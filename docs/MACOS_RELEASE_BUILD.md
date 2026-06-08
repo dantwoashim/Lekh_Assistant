@@ -24,6 +24,13 @@ The current Swift package validates proof-spike decision logic only. A productio
 - Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper validation pass.
 - Uninstall removes input method, XPC service, daemon/companion files, and optional user data only after confirmation.
 
+## Privacy Requirements
+
+- Normal typing is local-first and does not send typed text to a server.
+- Secure input disables memory, proofread, and aggressive suggestions.
+- Diagnostics exports must be redacted before sharing.
+- Pilot examples require explicit consent and manual redaction.
+
 ## Manual Test Matrix
 
 - TextEdit

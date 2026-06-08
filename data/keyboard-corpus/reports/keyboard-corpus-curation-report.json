@@ -1,0 +1,39 @@
+{
+  "generatedAt": "2026-06-08T06:53:20.463Z",
+  "version": "v0.1",
+  "counters": {
+    "d8": 100000,
+    "d1": 1000000,
+    "d1Dropped": 0,
+    "d2": 99998,
+    "d2Dropped": 2,
+    "d3": 249685,
+    "d3Dropped": 315,
+    "d4": 250000,
+    "d4Dropped": 0,
+    "d5": 100000,
+    "d5Dropped": 0,
+    "d6": 50000,
+    "d6Dropped": 0,
+    "d7": 1000000,
+    "d7Dropped": 0
+  },
+  "leakageAudit": {
+    "checkedTrainRows": 2653385,
+    "heldOutRows": 96298,
+    "violations": 0,
+    "status": "passed",
+    "rule": "No train row may share a holdout key with blind_v0.1; matching rows are marked split=blind_holdout."
+  },
+  "qualityCounts": {
+    "gold": 124,
+    "silver": 54876,
+    "bronze": 0,
+    "synthetic": 10000,
+    "blind": 100000
+  },
+  "reviewQueueRows": 25000,
+  "goldPromotions": 149,
+  "runtimePackDir": "data/keyboard-corpus/runtime/v0.1",
+  "bundledRuntimePack": "src/data/keyboard-packs/v0.1/runtime-suggestions.json"
+}

@@ -1,8 +1,29 @@
 # macOS Native Implementation Report
 
-Generated: 2026-05-28
+Generated: 2026-06-08
 
 Status: `blocked-external` for production distribution and `blocked-native-environment` for installed IMK validation.
+
+## 2026-06-08 Build Evidence
+
+Repo-executable macOS proof build:
+
+```bash
+cd native/macos-imk/skeleton
+swift build
+```
+
+Result on 2026-06-08: passed with Apple Swift 6.2.3, target `arm64-apple-macosx26.0`.
+
+Native environment check:
+
+```bash
+xcodebuild -version
+```
+
+Result on 2026-06-08: blocked because `xcodebuild` requires full Xcode, but the active developer directory is `/Library/Developer/CommandLineTools`.
+
+This proves the Swift IMK/XPC decision scaffold builds here. It does not prove an installed `.inputmethod` bundle, because full Xcode, input source registration, Developer ID signing, notarization, and host-app validation are still required.
 
 ## What Exists
 

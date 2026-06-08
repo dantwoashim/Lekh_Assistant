@@ -1,0 +1,69 @@
+{
+  "generatedAt": "2026-06-08T07:00:42.290Z",
+  "buildReportGeneratedAt": "2026-06-08T06:52:18.359Z",
+  "files": {
+    "wordAliases": {
+      "file": "word-aliases.auto-reviewed.jsonl",
+      "count": 1000000,
+      "target": 1000000,
+      "status": "met"
+    },
+    "phraseAliases": {
+      "file": "phrase-aliases.auto-reviewed.jsonl",
+      "count": 100000,
+      "target": 100000,
+      "status": "met"
+    },
+    "casualSentences": {
+      "file": "casual-romanized-sentences.pii-screened.jsonl",
+      "count": 250000,
+      "target": 250000,
+      "status": "met"
+    },
+    "mixedSentences": {
+      "file": "mixed-nepali-english-sentences.pii-screened.jsonl",
+      "count": 250000,
+      "target": 250000,
+      "status": "met"
+    },
+    "proofreadPairs": {
+      "file": "proofread-error-corrections.synthetic-silver.jsonl",
+      "count": 100000,
+      "target": 100000,
+      "status": "met"
+    },
+    "nameVariants": {
+      "file": "name-surname-variants.synthetic-silver.jsonl",
+      "count": 50000,
+      "target": 50000,
+      "status": "met"
+    },
+    "nextWordContexts": {
+      "file": "next-word-phrase-contexts.auto-reviewed.jsonl",
+      "count": 1000000,
+      "target": 1000000,
+      "status": "met"
+    },
+    "blindTest": {
+      "file": "frozen-blind-test.v1.jsonl",
+      "count": 100000,
+      "target": 100000,
+      "status": "met"
+    }
+  },
+  "curation": {
+    "generatedAt": "2026-06-08T06:53:20.463Z",
+    "leakageAudit": {
+      "checkedTrainRows": 2653385,
+      "heldOutRows": 96298,
+      "violations": 0,
+      "status": "passed",
+      "rule": "No train row may share a holdout key with blind_v0.1; matching rows are marked split=blind_holdout."
+    },
+    "reviewQueueRows": 25000,
+    "goldPromotions": 149,
+    "runtimePackDir": "data/keyboard-corpus/runtime/v0.1",
+    "bundledRuntimePack": "src/data/keyboard-packs/v0.1/runtime-suggestions.json"
+  },
+  "violations": []
+}

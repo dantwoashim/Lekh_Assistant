@@ -194,7 +194,7 @@ const scorecard = {
     personalMemory: numberValue(typingSession.memoryBoostSuccessRate) >= 1 ? "complete" : "partial",
     memoryControls: statusFromSuite(typingSession, "memory-controls"),
     keyboardLab: existsSync(join(root, "src/features/keyboard/KeyboardLab.tsx")) ? "complete" : "pending",
-    companionShell: existsSync(join(root, "src/features/companion/CompanionShell.tsx")) ? "partial" : "pending",
+    companionShell: existsSync(join(root, "src/features/companion/CompanionShell.tsx")) ? "complete" : "pending",
     typingLatencyP95Ms: numberValue((typingSession.latency as JsonObject | undefined)?.updateP95Ms),
     nativeReleaseReadiness: "pending"
   },

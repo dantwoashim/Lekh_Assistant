@@ -196,7 +196,7 @@ const report = {
   suite: "performance",
   mode,
   durationMs: Date.now() - startedAt,
-  note: "Performance smoke benchmark. It reports p95 gates and fails only on gross slowdowns over 10x gate.",
+  note: "Performance smoke benchmark. It uses one untimed warmup per case, reports p95 gates, and fails only on repeated gross slowdowns over 10x gate.",
   reports
 };
 
@@ -210,6 +210,7 @@ if (reports.some((report) => report.grosslySlow)) {
 
 async function runPerfCase(perfCase: PerfCase): Promise<PerfReport> {
   const timings: number[] = [];
+  await perfCase.run();
   for (let index = 0; index < perfCase.iterations; index += 1) {
     const start = Date.now();
     await perfCase.run();
@@ -232,5 +233,5 @@ async function runPerfCase(perfCase: PerfCase): Promise<PerfReport> {
 }
 
 function iterations(fullCount: number): number {
-  return mode === "full" ? fullCount : Math.max(8, Math.ceil(fullCount / 4));
+  return mode === "full" ? fullCount : Math.max(20, Math.ceil(fullCount / 4));
 }

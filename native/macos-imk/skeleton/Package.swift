@@ -8,6 +8,11 @@ let package = Package(
     .library(name: "LekhInputMethodPlaceholder", targets: ["LekhInputMethodPlaceholder"])
   ],
   targets: [
-    .target(name: "LekhInputMethodPlaceholder", path: ".", sources: ["LekhInputController.placeholder.swift"])
+    .target(
+      name: "LekhInputMethodPlaceholder",
+      path: ".",
+      exclude: ["lekh_imk_contract.md"],
+      sources: ["LekhInputController.placeholder.swift"]
+    )
   ]
 )

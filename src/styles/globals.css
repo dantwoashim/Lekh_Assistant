@@ -922,6 +922,45 @@ summary {
   line-height: 1.35;
 }
 
+.companion-privacy-panel {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f8fbfa;
+  padding: 12px;
+}
+
+.companion-privacy-panel div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-dark);
+}
+
+.companion-privacy-panel h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.companion-privacy-panel p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.companion-privacy-panel ul {
+  margin: 9px 0 0;
+  padding-left: 18px;
+}
+
+.companion-privacy-panel li {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .keyboard-side-panel {
   align-self: start;
 }

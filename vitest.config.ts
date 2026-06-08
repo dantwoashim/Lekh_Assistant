@@ -8,12 +8,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["src/tests/setup.ts"],
     pool: "forks",
-    poolOptions: {
-      forks: {
-        minForks: 1,
-        maxForks: 2
-      }
-    },
+    maxWorkers: 2,
     testTimeout: 20_000,
     hookTimeout: 20_000,
     teardownTimeout: 10_000,

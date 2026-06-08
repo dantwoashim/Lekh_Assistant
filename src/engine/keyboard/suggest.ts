@@ -1,11 +1,13 @@
 import { suggestWords } from "../../core/dictionary/suggestWords";
+import { finalizeCandidates } from "./candidates";
+import { runtimePackSuggestions } from "./runtimePacks";
 import type { Candidate, TypingContext } from "./types";
 
 export function getKeyboardSuggestions(context: TypingContext): Candidate[] {
   if (context.secureInput || context.fieldType === "password" || context.fieldType === "code") return [];
   const lastToken = currentToken(context.leftTextWindow);
   if (!lastToken) return [];
-  return suggestWords(lastToken, 8).map((suggestion, index): Candidate => ({
+  const dictionaryCandidates = suggestWords(lastToken, 8).map((suggestion, index): Candidate => ({
     id: `suggest-${index}-${suggestion.normalizedWord}`,
     text: suggestion.normalizedWord,
     label: suggestion.romanized,
@@ -14,6 +16,7 @@ export function getKeyboardSuggestions(context: TypingContext): Candidate[] {
     reason: [`${suggestion.domain} dictionary prefix`, suggestion.source],
     shortcut: String(index + 1)
   }));
+  return finalizeCandidates([...runtimePackSuggestions(context), ...dictionaryCandidates], 8);
 }
 
 function currentToken(input: string): string {

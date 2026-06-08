@@ -1,0 +1,86 @@
+{
+  "generatedAt": "2026-06-08T06:52:18.359Z",
+  "startedAt": "2026-06-08T06:49:38.819Z",
+  "targets": {
+    "wordAliases": 1000000,
+    "phraseAliases": 100000,
+    "casualSentences": 250000,
+    "mixedSentences": 250000,
+    "proofreadPairs": 100000,
+    "nameVariants": 50000,
+    "nextWordContexts": 1000000,
+    "blindTest": 100000
+  },
+  "counts": {
+    "wordAliases": 1000000,
+    "casualSentences": 250000,
+    "mixedSentences": 250000,
+    "phraseAliases": 100000,
+    "proofreadPairs": 100000,
+    "nameVariants": 50000,
+    "nextWordContexts": 1000000,
+    "blindTest": 100000
+  },
+  "outputDir": "data/keyboard-corpus",
+  "sources": {
+    "transliteration": {
+      "id": "hf-syubraj-roman2nepali-transliteration",
+      "dataset": "syubraj/roman2nepali-transliteration",
+      "split": "train",
+      "license": "MIT",
+      "url": "https://huggingface.co/datasets/syubraj/roman2nepali-transliteration",
+      "parquetUrls": [
+        "https://huggingface.co/datasets/syubraj/roman2nepali-transliteration/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet"
+      ]
+    },
+    "romanSocial": {
+      "id": "hf-boredoom17-nepali-flow-roman",
+      "dataset": "Boredoom17/Nepali-Flow-Roman",
+      "split": "train",
+      "license": "CC-BY-4.0; PII review required for public/social rows",
+      "url": "https://huggingface.co/datasets/Boredoom17/Nepali-Flow-Roman",
+      "parquetUrls": [
+        "https://huggingface.co/datasets/Boredoom17/Nepali-Flow-Roman/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet"
+      ]
+    },
+    "colloquial": {
+      "id": "hf-boredoom17-nepali-flow-colloquial",
+      "dataset": "Boredoom17/Nepali-Flow-Colloquial",
+      "split": "train",
+      "license": "CC-BY-4.0; PII review required for public/social rows",
+      "url": "https://huggingface.co/datasets/Boredoom17/Nepali-Flow-Colloquial",
+      "parquetUrls": [
+        "https://huggingface.co/datasets/Boredoom17/Nepali-Flow-Colloquial/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet"
+      ]
+    },
+    "internalPhrases": {
+      "id": "lekh-internal-romanized-phrases",
+      "path": "src/data/phrases/romanized-phrases.tsv",
+      "license": "project-internal"
+    },
+    "internalAliases": {
+      "id": "lekh-internal-romanized-aliases",
+      "path": "src/data/aliases/romanized-aliases.tsv",
+      "license": "project-internal"
+    }
+  },
+  "reviewTiers": {
+    "auto-reviewed-open-license": "Machine-filtered open dataset row. Not human-reviewed.",
+    "auto-reviewed-token-aligned": "Phrase generated from high-confidence token aliases. Not human-reviewed.",
+    "pii-screened-open-social": "Public/social row with automated PII and quality filters. Not human-reviewed.",
+    "synthetic-silver": "Generated from reviewed rules/templates for coverage and stress testing. Needs human promotion before gold use.",
+    "project-internal-seed": "Project-curated seed data; useful for bootstrapping but not frequency evidence."
+  },
+  "piiPolicy": {
+    "dropped": [
+      "emails",
+      "urls",
+      "phone-like long digit strings",
+      "very long numeric IDs",
+      "handle-like underscore tokens",
+      "creator/music metadata rows",
+      "blocked local workspace identity examples"
+    ],
+    "note": "Automated PII screening is not a substitute for human privacy review before public release."
+  }
+}
