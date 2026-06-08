@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-06-08T07:00:42.098Z",
+  "sourceReport": "bench/reports/typing-session-report.json",
+  "reportGeneratedAt": "2026-06-08T07:00:29.285Z",
+  "failedSessions": 0,
+  "buckets": {},
+  "loop": [
+    "benchmark",
+    "failure buckets",
+    "review queue",
+    "data/ranking update",
+    "new data pack version",
+    "rerun"
+  ]
+}

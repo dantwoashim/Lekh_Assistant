@@ -1,6 +1,6 @@
 # Engine Quality Scorecard
 
-Updated: 2026-05-27T18:47:18.723Z
+Updated: 2026-06-08T07:13:54.897Z
 
 This scorecard reads existing fresh report files from `bench/reports`. It does not recompute the heavy benchmark universe. Missing, stale, zero-fixture, or schema-weak reports are visible below.
 
@@ -78,25 +78,25 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | personal memory | complete |
 | memory controls | complete |
 | Keyboard Lab | complete |
-| companion shell | partial |
-| typing latency p95 ms | 6 |
+| companion shell | complete |
+| typing latency p95 ms | 4 |
 | native release readiness | pending |
 
 ## Performance
 
 | Case | p95 ms | Gate ms | Status |
 | --- | ---: | ---: | --- |
-| 50-token hostile Romanized mixed sentence | 27 | 30 | pass |
-| 5KB mixed Preeti paragraph | 346 | 100 | pass |
+| 50-token hostile Romanized mixed sentence | 16 | 30 | pass |
+| 5KB mixed Preeti paragraph | 226 | 100 | pass |
 | KeyboardEngine warm startup | 0 | 500 | pass |
 | KeyboardEngine partial warm timeout | 0 | 50 | pass |
-| Keyboard Romanized live update | 9 | 20 | pass |
-| Keyboard candidate count cap | 8 | 20 | pass |
-| Keyboard Traditional Unicode suggestion | 9 | 20 | pass |
+| Keyboard Romanized live update | 3 | 20 | pass |
+| Keyboard candidate count cap | 3 | 20 | pass |
+| Keyboard Traditional Unicode suggestion | 3 | 20 | pass |
 | Keyboard proofread hint update | 0 | 40 | pass |
-| Keyboard dictionary lookup | 15 | 30 | pass |
-| Keyboard memory ranking update | 4 | 10 | pass |
-| Keyboard candidate commit | 4 | 10 | pass |
+| Keyboard dictionary lookup | 9 | 30 | pass |
+| Keyboard memory ranking update | 2 | 10 | pass |
+| Keyboard candidate commit | 3 | 10 | pass |
 | Native IPC JSON envelope simulation | 0 | 10 | pass |
 
 ## Native And Release

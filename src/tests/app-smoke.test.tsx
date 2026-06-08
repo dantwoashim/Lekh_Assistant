@@ -90,6 +90,8 @@ describe("App", () => {
     expect(await screen.findByText("Production Pages")).toBeInTheDocument();
     expect(await screen.findByText(/Dev daemon/i)).toBeInTheDocument();
     expect(await screen.findByText(/No global key hook in the companion/i)).toBeInTheDocument();
+    expect(await screen.findByText("Privacy Page Ready")).toBeInTheDocument();
+    expect((await screen.findAllByText(/redacted diagnostics/i)).length).toBeGreaterThan(0);
     expect(await screen.findByText(/Companion app controls settings and diagnostics/i)).toBeInTheDocument();
     expect((await screen.findAllByText("Privacy")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("blocked-human")).length).toBeGreaterThan(0);

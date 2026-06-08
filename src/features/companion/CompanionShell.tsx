@@ -6,7 +6,7 @@ const statusRows = [
   ["Keyboard engine", "Native-ready API and lab validation pass"],
   ["Dev daemon", "TypeScript daemon dispatcher available"],
   ["Native Windows", "TSF build path requires Windows validation"],
-  ["Native macOS", "IMK/XPC path requires signed native validation"],
+  ["Native macOS", "Swift IMK/XPC proof build available; installed validation still needs Xcode/signing"],
   ["Traditional layout", "Physical keymap blocked on LTK audit"],
   ["Privacy", "No typed-text upload, no hidden telemetry"]
 ] as const;
@@ -19,15 +19,17 @@ const diagnostics = [
 ] as const;
 
 export function CompanionShell() {
+  const privacyPage = companionPages.find((page) => page.id === "privacy");
+
   return (
-    <section className="companion-layout" aria-label="Companion app MVP shell">
+    <section className="companion-layout" aria-label="Companion app console">
       <div className="editor-panel companion-hero-panel">
         <div className="panel-heading">
           <div>
-            <h2>Companion MVP Shell</h2>
-            <p>Settings, privacy, dictionary, memory, diagnostics, and Preeti side utility. This shell is not the IME.</p>
+            <h2>Companion App Console</h2>
+            <p>Settings, privacy, dictionary, memory, diagnostics, and Preeti side utility are ready for engine and daemon validation. This app is not the IME.</p>
           </div>
-          <span className="local-badge">Scaffold</span>
+          <span className="local-badge">Dev-ready</span>
         </div>
 
         <div className="companion-status-grid">
@@ -75,13 +77,16 @@ export function CompanionShell() {
         />
         <CompanionCard
           icon={<ShieldCheck size={17} aria-hidden="true" />}
-          title="Privacy"
+          title="Privacy Page"
           rows={[
+            "Privacy page is present in the companion navigation",
             "No global key hook in the companion",
             "No foreground-text reading",
             "No network for normal typing",
             `Telemetry: ${defaultCompanionSettings.telemetryEnabled ? "on" : "off"}`,
-            "Export/import/reset controls remain local"
+            "Redacted diagnostics export only",
+            "Export/import/reset controls remain local",
+            "Consented examples only for pilot data"
           ]}
         />
         <CompanionCard
@@ -120,6 +125,21 @@ export function CompanionShell() {
               <p>{page.controls.join(", ")}</p>
             </div>
           ))}
+        </div>
+        <div className="companion-privacy-panel" aria-label="Privacy page readiness">
+          <div>
+            <ShieldCheck size={17} aria-hidden="true" />
+            <h3>Privacy Page Ready</h3>
+          </div>
+          <p>
+            The companion privacy page exposes local-first typing, secure input pass-through, telemetry-off defaults,
+            consent controls, redacted diagnostics, and local data deletion.
+          </p>
+          <ul>
+            {(privacyPage?.controls ?? []).map((control) => (
+              <li key={control}>{control}</li>
+            ))}
+          </ul>
         </div>
         <p className="quiet-note">
           <EyeOff size={14} aria-hidden="true" />

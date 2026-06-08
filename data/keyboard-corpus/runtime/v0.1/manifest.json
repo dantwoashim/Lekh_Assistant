@@ -1,0 +1,15 @@
+{
+  "version": "keyboard-pack-v0.1",
+  "generatedAt": "2026-06-08T06:53:19.973Z",
+  "sourceCorpus": "data/keyboard-corpus/curated/v0.1",
+  "excludesSplit": "blind_holdout",
+  "counts": {
+    "words": 25000,
+    "phrases": 10000,
+    "proofread": 5000,
+    "mixedPreserve": 63,
+    "mixedPreference": 25,
+    "names": 5000,
+    "contexts": 20000
+  }
+}

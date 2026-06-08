@@ -25,6 +25,29 @@ describe("KeyboardEngine session API", () => {
     expect(update.candidates.length).toBeGreaterThan(0);
   });
 
+  it("uses the compiled keyboard runtime pack for live candidates and direct suggestions", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const update = engine.updateComposition(sessionId, "muskuraundai", 11);
+    expect(update.candidates.some((candidate) => candidate.text === "मुस्कुराउँदै")).toBe(true);
+    expect(update.candidates.find((candidate) => candidate.text === "मुस्कुराउँदै")?.reason.join(" ")).toMatch(/runtime pack/);
+
+    const suggestions = engine.getSuggestions({
+      ...defaultTypingContext("romanized"),
+      leftTextWindow: "muskur",
+      showRomanizedLabels: true
+    });
+    expect(suggestions.some((candidate) => candidate.text === "मुस्कुराउँदै")).toBe(true);
+  });
+
+  it("suppresses compiled runtime pack suggestions in secure fields", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), secureInput: true });
+    const update = engine.updateComposition(sessionId, "muskuraundai", 11);
+    expect(update.candidates).toHaveLength(0);
+    expect(engine.getSuggestions({ ...defaultTypingContext("romanized"), leftTextWindow: "muskur", secureInput: true })).toHaveLength(0);
+  });
+
   it("processes native-style key strokes", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession(defaultTypingContext("romanized"));

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .DS_Store
+.tmp/
 AGENTS.md
 docs/AGENTS.md
 docs/architecture.md
@@ -25,3 +26,7 @@ competitor/raw/**
 reports/*.tsv
 reports/*.json
 reports/*.jsonl
+data/keyboard-corpus/generated/**
+data/keyboard-corpus/curated/**
+data/keyboard-corpus/review/**/review_queue.jsonl
+native/**/.build/

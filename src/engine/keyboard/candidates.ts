@@ -4,6 +4,7 @@ import { nowMs } from "../util/time";
 import { canonicalRomanizedLabel, romanizedHelperCandidates } from "./helpers";
 import { keyboardBlockedCandidateTexts, keyboardMemoryCandidates } from "./memory";
 import { isSecureContext, surfaceForMode } from "./modes";
+import { runtimePackCandidates } from "./runtimePacks";
 import type { CorrectionMemoryEntry } from "../memory";
 import type { Candidate, CandidateUpdate, KeyboardSession, TypingContext } from "./types";
 
@@ -101,6 +102,7 @@ export function romanizedCandidates(
   const protectedCandidate = protectedKeyboardCandidate(trimmed, input.length);
   if (protectedCandidate) return [protectedCandidate];
   const keyboardPrefixCandidates = prefixCandidates(trimmed, input.length, context);
+  const dataPackCandidates = runtimePackCandidates(trimmed, context, input.length);
   const convertResult = convertRomanized(trimmed, {
     mode: context?.activeDomains.includes("government") ? "romanized-government" : "romanized-mixed",
     digitPolicy: "context-dependent"
@@ -141,6 +143,7 @@ export function romanizedCandidates(
   const primaryCandidates = finalizeCandidates([
     ...memoryCandidates,
     ...keyboardPrefixCandidates,
+    ...dataPackCandidates,
     ...dictionaryCandidates,
     ...engineCandidates,
     romanizedHelper

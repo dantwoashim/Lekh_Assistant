@@ -1,8 +1,26 @@
 # Windows Native Implementation Report
 
-Generated: 2026-05-28
+Generated: 2026-06-08
 
 Status: `blocked-native-environment`
+
+## 2026-06-08 Environment Evidence
+
+Repo-executable native scaffold tests:
+
+```bash
+npm run test:native-scaffold
+```
+
+Result on 2026-06-08: passed, covering IPC message contracts, daemon dispatcher behavior, and native storage JSON-file stores.
+
+Windows TSF build environment check:
+
+```bash
+cmake --version
+```
+
+Result on 2026-06-08: blocked in this environment because `cmake` is not installed and this host is not a Windows TSF host with Visual Studio/MSBuild. The exact Windows dev build path below remains the required next action on a Windows machine.
 
 ## What Exists
 

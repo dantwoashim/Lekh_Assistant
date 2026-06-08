@@ -106,7 +106,7 @@ export const companionPages: CompanionPageDefinition[] = [
     id: "privacy",
     title: "Privacy",
     status: "usable-dev",
-    controls: ["telemetry off", "secure input", "consent controls", "data deletion"]
+    controls: ["telemetry off", "secure input", "consent controls", "redacted diagnostics", "data deletion"]
   },
   {
     id: "diagnostics",

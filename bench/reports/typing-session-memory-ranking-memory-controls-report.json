@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-05-27T18:48:07.627Z",
+  "generatedAt": "2026-06-08T07:00:48.160Z",
   "command": "npm run benchmark:typing-session -- memory-ranking,memory-controls",
   "suite": "typing-session:memory-ranking,memory-controls",
   "mode": "full",
-  "durationMs": 153,
+  "durationMs": 172,
   "fixtureCount": 4,
   "romanized": {
     "totalSessions": 4,
@@ -76,9 +76,9 @@
         "pradesh"
       ],
       "latencyMs": [
-        17
+        6
       ],
-      "commitLatencyMs": 0,
+      "commitLatencyMs": 1,
       "keystrokeSavingsRatio": 0.25,
       "warnings": [],
       "proofHintHit": false,
@@ -112,7 +112,7 @@
       "latencyMs": [
         4
       ],
-      "commitLatencyMs": 1,
+      "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
       "warnings": [],
       "proofHintHit": false,

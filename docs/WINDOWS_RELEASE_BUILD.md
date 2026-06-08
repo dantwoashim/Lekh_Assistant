@@ -29,6 +29,13 @@ The current proof artifact is scaffold-only. It must not be distributed as a pro
 - Uninstall removes TSF profile, daemon startup entry, companion app, and optional user data only after confirmation.
 - Code-signing certificate is available.
 
+## Privacy Requirements
+
+- Normal typing is local-first and does not send typed text to a server.
+- Secure input disables memory, proofread, and aggressive suggestions.
+- Diagnostics exports must be redacted before sharing.
+- Pilot examples require explicit consent and manual redaction.
+
 ## Manual Test Matrix
 
 - Notepad

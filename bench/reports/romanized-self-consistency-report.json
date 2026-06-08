@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-05-27T18:47:27.027Z",
+  "generatedAt": "2026-06-08T07:14:00.531Z",
   "command": "npm run benchmark:romanized:self:smoke",
   "suite": "romanized-self-consistency",
   "mode": "smoke",
-  "durationMs": 729,
+  "durationMs": 331,
   "fixtureCount": 390,
   "normalizedStabilityRate": 1,
   "outputInTopCandidatesRate": 1,

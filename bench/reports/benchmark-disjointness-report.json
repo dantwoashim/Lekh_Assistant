@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-05-27T18:46:52.198Z",
+  "generatedAt": "2026-06-08T07:13:30.559Z",
   "command": "npm run check:benchmark-disjointness",
   "suite": "benchmark-disjointness",
   "mode": "full",
-  "durationMs": 389,
+  "durationMs": 298,
   "fixtureCount": 17001,
   "rule": "Exact held-out input overlap with phrase/alias sources fails. Expected-output overlap is reported as warning because Nepali words can legitimately recur.",
   "suiteCount": 14,
