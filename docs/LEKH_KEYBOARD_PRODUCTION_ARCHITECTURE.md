@@ -31,7 +31,7 @@ Deferred:
 - mobile keyboard;
 - OCR;
 - voice input;
-- LLM rewriting;
+- cloud rewriting;
 - enterprise dashboard.
 
 ## Runtime Architecture

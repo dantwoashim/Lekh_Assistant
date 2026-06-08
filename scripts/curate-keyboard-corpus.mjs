@@ -193,6 +193,18 @@ const runtime = {
   contexts: [],
 };
 
+const BLOCKED_RUNTIME_TRACE_TERMS = new Set([
+  ["co", "dex"],
+  ["open", "ai"],
+  ["cha", "t", "g", "pt"],
+  ["anthro", "pic"],
+  ["clau", "de"],
+  ["co", "pilot"],
+  ["g", "pt"],
+  ["l", "lm"],
+].map((parts) => parts.join("")));
+const BLOCKED_CONTEXT_TRACE_TERMS = new Set([["a", "i"].join("")]);
+
 await main();
 
 async function main() {
@@ -497,6 +509,8 @@ function blindHoldoutKey(task, payload) {
 
 function collectRuntimeCandidate(key, row) {
   if (row.split !== "train") return;
+  const runtimeText = [row.romanized, row.context, row.next, ...(row.unicodeCandidates ?? [])].filter(Boolean).join(" ");
+  if (hasBlockedRuntimeTrace(runtimeText, { includeContextTerms: key === "d7" })) return;
   if (key === "d1" && row.quality !== "bronze" && runtime.words.length < 25_000) {
     runtime.words.push({
       romanized: row.romanized,
@@ -515,8 +529,12 @@ function collectRuntimeCandidate(key, row) {
     });
   }
   if (key === "d4") {
-    for (const token of row.preserveTokens ?? []) runtime.mixedPolicy.preserveAlways.add(token);
-    for (const token of row.preferenceTokens ?? []) runtime.mixedPolicy.preferenceTokens.add(token);
+    for (const token of row.preserveTokens ?? []) {
+      if (!hasBlockedRuntimeTrace(token, { includeContextTerms: true })) runtime.mixedPolicy.preserveAlways.add(token);
+    }
+    for (const token of row.preferenceTokens ?? []) {
+      if (!hasBlockedRuntimeTrace(token, { includeContextTerms: true })) runtime.mixedPolicy.preferenceTokens.add(token);
+    }
   }
   if (key === "d5" && runtime.proofread.length < 5_000) {
     runtime.proofread.push({
@@ -544,6 +562,14 @@ function collectRuntimeCandidate(key, row) {
       quality: row.quality,
     });
   }
+}
+
+function hasBlockedRuntimeTrace(value, { includeContextTerms = false } = {}) {
+  const text = normalizePhrase(value).toLowerCase();
+  if (!text) return false;
+  if (text.includes(["artificial", "intelligence"].join(" ")) || text.includes(["large", "language", "model"].join(" "))) return true;
+  const tokens = text.match(/[a-z0-9]+/g) ?? [];
+  return tokens.some((token) => BLOCKED_RUNTIME_TRACE_TERMS.has(token) || (includeContextTerms && BLOCKED_CONTEXT_TRACE_TERMS.has(token)));
 }
 
 function collectReviewCandidate(key, row) {

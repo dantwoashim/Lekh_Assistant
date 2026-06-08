@@ -28356,37 +28356,7 @@
     "quality": "silver"
   },
   {
-    "context": "nepal",
-    "next": "ai",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "ai",
-    "next": "understands",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "nepal ai",
-    "next": "understands",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
     "context": "understands",
-    "next": "nepal",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "ai understands",
-    "next": "nepal",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "nepal ai understands",
     "next": "nepal",
     "confidence": 0.64,
     "quality": "silver"
@@ -28399,18 +28369,6 @@
   },
   {
     "context": "understands nepal",
-    "next": "like",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "ai understands nepal",
-    "next": "like",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "nepal ai understands nepal",
     "next": "like",
     "confidence": 0.64,
     "quality": "silver"
@@ -28429,12 +28387,6 @@
   },
   {
     "context": "understands nepal like",
-    "next": "no",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "ai understands nepal like",
     "next": "no",
     "confidence": 0.64,
     "quality": "silver"
@@ -28464,84 +28416,6 @@
     "quality": "silver"
   },
   {
-    "context": "other",
-    "next": "ai",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "no other",
-    "next": "ai",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "like no other",
-    "next": "ai",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "nepal like no other",
-    "next": "ai",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "ai",
-    "next": "in",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "other ai",
-    "next": "in",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "no other ai",
-    "next": "in",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "like no other ai",
-    "next": "in",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "ai in",
-    "next": "the",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "other ai in",
-    "next": "the",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "no other ai in",
-    "next": "the",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "ai in the",
-    "next": "world",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "other ai in the",
-    "next": "world",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
     "context": "world",
     "next": "this",
     "confidence": 0.64,
@@ -28555,12 +28429,6 @@
   },
   {
     "context": "in the world",
-    "next": "this",
-    "confidence": 0.64,
-    "quality": "silver"
-  },
-  {
-    "context": "ai in the world",
     "next": "this",
     "confidence": 0.64,
     "quality": "silver"
@@ -119996,6 +119864,138 @@
   {
     "context": "bhari timi ra ma",
     "next": "sadhai",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "ma sadhai",
+    "next": "bhari",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "ra ma sadhai",
+    "next": "bhari",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "timi ra ma sadhai",
+    "next": "bhari",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "bhari",
+    "next": "maya",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "sadhai bhari",
+    "next": "maya",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "ma sadhai bhari",
+    "next": "maya",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "ra ma sadhai bhari",
+    "next": "maya",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "bhari maya",
+    "next": "ra",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "sadhai bhari maya",
+    "next": "ra",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "ma sadhai bhari maya",
+    "next": "ra",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "ra",
+    "next": "moha",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "maya ra",
+    "next": "moha",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "bhari maya ra",
+    "next": "moha",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "sadhai bhari maya ra",
+    "next": "moha",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "outro",
+    "next": "hera",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "outro hera",
+    "next": "mero",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "mero",
+    "next": "aankha",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "hera mero",
+    "next": "aankha",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "outro hera mero",
+    "next": "aankha",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "mero aankha",
+    "next": "ma",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "hera mero aankha",
+    "next": "ma",
+    "confidence": 0.64,
+    "quality": "silver"
+  },
+  {
+    "context": "outro hera mero aankha",
+    "next": "ma",
     "confidence": 0.64,
     "quality": "silver"
   }
