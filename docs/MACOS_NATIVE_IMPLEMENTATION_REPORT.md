@@ -23,16 +23,18 @@ xcodebuild -version
 
 Result on 2026-06-08: blocked because `xcodebuild` requires full Xcode, but the active developer directory is `/Library/Developer/CommandLineTools`.
 
-This proves the Swift IMK/XPC decision scaffold builds here. It does not prove an installed `.inputmethod` bundle, because full Xcode, input source registration, Developer ID signing, notarization, and host-app validation are still required.
+This proves the Swift IMK proof target builds here. It does not prove an installed `.inputmethod` bundle, because full Xcode, input source registration, Developer ID signing, notarization, and host-app validation are still required.
 
 ## What Exists
 
-- Build-ready IMK/XPC proof-spike scaffold under `native/macos-imk/skeleton`.
-- Swift package target: `LekhInputMethodPlaceholder`.
-- Placeholder key decision logic for:
-  - `k`/`K`: set dummy marked text candidate.
-  - Enter: commit dummy text.
-  - Escape: cancel.
+- Build-ready IMK/XPC proof target under `native/macos-imk/skeleton`.
+- Swift package target: `LekhInputMethod`.
+- Source files:
+  - `LekhInputController.swift`
+  - `LekhCandidateController.swift`
+  - `LekhXpcClient.swift`
+- Safe proof behavior:
+  - `inputText(_:client:)` maps key input to marked text, committed text, cancellation, or pass-through.
   - XPC unavailable/timed out: pass through.
 - XPC contract points at `session.processKeyStroke` with a 50 ms hot-path timeout.
 - Dev daemon dispatcher exists in `native/daemon/src/keyboardDaemon.ts`.
@@ -58,7 +60,7 @@ swift test
 
 Expected proof-spike artifact:
 
-- `.build/debug/LekhInputMethodPlaceholder`
+- `.build/debug/LekhInputMethod`
 
 This Swift package validates shared decision logic only. A real IMK bundle must still be created and installed under `~/Library/Input Methods/`.
 

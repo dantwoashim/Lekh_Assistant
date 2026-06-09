@@ -1,6 +1,6 @@
 # Engine Quality Scorecard
 
-Updated: 2026-06-08T07:13:54.897Z
+Updated: 2026-06-09T06:18:10.518Z
 
 This scorecard reads existing fresh report files from `bench/reports`. It does not recompute the heavy benchmark universe. Missing, stale, zero-fixture, or schema-weak reports are visible below.
 
@@ -9,16 +9,17 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | Report | Status | Fixtures | Mode | Command | Note |
 | --- | --- | ---: | --- | --- | --- |
 | Romanized benchmark | fresh | 776 | smoke | npm run benchmark:romanized:smoke |  |
-| Romanized self-consistency | fresh | 390 | smoke | npm run benchmark:romanized:self:smoke |  |
-| Typing-session benchmark | fresh | 60 | full | npm run benchmark:typing-session |  |
+| Romanized self-consistency | fresh | 140 | smoke | npm run benchmark:romanized:self:smoke |  |
+| Typing-session benchmark | fresh | 66 | full | npm run benchmark:typing-session |  |
 | Typing-session dictionary benchmark | fresh | 5 | full | npm run benchmark:typing-session -- dictionary-lookup |  |
 | Typing-session memory benchmark | fresh | 4 | full | npm run benchmark:typing-session -- memory-ranking,memory-controls |  |
 | Proofread benchmark | fresh | 9 | full | npm run benchmark:proofread |  |
 | Performance smoke benchmark | fresh | 12 | smoke | npm run bench:perf:smoke |  |
 | Benchmark disjointness | fresh | 17001 | full | npm run check:benchmark-disjointness |  |
-| Preeti benchmark | stale | 10225 | n/a | missing | A relevant source, fixture, or benchmark script is newer than the report. |
-| Mixed span mutations | stale | 25 | n/a | missing | A relevant source, fixture, or benchmark script is newer than the report. |
-| Romanized alias collisions | schema-warning | n/a | n/a | missing | Report is missing command, suite, or duration metadata. |
+| Keyboard corpus package | fresh | 11 | n/a | npm run corpus:keyboard:package-check |  |
+| Preeti benchmark | fresh | 10225 | full | npm run benchmark:preeti |  |
+| Mixed span mutations | fresh | 25 | full | npm run benchmark:mixed-span-mutations |  |
+| Romanized alias collisions | fresh | 76193 | full | npm run check:alias-collisions |  |
 
 ## Keyboard Foundation
 
@@ -41,14 +42,28 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | top-3 | 1.0000 |
 | top-5 | 1.0000 |
 | MRR | 1.0000 |
-| self-consistency fixtures | 390 |
+| self-consistency fixtures | 140 |
 | self-consistency failures | 0 |
+
+## Corpus Package
+
+| Metric | Value |
+| --- | --- |
+| package status | passed |
+| source registry rows | 11 |
+| human-reviewed gold rows | 124 |
+| gold promotions | 149 |
+| reviewed scale status | partial |
+| frozen blind rows | 100000 |
+| real blind benchmark status | partial |
+| leakage audit | passed |
+| benchmark evidence risk | perfect benchmark scores require real frozen human-reviewed blind validation before public accuracy claims |
 
 ## Typing Sessions
 
 | Metric | Value |
 | --- | ---: |
-| fixtures | 60 |
+| fixtures | 66 |
 | failed sessions | 0 |
 | proof hint hit rate | 1.0000 |
 | dictionary hit rate | 1.0000 |
@@ -69,7 +84,7 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | candidate dedupe and shortcuts | complete |
 | ranking and phrase completion | complete |
 | next-word prediction | complete |
-| KSR baseline | 0.02133169490981017 |
+| KSR baseline | 0.0162889756411158 |
 | Traditional physical layout | blocked-human |
 | Traditional Unicode suggestions | complete |
 | Traditional proofread | complete |
@@ -79,36 +94,38 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | memory controls | complete |
 | Keyboard Lab | complete |
 | companion shell | complete |
-| typing latency p95 ms | 4 |
+| typing latency p95 ms | 2 |
 | native release readiness | pending |
 
 ## Performance
 
 | Case | p95 ms | Gate ms | Status |
 | --- | ---: | ---: | --- |
-| 50-token hostile Romanized mixed sentence | 16 | 30 | pass |
-| 5KB mixed Preeti paragraph | 226 | 100 | pass |
+| 50-token hostile Romanized mixed sentence | 1 | 30 | pass |
+| 5KB mixed Preeti paragraph | 19 | 100 | pass |
 | KeyboardEngine warm startup | 0 | 500 | pass |
 | KeyboardEngine partial warm timeout | 0 | 50 | pass |
-| Keyboard Romanized live update | 3 | 20 | pass |
-| Keyboard candidate count cap | 3 | 20 | pass |
-| Keyboard Traditional Unicode suggestion | 3 | 20 | pass |
+| Keyboard Romanized live update | 1 | 20 | pass |
+| Keyboard candidate count cap | 1 | 20 | pass |
+| Keyboard Traditional Unicode suggestion | 5 | 20 | pass |
 | Keyboard proofread hint update | 0 | 40 | pass |
-| Keyboard dictionary lookup | 9 | 30 | pass |
-| Keyboard memory ranking update | 2 | 10 | pass |
-| Keyboard candidate commit | 3 | 10 | pass |
+| Keyboard dictionary lookup | 19 | 30 | pass |
+| Keyboard memory ranking update | 0 | 10 | pass |
+| Keyboard candidate commit | 1 | 10 | pass |
 | Native IPC JSON envelope simulation | 0 | 10 | pass |
+
+Performance target misses: 0
 
 ## Native And Release
 
 | Area | Status |
 | --- | --- |
-| Windows TSF skeleton | present |
-| macOS IMK skeleton | present |
+| Windows TSF source | present |
+| macOS IMK skeleton | missing |
 | IPC schema | present |
 | daemon lifecycle | documented |
-| companion scaffold | present |
-| release status | blocked until real TSF/IMK implementation, platform tests, signing/notarization, and pilot feedback |
+| companion desktop shell | present |
+| release status | blocked until Windows/macOS platform tests, signing/notarization, and pilot feedback |
 
 ## Final Production Scorecard
 
@@ -125,7 +142,7 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | memory | complete |
 | candidate quality | complete |
 | Keyboard Lab | complete |
-| companion app | complete |
+| companion app | partial |
 | daemon/IPC | complete |
 | Windows native | blocked-native-environment |
 | macOS native | blocked-native-environment |

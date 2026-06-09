@@ -23,7 +23,7 @@ const checks = [
   {
     id: "windows-release-build",
     path: "docs/WINDOWS_RELEASE_BUILD.md",
-    required: ["MSI", "TSF", "daemon", "companion", "uninstall", "code-signing", "privacy"]
+    required: ["NSIS", ".exe", "TSF", "daemon", "companion", "uninstall", "code-signing", "privacy"]
   },
   {
     id: "installer-uninstaller-checklist",

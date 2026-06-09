@@ -1,26 +1,63 @@
 # Windows Release Build
 
-Generated: 2026-05-28
+Generated: 2026-06-08
 
 Status: `blocked-native-environment` for TSF validation and `blocked-external` for signed release.
 
 ## Primary Installer Strategy
 
-Use a signed per-user MSI first. MSIX is deferred until TSF registration constraints are verified.
+Use a signed per-user NSIS `.exe` installer first:
+
+- TSF DLL: `native/windows-tsf/skeleton/build/bin/Release/LekhTextService.dll`
+- Per-user daemon: TypeScript/Node daemon process built from `native/daemon/src/daemonCli.ts`
+- Bundled daemon artifact: `native/daemon/dist/lekh-keyboard-daemon.mjs`
+- Companion app: Electron-packaged React UI from `electron/main.cjs`
+- Installer hook: `build/installer/windows/installer.nsh`
+
+MSI/MSIX can be evaluated later, but the current repo-executable Windows installer target is an NSIS `.exe`.
 
 ## Unsigned Dev Build Path
 
 ```powershell
 cd native\windows-tsf\skeleton
-cmake -S . -B build -G "Visual Studio 17 2022"
-cmake --build build --config Debug
+.\build.ps1
+.\register-dev.ps1
 ```
 
-The current proof artifact is scaffold-only. It must not be distributed as a production IME.
+Unsigned companion installer from any host supported by electron-builder:
+
+```bash
+npm run package:windows:unsigned
+npm run check:windows-release
+```
+
+Daemon-only development:
+
+```bash
+npm run build:daemon
+npm run daemon:dev
+```
+
+Windows named-pipe development:
+
+```powershell
+npm run build:daemon
+npm run daemon:named-pipe
+```
+
+Signed installer on the release host:
+
+```bash
+export CSC_LINK=/secure/path/windows-authenticode.pfx
+export CSC_KEY_PASSWORD=...
+npm run package:windows
+```
+
+The unsigned `.exe` is a dev artifact. Public release requires Authenticode signing and Windows host-app validation.
 
 ## Signed Release Build Requirements
 
-- Windows TSF DLL registers and unregisters cleanly.
+- Windows TSF DLL builds, registers, and unregisters cleanly.
 - Per-user daemon starts at login or through companion.
 - Named pipe is per-user ACL scoped.
 - Companion app installs with the daemon.
@@ -51,9 +88,9 @@ The current proof artifact is scaffold-only. It must not be distributed as a pro
 | Blocker | Type | Resolution |
 | --- | --- | --- |
 | Windows test machine | blocked-native-environment | Run TSF registration and host-app test matrix on Windows. |
-| Code-signing certificate | blocked-external | Acquire certificate and sign DLL/MSI. |
+| Code-signing certificate | blocked-external | Acquire certificate and sign DLL/daemon/NSIS `.exe`. |
 | Installer validation | blocked-native-environment | Verify install, update, repair, uninstall. |
 
 ## Launch Claim
 
-Windows release is not production-ready until TSF implementation, host-app validation, signed installer, and pilot feedback are complete.
+Windows release is not production-ready until TSF host-app validation, signed installer, and pilot feedback are complete.

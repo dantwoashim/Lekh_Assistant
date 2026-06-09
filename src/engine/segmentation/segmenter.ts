@@ -71,7 +71,8 @@ function segmentGap(text: string, offset: number, options: SegmenterOptions): Ty
     }
     const token = text.slice(start, index);
     const tokenSpans = segmentToken(token, offset + start, previousWord, options);
-    const wordLike = token.match(/[A-Za-z]+/g)?.at(-1);
+    const wordMatches = token.match(/[A-Za-z]+/g);
+    const wordLike = wordMatches ? wordMatches[wordMatches.length - 1] : undefined;
     if (wordLike) previousWord = wordLike;
     spans.push(...tokenSpans);
   }

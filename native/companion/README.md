@@ -1,8 +1,17 @@
-# Lekh Companion Scaffold
+# Lekh Keyboard Companion
 
 The companion app is the settings, diagnostics, privacy, dictionary, memory, and document-tools surface. It is not the IME and not the hot keystroke handler.
 
-Prompt 2 adds a lightweight web MVP shell at `src/features/companion/CompanionShell.tsx`. That shell is a repo-executable product scaffold and settings model preview. It does not add Tauri, does not globally hook keys, and does not read foreground text.
+The current desktop companion packages the existing React UI through Electron:
+
+- React UI: `src/features/companion/CompanionShell.tsx`
+- Desktop wrapper: `electron/main.cjs`
+- Preload boundary: `electron/preload.cjs`
+- Packager config: `electron-builder.config.cjs`
+- Windows NSIS hooks: `build/installer/windows/installer.nsh`
+- Bundled daemon artifact: `native/daemon/dist/lekh-keyboard-daemon.mjs`
+
+The companion does not globally hook keys and does not read foreground text. Native keystrokes must go through Windows TSF or macOS IMK.
 
 Planned pages:
 
@@ -17,6 +26,13 @@ Planned pages:
 9. Diagnostics
 10. About/update
 
-No Tauri dependency is added in Prompt 2. The current browser Keyboard Lab remains the repo-executable simulator for keyboard behavior, while the Companion tab previews settings, privacy, dictionary, memory, diagnostics, updates, and the Preeti side utility.
+Build commands:
 
-Prompt 3 must decide the production desktop shell and wire it to native daemon/IPCs without making the companion app the IME.
+```bash
+npm run build:companion
+npm run package:windows:unsigned
+```
+
+On Windows, the companion starts the bundled per-user daemon as a separate background process. The daemon exposes the named pipe expected by the TSF text service. If the daemon is unavailable, TSF must pass keystrokes through rather than freezing the host app.
+
+Signed Windows release requires `CSC_LINK` and `CSC_KEY_PASSWORD`.

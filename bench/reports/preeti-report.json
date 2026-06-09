@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-27T11:06:57.002Z",
+  "generatedAt": "2026-06-08T12:52:55.306Z",
   "fixtureCount": 10225,
   "byType": {
     "manual": {
@@ -61,5 +61,9 @@
     }
   },
   "topFailureCategories": [],
-  "remainingFailures": []
+  "remainingFailures": [],
+  "command": "npm run benchmark:preeti",
+  "suite": "preeti",
+  "mode": "full",
+  "durationMs": 155
 }

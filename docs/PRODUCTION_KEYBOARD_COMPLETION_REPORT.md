@@ -1,12 +1,12 @@
 # Production Keyboard Completion Report
 
-Generated: 2026-05-28
+Generated: 2026-06-08
 
 Final recommendation: `NOT_READY_BLOCKED_BY_EXTERNAL_NATIVE_REQUIREMENTS`.
 
 ## Executive Summary
 
-Prompt 3 completed the repo-executable production-readiness work: engine hardening, Romanized coverage, Traditional audit gate, dev daemon dispatcher, IPC schema validation, native JSON storage adapters, companion production shell, native Windows/macOS implementation reports, release checklists, pilot/demo package, final scorecard, final readiness gate, final gap matrix, and final verification evidence.
+Prompt 3 completed the repo-executable production-readiness work: engine hardening, Romanized coverage, Traditional audit gate, dev daemon dispatcher, IPC schema validation, native JSON storage adapters, companion shell packaging, native Windows/macOS implementation reports, release checklists, pilot/demo package, final scorecard, final readiness gate, final gap matrix, and final verification evidence.
 
 The repo is ready for native implementation and stakeholder demo. It is not ready for public Windows/macOS launch because real native TSF/IMK validation, signing/notarization, human Traditional layout validation, and pilot feedback remain external/native/human blockers.
 
@@ -75,9 +75,9 @@ Status: complete for repo-executable engine/lab behavior.
 
 ## Companion App Status
 
-Status: complete for repo-executable shell.
+Status: partial desktop companion.
 
-The companion shell exposes production pages for settings, Romanized preferences, Traditional layout status, layout preview, candidates, proofread, dictionary, personal memory, privacy, diagnostics, Preeti side utility, import/export, and updates/about. It is explicitly not the IME and does not globally hook keys.
+The companion shell exposes pages for settings, Romanized preferences, Traditional layout status, layout preview, candidates, proofread, dictionary, personal memory, privacy, diagnostics, Preeti side utility, import/export, and updates/about. It builds with `npm run build:companion`, and `npm run package:macos:unsigned` produces an unsigned development `.app` at `/Users/rohanbasnet14/Documents/Romanized-Nepali-Keyboard/release/mac-arm64/Lekh Keyboard Companion.app`. It is explicitly not the IME and does not globally hook keys. Production companion release still needs signed/notarized packaging and daemon/service installation validation.
 
 ## Daemon and IPC Status
 
@@ -100,7 +100,7 @@ The Windows TSF path is build-ready as a proof-spike scaffold and documented in 
 
 Status: `blocked-native-environment` plus `blocked-external` for signing/notarization.
 
-The macOS IMK/XPC path is build-ready as a proof-spike scaffold and documented in `docs/MACOS_NATIVE_IMPLEMENTATION_REPORT.md`. Production completion requires installed IMK/XPC validation, Developer ID signing, notarization, host-app tests, and packaging validation.
+The macOS IMK proof target now builds with `npm run build:macos` and includes `LekhInputController`, `LekhCandidateController`, and `LekhXpcClient`. Production completion still requires installed IMK/XPC validation, Developer ID signing, notarization, host-app tests, and packaging validation.
 
 ## Storage Status
 
@@ -155,21 +155,24 @@ Blocked:
 
 Final report source: `bench/reports/perf-report.json` and `bench/reports/typing-session-report.json`.
 
+- hostile Romanized mixed sentence p95: 1 ms.
+- Preeti side utility 5KB p95: 21 ms.
 - warm startup p95: 0 ms.
 - partial warm p95: 0 ms.
-- Romanized live update p95: 9 ms.
-- Traditional Unicode suggestion p95: 9 ms.
+- Romanized live update p95: 1 ms.
+- Traditional Unicode suggestion p95: 2 ms.
 - proofread p95: 0 ms.
-- dictionary lookup p95: 15 ms.
-- memory ranking p95: 4 ms.
-- commit p95: 4 ms.
-- typing-session update p95: 6 ms.
+- dictionary lookup p95: 8 ms.
+- memory ranking p95: 0 ms.
+- commit p95: 1 ms.
+- typing-session update p95: 1 ms.
 - native IPC JSON simulation p95: 0 ms.
-- Preeti side utility 5KB p95: 346 ms; not keyboard hot path, remains P2 side-utility optimization.
 
 ## Verification Command Table
 
-Final log directory: `/tmp/lekh_prod_p3_final_1779907449`
+Final log directory from the scripted Prompt 3 evidence sweep: `/tmp/lekh_prod_p3_final_1779907449`.
+
+Latest post-cleanup rerun on 2026-06-09: `npm run verify` passed after corpus trace cleanup, runtime-pack regeneration, readiness doc refresh, and generated-release-output test exclusion. The rerun included 34 test files / 204 tests, corpus package check, Traditional audit, benchmark disjointness, typing-session, Romanized smoke, proofread, competitor, performance smoke, scorecard, protected-span benchmark, and Romanized self-consistency smoke.
 
 | Command | Status | Duration | Log |
 | --- | --- | ---: | --- |

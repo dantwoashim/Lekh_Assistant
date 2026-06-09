@@ -3,7 +3,7 @@ import { normalizeCorrectionInput, type LocalCorrection } from "../../core/trans
 import { emptyMemorySnapshot } from "./storage";
 import type { CorrectionMemoryEntry, CorrectionMemorySnapshot } from "./types";
 
-export const LEGACY_ROMANIZED_MEMORY_KEY = "lekh-assistant:romanized-corrections:v1";
+export const LEGACY_ROMANIZED_MEMORY_KEY = "lekh-keyboard:romanized-corrections:v1";
 
 export function migrateLegacyCorrections(legacy: LocalCorrection[], now = new Date().toISOString()): CorrectionMemorySnapshot {
   const entries = mergeDuplicateEntries(legacy.filter(isLegacyCorrection).map((entry) => legacyToEntry(entry, now)));

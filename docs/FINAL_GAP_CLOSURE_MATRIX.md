@@ -1,6 +1,6 @@
 # Final Gap Closure Matrix
 
-Generated: 2026-05-28
+Generated: 2026-06-08
 
 | Item | Status | Evidence | Tests | Blocker type | Next action | Owner |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -22,15 +22,15 @@ Generated: 2026-05-28
 | secure input | complete | tests/fixtures | test:keyboard | none | native secure field validation | engineering |
 | protected tokens | complete | protected benchmark | benchmark:protected | none | monitor | engineering |
 | Keyboard Lab | complete | smoke test | test:companion/app smoke | none | demo | product |
-| companion | complete for repo shell | CompanionShell | test:companion | native packaging | desktop packaging | engineering |
+| companion | partial desktop companion | unsigned macOS dev `.app` plus CompanionShell | test:companion/build:companion/package:macos:unsigned | signing/native install validation | signed packaging and daemon/service integration | engineering |
 | daemon | complete for dev dispatcher | keyboardDaemon | test:native-scaffold | native packaging | wrap in OS service/XPC | engineering |
 | IPC | complete for schema/dispatcher | schema validator | check:ipc-schema | native transport | named pipe/XPC transport | engineering |
-| Windows TSF | blocked-native-environment | native report | manual only | native env | build/register/test on Windows | engineering |
-| macOS IMK | blocked-native-environment | native report | manual only | native env/signing | install/test/sign/notarize | engineering/release |
+| Windows TSF | blocked-native-environment | source tests plus `build:windows` blocker report | build:windows/test:native-scaffold | native env | build/register/test on Windows | engineering |
+| macOS IMK | blocked-native-environment | Swift IMK proof target builds | build:macos/test:native-scaffold | native env/signing | package as input method, install/test/sign/notarize | engineering/release |
 | storage | complete for JSON dev path | jsonFileStores | test:native-scaffold | none | SQLite hardening optional | engineering |
-| installer | blocked-native-environment | release docs | manual only | native env | create signed installers | release |
-| signing | blocked-external | checklist | manual only | external | acquire certs | product/release |
-| notarization | blocked-external | checklist | manual only | external | acquire Apple Developer ID | product/release |
+| installer | blocked-native-environment | release docs plus package blocker reports | package:windows/package:macos | native env | create signed installers | release |
+| signing | blocked-external | checklist plus signed package blocker reports | package:windows/package:macos | external | acquire certs | product/release |
+| notarization | blocked-external | checklist plus macOS signed package blocker report | package:macos | external | acquire Apple Developer ID | product/release |
 | performance | complete for JS hot path | perf report | bench:perf:smoke | native env for TSF/IMK | measure native latency | engineering |
 | privacy | complete for repo path | privacy checks/docs | check:privacy | native review | final privacy review | product/engineering |
 | pilot | partial | pilot docs | n/a | human | run private pilot | product |

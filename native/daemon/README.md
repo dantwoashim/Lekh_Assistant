@@ -2,12 +2,16 @@
 
 The daemon will host the shared `KeyboardEngine`, maintain warm state, own local storage adapters, and serve Windows TSF, macOS IMK/XPC, and the companion app over local-only IPC.
 
-Prompt 3 adds a repo-executable TypeScript development daemon dispatcher:
+Prompt 3 adds a repo-executable TypeScript daemon:
 
 - `native/daemon/src/keyboardDaemon.ts`
 - `native/daemon/src/keyboardDaemon.test.ts`
+- `native/daemon/src/lineProtocol.ts`
+- `native/daemon/src/daemonCli.ts`
+- `native/daemon/src/namedPipeServer.ts`
+- `native/daemon/dist/lekh-keyboard-daemon.mjs`
 
-It is not a packaged production OS service yet, but it handles every IPC message, validates envelopes, tracks diagnostics, exercises timeout fallback, and is covered by `npm run test:native-scaffold`.
+It handles every IPC message, validates envelopes, tracks diagnostics, exercises timeout fallback, and is covered by `npm run test:native-scaffold`. On Windows, the packaged companion can start it as a separate background process exposing `\\.\pipe\LekhKeyboard` for the TSF service.
 
 ## Responsibilities
 
@@ -27,3 +31,5 @@ If daemon IPC is unavailable, native input methods must pass through raw keystro
 - `npm run check:ipc-schema`
 - `npm run test:native-scaffold`
 - `npm run build:daemon`
+- `npm run daemon:dev`
+- `npm run daemon:named-pipe` on Windows

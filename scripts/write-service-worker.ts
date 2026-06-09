@@ -19,7 +19,7 @@ const assetUrls = listFiles(join(distDir, "assets"))
 const precacheUrls = Array.from(new Set([...publicUrls, ...assetUrls])).sort();
 const version = createHash("sha256").update(precacheUrls.join("\n")).digest("hex").slice(0, 12);
 
-const serviceWorker = `const CACHE_NAME = "lekh-assistant-${version}";
+const serviceWorker = `const CACHE_NAME = "lekh-keyboard-${version}";
 const PRECACHE_URLS = ${JSON.stringify(precacheUrls, null, 2)};
 
 self.addEventListener("install", (event) => {

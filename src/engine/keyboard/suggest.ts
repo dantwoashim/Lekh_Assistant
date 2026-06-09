@@ -20,5 +20,6 @@ export function getKeyboardSuggestions(context: TypingContext): Candidate[] {
 }
 
 function currentToken(input: string): string {
-  return input.trim().split(/\s+/).at(-1) ?? "";
+  const tokens = input.trim().split(/\s+/);
+  return tokens[tokens.length - 1] ?? "";
 }

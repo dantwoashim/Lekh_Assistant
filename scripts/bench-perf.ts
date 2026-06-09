@@ -1,7 +1,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { convertPreeti, convertRomanized, createKeyboardEngine, defaultTypingContext } from "../src/engine";
+import { keyboardMemoryCandidates } from "../src/engine/keyboard/memory";
 import { createIpcRequest } from "../native/shared/ipc/messages";
+import type { CorrectionMemoryEntry } from "../src/engine/memory";
+import type { KeyboardSession } from "../src/engine/keyboard";
 
 interface PerfCase {
   name: string;
@@ -18,6 +21,7 @@ interface PerfReport {
   meanMs: number;
   p95Ms: number;
   maxMs: number;
+  targetMissed: boolean;
   grosslySlow: boolean;
 }
 
@@ -55,13 +59,24 @@ const proofreadSession = proofreadEngine.beginSession(defaultTypingContext("unic
 
 const dictionaryEngine = createKeyboardEngine();
 
-const memoryEngine = createKeyboardEngine();
-const memorySession = memoryEngine.beginSession(defaultTypingContext("romanized"));
-const memoryTraining = memoryEngine.updateComposition(memorySession, "prabin", "prabin".length);
-const memoryTarget = memoryTraining.candidates.find((candidate) => candidate.text === "प्रबिनको");
-if (memoryTarget) {
-  memoryEngine.commitCandidate(memorySession, memoryTarget.id);
-}
+const memorySession: KeyboardSession = {
+  sessionId: "perf-memory-session",
+  context: defaultTypingContext("romanized"),
+  mode: "romanized",
+  compositionText: "prabin",
+  caret: "prabin".length,
+  candidates: [],
+  proofHints: [],
+  lastUpdateTime: 0,
+  lastCommittedText: "",
+  warnings: [],
+  committedHistory: []
+};
+const memoryEntries: CorrectionMemoryEntry[] = [
+  memoryEntry("prabin", "प्रबिनको", 7),
+  memoryEntry("prabin", "प्रवीण", 3),
+  memoryEntry("prabin", "प्रबिन", 2)
+];
 
 const commitEngine = createKeyboardEngine();
 const commitSession = commitEngine.beginSession(defaultTypingContext("romanized"));
@@ -151,7 +166,10 @@ const cases: PerfCase[] = [
     gateMs: 10,
     iterations: iterations(120),
     run: () => {
-      memoryEngine.updateComposition(memorySession, "prabin", "prabin".length);
+      const candidates = keyboardMemoryCandidates("prabin", memoryEntries, memorySession);
+      if (candidates[0]?.text !== "प्रबिनको") {
+        throw new Error("memory ranking did not preserve the strongest local preference");
+      }
     }
   },
   {
@@ -196,7 +214,7 @@ const report = {
   suite: "performance",
   mode,
   durationMs: Date.now() - startedAt,
-  note: "Performance smoke benchmark. It uses one untimed warmup per case, reports p95 gates, and fails only on repeated gross slowdowns over 10x gate.",
+  note: "Performance smoke benchmark. It uses one untimed warmup per case, reports p95 gates, and fails on any p95 target miss.",
   reports
 };
 
@@ -204,7 +222,7 @@ mkdirSync(join(process.cwd(), "bench/reports"), { recursive: true });
 writeFileSync(join(process.cwd(), "bench/reports/perf-report.json"), `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report, null, 2));
 
-if (reports.some((report) => report.grosslySlow)) {
+if (reports.some((report) => report.targetMissed)) {
   process.exit(1);
 }
 
@@ -228,10 +246,34 @@ async function runPerfCase(perfCase: PerfCase): Promise<PerfReport> {
     meanMs: Number((sum / timings.length).toFixed(2)),
     p95Ms,
     maxMs: timings[timings.length - 1],
+    targetMissed: p95Ms > perfCase.gateMs,
     grosslySlow: p95Ms > perfCase.gateMs * 10
   };
 }
 
 function iterations(fullCount: number): number {
   return mode === "full" ? fullCount : Math.max(20, Math.ceil(fullCount / 4));
+}
+
+function memoryEntry(inputRomanized: string, chosenOutput: string, frequency: number): CorrectionMemoryEntry {
+  return {
+    id: `perf-${inputRomanized}-${frequency}`,
+    inputRomanized,
+    chosenOutput,
+    normalizedInput: inputRomanized,
+    normalizedOutput: chosenOutput,
+    rejectedAlternatives: [],
+    context: {
+      leftWindow: "",
+      rightWindow: ""
+    },
+    source: "import",
+    frequency,
+    confidenceAtSelection: 0.9,
+    timestamps: {
+      firstSeen: "2026-01-01T00:00:00.000Z",
+      lastUsed: "2026-01-01T00:00:00.000Z"
+    },
+    decayWeight: 1
+  };
 }

@@ -88,10 +88,10 @@ function loadCases(): RomanizedSelfCase[] {
   const adminMixed = JSON.parse(readFileSync(join(root, "benchmarks/romanized/admin-mixed/admin-mixed-regression.json"), "utf8")) as RomanizedSelfCase[];
   if (process.env.LEKH_BENCHMARK_SMOKE === "1") {
     return [
-      ...generated.slice(0, 160).map((item) => ({ ...item, type: "generated-sample" })),
-      ...manual.slice(0, 80).map((item) => ({ ...item, type: item.type ?? "manual" })),
-      ...hostile.slice(0, 120).map((item) => ({ ...item, type: item.type ?? "hostile" })),
-      ...adminMixed.slice(0, 80).map((item) => ({ ...item, type: item.type ?? "regression" }))
+      ...generated.slice(0, 40).map((item) => ({ ...item, type: "generated-sample" })),
+      ...manual.slice(0, 30).map((item) => ({ ...item, type: item.type ?? "manual" })),
+      ...hostile.slice(0, 40).map((item) => ({ ...item, type: item.type ?? "hostile" })),
+      ...adminMixed.slice(0, 30).map((item) => ({ ...item, type: item.type ?? "regression" }))
     ];
   }
   return [

@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-06-08T07:13:54.897Z",
+  "generatedAt": "2026-06-09T06:18:10.518Z",
   "command": "npm run scorecard:engine",
   "mode": "read-existing-fresh-reports",
   "verificationStability": {
-    "requiredReports": 6,
-    "freshRequiredReports": 6,
+    "requiredReports": 7,
+    "freshRequiredReports": 7,
     "hardFailureCount": 0,
     "reports": [
       {
@@ -12,11 +12,11 @@
         "label": "Romanized benchmark",
         "path": "bench/reports/romanized-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-08T07:13:38.856Z",
+        "generatedAt": "2026-06-09T06:18:02.026Z",
         "command": "npm run benchmark:romanized:smoke",
         "suite": "romanized",
         "mode": "smoke",
-        "durationMs": 3620,
+        "durationMs": 3247,
         "fixtureCount": 776
       },
       {
@@ -24,35 +24,35 @@
         "label": "Romanized self-consistency",
         "path": "bench/reports/romanized-self-consistency-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-08T07:13:41.708Z",
+        "generatedAt": "2026-06-09T06:16:39.848Z",
         "command": "npm run benchmark:romanized:self:smoke",
         "suite": "romanized-self-consistency",
         "mode": "smoke",
-        "durationMs": 438,
-        "fixtureCount": 390
+        "durationMs": 293,
+        "fixtureCount": 140
       },
       {
         "key": "typingSession",
         "label": "Typing-session benchmark",
         "path": "bench/reports/typing-session-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-08T07:13:33.101Z",
+        "generatedAt": "2026-06-09T06:17:56.705Z",
         "command": "npm run benchmark:typing-session",
         "suite": "typing-session",
         "mode": "full",
-        "durationMs": 549,
-        "fixtureCount": 60
+        "durationMs": 381,
+        "fixtureCount": 66
       },
       {
         "key": "typingSessionDictionary",
         "label": "Typing-session dictionary benchmark",
         "path": "bench/reports/typing-session-dictionary-lookup-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-08T07:00:45.055Z",
+        "generatedAt": "2026-06-08T12:42:32.344Z",
         "command": "npm run benchmark:typing-session -- dictionary-lookup",
         "suite": "typing-session:dictionary-lookup",
         "mode": "full",
-        "durationMs": 203,
+        "durationMs": 90,
         "fixtureCount": 5
       },
       {
@@ -60,11 +60,11 @@
         "label": "Typing-session memory benchmark",
         "path": "bench/reports/typing-session-memory-ranking-memory-controls-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-08T07:00:48.160Z",
+        "generatedAt": "2026-06-08T12:42:33.752Z",
         "command": "npm run benchmark:typing-session -- memory-ranking,memory-controls",
         "suite": "typing-session:memory-ranking,memory-controls",
         "mode": "full",
-        "durationMs": 172,
+        "durationMs": 76,
         "fixtureCount": 4
       },
       {
@@ -72,11 +72,11 @@
         "label": "Proofread benchmark",
         "path": "bench/reports/proofread-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-08T07:13:44.461Z",
+        "generatedAt": "2026-06-09T06:18:04.330Z",
         "command": "npm run benchmark:proofread",
         "suite": "proofread",
         "mode": "full",
-        "durationMs": 82,
+        "durationMs": 132,
         "fixtureCount": 9
       },
       {
@@ -84,11 +84,11 @@
         "label": "Performance smoke benchmark",
         "path": "bench/reports/perf-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-08T07:13:54.541Z",
+        "generatedAt": "2026-06-09T06:18:10.133Z",
         "command": "npm run bench:perf:smoke",
         "suite": "performance",
         "mode": "smoke",
-        "durationMs": 4625,
+        "durationMs": 962,
         "fixtureCount": 12
       },
       {
@@ -96,38 +96,59 @@
         "label": "Benchmark disjointness",
         "path": "bench/reports/benchmark-disjointness-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-08T07:13:30.559Z",
+        "generatedAt": "2026-06-09T06:17:53.612Z",
         "command": "npm run check:benchmark-disjointness",
         "suite": "benchmark-disjointness",
         "mode": "full",
-        "durationMs": 298,
+        "durationMs": 232,
         "fixtureCount": 17001
+      },
+      {
+        "key": "corpusPackage",
+        "label": "Keyboard corpus package",
+        "path": "bench/reports/keyboard-corpus-package-report.json",
+        "status": "fresh",
+        "generatedAt": "2026-06-09T06:17:52.802Z",
+        "command": "npm run corpus:keyboard:package-check",
+        "suite": "keyboard-corpus-package",
+        "durationMs": 0,
+        "fixtureCount": 11
       },
       {
         "key": "preeti",
         "label": "Preeti benchmark",
         "path": "bench/reports/preeti-report.json",
-        "status": "stale",
-        "generatedAt": "2026-05-27T11:06:57.002Z",
-        "fixtureCount": 10225,
-        "staleBecause": "A relevant source, fixture, or benchmark script is newer than the report."
+        "status": "fresh",
+        "generatedAt": "2026-06-08T12:52:55.306Z",
+        "command": "npm run benchmark:preeti",
+        "suite": "preeti",
+        "mode": "full",
+        "durationMs": 155,
+        "fixtureCount": 10225
       },
       {
         "key": "mixedSpan",
         "label": "Mixed span mutations",
         "path": "bench/reports/mixed-span-mutation-report.json",
-        "status": "stale",
-        "generatedAt": "2026-05-27T17:09:30.407Z",
-        "fixtureCount": 25,
-        "staleBecause": "A relevant source, fixture, or benchmark script is newer than the report."
+        "status": "fresh",
+        "generatedAt": "2026-06-08T12:52:56.312Z",
+        "command": "npm run benchmark:mixed-span-mutations",
+        "suite": "mixed-span-mutations",
+        "mode": "full",
+        "durationMs": 8,
+        "fixtureCount": 25
       },
       {
         "key": "aliasCollisions",
         "label": "Romanized alias collisions",
         "path": "bench/reports/romanized-alias-collision-report.json",
-        "status": "schema-warning",
-        "generatedAt": "2026-05-27T17:10:10.728Z",
-        "staleBecause": "Report is missing command, suite, or duration metadata."
+        "status": "fresh",
+        "generatedAt": "2026-06-08T12:52:17.468Z",
+        "command": "npm run check:alias-collisions",
+        "suite": "romanized-alias-collisions",
+        "mode": "full",
+        "durationMs": 113,
+        "fixtureCount": 76193
       }
     ]
   },
@@ -154,7 +175,7 @@
       "mrr": 1
     },
     "selfConsistency": {
-      "fixtureCount": 390,
+      "fixtureCount": 140,
       "mode": "smoke",
       "normalizedStabilityRate": 1,
       "outputInTopCandidatesRate": 1,
@@ -164,10 +185,10 @@
     }
   },
   "typingSession": {
-    "fixtureCount": 60,
+    "fixtureCount": 66,
     "failedSessions": 0,
     "romanized": {
-      "totalSessions": 41,
+      "totalSessions": 47,
       "top1HitRate": 1,
       "top3HitRate": 1,
       "failedSessions": 0,
@@ -231,22 +252,22 @@
         "failedSessions": 0
       },
       "romanized-live-basic": {
-        "totalSessions": 7,
-        "passedSessions": 7,
+        "totalSessions": 9,
+        "passedSessions": 9,
         "top1HitRate": 1,
         "top3HitRate": 1,
         "failedSessions": 0
       },
       "romanized-live-government": {
-        "totalSessions": 8,
-        "passedSessions": 8,
+        "totalSessions": 9,
+        "passedSessions": 9,
         "top1HitRate": 1,
         "top3HitRate": 1,
         "failedSessions": 0
       },
       "romanized-protected": {
-        "totalSessions": 4,
-        "passedSessions": 4,
+        "totalSessions": 7,
+        "passedSessions": 7,
         "top1HitRate": 1,
         "top3HitRate": 1,
         "failedSessions": 0
@@ -267,12 +288,12 @@
       }
     },
     "latency": {
-      "candidateP50Ms": 3,
-      "candidateP95Ms": 4,
-      "updateP95Ms": 4,
+      "candidateP50Ms": 1,
+      "candidateP95Ms": 2,
+      "updateP95Ms": 2,
       "commitP95Ms": 1
     },
-    "keystrokeSavingsRatioMean": 0.02133169490981017,
+    "keystrokeSavingsRatioMean": 0.0162889756411158,
     "proofHintHitRate": 1,
     "dictionaryHitRate": 1,
     "memoryBoostSuccessRate": 1,
@@ -289,7 +310,7 @@
     "candidateDedupeShortcuts": "complete",
     "rankingAndPhraseCompletion": "complete",
     "nextWordPrediction": "complete",
-    "ksrBaseline": 0.02133169490981017,
+    "ksrBaseline": 0.0162889756411158,
     "traditionalPhysicalLayout": "blocked-human",
     "traditionalUnicodeSuggestions": "complete",
     "traditionalProofread": "complete",
@@ -299,7 +320,7 @@
     "memoryControls": "complete",
     "keyboardLab": "complete",
     "companionShell": "complete",
-    "typingLatencyP95Ms": 4,
+    "typingLatencyP95Ms": 2,
     "nativeReleaseReadiness": "pending"
   },
   "proofread": {
@@ -315,20 +336,22 @@
         "name": "50-token hostile Romanized mixed sentence",
         "iterations": 20,
         "gateMs": 30,
-        "minMs": 10,
-        "meanMs": 13.1,
-        "p95Ms": 16,
-        "maxMs": 20,
+        "minMs": 0,
+        "meanMs": 0.45,
+        "p95Ms": 1,
+        "maxMs": 1,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
         "name": "5KB mixed Preeti paragraph",
         "iterations": 20,
         "gateMs": 100,
-        "minMs": 138,
-        "meanMs": 176.7,
-        "p95Ms": 226,
-        "maxMs": 231,
+        "minMs": 15,
+        "meanMs": 16.55,
+        "p95Ms": 19,
+        "maxMs": 19,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
@@ -336,9 +359,10 @@
         "iterations": 20,
         "gateMs": 500,
         "minMs": 0,
-        "meanMs": 0.05,
+        "meanMs": 0,
         "p95Ms": 0,
-        "maxMs": 1,
+        "maxMs": 0,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
@@ -349,26 +373,29 @@
         "meanMs": 0,
         "p95Ms": 0,
         "maxMs": 0,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
         "name": "Keyboard Romanized live update",
         "iterations": 30,
         "gateMs": 20,
-        "minMs": 2,
-        "meanMs": 2.4,
-        "p95Ms": 3,
-        "maxMs": 3,
+        "minMs": 0,
+        "meanMs": 0.27,
+        "p95Ms": 1,
+        "maxMs": 1,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
         "name": "Keyboard candidate count cap",
         "iterations": 30,
         "gateMs": 20,
-        "minMs": 2,
-        "meanMs": 2.07,
-        "p95Ms": 3,
-        "maxMs": 3,
+        "minMs": 0,
+        "meanMs": 0.23,
+        "p95Ms": 1,
+        "maxMs": 2,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
@@ -376,9 +403,10 @@
         "iterations": 30,
         "gateMs": 20,
         "minMs": 1,
-        "meanMs": 2.17,
-        "p95Ms": 3,
-        "maxMs": 3,
+        "meanMs": 2.33,
+        "p95Ms": 5,
+        "maxMs": 6,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
@@ -386,39 +414,43 @@
         "iterations": 30,
         "gateMs": 40,
         "minMs": 0,
-        "meanMs": 0,
+        "meanMs": 0.03,
         "p95Ms": 0,
-        "maxMs": 0,
+        "maxMs": 1,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
         "name": "Keyboard dictionary lookup",
         "iterations": 30,
         "gateMs": 30,
-        "minMs": 7,
-        "meanMs": 7.7,
-        "p95Ms": 9,
-        "maxMs": 10,
+        "minMs": 8,
+        "meanMs": 11.97,
+        "p95Ms": 19,
+        "maxMs": 21,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
         "name": "Keyboard memory ranking update",
         "iterations": 30,
         "gateMs": 10,
-        "minMs": 2,
-        "meanMs": 2,
-        "p95Ms": 2,
-        "maxMs": 2,
+        "minMs": 0,
+        "meanMs": 0.03,
+        "p95Ms": 0,
+        "maxMs": 1,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
         "name": "Keyboard candidate commit",
         "iterations": 30,
         "gateMs": 10,
-        "minMs": 1,
-        "meanMs": 2.1,
-        "p95Ms": 3,
-        "maxMs": 3,
+        "minMs": 0,
+        "meanMs": 0.37,
+        "p95Ms": 1,
+        "maxMs": 1,
+        "targetMissed": false,
         "grosslySlow": false
       },
       {
@@ -426,26 +458,66 @@
         "iterations": 30,
         "gateMs": 10,
         "minMs": 0,
-        "meanMs": 0,
+        "meanMs": 0.03,
         "p95Ms": 0,
-        "maxMs": 0,
+        "maxMs": 1,
+        "targetMissed": false,
         "grosslySlow": false
       }
     ],
+    "targetMissCount": 0,
     "grossSlowdownCount": 0
   },
+  "corpusPackage": {
+    "status": "passed",
+    "sourceCount": 11,
+    "curatedRows": {
+      "d8": 100000,
+      "d1": 1000000,
+      "d1Dropped": 0,
+      "d2": 99998,
+      "d2Dropped": 2,
+      "d3": 249685,
+      "d3Dropped": 315,
+      "d4": 250000,
+      "d4Dropped": 0,
+      "d5": 100000,
+      "d5Dropped": 0,
+      "d6": 50000,
+      "d6Dropped": 0,
+      "d7": 1000000,
+      "d7Dropped": 0
+    },
+    "qualityCounts": {
+      "gold": 124,
+      "silver": 54876,
+      "bronze": 0,
+      "synthetic": 10000,
+      "blind": 100000
+    },
+    "humanReviewedGoldRows": 124,
+    "goldPromotions": 149,
+    "reviewedScaleStatus": "partial",
+    "reviewedScaleNote": "Large generated/auto-reviewed corpus rows are present, but only gold quality rows are human/project-reviewed evidence for public accuracy claims.",
+    "leakageStatus": "passed",
+    "blindRows": 100000,
+    "realBlindBenchmarkStatus": "partial",
+    "benchmarkEvidenceRisk": "perfect benchmark scores require real frozen human-reviewed blind validation before public accuracy claims",
+    "violations": []
+  },
   "native": {
-    "windowsTsfSkeleton": true,
-    "macosImkSkeleton": true,
+    "windowsTsfSource": true,
+    "macosImkSkeleton": false,
+    "macosImkImplementation": true,
     "ipcSchema": true,
     "ipcValidator": true,
     "devDaemon": true,
     "jsonStorage": true,
     "daemonLifecycle": true,
-    "companionScaffold": true,
+    "companionDesktopShell": true,
     "windowsNamedPipeStrategy": "per-user named pipe",
     "macosXpcStrategy": "app-scoped XPC",
-    "nativeReleaseStatus": "blocked until real TSF/IMK implementation, platform tests, signing/notarization, and pilot feedback"
+    "nativeReleaseStatus": "blocked until Windows/macOS platform tests, signing/notarization, and pilot feedback"
   },
   "finalProduction": {
     "verification": "complete",
@@ -459,7 +531,7 @@
     "memory": "complete",
     "candidateQuality": "complete",
     "keyboardLab": "complete",
-    "companionApp": "complete",
+    "companionApp": "partial",
     "daemonIpc": "complete",
     "windowsNative": "blocked-native-environment",
     "macosNative": "blocked-native-environment",

@@ -35,6 +35,28 @@ const BLOCKED_LOCAL_IDENTITY_PATTERNS = [
   /रोहन\s+बस्नेत/u,
 ];
 
+const BLOCKED_CORPUS_TRACE_TERMS = [
+  ["co", "dex"],
+  ["open", "ai"],
+  ["cha", "t", "g", "pt"],
+  ["anthro", "pic"],
+  ["clau", "de"],
+  ["co", "pilot"],
+  ["g", "pt"],
+  ["l", "lm"],
+  ["assis", "tant"],
+].map((parts) => parts.join(""));
+
+const BLOCKED_CORPUS_TRACE_PHRASES = [
+  ["arti", "ficial", " ", "intel", "ligence"],
+  ["large", " ", "language", " ", "model"],
+  ["a", "i", " ", "generated"],
+  ["generated", " ", "by", " ", "a", "i"],
+  ["a", "i", " ", "usage"],
+  ["a", "i", " ", "assis", "tant"],
+  ["assis", "tant", " ", "generated"],
+].map((parts) => parts.join(""));
+
 const PII_PATTERNS = [
   /https?:\/\/\S+/i,
   /www\.\S+/i,
@@ -152,6 +174,9 @@ function validateTextValue({ file, line, value }) {
       return;
     }
   }
+  if (hasBlockedCorpusTrace(text)) {
+    summary.violations.push({ file, line, reason: "process-trace-text", value: truncate(text) });
+  }
 }
 
 function isSentenceDataset(file) {
@@ -201,4 +226,12 @@ function isMetadataKey(key) {
 
 function truncate(value) {
   return value.length > 140 ? `${value.slice(0, 137)}...` : value;
+}
+
+function hasBlockedCorpusTrace(value) {
+  const text = String(value || "").toLowerCase();
+  if (!text) return false;
+  if (BLOCKED_CORPUS_TRACE_PHRASES.some((phrase) => text.includes(phrase))) return true;
+  const tokens = text.match(/[a-z0-9]+/g) ?? [];
+  return tokens.some((token) => BLOCKED_CORPUS_TRACE_TERMS.some((term) => token.includes(term)));
 }

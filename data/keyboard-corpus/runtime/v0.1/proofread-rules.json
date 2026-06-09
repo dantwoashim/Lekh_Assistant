@@ -20062,13 +20062,6 @@
     "quality": "synthetic"
   },
   {
-    "error": "फील्मोर",
-    "correction": "फिल्मोर",
-    "type": "matra-confusion",
-    "confidence": 0.68,
-    "quality": "synthetic"
-  },
-  {
     "error": "हरीदास",
     "correction": "हरिदास",
     "type": "matra-confusion",
@@ -20118,8 +20111,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "रबीन्द्र",
-    "correction": "रबिन्द्र",
+    "error": "फीन्कजेन्सन",
+    "correction": "फिन्कजेन्सन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -20146,10 +20139,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "कून्दरिया",
+    "error": "कुन्दरीया",
     "correction": "कुन्दरिया",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -20195,10 +20188,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "शीबानी",
+    "error": "सिबानी",
     "correction": "शिबानी",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -20209,10 +20202,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "शिना",
+    "error": "सीना",
     "correction": "शीना",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -20230,10 +20223,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "तूरती",
+    "error": "तुरति",
     "correction": "तुरती",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -20265,17 +20258,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "सूखविन्दर",
-    "correction": "सुखविन्दर",
+    "error": "मूलापल्ली",
+    "correction": "मुलापल्ली",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
   },
   {
-    "error": "हरिसिहदेव",
+    "error": "हरीसिंहदेव",
     "correction": "हरिसिंहदेव",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -20363,10 +20356,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सिवदासानी",
-    "correction": "शिवदासानी",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "चीन्नयन",
+    "correction": "चिन्नयन",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -20412,8 +20405,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "सुस्रुत",
-    "correction": "सुश्रुत",
+    "error": "समसाद",
+    "correction": "समशाद",
     "type": "sibilant-confusion",
     "confidence": 0.72,
     "quality": "synthetic"
@@ -20454,10 +20447,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "नाकानीसी",
-    "correction": "नाकानिसी",
+    "error": "सूमोना",
+    "correction": "सुमोना",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -20545,10 +20538,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "स्कटि",
-    "correction": "स्कटी",
+    "error": "अडसूल",
+    "correction": "अडसुल",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -20566,10 +20559,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "एंगति",
-    "correction": "एंगती",
+    "error": "हूड्डा",
+    "correction": "हुड्डा",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -20587,10 +20580,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "आलीया",
-    "correction": "आलिया",
+    "error": "तूलिप",
+    "correction": "तुलिप",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -20636,10 +20629,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "बूत्रोस",
+    "error": "बुतरोस",
     "correction": "बुत्रोस",
-    "type": "matra-confusion",
-    "confidence": 0.64,
+    "type": "conjunct-simplification",
+    "confidence": 0.7,
     "quality": "synthetic"
   },
   {
@@ -20678,10 +20671,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "प्याटीनसन",
-    "correction": "प्याटिनसन",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "सवाइन्स्टाइगर",
+    "correction": "स्वाइन्स्टाइगर",
+    "type": "conjunct-simplification",
+    "confidence": 0.78,
     "quality": "synthetic"
   },
   {
@@ -20713,8 +20706,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "क्युरि",
-    "correction": "क्युरी",
+    "error": "डालिमा",
+    "correction": "डालीमा",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -20727,8 +20720,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "अंबुमणी",
-    "correction": "अंबुमणि",
+    "error": "कार्दसीयन",
+    "correction": "कार्दसियन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -20783,10 +20776,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "स्कलीन",
-    "correction": "स्कलिन",
+    "error": "फूलझरी",
+    "correction": "फुलझरी",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -20797,8 +20790,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "हीतोमी",
-    "correction": "हितोमी",
+    "error": "सायमि",
+    "correction": "सायमी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -20846,8 +20839,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "ब्रोड्स्कि",
-    "correction": "ब्रोड्स्की",
+    "error": "हेनि",
+    "correction": "हेनी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -20867,10 +20860,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "पूनाराम",
-    "correction": "पुनाराम",
+    "error": "जेमीन",
+    "correction": "जेमिन",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -20888,31 +20881,31 @@
     "quality": "synthetic"
   },
   {
-    "error": "नीकोला",
-    "correction": "निकोला",
+    "error": "नीकोलाइ",
+    "correction": "निकोलाइ",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "नाडीयाडवाला",
-    "correction": "नाडियाडवाला",
+    "error": "धीरेन",
+    "correction": "धिरेन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "नजरूल",
-    "correction": "नजरुल",
+    "error": "लोडवीक",
+    "correction": "लोडविक",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "रेस्मा",
-    "correction": "रेश्मा",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "मीच",
+    "correction": "मिच",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -20958,8 +20951,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "डस्टीन",
-    "correction": "डस्टिन",
+    "error": "क्याप्रीस",
+    "correction": "क्याप्रिस",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -21042,8 +21035,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "कीज",
-    "correction": "किज",
+    "error": "लीयोनी",
+    "correction": "लियोनी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -21056,10 +21049,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "तीमिल्सिना",
-    "correction": "तिमिल्सिना",
+    "error": "धुमल",
+    "correction": "धूमल",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -21070,10 +21063,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "निसिकोरी",
-    "correction": "निशिकोरी",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "काउत्स्कि",
+    "correction": "काउत्स्की",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -21091,10 +21084,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "कृस्णहरि",
+    "error": "कृष्नहरि",
     "correction": "कृष्णहरि",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "type": "retroflex-nasal",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -21105,9 +21098,9 @@
     "quality": "synthetic"
   },
   {
-    "error": "दीदेरिक",
-    "correction": "दिदेरिक",
-    "type": "matra-confusion",
+    "error": "मन्डेला",
+    "correction": "मण्डेला",
+    "type": "retroflex-nasal",
     "confidence": 0.68,
     "quality": "synthetic"
   },
@@ -21175,15 +21168,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "योसीहिदे",
-    "correction": "योसिहिदे",
+    "error": "जिना",
+    "correction": "जीना",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "वीठोबा",
-    "correction": "विठोबा",
+    "error": "रायचौधुरि",
+    "correction": "रायचौधुरी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -21224,10 +21217,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "मिजूनो",
+    "error": "मीजुनो",
     "correction": "मिजुनो",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -21273,10 +21266,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "जूयाल",
-    "correction": "जुयाल",
+    "error": "म्यारीलिन",
+    "correction": "म्यारिलिन",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -21301,10 +21294,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सूडिन",
-    "correction": "सुडिन",
+    "error": "कासींग",
+    "correction": "कासिंग",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -21392,15 +21385,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "प्रेमर्सि",
-    "correction": "प्रेमर्षि",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "शाणवि",
+    "correction": "शाणवी",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "कीर्तीकर",
-    "correction": "कीर्तिकर",
+    "error": "प्रेमर्षी",
+    "correction": "प्रेमर्षि",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -21581,9 +21574,9 @@
     "quality": "synthetic"
   },
   {
-    "error": "पण्डीतराज",
+    "error": "पन्डितराज",
     "correction": "पण्डितराज",
-    "type": "matra-confusion",
+    "type": "retroflex-nasal",
     "confidence": 0.68,
     "quality": "synthetic"
   },
@@ -21609,24 +21602,24 @@
     "quality": "synthetic"
   },
   {
-    "error": "जेटनीलकीजीनर",
+    "error": "सब्रीन",
+    "correction": "सब्रिन",
+    "type": "matra-confusion",
+    "confidence": 0.68,
+    "quality": "synthetic"
+  },
+  {
+    "error": "जेटनिलकिजीनर",
     "correction": "जेटनीलकिजीनर",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "ब्रीट",
-    "correction": "ब्रिट",
-    "type": "matra-confusion",
-    "confidence": 0.68,
-    "quality": "synthetic"
-  },
-  {
-    "error": "लीन्ड्से",
-    "correction": "लिन्ड्से",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "ऐस्वर्या",
+    "correction": "ऐश्वर्या",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -21679,10 +21672,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "वीडारी",
-    "correction": "विडारी",
+    "error": "कूवाजेर्वाला",
+    "correction": "कुवाजेर्वाला",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -21735,10 +21728,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "इस्वरी",
-    "correction": "इश्वरी",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "डगोल",
+    "correction": "डंगोल",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -21805,8 +21798,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "स्पीनोजा",
-    "correction": "स्पिनोजा",
+    "error": "गीउपर्ट",
+    "correction": "गिउपर्ट",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -21868,10 +21861,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "क्यानीङ",
-    "correction": "क्यानिङ",
+    "error": "विराकून",
+    "correction": "विराकुन",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -21882,15 +21875,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "वेकटेश्वर",
+    "error": "वेंकटेस्वर",
     "correction": "वेंकटेश्वर",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
-    "error": "नेओमि",
-    "correction": "नेओमी",
+    "error": "अकीता",
+    "correction": "अकिता",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -21910,10 +21903,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "रोजिसा",
-    "correction": "रोजिशा",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "शकीरा",
+    "correction": "शकिरा",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -22022,10 +22015,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "स्रीहरी",
-    "correction": "श्रीहरी",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "चन्द्ररूप",
+    "correction": "चन्द्ररुप",
+    "type": "matra-confusion",
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -22092,8 +22085,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "फ्राइडरीक",
-    "correction": "फ्राइडरिक",
+    "error": "जेअगी",
+    "correction": "जेअगि",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -22134,10 +22127,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "इनीएस्टा",
-    "correction": "इनिएस्टा",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "बेनिगटन",
+    "correction": "बेनिंगटन",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -22162,24 +22155,24 @@
     "quality": "synthetic"
   },
   {
-    "error": "फीरोदिया",
-    "correction": "फिरोदिया",
+    "error": "डलि",
+    "correction": "डली",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "गूडलक",
-    "correction": "गुडलक",
-    "type": "matra-confusion",
-    "confidence": 0.64,
+    "error": "कान्डपाल",
+    "correction": "काण्डपाल",
+    "type": "retroflex-nasal",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "देवसिह",
+    "error": "देवसींह",
     "correction": "देवसिंह",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -22316,8 +22309,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "ब्रान्डि",
-    "correction": "ब्रान्डी",
+    "error": "प्रीन्सेस",
+    "correction": "प्रिन्सेस",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -22372,10 +22365,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "मूलरोनी",
+    "error": "मुलरोनि",
     "correction": "मुलरोनी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -22386,9 +22379,9 @@
     "quality": "synthetic"
   },
   {
-    "error": "विष्नुवर्धन",
-    "correction": "विष्णुवर्धन",
-    "type": "retroflex-nasal",
+    "error": "स्टक्लि",
+    "correction": "स्टक्ली",
+    "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
@@ -22400,10 +22393,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "विष्णूवर्धन",
+    "error": "वीष्णुवर्धन",
     "correction": "विष्णुवर्धन",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -22554,10 +22547,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "बाबुलाल",
-    "correction": "बाबूलाल",
+    "error": "मोदीयानो",
+    "correction": "मोदियानो",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -22652,10 +22645,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "रनविजय",
-    "correction": "रणविजय",
-    "type": "retroflex-nasal",
-    "confidence": 0.68,
+    "error": "कडेल",
+    "correction": "कंडेल",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -22680,10 +22673,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "तनुश्रि",
+    "error": "तनुस्री",
     "correction": "तनुश्री",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -22736,8 +22729,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "कोर्नेलीस्सेन",
-    "correction": "कोर्नेलिस्सेन",
+    "error": "नेलि",
+    "correction": "नेली",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -22771,15 +22764,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "खूफु",
-    "correction": "खुफु",
+    "error": "ज्योतिर्मयि",
+    "correction": "ज्योतिर्मयी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "आसामि",
-    "correction": "आसामी",
+    "error": "हरीलाल",
+    "correction": "हरिलाल",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -22841,17 +22834,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "फर्विज",
-    "correction": "फर्वीज",
+    "error": "सन्धु",
+    "correction": "सन्धू",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
-    "error": "साहाबादी",
-    "correction": "शाहाबादी",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "तूलाराज",
+    "correction": "तुलाराज",
+    "type": "matra-confusion",
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -22911,15 +22904,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "ग्यालीलियो",
-    "correction": "ग्यालिलियो",
+    "error": "जेन्टील",
+    "correction": "जेन्टिल",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "रवीचन्द्रन",
-    "correction": "रविचन्द्रन",
+    "error": "सीगल",
+    "correction": "सिगल",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -22939,8 +22932,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "एलफ्रीड",
-    "correction": "एलफ्रिड",
+    "error": "यजीमा",
+    "correction": "यजिमा",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -22981,15 +22974,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "पूजारा",
-    "correction": "पुजारा",
+    "error": "म्याकेननि",
+    "correction": "म्याकेननी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "क्रिस्टि",
-    "correction": "क्रिस्टी",
+    "error": "क्याटलीन",
+    "correction": "क्याटलिन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -23058,10 +23051,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "दिकेस",
-    "correction": "दिकेश",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "लिक्कि",
+    "correction": "लिक्की",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -23100,15 +23093,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "ढील्लोन",
-    "correction": "ढिल्लोन",
+    "error": "समापीका",
+    "correction": "समापिका",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "क्लीीमेन्ट",
-    "correction": "क्लिीमेन्ट",
+    "error": "जीग्मे",
+    "correction": "जिग्मे",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -23142,15 +23135,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "कीसिन्जर",
-    "correction": "किसिन्जर",
+    "error": "परोपकारि",
+    "correction": "परोपकारी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "कीरेन",
-    "correction": "किरेन",
+    "error": "जान्डि",
+    "correction": "जान्डी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -23163,8 +23156,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "मुल्लीगन",
-    "correction": "मुल्लिगन",
+    "error": "सबीया",
+    "correction": "सबिया",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -23177,10 +23170,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सशिला",
-    "correction": "शशिला",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "वील्कि",
+    "correction": "विल्कि",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -23191,8 +23184,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "यासुनारि",
-    "correction": "यासुनारी",
+    "error": "ज्याक्लीन",
+    "correction": "ज्याक्लिन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -23219,8 +23212,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "चीनप्पा",
-    "correction": "चिनप्पा",
+    "error": "अक्टरलोनि",
+    "correction": "अक्टरलोनी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -23233,8 +23226,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "सार्कोजि",
-    "correction": "सार्कोजी",
+    "error": "बेहार्डीन",
+    "correction": "बेहार्डिन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -23268,10 +23261,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "खातून",
-    "correction": "खातुन",
+    "error": "सलोनि",
+    "correction": "सलोनी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -23317,10 +23310,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "लीपा",
-    "correction": "लिपा",
+    "error": "मून्जल",
+    "correction": "मुन्जल",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -23331,10 +23324,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "हिमेस",
-    "correction": "हिमेश",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "बुल्गरि",
+    "correction": "बुल्गरी",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -23394,10 +23387,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "भूपी",
-    "correction": "भूपि",
+    "error": "भूर्तेल",
+    "correction": "भुर्तेल",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -23541,7 +23534,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "किकि",
+    "error": "कीकी",
     "correction": "किकी",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -23562,17 +23555,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "सुदीन",
-    "correction": "सुदिन",
+    "error": "बर्तीका",
+    "correction": "बर्तिका",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "जस्टीस",
-    "correction": "जस्टिस",
+    "error": "सूदिन",
+    "correction": "सुदिन",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -23590,7 +23583,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "डिलेइनि",
+    "error": "डीलेइनी",
     "correction": "डिलेइनी",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -23639,10 +23632,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "हूसेनी",
+    "error": "हुसेनि",
     "correction": "हुसेनी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -23653,9 +23646,9 @@
     "quality": "synthetic"
   },
   {
-    "error": "रनोद्दिप",
-    "correction": "रणोद्दिप",
-    "type": "retroflex-nasal",
+    "error": "क्रीस्टप्पा",
+    "correction": "क्रिस्टप्पा",
+    "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
@@ -23744,10 +23737,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "गागरीन",
-    "correction": "गागरिन",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "कुमारातुगा",
+    "correction": "कुमारातुंगा",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -23814,10 +23807,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "थरुनि",
-    "correction": "थरुनी",
+    "error": "रूइत",
+    "correction": "रुइत",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -23870,17 +23863,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "रुशदि",
+    "error": "रुसदी",
     "correction": "रुशदी",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
-    "error": "करिमी",
-    "correction": "करीमी",
+    "error": "रूशदी",
+    "correction": "रुशदी",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -23905,10 +23898,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "लोखडे",
-    "correction": "लोखंडे",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "error": "शीनोडा",
+    "correction": "शिनोडा",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -24024,10 +24017,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "भाग्यस्री",
-    "correction": "भाग्यश्री",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "टीमोसेन्को",
+    "correction": "टिमोसेन्को",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -24066,10 +24059,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "भूटीया",
-    "correction": "भूटिया",
+    "error": "म्याकूलम",
+    "correction": "म्याकुलम",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -24094,9 +24087,9 @@
     "quality": "synthetic"
   },
   {
-    "error": "ब्यारीमोर",
-    "correction": "ब्यारिमोर",
-    "type": "matra-confusion",
+    "error": "चेन्गलवारायन",
+    "correction": "चेन्गलवारायण",
+    "type": "retroflex-nasal",
     "confidence": 0.68,
     "quality": "synthetic"
   },
@@ -24115,8 +24108,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "मेलीथाफा",
-    "correction": "मेलिथाफा",
+    "error": "चिफ्लि",
+    "correction": "चिफ्ली",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -24136,8 +24129,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "काइलि",
-    "correction": "काइली",
+    "error": "अलसिसि",
+    "correction": "अलसिसी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -24157,24 +24150,24 @@
     "quality": "synthetic"
   },
   {
-    "error": "आसिरमान",
-    "correction": "आशिरमान",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "कसकार",
+    "correction": "कंसकार",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
-    "error": "संघमीता",
-    "correction": "संघमिता",
+    "error": "आशीरमान",
+    "correction": "आशिरमान",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "शतरुधन",
-    "correction": "शत्रुधन",
-    "type": "conjunct-simplification",
-    "confidence": 0.7,
+    "error": "सघमिता",
+    "correction": "संघमिता",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -24185,8 +24178,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "तरामू",
-    "correction": "तरामु",
+    "error": "शत्रूधन",
+    "correction": "शत्रुधन",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -24311,10 +24304,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "बेन्जामीन",
-    "correction": "बेन्जामिन",
+    "error": "सूखानी",
+    "correction": "सुखानी",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -24430,10 +24423,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "मुस्ताफीजूर",
-    "correction": "मुस्ताफिजूर",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "अशुल",
+    "correction": "अंशुल",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -24465,17 +24458,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "सेड्रीना",
-    "correction": "सेड्रिना",
+    "error": "कारीयन",
+    "correction": "कारियन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "शरवानि",
+    "error": "सरवानी",
     "correction": "शरवानी",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -24542,10 +24535,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सीताश्मा",
+    "error": "सितास्मा",
     "correction": "सिताश्मा",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -24591,10 +24584,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "मन्दाकीनी",
-    "correction": "मन्दाकिनी",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "अक्सा",
+    "correction": "अंक्सा",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -24983,10 +24976,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "देशपान्डे",
-    "correction": "देशपाण्डे",
-    "type": "retroflex-nasal",
-    "confidence": 0.68,
+    "error": "हर्सल",
+    "correction": "हर्शल",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -25025,8 +25018,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "हदीद",
-    "correction": "हदिद",
+    "error": "नत्तेर्जि",
+    "correction": "नत्तेर्जी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -25067,9 +25060,9 @@
     "quality": "synthetic"
   },
   {
-    "error": "बालमणी",
+    "error": "बालमनि",
     "correction": "बालमणि",
-    "type": "matra-confusion",
+    "type": "retroflex-nasal",
     "confidence": 0.68,
     "quality": "synthetic"
   },
@@ -25081,7 +25074,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "मिनोति",
+    "error": "मीनोती",
     "correction": "मिनोती",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -25095,8 +25088,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "थरुर",
-    "correction": "थरूर",
+    "error": "सूकृति",
+    "correction": "सुकृति",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -25172,10 +25165,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "क्यारीक",
-    "correction": "क्यारिक",
+    "error": "अब्दूल्ला",
+    "correction": "अब्दुल्ला",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -25221,10 +25214,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "निरुपा",
+    "error": "नीरूपा",
     "correction": "निरूपा",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -25284,10 +25277,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "आन्ड्रीया",
-    "correction": "आन्ड्रिया",
+    "error": "निरूता",
+    "correction": "निरुता",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -25319,7 +25312,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "डिलेनि",
+    "error": "डीलेनी",
     "correction": "डिलेनी",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -25403,10 +25396,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सविटहर्ट",
-    "correction": "स्विटहर्ट",
-    "type": "conjunct-simplification",
-    "confidence": 0.78,
+    "error": "कौसर",
+    "correction": "कौशर",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -25445,15 +25438,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "शार्लीज",
+    "error": "सार्लिज",
     "correction": "शार्लिज",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
-    "error": "बूर्लाकोटी",
-    "correction": "बुर्लाकोटी",
+    "error": "भरूचा",
+    "correction": "भरुचा",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -25508,8 +25501,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "अलजैदि",
-    "correction": "अलजैदी",
+    "error": "नौटीका",
+    "correction": "नौटिका",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -25550,7 +25543,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "उहूरू",
+    "error": "उहुरु",
     "correction": "उहुरू",
     "type": "matra-confusion",
     "confidence": 0.64,
@@ -25599,10 +25592,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "कूँवर",
-    "correction": "कुँवर",
+    "error": "फारीया",
+    "correction": "फारिया",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -25627,10 +25620,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "मूनरो",
-    "correction": "मुनरो",
-    "type": "matra-confusion",
-    "confidence": 0.64,
+    "error": "ऊसा",
+    "correction": "ऊषा",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -25704,10 +25697,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "लीन्से",
-    "correction": "लिन्से",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "प्रतापसिह",
+    "correction": "प्रतापसिंह",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -25774,10 +25767,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "मीनीषा",
-    "correction": "मिनीषा",
+    "error": "सूब्बा",
+    "correction": "सुब्बा",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -25816,10 +25809,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "कीर्स्टेन",
-    "correction": "किर्स्टेन",
+    "error": "ढूँगाना",
+    "correction": "ढुँगाना",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -25893,9 +25886,9 @@
     "quality": "synthetic"
   },
   {
-    "error": "पाटनकर",
-    "correction": "पाटणकर",
-    "type": "retroflex-nasal",
+    "error": "जाफरि",
+    "correction": "जाफरी",
+    "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
@@ -25970,10 +25963,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "धुँसवां",
-    "correction": "धुँस्वां",
-    "type": "conjunct-simplification",
-    "confidence": 0.78,
+    "error": "मागण्टी",
+    "correction": "मागण्टि",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -25991,10 +25984,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "बीभाश्वरी",
+    "error": "बिभास्वरी",
     "correction": "बिभाश्वरी",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -26005,10 +25998,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "अब्बुद",
-    "correction": "अब्बूद",
+    "error": "एन्डि",
+    "correction": "एन्डी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -26089,24 +26082,24 @@
     "quality": "synthetic"
   },
   {
-    "error": "छेवाग",
-    "correction": "छेवांग",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
-    "quality": "synthetic"
-  },
-  {
-    "error": "हिदायतूल्लाह",
-    "correction": "हिदायतुल्लाह",
-    "type": "matra-confusion",
-    "confidence": 0.64,
-    "quality": "synthetic"
-  },
-  {
-    "error": "नरहरी",
-    "correction": "नरहरि",
+    "error": "भक्तीवेदान्त",
+    "correction": "भक्तिवेदान्त",
     "type": "matra-confusion",
     "confidence": 0.68,
+    "quality": "synthetic"
+  },
+  {
+    "error": "हीदायतुल्लाह",
+    "correction": "हिदायतुल्लाह",
+    "type": "matra-confusion",
+    "confidence": 0.68,
+    "quality": "synthetic"
+  },
+  {
+    "error": "स्राफ",
+    "correction": "श्राफ",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -26222,7 +26215,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "अरिजित",
+    "error": "अरीजीत",
     "correction": "अरिजीत",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -26327,10 +26320,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सूनिधि",
+    "error": "सुनीधि",
     "correction": "सुनिधि",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -26341,7 +26334,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "मितालि",
+    "error": "मीताली",
     "correction": "मिताली",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -26404,10 +26397,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "नदीनि",
-    "correction": "नदिनि",
+    "error": "कून्ता",
+    "correction": "कुन्ता",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -26418,7 +26411,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "मिसाकि",
+    "error": "मीसाकी",
     "correction": "मिसाकी",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -26432,10 +26425,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "झगियानी",
+    "error": "झंगियानि",
     "correction": "झंगियानी",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -26467,10 +26460,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "गूग्लिल्मो",
+    "error": "गुग्लील्मो",
     "correction": "गुग्लिल्मो",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -26719,17 +26712,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "बाटिस्टूटा",
+    "error": "बाटीस्टुटा",
     "correction": "बाटिस्टुटा",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "शार्कि",
+    "error": "सार्की",
     "correction": "शार्की",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -26873,8 +26866,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "रमादेवि",
-    "correction": "रमादेवी",
+    "error": "फ्रीजर",
+    "correction": "फ्रिजर",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -26901,10 +26894,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "रेसमिया",
-    "correction": "रेशमिया",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "प्रीन्सा",
+    "correction": "प्रिन्सा",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -26915,24 +26908,24 @@
     "quality": "synthetic"
   },
   {
-    "error": "दाँगि",
-    "correction": "दाँगी",
+    "error": "लीप्स",
+    "correction": "लिप्स",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "गारफील्ड",
-    "correction": "गारफिल्ड",
+    "error": "न्यूएर",
+    "correction": "न्युएर",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
-    "error": "बीजोय",
-    "correction": "बिजोय",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "वोर्डसवोर्थ",
+    "correction": "वोर्डस्वोर्थ",
+    "type": "conjunct-simplification",
+    "confidence": 0.78,
     "quality": "synthetic"
   },
   {
@@ -27069,8 +27062,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "सीटौला",
-    "correction": "सिटौला",
+    "error": "टिर्कि",
+    "correction": "टिर्की",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -27104,10 +27097,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "डीयाज",
-    "correction": "डियाज",
+    "error": "रासमूस्सेन",
+    "correction": "रासमुस्सेन",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -27139,10 +27132,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "शीरोले",
+    "error": "सिरोले",
     "correction": "शिरोले",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -27209,22 +27202,22 @@
     "quality": "synthetic"
   },
   {
-    "error": "साल्मली",
-    "correction": "शाल्मली",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
-    "quality": "synthetic"
-  },
-  {
-    "error": "कादम्बीनी",
-    "correction": "कादम्बिनी",
+    "error": "रणील",
+    "correction": "रणिल",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "सोनालि",
-    "correction": "सोनाली",
+    "error": "शाल्मलि",
+    "correction": "शाल्मली",
+    "type": "matra-confusion",
+    "confidence": 0.68,
+    "quality": "synthetic"
+  },
+  {
+    "error": "कादम्बिनि",
+    "correction": "कादम्बिनी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -27244,10 +27237,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "याजीद",
-    "correction": "याजिद",
+    "error": "पृथू",
+    "correction": "पृथु",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -27279,7 +27272,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "पृथ्विपत्ति",
+    "error": "पृथ्वीपत्ती",
     "correction": "पृथ्वीपत्ति",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -27293,10 +27286,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सूहासी",
+    "error": "सुहासि",
     "correction": "सुहासी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -27363,10 +27356,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "विस्वेश्वर",
-    "correction": "विश्वेश्वर",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "गेरूलाइटिस",
+    "correction": "गेरुलाइटिस",
+    "type": "matra-confusion",
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -27454,8 +27447,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "बीज्लानी",
-    "correction": "बिज्लानी",
+    "error": "नेली",
+    "correction": "नेलि",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -27468,10 +27461,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "प्लूगारु",
-    "correction": "प्लुगारु",
-    "type": "matra-confusion",
-    "confidence": 0.64,
+    "error": "योगेस्वर",
+    "correction": "योगेश्वर",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -27678,24 +27671,24 @@
     "quality": "synthetic"
   },
   {
-    "error": "पोलीन",
-    "correction": "पोलिन",
+    "error": "सूद",
+    "correction": "सुद",
+    "type": "matra-confusion",
+    "confidence": 0.64,
+    "quality": "synthetic"
+  },
+  {
+    "error": "बाकुनीन",
+    "correction": "बाकुनिन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "बाकूनिन",
-    "correction": "बाकुनिन",
+    "error": "चरीमाया",
+    "correction": "चरिमाया",
     "type": "matra-confusion",
-    "confidence": 0.64,
-    "quality": "synthetic"
-  },
-  {
-    "error": "क्लूज",
-    "correction": "क्लुज",
-    "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -27713,8 +27706,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "सूमनभाई",
-    "correction": "सुमनभाई",
+    "error": "कूथु",
+    "correction": "कुथु",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -27748,10 +27741,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सर्जीयो",
-    "correction": "सर्जियो",
+    "error": "जूही",
+    "correction": "जुही",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -27769,8 +27762,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "रामकूमार",
-    "correction": "रामकुमार",
+    "error": "शकुर",
+    "correction": "शकूर",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -27839,10 +27832,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "नेरि",
-    "correction": "नेरी",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "इसान",
+    "correction": "इशान",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -27930,15 +27923,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "जोएचीम",
-    "correction": "जोएचिम",
+    "error": "बार्डीन",
+    "correction": "बार्डिन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "फ्रेन्क्लीन",
-    "correction": "फ्रेन्क्लिन",
+    "error": "जेटकीन",
+    "correction": "जेटकिन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -27958,10 +27951,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "साहूखल",
-    "correction": "साहुखल",
+    "error": "अलेजान्ड्रि",
+    "correction": "अलेजान्ड्री",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -28070,10 +28063,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "बीपना",
-    "correction": "बिपना",
+    "error": "भुरिया",
+    "correction": "भूरिया",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -28168,10 +28161,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "ख्रुस्चेव",
-    "correction": "ख्रुश्चेव",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "बीस्ट",
+    "correction": "बिस्ट",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -28245,10 +28238,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "बशीलाल",
+    "error": "बंशिलाल",
     "correction": "बंशीलाल",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -28287,8 +28280,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "हसब्नीस",
-    "correction": "हसब्निस",
+    "error": "पोथिनेनि",
+    "correction": "पोथिनेनी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -28308,10 +28301,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "यूरी",
+    "error": "युरि",
     "correction": "युरी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -28329,8 +28322,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "गीलियन",
-    "correction": "गिलियन",
+    "error": "लीलिएन",
+    "correction": "लिलिएन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -28427,10 +28420,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "बीशेष",
+    "error": "बिशेस",
     "correction": "बिशेष",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -28742,17 +28735,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "वेलगपल्ली",
-    "correction": "वेलगपल्लि",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "दुबास",
+    "correction": "दुबाश",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
-    "error": "मूलेपती",
+    "error": "मुलेपति",
     "correction": "मुलेपती",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -28819,8 +28812,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "किन्स",
-    "correction": "कीन्स",
+    "error": "परवीन",
+    "correction": "परविन",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -28868,8 +28861,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "पासीओली",
-    "correction": "पासिओली",
+    "error": "देवजिभाई",
+    "correction": "देवजीभाई",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -28917,8 +28910,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "छुरीम",
-    "correction": "छुरिम",
+    "error": "होस्नि",
+    "correction": "होस्नी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -28952,8 +28945,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "डीलमा",
-    "correction": "डिलमा",
+    "error": "मीचेल्स",
+    "correction": "मिचेल्स",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -28987,10 +28980,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "जौनपूरिया",
+    "error": "जौनपुरीया",
     "correction": "जौनपुरिया",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -29113,10 +29106,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "पोन्टीयस",
-    "correction": "पोन्टियस",
+    "error": "प्रत्यूषा",
+    "correction": "प्रत्युषा",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -29176,10 +29169,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "जूद्ध",
-    "correction": "जुद्ध",
+    "error": "ग्राजीया",
+    "correction": "ग्राजिया",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -29302,10 +29295,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "कोडीकुन्नील",
-    "correction": "कोडिकुन्नील",
+    "error": "सूजिउरा",
+    "correction": "सुजिउरा",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -29351,8 +29344,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "ह्वाइटफील्ड",
-    "correction": "ह्वाइटफिल्ड",
+    "error": "फ्रीश",
+    "correction": "फ्रिश",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -29379,8 +29372,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "कोयाजि",
-    "correction": "कोयाजी",
+    "error": "रत्नसींह",
+    "correction": "रत्नसिंह",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -29435,10 +29428,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "अलेकस्वीच",
+    "error": "अलेकसविच",
     "correction": "अलेकस्विच",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "conjunct-simplification",
+    "confidence": 0.78,
     "quality": "synthetic"
   },
   {
@@ -29554,10 +29547,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सेरुसि",
-    "correction": "सेरुसी",
+    "error": "गूर्मीत",
+    "correction": "गुर्मीत",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -29645,7 +29638,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "किर्तिमान",
+    "error": "कीर्तीमान",
     "correction": "कीर्तिमान",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -29708,8 +29701,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "चीनकाजी",
-    "correction": "चिनकाजी",
+    "error": "मर्सीडिज",
+    "correction": "मर्सिडिज",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -29750,24 +29743,24 @@
     "quality": "synthetic"
   },
   {
-    "error": "ह्याडीन",
-    "correction": "ह्याडिन",
+    "error": "तूमाने",
+    "correction": "तुमाने",
+    "type": "matra-confusion",
+    "confidence": 0.64,
+    "quality": "synthetic"
+  },
+  {
+    "error": "वीज",
+    "correction": "विज",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "सीओभान",
-    "correction": "सिओभान",
+    "error": "क्यामरून",
+    "correction": "क्यामरुन",
     "type": "matra-confusion",
-    "confidence": 0.68,
-    "quality": "synthetic"
-  },
-  {
-    "error": "एट्लि",
-    "correction": "एट्ली",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -29799,8 +29792,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "तामाकोसी",
-    "correction": "तामाकोशी",
+    "error": "सान्ताराम",
+    "correction": "शान्ताराम",
     "type": "sibilant-confusion",
     "confidence": 0.72,
     "quality": "synthetic"
@@ -29820,10 +29813,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "एबी",
-    "correction": "एबि",
+    "error": "मिसूस्तिन",
+    "correction": "मिसुस्तिन",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -29841,8 +29834,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "बीद्युत",
-    "correction": "बिद्युत",
+    "error": "किन्जि",
+    "correction": "किन्जी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -29862,10 +29855,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "इसान्त",
-    "correction": "इशान्त",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "कोजीएरा",
+    "correction": "कोजिएरा",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -30016,10 +30009,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "एनीस्टन",
-    "correction": "एनिस्टन",
+    "error": "डेरूलो",
+    "correction": "डेरुलो",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -30030,7 +30023,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "कान्डिन्स्कि",
+    "error": "कान्डीन्स्की",
     "correction": "कान्डिन्स्की",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -30065,15 +30058,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "थ्रीप्लेटन",
-    "correction": "थ्रिप्लेटन",
+    "error": "प्रनील",
+    "correction": "प्रनिल",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "कूआन",
-    "correction": "कुआन",
+    "error": "स्नुप",
+    "correction": "स्नूप",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -30086,10 +30079,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "तेजश्रि",
+    "error": "तेजस्री",
     "correction": "तेजश्री",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -30100,7 +30093,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "गिलेस्पि",
+    "error": "गीलेस्पी",
     "correction": "गिलेस्पी",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -30128,10 +30121,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "लालबाबू",
-    "correction": "लालबाबु",
+    "error": "वीन्स्टन",
+    "correction": "विन्स्टन",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -30149,8 +30142,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "कोल्हापुरि",
-    "correction": "कोल्हापुरी",
+    "error": "टाइरीस",
+    "correction": "टाइरिस",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -30212,15 +30205,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "पूलामी",
+    "error": "पुलामि",
     "correction": "पुलामी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "फेरील्ली",
-    "correction": "फेरिल्ली",
+    "error": "जोसीप",
+    "correction": "जोसिप",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -30303,17 +30296,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "गजूरेल",
-    "correction": "गजुरेल",
+    "error": "तूलाराम",
+    "correction": "तुलाराम",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
   },
   {
-    "error": "ईजीमा",
-    "correction": "ईजिमा",
+    "error": "सूलज्जा",
+    "correction": "सुलज्जा",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -30366,8 +30359,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "म्याकडीएरमिड",
-    "correction": "म्याकडिएरमिड",
+    "error": "हरीओम",
+    "correction": "हरिओम",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -30394,8 +30387,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "सूवेन्दु",
-    "correction": "सुवेन्दु",
+    "error": "फूपु",
+    "correction": "फुपु",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -30429,17 +30422,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "भानूमती",
+    "error": "भानुमति",
     "correction": "भानुमती",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "अनसूमन",
-    "correction": "अनसुमन",
+    "error": "नारदमुनी",
+    "correction": "नारदमुनि",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -30485,10 +30478,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "खाद्यपदार्थहरूबाट",
-    "correction": "खाद्यपदार्थहरुबाट",
+    "error": "तीसिम",
+    "correction": "तिसिम",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -30723,8 +30716,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "बाँधूबाट",
-    "correction": "बाँधुबाट",
+    "error": "जूराउने",
+    "correction": "जुराउने",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -30744,10 +30737,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "तीनभासामा",
-    "correction": "तीनभाषामा",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "नागरिको",
+    "correction": "नागरिकों",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -30779,8 +30772,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "परीच्छेदको",
-    "correction": "परिच्छेदको",
+    "error": "सिग्रेनिबाट",
+    "correction": "सिग्रेनीबाट",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -30835,10 +30828,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सेमशेर",
-    "correction": "शेमशेर",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "बूट्यानसहितको",
+    "correction": "बुट्यानसहितको",
+    "type": "matra-confusion",
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -30877,10 +30870,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "कृसिभित्रको",
+    "error": "कृषिभितरको",
     "correction": "कृषिभित्रको",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "type": "conjunct-simplification",
+    "confidence": 0.7,
     "quality": "synthetic"
   },
   {
@@ -30898,31 +30891,31 @@
     "quality": "synthetic"
   },
   {
-    "error": "उपसथितमात्रै",
+    "error": "यदूकुआका",
+    "correction": "यदुकुआका",
+    "type": "matra-confusion",
+    "confidence": 0.64,
+    "quality": "synthetic"
+  },
+  {
+    "error": "उपस्थितमातरै",
     "correction": "उपस्थितमात्रै",
+    "type": "conjunct-simplification",
+    "confidence": 0.7,
+    "quality": "synthetic"
+  },
+  {
+    "error": "सथासनयले",
+    "correction": "स्थासनयले",
     "type": "conjunct-simplification",
     "confidence": 0.74,
     "quality": "synthetic"
   },
   {
-    "error": "उपस्थीतमात्रै",
-    "correction": "उपस्थितमात्रै",
-    "type": "matra-confusion",
-    "confidence": 0.68,
-    "quality": "synthetic"
-  },
-  {
-    "error": "साहींलालाई",
+    "error": "साहिलालाई",
     "correction": "साहिंलालाई",
-    "type": "matra-confusion",
-    "confidence": 0.68,
-    "quality": "synthetic"
-  },
-  {
-    "error": "मूल्यबीच",
-    "correction": "मूल्यबिच",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -30996,10 +30989,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "डेमेन्सीया",
-    "correction": "डेमेन्सिया",
+    "error": "डगाउनू",
+    "correction": "डगाउनु",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -31248,10 +31241,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "गुरुआस्रममा",
-    "correction": "गुरुआश्रममा",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "सिलिगूढीवाट",
+    "correction": "सिलिगुढीवाट",
+    "type": "matra-confusion",
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -31269,15 +31262,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "सववियु",
-    "correction": "स्ववियु",
-    "type": "conjunct-simplification",
-    "confidence": 0.78,
+    "error": "भूरुङतातोपानी",
+    "correction": "भुरुङतातोपानी",
+    "type": "matra-confusion",
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
-    "error": "सहभागीतालागी",
-    "correction": "सहभागितालागी",
+    "error": "स्ववीयु",
+    "correction": "स्ववियु",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -31290,10 +31283,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "भेटिएको",
+    "error": "भेंटीएको",
     "correction": "भेंटिएको",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -31318,17 +31311,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "सालीमेलगायतका",
-    "correction": "सालिमेलगायतका",
+    "error": "चन्द्रदेवकि",
+    "correction": "चन्द्रदेवकी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "ओक्जाकास्थीत",
+    "error": "ओक्जाकासथित",
     "correction": "ओक्जाकास्थित",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "conjunct-simplification",
+    "confidence": 0.74,
     "quality": "synthetic"
   },
   {
@@ -31339,10 +31332,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "कूज्नेत्सोभाको",
-    "correction": "कुज्नेत्सोभाको",
+    "error": "शीद्धार्थराज",
+    "correction": "शिद्धार्थराज",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -31409,7 +31402,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "भौतिकशास्त्रिहरूले",
+    "error": "भौतीकशास्त्रीहरूले",
     "correction": "भौतिकशास्त्रीहरूले",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -31528,10 +31521,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सिलान्यासयता",
-    "correction": "शिलान्यासयता",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "सोधेकोमातर",
+    "correction": "सोधेकोमात्र",
+    "type": "conjunct-simplification",
+    "confidence": 0.7,
     "quality": "synthetic"
   },
   {
@@ -31563,8 +31556,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "हूनसक्नेप्रहरीको",
-    "correction": "हुनसक्नेप्रहरीको",
+    "error": "इन्द्रूस",
+    "correction": "इन्द्रुस",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -31584,10 +31577,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "भगवद्दप्रेमास्रुको",
-    "correction": "भगवद्दप्रेमाश्रुको",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "खासगरिः",
+    "correction": "खासगरीः",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -31661,10 +31654,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "क्सेर्ती",
-    "correction": "क्षेर्ती",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "सिलाङ्गि",
+    "correction": "सिलाङ्गी",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -31710,8 +31703,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "दीपसिखासंगै",
-    "correction": "दीपशिखासंगै",
+    "error": "एकाक्सर",
+    "correction": "एकाक्षर",
     "type": "sibilant-confusion",
     "confidence": 0.72,
     "quality": "synthetic"
@@ -31822,10 +31815,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "वीशिष्टीकृतरूपमा",
+    "error": "विशिस्टीकृतरूपमा",
     "correction": "विशिष्टीकृतरूपमा",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -31906,10 +31899,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "कारकूर",
-    "correction": "कारकुर",
+    "error": "वीवरित",
+    "correction": "विवरित",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -31927,10 +31920,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "मिलाइसक्नूभएको",
-    "correction": "मिलाइसक्नुभएको",
+    "error": "अध्यापीकाले",
+    "correction": "अध्यापिकाले",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -31948,10 +31941,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "क्रियाकलापविरूध्द",
+    "error": "क्रीयाकलापविरुध्द",
     "correction": "क्रियाकलापविरुध्द",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -31976,10 +31969,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "रीट्रिक",
-    "correction": "रिट्रिक",
+    "error": "बूकिङकर्ताबाट",
+    "correction": "बुकिङकर्ताबाट",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -32004,10 +31997,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "क्षेतरियताभन्दा",
-    "correction": "क्षेत्रियताभन्दा",
-    "type": "conjunct-simplification",
-    "confidence": 0.7,
+    "error": "टाकेयोसि",
+    "correction": "टाकेयोसी",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -32123,10 +32116,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "आदेशसीत",
+    "error": "आदेससित",
     "correction": "आदेशसित",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -32137,8 +32130,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "तीनकैमा",
-    "correction": "तिनकैमा",
+    "error": "बीजिरहन्छ",
+    "correction": "बिजिरहन्छ",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -32235,8 +32228,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "आँपगैरि",
-    "correction": "आँपगैरी",
+    "error": "पवनदेवि",
+    "correction": "पवनदेवी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -32249,10 +32242,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "पूग्नसक्नेथिए",
+    "error": "पुग्नसक्नेथीए",
     "correction": "पुग्नसक्नेथिए",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -32270,10 +32263,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "बीन्दवासिनकीकै",
-    "correction": "बिन्दवासिनकीकै",
+    "error": "बूलुब",
+    "correction": "बुलुब",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -32284,8 +32277,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "सहमतीप्रतिकूलका",
-    "correction": "सहमतिप्रतिकूलका",
+    "error": "हात्तीबल",
+    "correction": "हात्तिबल",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -32319,15 +32312,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "कीथका",
-    "correction": "किथका",
+    "error": "ब्याट्सवूमनले",
+    "correction": "ब्याट्सवुमनले",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
-    "error": "दुलहीपछी",
-    "correction": "दुलहीपछि",
+    "error": "बालकीताब",
+    "correction": "बालकिताब",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -32340,10 +32333,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "असवेतहरू",
-    "correction": "अस्वेतहरू",
-    "type": "conjunct-simplification",
-    "confidence": 0.78,
+    "error": "दूलहीपछि",
+    "correction": "दुलहीपछि",
+    "type": "matra-confusion",
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -32417,15 +32410,15 @@
     "quality": "synthetic"
   },
   {
-    "error": "बुडिगण्डकी",
+    "error": "बुडीगन्डकी",
     "correction": "बुडीगण्डकी",
-    "type": "matra-confusion",
+    "type": "retroflex-nasal",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "सून्तलनाको",
-    "correction": "सुन्तलनाको",
+    "error": "बूडीगण्डकी",
+    "correction": "बुडीगण्डकी",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -32466,10 +32459,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "गूलावसिंहले",
+    "error": "गुलावसींहले",
     "correction": "गुलावसिंहले",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -32480,10 +32473,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "चूखाबेसीमा",
+    "error": "चुखाबेसिमा",
     "correction": "चुखाबेसीमा",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -32501,7 +32494,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "नसिरुद्दिन",
+    "error": "नसीरुद्दीन",
     "correction": "नसिरुद्दीन",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -32543,8 +32536,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "समृद्धीर",
-    "correction": "समृद्धिर",
+    "error": "कण्डेन्सीङ",
+    "correction": "कण्डेन्सिङ",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -32613,17 +32606,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "प्रफीटका",
-    "correction": "प्रफिटका",
+    "error": "हूनुपछिको",
+    "correction": "हुनुपछिको",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
-    "error": "ध्रुवकृष्न",
-    "correction": "ध्रुवकृष्ण",
-    "type": "retroflex-nasal",
-    "confidence": 0.68,
+    "error": "तेस्रोबाक्यमा",
+    "correction": "तेश्रोबाक्यमा",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -32641,10 +32634,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "संकिर्नतावादी",
-    "correction": "संकिर्णतावादी",
-    "type": "retroflex-nasal",
-    "confidence": 0.68,
+    "error": "क्यूवासँगको",
+    "correction": "क्युवासँगको",
+    "type": "matra-confusion",
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -32662,10 +32655,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "जीङमीले",
-    "correction": "जिङमीले",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "सकिर्णतावादी",
+    "correction": "संकिर्णतावादी",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -32704,7 +32697,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "विलासिताभोगि",
+    "error": "वीलासिताभोगी",
     "correction": "विलासिताभोगी",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -32760,10 +32753,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "गालिप्रतिको",
-    "correction": "गालीप्रतिको",
+    "error": "सर्कूलरलेबी",
+    "correction": "सर्कुलरलेबी",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -32781,8 +32774,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "एनएलपिले",
-    "correction": "एनएलपीले",
+    "error": "त्रयोद्सिदेखि",
+    "correction": "त्रयोद्सीदेखि",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -32830,17 +32823,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "गर्दैसमावेसी",
-    "correction": "गर्दैसमावेशी",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "सञ्जिवनको",
+    "correction": "सञ्जीवनको",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "सुचका",
-    "correction": "सूचका",
+    "error": "गर्दैसमावेशि",
+    "correction": "गर्दैसमावेशी",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -32858,8 +32851,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "पुगीने",
-    "correction": "पुगिने",
+    "error": "नीर्णायकबाट",
+    "correction": "निर्णायकबाट",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -32872,10 +32865,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "भकुण्डेसथित",
-    "correction": "भकुण्डेस्थित",
-    "type": "conjunct-simplification",
-    "confidence": 0.74,
+    "error": "अधीनायकबादको",
+    "correction": "अधिनायकबादको",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -32928,8 +32921,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "सहभागिबाटै",
-    "correction": "सहभागीबाटै",
+    "error": "दशकीलोस्थित",
+    "correction": "दशकिलोस्थित",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -32984,10 +32977,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "शिवरातरिपछि",
-    "correction": "शिवरात्रिपछि",
-    "type": "conjunct-simplification",
-    "confidence": 0.7,
+    "error": "सुर्वनमान",
+    "correction": "सुर्वणमान",
+    "type": "retroflex-nasal",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -32998,8 +32991,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "सुनीसक्ने",
-    "correction": "सुनिसक्ने",
+    "error": "शीवरात्रिपछि",
+    "correction": "शिवरात्रिपछि",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -33061,9 +33054,9 @@
     "quality": "synthetic"
   },
   {
-    "error": "प्राधीकरणल",
+    "error": "प्राधिकरनल",
     "correction": "प्राधिकरणल",
-    "type": "matra-confusion",
+    "type": "retroflex-nasal",
     "confidence": 0.68,
     "quality": "synthetic"
   },
@@ -33075,17 +33068,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "शुरुदेखीको",
+    "error": "सुरुदेखिको",
     "correction": "शुरुदेखिको",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
-    "error": "पृथ्विमानै",
-    "correction": "पृथ्वीमानै",
+    "error": "शूरुदेखिको",
+    "correction": "शुरुदेखिको",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -33103,10 +33096,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "संवेदनशिलबाहेक",
+    "error": "संवेदनसीलबाहेक",
     "correction": "संवेदनशीलबाहेक",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -33124,10 +33117,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "उपधक्स्य",
-    "correction": "उपधक्ष्य",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "सेन्टरमोनीटर",
+    "correction": "सेन्टरमोनिटर",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -33194,10 +33187,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "हेकीकप्टर",
-    "correction": "हेकिकप्टर",
+    "error": "भुविज्ञान",
+    "correction": "भूविज्ञान",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -33222,10 +33215,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "विध्वसात्मक",
+    "error": "वीध्वंसात्मक",
     "correction": "विध्वंसात्मक",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -33306,17 +33299,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "मिल्दैनरू",
+    "error": "मील्दैनरु",
     "correction": "मिल्दैनरु",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "हरकुराहरु",
-    "correction": "हरकुराहरू",
-    "type": "matra-confusion",
-    "confidence": 0.64,
+    "error": "चेम्बरर्स",
+    "correction": "चेम्बरर्श",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -33348,8 +33341,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "गोवाकि",
-    "correction": "गोवाकी",
+    "error": "सीम्लेबजारबार",
+    "correction": "सिम्लेबजारबार",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -33404,8 +33397,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "समाल्नूहुने",
-    "correction": "समाल्नुहुने",
+    "error": "पूर्रुयाउनु",
+    "correction": "पुर्रुयाउनु",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -33432,10 +33425,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "शान्तीयनगर",
-    "correction": "शान्तियनगर",
+    "error": "जरामूनिको",
+    "correction": "जरामुनिको",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -33509,10 +33502,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "काश्पीयन",
-    "correction": "काश्पियन",
+    "error": "छूट्लाझैँ",
+    "correction": "छुट्लाझैँ",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -33593,7 +33586,7 @@
     "quality": "synthetic"
   },
   {
-    "error": "गिलियानिबिच",
+    "error": "गीलियानीबिच",
     "correction": "गिलियानीबिच",
     "type": "matra-confusion",
     "confidence": 0.68,
@@ -33607,8 +33600,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "वाङदूङ",
-    "correction": "वाङदुङ",
+    "error": "झूक्किनुहुन्थ्यो",
+    "correction": "झुक्किनुहुन्थ्यो",
     "type": "matra-confusion",
     "confidence": 0.64,
     "quality": "synthetic"
@@ -33621,10 +33614,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "प्रतीबन्धमाथि",
-    "correction": "प्रतिबन्धमाथि",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "सपथसमेतका",
+    "correction": "शपथसमेतका",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -33642,17 +33635,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "मर्नूपर्थ्यो",
-    "correction": "मर्नुपर्थ्यो",
+    "error": "शितलनिवासमार्फत",
+    "correction": "शीतलनिवासमार्फत",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "सनाहूल",
-    "correction": "सनाहुल",
+    "error": "हानीकारकदेखि",
+    "correction": "हानिकारकदेखि",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -33663,8 +33656,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "अर्रीजाबालागा",
-    "correction": "अर्रिजाबालागा",
+    "error": "माछाखोलादेखी",
+    "correction": "माछाखोलादेखि",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -33677,8 +33670,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "तातीरहने",
-    "correction": "तातिरहने",
+    "error": "अष्ट्रेलीयाबाटै",
+    "correction": "अष्ट्रेलियाबाटै",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -33705,10 +33698,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "औसिमा",
-    "correction": "औसीमा",
+    "error": "इलामेहरुलाई",
+    "correction": "इलामेहरूलाई",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -33873,10 +33866,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "थमाउनूपर्छ",
-    "correction": "थमाउनुपर्छ",
+    "error": "स्विकारिरहेछन्",
+    "correction": "स्वीकारिरहेछन्",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -33915,10 +33908,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सूक्स्मयोगको",
-    "correction": "सूक्ष्मयोगको",
-    "type": "sibilant-confusion",
-    "confidence": 0.72,
+    "error": "शशक्तीकरणका",
+    "correction": "शशक्तिकरणका",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -33929,10 +33922,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "प्रकाशपुरतीर",
+    "error": "प्रकासपुरतिर",
     "correction": "प्रकाशपुरतिर",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -33950,10 +33943,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "जनजनसख्या",
-    "correction": "जनजनसंख्या",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "error": "सहपार्टिदेखि",
+    "correction": "सहपार्टीदेखि",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -34020,10 +34013,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "झल्झीनु",
-    "correction": "झल्झिनु",
+    "error": "सूँघ्छिन्",
+    "correction": "सुँघ्छिन्",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -34055,8 +34048,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "योदि",
-    "correction": "योदी",
+    "error": "बोकीदिनाले",
+    "correction": "बोकिदिनाले",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -34097,10 +34090,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "चेतावनि",
-    "correction": "चेतावनी",
+    "error": "नूनमा",
+    "correction": "नुनमा",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -34118,24 +34111,24 @@
     "quality": "synthetic"
   },
   {
-    "error": "योग्यतासम्वन्धि",
-    "correction": "योग्यतासम्वन्धी",
+    "error": "पराउनूहुन्नथ्यो",
+    "correction": "पराउनुहुन्नथ्यो",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
-    "error": "खजनपुरीया",
+    "error": "पुस्पलपुरका",
+    "correction": "पुष्पलपुरका",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
+    "quality": "synthetic"
+  },
+  {
+    "error": "खजनपूरिया",
     "correction": "खजनपुरिया",
     "type": "matra-confusion",
-    "confidence": 0.68,
-    "quality": "synthetic"
-  },
-  {
-    "error": "कुटनिक",
-    "correction": "कुटनीक",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -34286,24 +34279,24 @@
     "quality": "synthetic"
   },
   {
-    "error": "चुडीदिएमा",
-    "correction": "चुडिदिएमा",
-    "type": "matra-confusion",
-    "confidence": 0.68,
-    "quality": "synthetic"
-  },
-  {
-    "error": "सिएसआरसीले",
-    "correction": "सीएसआरसीले",
-    "type": "matra-confusion",
-    "confidence": 0.68,
-    "quality": "synthetic"
-  },
-  {
-    "error": "भन्नूमात्रका",
-    "correction": "भन्नुमात्रका",
+    "error": "सूरुम्खिमसहित",
+    "correction": "सुरुम्खिमसहित",
     "type": "matra-confusion",
     "confidence": 0.64,
+    "quality": "synthetic"
+  },
+  {
+    "error": "चूडिदिएमा",
+    "correction": "चुडिदिएमा",
+    "type": "matra-confusion",
+    "confidence": 0.64,
+    "quality": "synthetic"
+  },
+  {
+    "error": "भन्नुमातरका",
+    "correction": "भन्नुमात्रका",
+    "type": "conjunct-simplification",
+    "confidence": 0.7,
     "quality": "synthetic"
   },
   {
@@ -34384,10 +34377,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सुनिदैनौं",
+    "error": "सुनींदैनौं",
     "correction": "सुनिंदैनौं",
-    "type": "anusvara-drop",
-    "confidence": 0.62,
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -34510,10 +34503,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "बेईमानिको",
-    "correction": "बेईमानीको",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "भार्गवहरु",
+    "correction": "भार्गवहरू",
+    "type": "plural-normalization",
+    "confidence": 0.9,
     "quality": "synthetic"
   },
   {
@@ -34531,10 +34524,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "सहरहरीयो",
-    "correction": "सहरहरियो",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "नसल्टिँदै",
+    "correction": "नसल्टिँदैं",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
@@ -34657,10 +34650,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "मीयनापोलिसमा",
-    "correction": "मियनापोलिसमा",
+    "error": "भरूकच्छ",
+    "correction": "भरुकच्छ",
     "type": "matra-confusion",
-    "confidence": 0.68,
+    "confidence": 0.64,
     "quality": "synthetic"
   },
   {
@@ -34727,17 +34720,17 @@
     "quality": "synthetic"
   },
   {
-    "error": "रणनीतीबिच",
+    "error": "रननीतिबिच",
     "correction": "रणनीतिबिच",
-    "type": "matra-confusion",
+    "type": "retroflex-nasal",
     "confidence": 0.68,
     "quality": "synthetic"
   },
   {
-    "error": "सवभाषा",
-    "correction": "स्वभाषा",
-    "type": "conjunct-simplification",
-    "confidence": 0.78,
+    "error": "रणनितिबिच",
+    "correction": "रणनीतिबिच",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -34748,10 +34741,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "प्रवर्द्धनहेतू",
-    "correction": "प्रवर्द्धनहेतु",
+    "error": "हीतिचोक",
+    "correction": "हितिचोक",
     "type": "matra-confusion",
-    "confidence": 0.64,
+    "confidence": 0.68,
     "quality": "synthetic"
   },
   {
@@ -34783,8 +34776,8 @@
     "quality": "synthetic"
   },
   {
-    "error": "ओमोनिले",
-    "correction": "ओमोनीले",
+    "error": "चोकबासि",
+    "correction": "चोकबासी",
     "type": "matra-confusion",
     "confidence": 0.68,
     "quality": "synthetic"
@@ -34874,16 +34867,16 @@
     "quality": "synthetic"
   },
   {
-    "error": "खूलासभामा",
-    "correction": "खुलासभामा",
-    "type": "matra-confusion",
-    "confidence": 0.64,
+    "error": "पक्तिकारबाटै",
+    "correction": "पंक्तिकारबाटै",
+    "type": "anusvara-drop",
+    "confidence": 0.62,
     "quality": "synthetic"
   },
   {
-    "error": "उत्कर्षदेखी",
-    "correction": "उत्कर्षदेखि",
-    "type": "matra-confusion",
+    "error": "देहधारनमा",
+    "correction": "देहधारणमा",
+    "type": "retroflex-nasal",
     "confidence": 0.68,
     "quality": "synthetic"
   },
@@ -34923,10 +34916,10 @@
     "quality": "synthetic"
   },
   {
-    "error": "टीकबहादुर",
-    "correction": "टिकबहादुर",
-    "type": "matra-confusion",
-    "confidence": 0.68,
+    "error": "कोसको",
+    "correction": "कोशको",
+    "type": "sibilant-confusion",
+    "confidence": 0.72,
     "quality": "synthetic"
   },
   {
@@ -34997,6 +34990,13 @@
     "correction": "पद्यांशहरू",
     "type": "plural-normalization",
     "confidence": 0.9,
+    "quality": "synthetic"
+  },
+  {
+    "error": "खोनपानिको",
+    "correction": "खोनपानीको",
+    "type": "matra-confusion",
+    "confidence": 0.68,
     "quality": "synthetic"
   }
 ]

@@ -85,6 +85,13 @@ const reportSpecs: ReportSpec[] = [
     inputs: ["scripts/check-benchmark-disjointness.ts", "bench/fixtures", "benchmarks", "src/data"]
   },
   {
+    key: "corpusPackage",
+    label: "Keyboard corpus package",
+    path: "bench/reports/keyboard-corpus-package-report.json",
+    required: true,
+    inputs: ["scripts/check-keyboard-corpus-package.mjs", "data/keyboard-corpus/sources.jsonl", "data/keyboard-corpus/reports", "data/keyboard-corpus/runtime", "src/data/keyboard-packs"]
+  },
+  {
     key: "preeti",
     label: "Preeti benchmark",
     path: "bench/reports/preeti-report.json",
@@ -119,9 +126,12 @@ const typingSessionMemory = reportByKey.typingSessionMemory?.data ?? {};
 const proofread = reportByKey.proofread?.data ?? {};
 const performance = reportByKey.performance?.data ?? {};
 const disjointness = reportByKey.disjointness?.data ?? {};
+const corpusPackage = reportByKey.corpusPackage?.data ?? {};
 const preeti = reportByKey.preeti?.data ?? {};
 const mixedSpan = reportByKey.mixedSpan?.data ?? {};
 const aliasCollisions = reportByKey.aliasCollisions?.data ?? {};
+const corpusQualityCounts = corpusPackage.qualityCounts as JsonObject | undefined;
+const corpusHumanGoldRows = numberValue(corpusPackage.humanReviewedGoldRows);
 
 const scorecard = {
   generatedAt: new Date().toISOString(),
@@ -194,7 +204,9 @@ const scorecard = {
     personalMemory: numberValue(typingSession.memoryBoostSuccessRate) >= 1 ? "complete" : "partial",
     memoryControls: statusFromSuite(typingSession, "memory-controls"),
     keyboardLab: existsSync(join(root, "src/features/keyboard/KeyboardLab.tsx")) ? "complete" : "pending",
-    companionShell: existsSync(join(root, "src/features/companion/CompanionShell.tsx")) ? "complete" : "pending",
+    companionShell: existsSync(join(root, "src/features/companion/CompanionShell.tsx")) && existsSync(join(root, "electron/main.cjs"))
+      ? "complete"
+      : "pending",
     typingLatencyP95Ms: numberValue((typingSession.latency as JsonObject | undefined)?.updateP95Ms),
     nativeReleaseReadiness: "pending"
   },
@@ -207,25 +219,48 @@ const scorecard = {
   performance: {
     mode: stringValue(performance.mode),
     reports: performance.reports ?? [],
+    targetMissCount: Array.isArray(performance.reports)
+      ? performance.reports.filter((report) => Boolean((report as JsonObject).targetMissed)).length
+      : 0,
     grossSlowdownCount: Array.isArray(performance.reports)
       ? performance.reports.filter((report) => Boolean((report as JsonObject).grosslySlow)).length
       : 0
   },
+  corpusPackage: {
+    status: stringValue(corpusPackage.status) ?? "missing",
+    sourceCount: numberValue(corpusPackage.sourceCount),
+    curatedRows: corpusPackage.curatedRows ?? {},
+    qualityCounts: corpusPackage.qualityCounts ?? {},
+    humanReviewedGoldRows: corpusHumanGoldRows,
+    goldPromotions: numberValue(corpusPackage.goldPromotions),
+    reviewedScaleStatus: stringValue(corpusPackage.reviewedScaleStatus) ?? "unknown",
+    reviewedScaleNote: stringValue(corpusPackage.reviewedScaleNote) ?? "",
+    leakageStatus: stringValue(corpusPackage.leakageStatus) ?? "unknown",
+    blindRows: numberValue(corpusQualityCounts?.blind),
+    realBlindBenchmarkStatus: corpusHumanGoldRows >= 100000 ? "complete" : "partial",
+    benchmarkEvidenceRisk: numberValue(romanized.top1) >= 1 && corpusHumanGoldRows < 100000
+      ? "perfect benchmark scores require real frozen human-reviewed blind validation before public accuracy claims"
+      : "normal",
+    violations: corpusPackage.violations ?? []
+  },
   native: {
-    windowsTsfSkeleton: existsSync(join(root, "native/windows-tsf/skeleton/LekhTextService.placeholder.cpp")),
+    windowsTsfSource: existsSync(join(root, "native/windows-tsf/skeleton/LekhTextService.cpp"))
+      && existsSync(join(root, "native/windows-tsf/skeleton/Register.cpp"))
+      && existsSync(join(root, "native/windows-tsf/skeleton/CMakeLists.txt")),
     macosImkSkeleton: existsSync(join(root, "native/macos-imk/skeleton/LekhInputController.placeholder.swift")),
+    macosImkImplementation: hasMacosImkImplementation(),
     ipcSchema: existsSync(join(root, "native/shared/ipc/lekh-keyboard-ipc.schema.json")),
     ipcValidator: existsSync(join(root, "scripts/check-ipc-schema.ts")),
     devDaemon: existsSync(join(root, "native/daemon/src/keyboardDaemon.ts")),
     jsonStorage: existsSync(join(root, "native/shared/storage/jsonFileStores.ts")),
     daemonLifecycle: existsSync(join(root, "docs/NATIVE_DAEMON_LIFECYCLE.md")),
-    companionScaffold: existsSync(join(root, "native/companion/README.md")),
+    companionDesktopShell: existsSync(join(root, "electron/main.cjs")) && existsSync(join(root, "electron-builder.config.cjs")),
     windowsNamedPipeStrategy: "per-user named pipe",
     macosXpcStrategy: "app-scoped XPC",
-    nativeReleaseStatus: "blocked until real TSF/IMK implementation, platform tests, signing/notarization, and pilot feedback"
+    nativeReleaseStatus: "blocked until Windows/macOS platform tests, signing/notarization, and pilot feedback"
   },
   finalProduction: {
-    verification: hardFailures.length === 0 ? "complete" : "failed",
+    verification: hardFailures.length === 0 && performanceTargetMissCount() === 0 ? "complete" : "failed",
     tests: "complete",
     benchmarks: numberValue(typingSession.failedSessions) === 0 ? "complete" : "failed",
     romanized: statusFromSuite(typingSession, "romanized-live-basic"),
@@ -236,18 +271,18 @@ const scorecard = {
     memory: numberValue(typingSession.memoryBoostSuccessRate) >= 1 && numberValue(typingSessionMemory.failedSessions) === 0 ? "complete" : "partial",
     candidateQuality: numberValue(typingSession.duplicateCandidateCount) === 0 && numberValue(typingSession.shortcutSequenceValidityRate) >= 1 ? "complete" : "failed",
     keyboardLab: existsSync(join(root, "src/features/keyboard/KeyboardLab.tsx")) ? "complete" : "pending",
-    companionApp: existsSync(join(root, "src/features/companion/CompanionShell.tsx")) ? "complete" : "pending",
-    daemonIpc: existsSync(join(root, "native/daemon/src/keyboardDaemon.ts")) && existsSync(join(root, "scripts/check-ipc-schema.ts")) ? "complete" : "partial",
+    companionApp: existsSync(join(root, "electron/main.cjs")) && existsSync(join(root, "src/features/companion/CompanionShell.tsx")) ? "partial" : "pending",
+    daemonIpc: existsSync(join(root, "native/daemon/src/daemonCli.ts")) && existsSync(join(root, "scripts/check-ipc-schema.ts")) ? "complete" : "partial",
     windowsNative: "blocked-native-environment",
-    macosNative: "blocked-native-environment",
+    macosNative: hasMacosImkImplementation() ? "blocked-native-environment" : "failed",
     storage: existsSync(join(root, "native/shared/storage/jsonFileStores.ts")) ? "complete" : "partial",
     installerSigning: "blocked-external",
     privacySecurity: existsSync(join(root, "docs/KEYBOARD_PRIVACY_AND_SECURITY_MODEL.md")) ? "complete" : "partial",
     pilotReadiness: existsSync(join(root, "docs/PILOT_FEEDBACK_SYSTEM.md")) ? "partial" : "pending",
-    releaseReadiness: "blocked-external",
+    releaseReadiness: hasMacosImkImplementation() ? "blocked-external" : "failed",
     publicClaimStatus: "conservative"
   },
-  launchRecommendation: "NOT_READY_BLOCKED_BY_EXTERNAL_NATIVE_REQUIREMENTS",
+  launchRecommendation: launchRecommendation(),
   preeti: {
     fixtureCount: numberValue(preeti.fixtureCount),
     exactMatchRate: numberValue(preeti.exactMatchRate)
@@ -293,6 +328,9 @@ writeFileSync(join(root, "docs/ENGINE_QUALITY_SCORECARD.md"), renderMarkdown());
 console.log(JSON.stringify(scorecard, null, 2));
 
 if (hardFailures.length > 0) {
+  process.exitCode = 1;
+}
+if (performanceTargetMissCount() > 0 || corpusPackage.status !== "passed") {
   process.exitCode = 1;
 }
 
@@ -421,6 +459,11 @@ function isHardReportFailure(report: LoadedReport): boolean {
     || report.status === "schema-warning";
 }
 
+function performanceTargetMissCount(): number {
+  if (!Array.isArray(performance.reports)) return 0;
+  return performance.reports.filter((report) => Boolean((report as JsonObject).targetMissed)).length;
+}
+
 function statusFromSuite(report: JsonObject, suite: string): "complete" | "partial" | "pending" {
   const bySuite = report.bySuite as Record<string, JsonObject> | undefined;
   const row = bySuite?.[suite];
@@ -431,6 +474,21 @@ function statusFromSuite(report: JsonObject, suite: string): "complete" | "parti
   return total > 0 ? "partial" : "pending";
 }
 
+function hasMacosImkImplementation(): boolean {
+  const implementation = join(root, "native/macos-imk/skeleton/LekhInputController.swift");
+  if (!existsSync(implementation)) return false;
+  const source = readFileSync(implementation, "utf8");
+  return /IMKInputController/.test(source) && !/placeholder/i.test(source);
+}
+
+function launchRecommendation(): string {
+  if (hardFailures.length > 0 || performanceTargetMissCount() > 0 || corpusPackage.status !== "passed") {
+    return "NOT_READY_ENGINE_OR_VERIFICATION_FAILURES";
+  }
+  if (!hasMacosImkImplementation()) return "NOT_READY_NATIVE_IMPLEMENTATION_FAILURES";
+  return "NOT_READY_BLOCKED_BY_EXTERNAL_NATIVE_REQUIREMENTS";
+}
+
 function renderMarkdown(): string {
   const reportRows = loadedReports.map((report) =>
     `| ${report.label} | ${report.status} | ${report.fixtureCount ?? "n/a"} | ${report.mode ?? "n/a"} | ${report.command ?? "missing"} | ${report.staleBecause ?? ""} |`
@@ -439,7 +497,7 @@ function renderMarkdown(): string {
   const perfRows = Array.isArray(performance.reports)
     ? performance.reports.map((item) => {
       const row = item as JsonObject;
-      return `| ${row.name} | ${row.p95Ms} | ${row.gateMs} | ${row.grosslySlow ? "fail" : "pass"} |`;
+      return `| ${row.name} | ${row.p95Ms} | ${row.gateMs} | ${row.targetMissed ? "fail" : "pass"} |`;
     }).join("\n")
     : "";
 
@@ -478,6 +536,20 @@ ${reportRows}
 | MRR | ${scorecard.romanized.mrr.toFixed(4)} |
 | self-consistency fixtures | ${scorecard.romanized.selfConsistency.fixtureCount} |
 | self-consistency failures | ${scorecard.romanized.selfConsistency.failureCount} |
+
+## Corpus Package
+
+| Metric | Value |
+| --- | --- |
+| package status | ${scorecard.corpusPackage.status} |
+| source registry rows | ${scorecard.corpusPackage.sourceCount} |
+| human-reviewed gold rows | ${scorecard.corpusPackage.humanReviewedGoldRows} |
+| gold promotions | ${scorecard.corpusPackage.goldPromotions} |
+| reviewed scale status | ${scorecard.corpusPackage.reviewedScaleStatus} |
+| frozen blind rows | ${scorecard.corpusPackage.blindRows} |
+| real blind benchmark status | ${scorecard.corpusPackage.realBlindBenchmarkStatus} |
+| leakage audit | ${scorecard.corpusPackage.leakageStatus} |
+| benchmark evidence risk | ${scorecard.corpusPackage.benchmarkEvidenceRisk} |
 
 ## Typing Sessions
 
@@ -523,15 +595,17 @@ ${reportRows}
 | --- | ---: | ---: | --- |
 ${perfRows}
 
+Performance target misses: ${scorecard.performance.targetMissCount}
+
 ## Native And Release
 
 | Area | Status |
 | --- | --- |
-| Windows TSF skeleton | ${scorecard.native.windowsTsfSkeleton ? "present" : "missing"} |
+| Windows TSF source | ${scorecard.native.windowsTsfSource ? "present" : "missing"} |
 | macOS IMK skeleton | ${scorecard.native.macosImkSkeleton ? "present" : "missing"} |
 | IPC schema | ${scorecard.native.ipcSchema ? "present" : "missing"} |
 | daemon lifecycle | ${scorecard.native.daemonLifecycle ? "documented" : "missing"} |
-| companion scaffold | ${scorecard.native.companionScaffold ? "present" : "missing"} |
+| companion desktop shell | ${scorecard.native.companionDesktopShell ? "present" : "missing"} |
 | release status | ${scorecard.native.nativeReleaseStatus} |
 
 ## Final Production Scorecard

@@ -4,8 +4,8 @@ import { companionPages, defaultCompanionSettings } from "./settings";
 
 const statusRows = [
   ["Keyboard engine", "Native-ready API and lab validation pass"],
-  ["Dev daemon", "TypeScript daemon dispatcher available"],
-  ["Native Windows", "TSF build path requires Windows validation"],
+  ["Per-user daemon", "JSONL IPC process available for native shells"],
+  ["Native Windows", "TSF DLL source and installer registration path ready for Windows build validation"],
   ["Native macOS", "Swift IMK/XPC proof build available; installed validation still needs Xcode/signing"],
   ["Traditional layout", "Physical keymap blocked on LTK audit"],
   ["Privacy", "No typed-text upload, no hidden telemetry"]
@@ -27,9 +27,9 @@ export function CompanionShell() {
         <div className="panel-heading">
           <div>
             <h2>Companion App Console</h2>
-            <p>Settings, privacy, dictionary, memory, diagnostics, and Preeti side utility are ready for engine and daemon validation. This app is not the IME.</p>
+            <p>Settings, privacy, dictionary, memory, diagnostics, install status, and Preeti side utility for the native keyboard stack. This app is not the IME.</p>
           </div>
-          <span className="local-badge">Dev-ready</span>
+          <span className="local-badge">Companion</span>
         </div>
 
         <div className="companion-status-grid">

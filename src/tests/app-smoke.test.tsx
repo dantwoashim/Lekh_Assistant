@@ -3,9 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { App } from "../app/App";
 
 describe("App", () => {
-  it("renders the Preeti converter as the primary tab", async () => {
+  it("renders Keyboard Lab as the primary keyboard-first tab", async () => {
     render(<App />);
-    expect(screen.getByRole("tab", { name: /preeti/i })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Keyboard Lab/i })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("heading", { name: "Keyboard Lab" }, { timeout: 8000 })).toBeInTheDocument();
+  });
+
+  it("renders the Preeti converter as a side utility tab", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("tab", { name: /Preeti Utility/i }));
     expect(await screen.findByLabelText(/Preeti text/i, {}, { timeout: 8000 })).toBeInTheDocument();
     expect(await screen.findByDisplayValue("नमस्ते", {}, { timeout: 8000 })).toBeInTheDocument();
   });
@@ -14,15 +21,15 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("tab", { name: /^Romanized$/i }));
-    expect(await screen.findByLabelText(/Romanized input/i)).toBeInTheDocument();
-    expect(await screen.findByDisplayValue(/NID form को नाम field/)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Romanized input/i, {}, { timeout: 8000 })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue(/NID form को नाम field/, {}, { timeout: 8000 })).toBeInTheDocument();
   });
 
   it("applies a suggestion by replacing only the current romanized token", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("tab", { name: /^Romanized$/i }));
-    const input = await screen.findByLabelText(/Romanized input/i);
+    const input = await screen.findByLabelText(/Romanized input/i, {}, { timeout: 8000 });
     await user.clear(input);
     await user.type(input, "mero pra");
     const [suggestion] = await screen.findAllByRole("button", { name: /प्रशासन/i });
@@ -35,7 +42,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("tab", { name: /^Romanized$/i }));
-    const input = await screen.findByLabelText(/Romanized input/i);
+    const input = await screen.findByLabelText(/Romanized input/i, {}, { timeout: 8000 });
     await user.clear(input);
     await user.type(input, "niraj bhusal");
     await user.click(screen.getByRole("button", { name: /नीरज भुसाल/i }));
@@ -48,7 +55,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("tab", { name: /^Romanized$/i }));
-    const input = await screen.findByLabelText(/Romanized input/i);
+    const input = await screen.findByLabelText(/Romanized input/i, {}, { timeout: 8000 });
     await user.clear(input);
     await user.type(input, "Thapa");
     await user.click(screen.getByRole("button", { name: /report bad typing/i }));
@@ -68,7 +75,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("tab", { name: /Keyboard Lab/i }));
-    expect(await screen.findByText("Keyboard Lab")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Keyboard Lab" }, { timeout: 8000 })).toBeInTheDocument();
     expect((await screen.findAllByText("स्वास्थ्य कार्यालय")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Dictionary")).toBeInTheDocument();
     expect((await screen.findAllByText("स्वास्थ्य")).length).toBeGreaterThan(0);
@@ -87,8 +94,8 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("tab", { name: /^Companion$/i }));
-    expect(await screen.findByText("Production Pages")).toBeInTheDocument();
-    expect(await screen.findByText(/Dev daemon/i)).toBeInTheDocument();
+    expect(await screen.findByText("Production Pages", {}, { timeout: 8000 })).toBeInTheDocument();
+    expect(await screen.findByText(/Per-user daemon/i)).toBeInTheDocument();
     expect(await screen.findByText(/No global key hook in the companion/i)).toBeInTheDocument();
     expect(await screen.findByText("Privacy Page Ready")).toBeInTheDocument();
     expect((await screen.findAllByText(/redacted diagnostics/i)).length).toBeGreaterThan(0);

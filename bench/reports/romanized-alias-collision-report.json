@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-27T17:10:10.728Z",
+  "generatedAt": "2026-06-08T12:52:17.468Z",
   "variantCount": 76193,
   "aliasCount": 70201,
   "collisionCount": 4499,
@@ -117942,5 +117942,10 @@
       ],
       "severity": "review-needed"
     }
-  ]
+  ],
+  "command": "npm run check:alias-collisions",
+  "suite": "romanized-alias-collisions",
+  "mode": "full",
+  "durationMs": 113,
+  "fixtureCount": 76193
 }

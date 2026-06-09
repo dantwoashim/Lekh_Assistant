@@ -91,7 +91,7 @@ Baseline followups pass for:
 - जन्म -> दर्ता;
 - मृत्यु -> दर्ता.
 
-No network or large language model is used.
+No network service is used.
 
 ## 9. Traditional Mode Status
 

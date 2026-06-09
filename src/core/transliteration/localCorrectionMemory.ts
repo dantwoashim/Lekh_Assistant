@@ -17,7 +17,7 @@ export interface MinimalStorage {
   removeItem(key: string): void;
 }
 
-export const LOCAL_CORRECTION_KEY = "lekh-assistant:romanized-corrections:v1";
+export const LOCAL_CORRECTION_KEY = "lekh-keyboard:romanized-corrections:v1";
 const MAX_CORRECTIONS = 100;
 
 export function normalizeCorrectionInput(input: string): string {
