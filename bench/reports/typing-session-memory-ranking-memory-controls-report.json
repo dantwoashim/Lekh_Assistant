@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-08T12:42:33.752Z",
+  "generatedAt": "2026-06-09T06:18:57.319Z",
   "command": "npm run benchmark:typing-session -- memory-ranking,memory-controls",
   "suite": "typing-session:memory-ranking,memory-controls",
   "mode": "full",
-  "durationMs": 76,
+  "durationMs": 107,
   "fixtureCount": 4,
   "romanized": {
     "totalSessions": 4,
@@ -37,8 +37,8 @@
   },
   "latency": {
     "candidateP50Ms": 0,
-    "candidateP95Ms": 0,
-    "updateP95Ms": 0,
+    "candidateP95Ms": 1,
+    "updateP95Ms": 1,
     "commitP95Ms": 0
   },
   "keystrokeSavingsRatioMean": 0.0625,
@@ -110,7 +110,7 @@
         "pradesh"
       ],
       "latencyMs": [
-        0
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,

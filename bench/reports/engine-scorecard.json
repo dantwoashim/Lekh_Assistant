@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-09T06:07:41.314Z",
+  "generatedAt": "2026-06-09T06:18:10.518Z",
   "command": "npm run scorecard:engine",
   "mode": "read-existing-fresh-reports",
   "verificationStability": {
@@ -12,11 +12,11 @@
         "label": "Romanized benchmark",
         "path": "bench/reports/romanized-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T06:07:34.740Z",
+        "generatedAt": "2026-06-09T06:18:02.026Z",
         "command": "npm run benchmark:romanized:smoke",
         "suite": "romanized",
         "mode": "smoke",
-        "durationMs": 2932,
+        "durationMs": 3247,
         "fixtureCount": 776
       },
       {
@@ -24,11 +24,11 @@
         "label": "Romanized self-consistency",
         "path": "bench/reports/romanized-self-consistency-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-08T12:53:32.406Z",
+        "generatedAt": "2026-06-09T06:16:39.848Z",
         "command": "npm run benchmark:romanized:self:smoke",
         "suite": "romanized-self-consistency",
         "mode": "smoke",
-        "durationMs": 96,
+        "durationMs": 293,
         "fixtureCount": 140
       },
       {
@@ -36,11 +36,11 @@
         "label": "Typing-session benchmark",
         "path": "bench/reports/typing-session-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T06:07:29.955Z",
+        "generatedAt": "2026-06-09T06:17:56.705Z",
         "command": "npm run benchmark:typing-session",
         "suite": "typing-session",
         "mode": "full",
-        "durationMs": 271,
+        "durationMs": 381,
         "fixtureCount": 66
       },
       {
@@ -72,11 +72,11 @@
         "label": "Proofread benchmark",
         "path": "bench/reports/proofread-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T06:07:36.391Z",
+        "generatedAt": "2026-06-09T06:18:04.330Z",
         "command": "npm run benchmark:proofread",
         "suite": "proofread",
         "mode": "full",
-        "durationMs": 58,
+        "durationMs": 132,
         "fixtureCount": 9
       },
       {
@@ -84,11 +84,11 @@
         "label": "Performance smoke benchmark",
         "path": "bench/reports/perf-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T06:07:41.008Z",
+        "generatedAt": "2026-06-09T06:18:10.133Z",
         "command": "npm run bench:perf:smoke",
         "suite": "performance",
         "mode": "smoke",
-        "durationMs": 803,
+        "durationMs": 962,
         "fixtureCount": 12
       },
       {
@@ -96,11 +96,11 @@
         "label": "Benchmark disjointness",
         "path": "bench/reports/benchmark-disjointness-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T06:07:27.582Z",
+        "generatedAt": "2026-06-09T06:17:53.612Z",
         "command": "npm run check:benchmark-disjointness",
         "suite": "benchmark-disjointness",
         "mode": "full",
-        "durationMs": 244,
+        "durationMs": 232,
         "fixtureCount": 17001
       },
       {
@@ -108,7 +108,7 @@
         "label": "Keyboard corpus package",
         "path": "bench/reports/keyboard-corpus-package-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T06:07:26.705Z",
+        "generatedAt": "2026-06-09T06:17:52.802Z",
         "command": "npm run corpus:keyboard:package-check",
         "suite": "keyboard-corpus-package",
         "durationMs": 0,
@@ -289,9 +289,9 @@
     },
     "latency": {
       "candidateP50Ms": 1,
-      "candidateP95Ms": 1,
-      "updateP95Ms": 1,
-      "commitP95Ms": 0
+      "candidateP95Ms": 2,
+      "updateP95Ms": 2,
+      "commitP95Ms": 1
     },
     "keystrokeSavingsRatioMean": 0.0162889756411158,
     "proofHintHitRate": 1,
@@ -320,7 +320,7 @@
     "memoryControls": "complete",
     "keyboardLab": "complete",
     "companionShell": "complete",
-    "typingLatencyP95Ms": 1,
+    "typingLatencyP95Ms": 2,
     "nativeReleaseReadiness": "pending"
   },
   "proofread": {
@@ -348,9 +348,9 @@
         "iterations": 20,
         "gateMs": 100,
         "minMs": 15,
-        "meanMs": 17.45,
-        "p95Ms": 21,
-        "maxMs": 23,
+        "meanMs": 16.55,
+        "p95Ms": 19,
+        "maxMs": 19,
         "targetMissed": false,
         "grosslySlow": false
       },
@@ -359,9 +359,9 @@
         "iterations": 20,
         "gateMs": 500,
         "minMs": 0,
-        "meanMs": 0.05,
+        "meanMs": 0,
         "p95Ms": 0,
-        "maxMs": 1,
+        "maxMs": 0,
         "targetMissed": false,
         "grosslySlow": false
       },
@@ -381,7 +381,7 @@
         "iterations": 30,
         "gateMs": 20,
         "minMs": 0,
-        "meanMs": 0.23,
+        "meanMs": 0.27,
         "p95Ms": 1,
         "maxMs": 1,
         "targetMissed": false,
@@ -403,9 +403,9 @@
         "iterations": 30,
         "gateMs": 20,
         "minMs": 1,
-        "meanMs": 1.53,
-        "p95Ms": 2,
-        "maxMs": 2,
+        "meanMs": 2.33,
+        "p95Ms": 5,
+        "maxMs": 6,
         "targetMissed": false,
         "grosslySlow": false
       },
@@ -414,9 +414,9 @@
         "iterations": 30,
         "gateMs": 40,
         "minMs": 0,
-        "meanMs": 0,
+        "meanMs": 0.03,
         "p95Ms": 0,
-        "maxMs": 0,
+        "maxMs": 1,
         "targetMissed": false,
         "grosslySlow": false
       },
@@ -424,10 +424,10 @@
         "name": "Keyboard dictionary lookup",
         "iterations": 30,
         "gateMs": 30,
-        "minMs": 7,
-        "meanMs": 7.3,
-        "p95Ms": 8,
-        "maxMs": 8,
+        "minMs": 8,
+        "meanMs": 11.97,
+        "p95Ms": 19,
+        "maxMs": 21,
         "targetMissed": false,
         "grosslySlow": false
       },
@@ -436,9 +436,9 @@
         "iterations": 30,
         "gateMs": 10,
         "minMs": 0,
-        "meanMs": 0,
+        "meanMs": 0.03,
         "p95Ms": 0,
-        "maxMs": 0,
+        "maxMs": 1,
         "targetMissed": false,
         "grosslySlow": false
       },
@@ -447,7 +447,7 @@
         "iterations": 30,
         "gateMs": 10,
         "minMs": 0,
-        "meanMs": 0.2,
+        "meanMs": 0.37,
         "p95Ms": 1,
         "maxMs": 1,
         "targetMissed": false,
@@ -458,9 +458,9 @@
         "iterations": 30,
         "gateMs": 10,
         "minMs": 0,
-        "meanMs": 0,
+        "meanMs": 0.03,
         "p95Ms": 0,
-        "maxMs": 0,
+        "maxMs": 1,
         "targetMissed": false,
         "grosslySlow": false
       }
