@@ -36,10 +36,26 @@ export function applyKeyToComposition(input: string, caret: number, key: Keyboar
   }
 
   if (safeKey === "Backspace") {
+    if (input.length === 0) {
+      return {
+        text: input,
+        caret,
+        command: "pass-through",
+        warning: "Backspace passed through because there is no active composition."
+      };
+    }
     return deleteBeforeCaret(input, caret);
   }
 
   if (safeKey === "Delete") {
+    if (input.length === 0) {
+      return {
+        text: input,
+        caret,
+        command: "pass-through",
+        warning: "Delete passed through because there is no active composition."
+      };
+    }
     return deleteAfterCaret(input, caret);
   }
 
@@ -56,7 +72,15 @@ export function applyKeyToComposition(input: string, caret: number, key: Keyboar
   }
 
   if (safeKey === " ") {
-    return insertAtCaret(input, caret, " ");
+    if (input.length === 0) {
+      return {
+        text: input,
+        caret,
+        command: "pass-through",
+        warning: "Space passed through because there is no active composition."
+      };
+    }
+    return { text: input, caret, command: "commit-primary" };
   }
 
   if (safeKey.length === 1) {

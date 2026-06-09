@@ -6,7 +6,7 @@ Generated: 2026-05-27
 
 Prompt 1 foundation is present and intact:
 
-- `docs/PROMPT_1_KEYBOARD_COMPLETION_REPORT.md` exists.
+- `docs/archive/generated-history/PROMPT_1_KEYBOARD_COMPLETION_REPORT.md` exists.
 - keyboard-first scope freeze exists.
 - Engineering MVP vs Product MVP documentation exists.
 - Traditional layout source-of-truth audit scaffold exists.
@@ -139,4 +139,3 @@ Known non-failing blockers:
 - dictionary meanings are blocked on safe licensed data.
 - competitor comparison remains pending manual collection.
 - `romanized-held-out` remains marked contaminated by disjointness and excluded from public proof.
-

@@ -6,6 +6,7 @@ import { nextWordCandidates } from "./followups";
 import { getKeyboardProofHints } from "./proofHints";
 import { lookupKeyboardDictionary } from "./dictionary";
 import { importKeyboardMemoryEntry, recordKeyboardMemorySelection } from "./memory";
+import { isSecureContext } from "./modes";
 import { KeyboardSessionManager } from "./session";
 import { getKeyboardSuggestions } from "./suggest";
 import { warmKeyboard } from "./warm";
@@ -41,30 +42,39 @@ export class LocalKeyboardEngine implements KeyboardEngine {
   processKeyStroke(sessionId: SessionId, key: KeyboardKeyEvent): CandidateUpdate {
     if (!this.sessions.has(sessionId)) return unknownSessionUpdate(sessionId, "", 0);
     const session = this.sessions.get(sessionId);
+    if (isSecureContext(session.context)) {
+      return withAction(this.refresh(sessionId), "passThrough", "Secure/code field: native key passed through without composition.");
+    }
     const mutation = applyKeyToComposition(session.compositionText, session.caret, key);
+    if (mutation.command === "pass-through") {
+      return withAction(this.refresh(sessionId), "passThrough", mutation.warning);
+    }
     if (mutation.command === "cancel") {
       this.cancelComposition(sessionId);
-      return this.refresh(sessionId);
+      return withAction(this.refresh(sessionId), "cancel");
     }
     if (mutation.command === "commit-primary") {
       const update = this.refresh(sessionId);
+      let commitResult: CommitResult;
       if (update.primary && update.primary.confidence >= 0.86) {
-        this.commitCandidate(sessionId, update.primary.id);
+        commitResult = this.commitCandidate(sessionId, update.primary.id);
       } else if (key.key === "Enter") {
-        this.commitRaw(sessionId);
+        commitResult = this.commitRaw(sessionId);
       } else {
-        const withSpace = `${session.compositionText} `;
-        this.sessions.updateComposition(sessionId, withSpace, withSpace.length);
+        commitResult = this.commitRaw(sessionId);
       }
-      return this.refresh(sessionId);
+      const committedText = key.key === " " && commitResult.committedText
+        ? `${commitResult.committedText} `
+        : commitResult.committedText;
+      return withCommit(this.refresh(sessionId), commitResult, committedText);
     }
     this.sessions.updateComposition(sessionId, mutation.text, mutation.caret);
     const update = this.refresh(sessionId);
     if (mutation.warning) {
-      return { ...update, warnings: Array.from(new Set([...update.warnings, mutation.warning])) };
+      return withAction(update, "compose", mutation.warning);
     }
     if (mutation.command === "expand-candidates") {
-      return { ...update, shouldShowCandidateUI: true };
+      return { ...update, action: "compose", shouldShowCandidateUI: true };
     }
     return update;
   }
@@ -79,6 +89,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
       this.cache.set(sessionId, this.refresh(sessionId).candidates);
       return {
         sessionId,
+        action: "compose",
         committedText: "",
         consumedRange: candidate.replaceRange ?? [0, session.compositionText.length],
         followupCandidates: [],
@@ -172,6 +183,7 @@ function unknownSessionUpdate(sessionId: SessionId, input: string, cursor: numbe
     sessionId,
     mode: "diagnostic",
     surface: "romanized-to-unicode",
+    action: "errorFallback",
     compositionText: input,
     displayText: input,
     caret: Math.max(0, Math.min(input.length, Math.trunc(cursor))),
@@ -182,6 +194,24 @@ function unknownSessionUpdate(sessionId: SessionId, input: string, cursor: numbe
     warnings: [`Unknown keyboard session: ${sessionId}; preserving input.`],
     latencyMs: 0,
     schemaVersion: 1
+  };
+}
+
+function withAction(update: CandidateUpdate, action: CandidateUpdate["action"], warning?: string): CandidateUpdate {
+  return {
+    ...update,
+    action,
+    warnings: warning ? Array.from(new Set([...update.warnings, warning])) : update.warnings
+  };
+}
+
+function withCommit(update: CandidateUpdate, result: CommitResult, committedText: string): CandidateUpdate {
+  return {
+    ...update,
+    action: result.action === "commit" ? "commit" : result.action,
+    committedText,
+    consumedRange: result.consumedRange,
+    shouldShowCandidateUI: false
   };
 }
 

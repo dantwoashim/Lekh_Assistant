@@ -40,7 +40,7 @@ Record the signer role, date, document domain, source format, font profile if kn
 3. Run `npm run ingest:preeti-real -- data/private/preeti-real-manifest.json`.
 4. Review generated outputs under ignored `data/generated/`.
 5. Promote only de-identified, permission-backed cases into benchmark fixtures.
-6. Update `docs/VALIDATION_REPORT.md` with counts, exact match, warning rate, and top failure categories.
+6. Update `docs/ENGINE_QUALITY_SCORECARD.md` and `docs/CURRENT_PRODUCTION_READINESS_STATUS.md` with counts, exact match, warning rate, and top failure categories.
 
 ## Review Checklist
 

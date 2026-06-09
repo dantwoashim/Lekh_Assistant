@@ -4,11 +4,20 @@ import { isSecureContext } from "./modes";
 import type { Candidate, KeyboardMode, KeyboardSession, SessionId, TypingContext } from "./types";
 
 let nextSessionCounter = 0;
+const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000;
+const DEFAULT_MAX_SESSIONS = 64;
 
 export class KeyboardSessionManager {
   private readonly sessions = new Map<SessionId, KeyboardSession>();
 
+  constructor(
+    private readonly sessionTtlMs = DEFAULT_SESSION_TTL_MS,
+    private readonly maxSessions = DEFAULT_MAX_SESSIONS
+  ) {}
+
   beginSession(context: TypingContext): SessionId {
+    this.cleanupExpired();
+    this.evictLeastRecentlyUsedIfNeeded();
     const sessionId = `kbd-${Date.now().toString(36)}-${(nextSessionCounter += 1).toString(36)}`;
     const secure = isSecureContext(context);
     this.sessions.set(sessionId, {
@@ -35,12 +44,14 @@ export class KeyboardSessionManager {
   }
 
   get(sessionId: SessionId): KeyboardSession {
+    this.cleanupExpired();
     const session = this.sessions.get(sessionId);
     if (!session) throw unknownSessionError(sessionId);
     return session;
   }
 
   has(sessionId: SessionId): boolean {
+    this.cleanupExpired();
     return this.sessions.has(sessionId);
   }
 
@@ -116,7 +127,19 @@ export class KeyboardSessionManager {
     this.sessions.clear();
   }
 
+  cleanupExpired(now = nowMs()): number {
+    let removed = 0;
+    for (const [sessionId, session] of this.sessions) {
+      if (now - session.lastUpdateTime > this.sessionTtlMs) {
+        this.sessions.delete(sessionId);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
   snapshot(): KeyboardSession[] {
+    this.cleanupExpired();
     return Array.from(this.sessions.values()).map((session) => ({
       ...session,
       context: { ...session.context },
@@ -125,5 +148,13 @@ export class KeyboardSessionManager {
       warnings: session.warnings.slice(),
       committedHistory: session.committedHistory.slice()
     }));
+  }
+
+  private evictLeastRecentlyUsedIfNeeded(): void {
+    if (this.sessions.size < this.maxSessions) return;
+    const [oldestSessionId] = Array.from(this.sessions.entries()).sort(
+      ([, a], [, b]) => a.lastUpdateTime - b.lastUpdateTime
+    )[0] ?? [];
+    if (oldestSessionId) this.sessions.delete(oldestSessionId);
   }
 }

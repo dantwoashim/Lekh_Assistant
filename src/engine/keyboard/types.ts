@@ -15,6 +15,13 @@ export type SuggestionSurface =
   | "traditional-to-romanized-helper"
   | "traditional-to-traditional-proofread";
 
+export type KeyboardHostAction =
+  | "passThrough"
+  | "compose"
+  | "commit"
+  | "cancel"
+  | "errorFallback";
+
 export interface KeyboardKeyEvent {
   /**
    * Logical key value, such as "a", "Backspace", "Enter", " ".
@@ -123,6 +130,16 @@ export interface CandidateUpdate {
   surface: SuggestionSurface;
 
   /**
+   * Native host decision for this update.
+   * passThrough means the host application should receive the original key.
+   * compose means update marked/composition text and candidate UI.
+   * commit means committedText/consumedRange carry text to insert.
+   * cancel means clear the active OS composition.
+   * errorFallback means preserve host input and do not block the app.
+   */
+  action: KeyboardHostAction;
+
+  /**
    * Raw active composition buffer.
    * In Romanized mode this is usually the Latin buffer, e.g. "swas".
    * In Traditional mode this may be the current Unicode word buffer.
@@ -139,6 +156,8 @@ export interface CandidateUpdate {
   candidates: Candidate[];
   primary?: Candidate;
   proofHints: ProofHint[];
+  committedText?: string;
+  consumedRange?: [number, number];
   shouldShowCandidateUI: boolean;
   confidence: number;
   warnings: string[];
@@ -148,6 +167,7 @@ export interface CandidateUpdate {
 
 export interface CommitResult {
   sessionId: SessionId;
+  action: KeyboardHostAction;
   committedText: string;
 
   /**

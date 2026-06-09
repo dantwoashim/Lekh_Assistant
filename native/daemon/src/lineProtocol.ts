@@ -6,6 +6,8 @@ import {
 import type { IpcRequest } from "../../shared/ipc/messages";
 import { KeyboardDaemon } from "./keyboardDaemon";
 
+export const MAX_IPC_LINE_BYTES = 64 * 1024;
+
 export interface DaemonLineHandler {
   handleLine(line: string): Promise<string>;
   shutdown(): Promise<void>;
@@ -14,6 +16,19 @@ export interface DaemonLineHandler {
 export function createDaemonLineHandler(daemon = new KeyboardDaemon()): DaemonLineHandler {
   return {
     async handleLine(line: string): Promise<string> {
+      if (Buffer.byteLength(line, "utf8") > MAX_IPC_LINE_BYTES) {
+        return JSON.stringify(
+          createIpcErrorResponse({
+            id: "payload_too_large",
+            type: "health.check"
+          }, {
+            code: "IPC_PAYLOAD_TOO_LARGE",
+            message: `IPC input line exceeded ${MAX_IPC_LINE_BYTES} bytes.`,
+            recoverable: true
+          })
+        );
+      }
+
       const trimmed = line.trim();
       if (!trimmed) {
         return JSON.stringify(

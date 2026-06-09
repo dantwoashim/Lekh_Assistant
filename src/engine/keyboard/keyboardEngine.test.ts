@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createKeyboardEngine, defaultTypingContext } from "./index";
 import type { KeyboardKeyEvent } from "./types";
 import { finalizeCandidates } from "./candidates";
+import { KeyboardSessionManager } from "./session";
 
 function key(value: string): KeyboardKeyEvent {
   return {
@@ -18,6 +19,7 @@ describe("KeyboardEngine session API", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
     const update = engine.updateComposition(sessionId, "swasthya", 8);
+    expect(update.action).toBe("compose");
     expect(update.compositionText).toBe("swasthya");
     expect(update.displayText).toBe("स्वास्थ्य");
     expect(update.primary?.text).toBe("स्वास्थ्य");
@@ -64,8 +66,19 @@ describe("KeyboardEngine session API", () => {
     const sessionId = engine.beginSession(defaultTypingContext("romanized"));
     engine.updateComposition(sessionId, "swas", 4);
     const update = engine.processKeyStroke(sessionId, { ...key("x"), key: undefined as unknown as string });
+    expect(update.action).toBe("passThrough");
     expect(update.compositionText).toBe("swas");
     expect(update.warnings.join(" ")).toMatch(/Malformed key event/);
+  });
+
+  it("passes native secure-field keys through without mutating composition", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), secureInput: true, fieldType: "password" });
+    const update = engine.processKeyStroke(sessionId, key("s"));
+    expect(update.action).toBe("passThrough");
+    expect(update.compositionText).toBe("");
+    expect(update.candidates).toHaveLength(0);
+    expect(update.warnings.join(" ")).toMatch(/Secure/);
   });
 
   it("handles Backspace, Delete, Tab, Escape, Space, and Enter in the native path", () => {
@@ -75,11 +88,18 @@ describe("KeyboardEngine session API", () => {
     expect(engine.processKeyStroke(sessionId, key("Backspace")).compositionText).toBe("swasthy");
     expect(engine.processKeyStroke(sessionId, key("Delete")).compositionText).toBe("swasthy");
     expect(engine.processKeyStroke(sessionId, key("Tab")).shouldShowCandidateUI).toBe(true);
-    expect(engine.processKeyStroke(sessionId, key(" ")).compositionText).toBe("swasthy ");
-    expect(engine.processKeyStroke(sessionId, key("Escape")).compositionText).toBe("");
+    const spaceCommit = engine.processKeyStroke(sessionId, key(" "));
+    expect(spaceCommit.action).toBe("commit");
+    expect(spaceCommit.committedText).toMatch(/^स्वास्थ्य /);
+    expect(spaceCommit.compositionText).toBe("");
+    const emptyBackspace = engine.processKeyStroke(sessionId, key("Backspace"));
+    expect(emptyBackspace.action).toBe("passThrough");
+    expect(engine.processKeyStroke(sessionId, key("Escape")).action).toBe("cancel");
 
     engine.updateComposition(sessionId, "swasthya", 8);
     const committed = engine.processKeyStroke(sessionId, key("Enter"));
+    expect(committed.action).toBe("commit");
+    expect(committed.committedText).toBe("स्वास्थ्य");
     expect(committed.compositionText).toBe("");
   });
 
@@ -88,6 +108,7 @@ describe("KeyboardEngine session API", () => {
     const sessionId = engine.beginSession(defaultTypingContext("romanized"));
     const update = engine.updateComposition(sessionId, "karyalaya", 9);
     const result = engine.commitCandidate(sessionId, update.primary?.id ?? "");
+    expect(result.action).toBe("commit");
     expect(result.committedText).toBe("कार्यालय");
     expect(result.consumedRange).toEqual([0, 9]);
     expect(result.memoryRecorded).toBe(true);
@@ -113,6 +134,7 @@ describe("KeyboardEngine session API", () => {
     const helper = update.candidates.find((candidate) => candidate.type === "romanized-helper" && candidate.text === "prashasan");
     expect(helper).toBeTruthy();
     const result = engine.commitCandidate(sessionId, helper!.id);
+    expect(result.action).toBe("compose");
     expect(result.committedText).toBe("");
     expect(result.memoryRecorded).toBe(false);
     const refined = engine.updateComposition(sessionId, "prashasan", 9);
@@ -393,9 +415,22 @@ describe("KeyboardEngine session API", () => {
   it("handles unknown sessions with safe results instead of crashing native callers", () => {
     const engine = createKeyboardEngine();
     const update = engine.updateComposition("missing-session", "swas", 4);
+    expect(update.action).toBe("errorFallback");
     expect(update.displayText).toBe("swas");
     expect(update.warnings.join(" ")).toMatch(/Unknown keyboard session/);
     const commit = engine.commitRaw("missing-session");
+    expect(commit.action).toBe("errorFallback");
     expect(commit.committedText).toBe("");
+  });
+
+  it("evicts idle sessions with TTL cleanup for daemon lifecycle safety", () => {
+    const manager = new KeyboardSessionManager(1, 2);
+    const first = manager.beginSession(defaultTypingContext("romanized"));
+    const second = manager.beginSession(defaultTypingContext("romanized"));
+    manager.updateComposition(second, "swas", 4);
+    expect(manager.has(first)).toBe(true);
+    expect(manager.cleanupExpired(Date.now() + 10)).toBeGreaterThan(0);
+    expect(manager.has(first)).toBe(false);
+    expect(manager.has(second)).toBe(false);
   });
 });

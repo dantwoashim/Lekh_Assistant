@@ -257,7 +257,8 @@ const scorecard = {
     windowsTsfSource: existsSync(join(root, "native/windows-tsf/skeleton/LekhTextService.cpp"))
       && existsSync(join(root, "native/windows-tsf/skeleton/Register.cpp"))
       && existsSync(join(root, "native/windows-tsf/skeleton/CMakeLists.txt")),
-    macosImkSkeleton: existsSync(join(root, "native/macos-imk/skeleton/LekhInputController.placeholder.swift")),
+    macosImkSkeleton: existsSync(join(root, "native/macos-imk/skeleton/LekhInputController.placeholder.swift"))
+      || existsSync(join(root, "native/macos-imk/skeleton/LekhKeyboardIMK/Sources/LekhKeyboardIMK/LekhInputController.swift")),
     macosImkImplementation: hasMacosImkImplementation(),
     ipcSchema: existsSync(join(root, "native/shared/ipc/lekh-keyboard-ipc.schema.json")),
     ipcValidator: existsSync(join(root, "scripts/check-ipc-schema.ts")),
@@ -623,7 +624,7 @@ Performance target misses: ${scorecard.performance.targetMissCount}
 | Area | Status |
 | --- | --- |
 | Windows TSF source | ${scorecard.native.windowsTsfSource ? "present" : "missing"} |
-| macOS IMK skeleton | ${scorecard.native.macosImkSkeleton ? "present" : "missing"} |
+| macOS IMK source | ${scorecard.native.macosImkImplementation ? "Swift proof target present" : scorecard.native.macosImkSkeleton ? "placeholder present" : "missing"} |
 | IPC schema | ${scorecard.native.ipcSchema ? "present" : "missing"} |
 | daemon lifecycle | ${scorecard.native.daemonLifecycle ? "documented" : "missing"} |
 | companion desktop shell | ${scorecard.native.companionDesktopShell ? "present" : "missing"} |

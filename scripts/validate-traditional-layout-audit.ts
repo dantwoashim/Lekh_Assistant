@@ -19,6 +19,7 @@ interface CaptureTemplate {
 }
 
 const root = process.cwd();
+const finalMode = process.argv.includes("--final") || process.env.LEKH_TRADITIONAL_AUDIT_FINAL === "1";
 const pendingFiles = [
   "data/layouts/traditional-ltk-compatible.pending.json",
   "data/layouts/traditional-standard.pending.json"
@@ -53,7 +54,17 @@ for (const file of pendingFiles) {
 for (const file of finalFiles) {
   const absolute = join(root, file);
   if (!existsSync(absolute)) {
-    warnings.push(`${file} is not present yet; Traditional physical layout remains pending.`);
+    const message = `${file} is not present yet; Traditional physical layout remains pending.`;
+    if (finalMode) failures.push(`${message} Final launch gate cannot pass without verified layout data.`);
+    else warnings.push(message);
+    continue;
+  }
+  const layout = JSON.parse(readFileSync(absolute, "utf8")) as PendingLayout;
+  if (layout.implementationAllowed !== true) {
+    failures.push(`${file} must set implementationAllowed=true only after source-of-truth and human validation.`);
+  }
+  if (!Array.isArray(layout.keys) || layout.keys.length === 0) {
+    failures.push(`${file} must contain verified key mappings before final launch.`);
   }
 }
 
@@ -87,13 +98,13 @@ const result = {
   generatedAt: new Date().toISOString(),
   command: "npm run audit:traditional-layout",
   suite: "traditional-layout-audit",
-  mode: "pending-scaffold",
+  mode: finalMode ? "final-launch-gate" : "pending-scaffold",
   fixtureCount: existsSync(join(root, fixturePath))
     ? readFileSync(join(root, fixturePath), "utf8").split("\n").filter(Boolean).length
     : 0,
   captureTemplate: existsSync(captureTemplateAbsolute) ? captureTemplatePath : undefined,
   status: failures.length === 0 ? "pass" : "fail",
-  implementationAllowed: false,
+  implementationAllowed: !finalMode && failures.length === 0 ? false : finalMode && failures.length === 0,
   warnings,
   failures
 };

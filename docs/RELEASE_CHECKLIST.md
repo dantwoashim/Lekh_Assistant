@@ -18,7 +18,7 @@ Required results:
 - privacy guard passes
 - offline service worker gate passes
 - npm audit has no moderate-or-higher vulnerabilities, or the exception is documented
-- quality report metrics are recorded in `docs/VALIDATION_REPORT.md`
+- quality report metrics are recorded in `docs/ENGINE_QUALITY_SCORECARD.md` and current launch status is recorded in `docs/CURRENT_PRODUCTION_READINESS_STATUS.md`
 
 ## Privacy Review
 
@@ -49,7 +49,7 @@ Do not claim:
 
 ## Manual Smoke Pass
 
-- Preeti tab is first.
+- Keyboard/companion status is first; Preeti remains a clearly labeled side utility.
 - Romanized tab shows candidates and full-output alternatives.
 - Traditional tab remains reference-only.
 - Feedback flow does not submit anything without explicit user action.

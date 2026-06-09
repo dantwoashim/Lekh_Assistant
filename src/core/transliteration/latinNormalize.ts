@@ -72,7 +72,6 @@ const TECHNICAL_ENGLISH = new Set([
   "print",
   "save",
   "format",
-  "table",
   "sheet",
   "document",
   "doc",

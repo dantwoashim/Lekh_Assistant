@@ -38,6 +38,15 @@ interface RuntimePack {
 
 const pack = runtimePack as RuntimePack;
 const MAX_RUNTIME_CANDIDATES = 6;
+const PREFIX_BUCKET_LENGTH = 3;
+
+interface RuntimePackIndexes {
+  words: Map<string, RuntimeWord[]>;
+  phrases: Map<string, RuntimePhrase[]>;
+  names: Map<string, RuntimeName[]>;
+}
+
+let indexes: RuntimePackIndexes | undefined;
 
 export function runtimePackVersion(): string {
   return pack.version;
@@ -47,17 +56,15 @@ export function runtimePackCandidates(input: string, context?: TypingContext, ra
   if (context?.secureInput || context?.fieldType === "password" || context?.fieldType === "code") return [];
   const normalized = normalizeRoman(input);
   if (normalized.length < 2) return [];
+  const packIndexes = runtimePackIndexes();
   const rows = [
-    ...pack.phrases
-      .filter((row) => row.romanized === normalized || (normalized.length >= 4 && row.romanized.startsWith(normalized)))
+    ...matchingRows(packIndexes.phrases, normalized, 4, MAX_RUNTIME_CANDIDATES)
       .slice(0, MAX_RUNTIME_CANDIDATES)
       .map((row, index): Candidate => runtimeCandidate(row, "phrase", index, rangeEnd, context, "runtime pack", row.romanized === normalized)),
-    ...pack.words
-      .filter((row) => row.romanized === normalized || (normalized.length >= 3 && row.romanized.startsWith(normalized)))
+    ...matchingRows(packIndexes.words, normalized, 3, MAX_RUNTIME_CANDIDATES)
       .slice(0, MAX_RUNTIME_CANDIDATES)
       .map((row, index): Candidate => runtimeCandidate(row, "word", index, rangeEnd, context, "runtime pack", row.romanized === normalized)),
-    ...pack.names
-      .filter((row) => row.romanized === normalized || (normalized.length >= 3 && row.romanized.startsWith(normalized)))
+    ...matchingRows(packIndexes.names, normalized, 3, 3)
       .slice(0, 3)
       .map((row, index): Candidate => runtimeCandidate(row, "word", index, rangeEnd, context, "name index", row.romanized === normalized)),
   ];
@@ -104,4 +111,54 @@ function currentToken(input: string): string {
 
 function normalizeRoman(input: string): string {
   return input.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function runtimePackIndexes(): RuntimePackIndexes {
+  if (!indexes) {
+    indexes = {
+      words: buildPrefixIndex(pack.words),
+      phrases: buildPrefixIndex(pack.phrases),
+      names: buildPrefixIndex(pack.names)
+    };
+  }
+  return indexes;
+}
+
+function buildPrefixIndex<T extends { romanized: string }>(rows: T[]): Map<string, T[]> {
+  const index = new Map<string, T[]>();
+  for (const row of rows) {
+    for (const key of bucketKeysForRow(row.romanized)) {
+      index.set(key, [...(index.get(key) ?? []), row]);
+    }
+  }
+  return index;
+}
+
+function matchingRows<T extends { romanized: string }>(
+  index: Map<string, T[]>,
+  normalized: string,
+  prefixMinLength: number,
+  limit: number
+): T[] {
+  const bucket = index.get(bucketKey(normalized)) ?? [];
+  const matches: T[] = [];
+  for (const row of bucket) {
+    if (row.romanized === normalized || (normalized.length >= prefixMinLength && row.romanized.startsWith(normalized))) {
+      matches.push(row);
+      if (matches.length >= limit) break;
+    }
+  }
+  return matches;
+}
+
+function bucketKey(value: string): string {
+  return value.slice(0, Math.min(PREFIX_BUCKET_LENGTH, value.length));
+}
+
+function bucketKeysForRow(value: string): string[] {
+  const keys = new Set<string>();
+  for (let length = 1; length <= Math.min(PREFIX_BUCKET_LENGTH, value.length); length += 1) {
+    keys.add(value.slice(0, length));
+  }
+  return Array.from(keys);
 }

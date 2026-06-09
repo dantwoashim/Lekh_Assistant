@@ -19,4 +19,13 @@ describe("Windows TSF source safety contract", () => {
     expect(ipc).toContain("LEKH_KEYBOARD_PIPE_NAME");
     expect(guids).toContain("kLekhPipeNamePrefix");
   });
+
+  it("uses overlapped named-pipe IO with bounded hot-path timeout", () => {
+    const ipc = readFileSync(join(root, "native/windows-tsf/skeleton/IpcClient.cpp"), "utf8");
+    expect(ipc).toContain("FILE_FLAG_OVERLAPPED");
+    expect(ipc).toContain("WaitForSingleObject");
+    expect(ipc).toContain("CancelIo");
+    expect(ipc).toContain("writeFileWithTimeout");
+    expect(ipc).toContain("readFileWithTimeout");
+  });
 });

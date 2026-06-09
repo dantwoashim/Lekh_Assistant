@@ -16,7 +16,7 @@ No native Windows TSF or macOS IMK production implementation exists at this base
 
 Prompt 1 completion evidence exists in:
 
-- `docs/PROMPT_1_PRODUCTION_FOUNDATION_COMPLETION_REPORT.md`
+- `docs/archive/generated-history/PROMPT_1_PRODUCTION_FOUNDATION_COMPLETION_REPORT.md`
 - `docs/PROMPT_1_PRODUCTION_BASELINE_AUDIT.md`
 - `docs/VERIFICATION_STABILITY_REPORT.md`
 - `docs/KEYBOARD_ENGINE_API.md`

@@ -27,10 +27,14 @@ const requiredMetadataFields = [
   "notes"
 ];
 
-for (const tracked of gitTrackedFiles(ignoredRawRoots)) {
-  if (!tracked.endsWith(".gitignore")) {
-    violations.push(`Raw/private user-data path is tracked: ${tracked}`);
+try {
+  for (const tracked of gitTrackedFiles(ignoredRawRoots)) {
+    if (!tracked.endsWith(".gitignore")) {
+      violations.push(`Raw/private user-data path is tracked: ${tracked}`);
+    }
   }
+} catch (error) {
+  violations.push(error instanceof Error ? error.message : String(error));
 }
 
 const consentIds = new Set<string>();
@@ -82,11 +86,13 @@ function assertFixtureConsent(file: string, fixture: Record<string, unknown>, co
 
 function gitTrackedFiles(paths: string[]): string[] {
   try {
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, encoding: "utf8", stdio: "pipe" });
     return execFileSync("git", ["ls-files", ...paths], { cwd: root, encoding: "utf8" })
       .split(/\n/)
       .filter(Boolean);
-  } catch {
-    return [];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`User-data safety check requires Git metadata or a release manifest; failing closed because Git inspection failed. ${message}`);
   }
 }
 

@@ -1,9 +1,10 @@
 import { createServer } from "node:net";
 import type { Server, Socket } from "node:net";
-import { createDaemonLineHandler } from "./lineProtocol";
+import { MAX_IPC_LINE_BYTES, createDaemonLineHandler } from "./lineProtocol";
 import { defaultWindowsPipeName } from "./windowsPipeName";
 
 export const WINDOWS_PIPE_NAME = defaultWindowsPipeName();
+const SOCKET_IDLE_TIMEOUT_MS = 5_000;
 
 export interface NamedPipeDaemon {
   pipeName: string;
@@ -37,10 +38,31 @@ export async function startWindowsNamedPipeDaemon(pipeName = defaultWindowsPipeN
 
 function wireSocket(socket: Socket, handler: ReturnType<typeof createDaemonLineHandler>): void {
   socket.setEncoding("utf8");
+  socket.on("error", () => undefined);
+  socket.setTimeout(SOCKET_IDLE_TIMEOUT_MS, () => {
+    socket.destroy(new Error("Named pipe client timed out."));
+  });
   let buffer = "";
 
   socket.on("data", (chunk) => {
     buffer += chunk;
+    if (Buffer.byteLength(buffer, "utf8") > MAX_IPC_LINE_BYTES) {
+      socket.write(
+        `${JSON.stringify({
+          id: "payload_too_large",
+          type: "health.check",
+          version: 1,
+          ok: false,
+          error: {
+            code: "IPC_PAYLOAD_TOO_LARGE",
+            message: `IPC input line exceeded ${MAX_IPC_LINE_BYTES} bytes.`,
+            recoverable: true
+          }
+        })}\n`,
+        () => socket.destroy()
+      );
+      return;
+    }
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
     for (const line of lines) {

@@ -62,6 +62,55 @@ std::wstring configuredPipeName() {
   return std::wstring(kLekhPipeNamePrefix) + *sid;
 }
 
+std::optional<DWORD> waitForOverlappedBytes(HANDLE handle, OVERLAPPED& overlapped, DWORD timeoutMs) {
+  const DWORD waitResult = WaitForSingleObject(overlapped.hEvent, timeoutMs);
+  if (waitResult != WAIT_OBJECT_0) {
+    CancelIo(handle);
+    return std::nullopt;
+  }
+
+  DWORD bytes = 0;
+  if (!GetOverlappedResult(handle, &overlapped, &bytes, FALSE)) {
+    return std::nullopt;
+  }
+  return bytes;
+}
+
+bool writeFileWithTimeout(HANDLE pipe, const char* data, DWORD bytesToWrite, DWORD timeoutMs) {
+  OVERLAPPED overlapped = {};
+  overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  if (!overlapped.hEvent) return false;
+
+  DWORD bytesWritten = 0;
+  BOOL wrote = WriteFile(pipe, data, bytesToWrite, &bytesWritten, &overlapped);
+  if (!wrote && GetLastError() == ERROR_IO_PENDING) {
+    const std::optional<DWORD> completedBytes = waitForOverlappedBytes(pipe, overlapped, timeoutMs);
+    CloseHandle(overlapped.hEvent);
+    return completedBytes.has_value() && *completedBytes == bytesToWrite;
+  }
+
+  CloseHandle(overlapped.hEvent);
+  return wrote && bytesWritten == bytesToWrite;
+}
+
+std::optional<DWORD> readFileWithTimeout(HANDLE pipe, char* data, DWORD bufferSize, DWORD timeoutMs) {
+  OVERLAPPED overlapped = {};
+  overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  if (!overlapped.hEvent) return std::nullopt;
+
+  DWORD bytesRead = 0;
+  BOOL read = ReadFile(pipe, data, bufferSize, &bytesRead, &overlapped);
+  if (!read && GetLastError() == ERROR_IO_PENDING) {
+    const std::optional<DWORD> completedBytes = waitForOverlappedBytes(pipe, overlapped, timeoutMs);
+    CloseHandle(overlapped.hEvent);
+    return completedBytes;
+  }
+
+  CloseHandle(overlapped.hEvent);
+  if (!read || bytesRead == 0) return std::nullopt;
+  return bytesRead;
+}
+
 } // namespace
 
 LekhIpcClient::LekhIpcClient(std::wstring pipeName)
@@ -78,7 +127,15 @@ bool LekhIpcClient::canConnect(DWORD timeoutMs) const {
 std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine, DWORD timeoutMs) const {
   if (!WaitNamedPipeW(pipeName_.c_str(), timeoutMs)) return std::nullopt;
 
-  HANDLE pipe = CreateFileW(pipeName_.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  HANDLE pipe = CreateFileW(
+    pipeName_.c_str(),
+    GENERIC_READ | GENERIC_WRITE,
+    0,
+    nullptr,
+    OPEN_EXISTING,
+    FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+    nullptr
+  );
   if (pipe == INVALID_HANDLE_VALUE) return std::nullopt;
 
   DWORD mode = PIPE_READMODE_MESSAGE;
@@ -86,19 +143,16 @@ std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine,
 
   std::string payload = toUtf8(jsonLine);
   if (payload.empty() || payload.back() != '\n') payload.push_back('\n');
-  DWORD bytesWritten = 0;
   const DWORD bytesToWrite = static_cast<DWORD>(payload.size());
-  const BOOL wrote = WriteFile(pipe, payload.data(), bytesToWrite, &bytesWritten, nullptr);
-  if (!wrote || bytesWritten != bytesToWrite) {
+  if (!writeFileWithTimeout(pipe, payload.data(), bytesToWrite, timeoutMs)) {
     CloseHandle(pipe);
     return std::nullopt;
   }
 
   std::vector<char> buffer(16384);
-  DWORD bytesRead = 0;
-  const BOOL read = ReadFile(pipe, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr);
+  const std::optional<DWORD> bytesRead = readFileWithTimeout(pipe, buffer.data(), static_cast<DWORD>(buffer.size()), timeoutMs);
   CloseHandle(pipe);
-  if (!read || bytesRead == 0) return std::nullopt;
+  if (!bytesRead || *bytesRead == 0) return std::nullopt;
 
-  return fromUtf8(buffer.data(), bytesRead);
+  return fromUtf8(buffer.data(), *bytesRead);
 }

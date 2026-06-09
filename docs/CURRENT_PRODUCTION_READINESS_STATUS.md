@@ -6,19 +6,19 @@ Generated: 2026-06-09
 
 Final launch recommendation: `NOT_READY_BLOCKED_BY_EXTERNAL_NATIVE_REQUIREMENTS`.
 
-The JavaScript/TypeScript keyboard engine, default verification loop, corpus package gate, active blind leakage gate, bundle budget gate, third-party notice gate, Keyboard Lab validation path, companion shell, unsigned macOS companion dev package, macOS IMK Swift proof target, dev daemon/IPC contract, and privacy checks are currently passing. The project is not public-launch-ready because installed macOS IMK/XPC validation still requires a native app bundle/test environment, Windows TSF has not been built/tested on Windows, signed installers are unavailable, Traditional physical layout needs human LTK validation, and real pilot feedback is not complete.
+The JavaScript/TypeScript keyboard engine, default verification loop, hard-timeout test gate, corpus package gate, active blind leakage gate, bundle budget gate, third-party notice gate, Keyboard Lab validation path, companion shell, unsigned macOS companion dev package, macOS IMK Swift proof target, dev daemon/IPC contract, and privacy checks are currently passing. The native-facing engine API now returns explicit host actions (`passThrough`, `compose`, `commit`, `cancel`, `errorFallback`), user-data safety fails closed without Git metadata, Windows TSF IPC source uses bounded overlapped named-pipe IO, and the daemon line protocol rejects oversized IPC payloads. The project is not public-launch-ready because installed macOS IMK/XPC validation still requires host-app tests, Windows TSF has not been built/tested on Windows, signed installers are unavailable, Traditional physical layout needs human LTK validation, and real pilot feedback is not complete.
 
 ## User-Reported Readiness List
 
 | Area | Current status | Evidence | Remaining blocker |
 | --- | --- | --- | --- |
 | Production verification | ready for default repo gate | `npm run verify` passed on 2026-06-09 with bundle budget and notice gates | rerun before release tag |
-| Full test reliability | ready for default suites | 34 files / 204 tests passed in the latest `npm run verify`; `test:companion` passed standalone with 9 tests | keep timing gates in CI |
+| Full test reliability | ready for default suites | 34 files / 208 tests passed in `npm run verify`; `test:native-scaffold` passed with 7 files / 21 tests | keep timing gates in CI |
 | Full corpus | partial | D1-D8 row counts present; package check passed | only 124 human/project-reviewed gold rows |
 | Real blind benchmark | partial | 100k blind rows frozen; active disjointness contamination is `0`; 1,896 public-proof eligible benchmark fixtures | not a 100k human-reviewed real-world blind set |
 | Mixed Nepali-English flagship behavior | ready for engine/lab validation | typing-session protected/mixed suites pass | private pilot tuning still needed |
-| Traditional physical keyboard | blocked-human | audit gate passes and prevents fake layout | LTK capture and typist validation required |
-| Windows native keyboard | blocked-native-environment | TSF source exists and safe pass-through guard is tested by source scan | real Windows build, TSF host tests, signing cert |
+| Traditional physical keyboard | blocked-human | normal audit gate passes pending scaffold; `audit:traditional-layout:final` fails until verified layout JSON exists | LTK capture and typist validation required |
+| Windows native keyboard | blocked-native-environment | TSF source exists, safe pass-through guard is tested by source scan, and IPC client uses bounded overlapped IO | real Windows build, TSF host tests, signing cert |
 | macOS native keyboard | blocked-native-environment | `npm run build:macos` passes a Swift IMK proof target | installable IMK bundle, XPC service, host-app tests, Developer ID/notarization |
 | Production companion app | partial | `npm run build:companion` passed; `npm run package:macos:unsigned` produced `.app` | signed/notarized package and daemon/service integration |
 | Installers/signing | blocked-external plus implementation work | Windows package command now blocks honestly on macOS; mac unsigned companion package passes | Windows release machine, Authenticode cert, Developer ID, notarization |
@@ -54,6 +54,11 @@ The JavaScript/TypeScript keyboard engine, default verification loop, corpus pac
 | P3-01 | partial | current docs updated; historical prompt reports remain archival clutter. |
 | P3-02 | partial | native docs are tied to explicit build/package blockers. |
 | P3-03 | pending | runtime JSON packs work; compact binary/trie packs remain optimization work. |
+| P0 native action gap | fixed | `CandidateUpdate.action` and `CommitResult.action` now expose host decisions; keyboard tests cover pass-through, commit, cancel, and error fallback. |
+| P0 user-data fail-open | fixed | `check:user-data` passes in Git and fails closed outside Git metadata. |
+| P0 Traditional final gate | fixed | `audit:traditional-layout:final` exits 1 with explicit missing verified layout files. |
+| P1 runtime scan risk | improved | runtime suggestion pack now uses a lazy prefix index instead of whole-pack scans per keystroke. |
+| P1 IPC hardening | improved | daemon line protocol has 64KB payload cap, named-pipe socket timeout, and oversized payload tests. |
 
 ## Latest Key Metrics
 
@@ -64,9 +69,9 @@ The JavaScript/TypeScript keyboard engine, default verification loop, corpus pac
 | duplicate candidate count | 0 |
 | shortcut sequence validity | 1.0 |
 | Romanized live update p95 | 1 ms |
-| dictionary lookup p95 | 13 ms |
+| dictionary lookup p95 | 8 ms |
 | memory ranking p95 | 0 ms |
-| 5KB Preeti side utility p95 | 64 ms |
+| 5KB Preeti side utility p95 | 19 ms |
 | public-proof eligible fixtures | 1,896 |
 | human/project-reviewed gold rows | 124 |
 | frozen blind rows | 100,000 |
@@ -75,12 +80,13 @@ The JavaScript/TypeScript keyboard engine, default verification loop, corpus pac
 
 | Command | Result |
 | --- | --- |
-| `npm run test:native-scaffold` | passed, 8 files / 21 tests |
-| `npm run build:daemon` | passed in current run history |
+| `npm run test:native-scaffold` | passed, 7 files / 21 tests |
+| `npm run build:daemon` | passed |
 | `npm run build:windows` | `blocked-native-environment` on darwin-arm64 |
 | `npm run package:windows:unsigned` | `blocked-native-environment` on darwin-arm64; manual Windows commands emitted |
 | `npm run build:macos` | passed; Swift IMK proof target builds |
 | `npm run package:macos:unsigned` | passed; produced `/Users/rohanbasnet14/Documents/Romanized-Nepali-Keyboard/release/mac-arm64/Lekh Keyboard Companion.app` |
+| `npm run audit:traditional-layout:final` | expected fail; verified layout JSON files are missing, so final launch gate remains blocked-human |
 
 ## Public Claim Boundary
 

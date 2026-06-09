@@ -1,6 +1,6 @@
 # Engine Quality Scorecard
 
-Updated: 2026-06-09T07:10:21.705Z
+Updated: 2026-06-09T08:29:04.308Z
 
 This scorecard reads existing fresh report files from `bench/reports`. It does not recompute the heavy benchmark universe. Missing, stale, zero-fixture, or schema-weak reports are visible below.
 
@@ -111,9 +111,9 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | KeyboardEngine partial warm timeout | 0 | 50 | pass |
 | Keyboard Romanized live update | 1 | 20 | pass |
 | Keyboard candidate count cap | 1 | 20 | pass |
-| Keyboard Traditional Unicode suggestion | 2 | 20 | pass |
+| Keyboard Traditional Unicode suggestion | 3 | 20 | pass |
 | Keyboard proofread hint update | 0 | 40 | pass |
-| Keyboard dictionary lookup | 12 | 30 | pass |
+| Keyboard dictionary lookup | 8 | 30 | pass |
 | Keyboard memory ranking update | 0 | 10 | pass |
 | Keyboard candidate commit | 1 | 10 | pass |
 | Native IPC JSON envelope simulation | 0 | 10 | pass |
@@ -125,7 +125,7 @@ Performance target misses: 0
 | Area | Status |
 | --- | --- |
 | Windows TSF source | present |
-| macOS IMK skeleton | missing |
+| macOS IMK source | Swift proof target present |
 | IPC schema | present |
 | daemon lifecycle | documented |
 | companion desktop shell | present |

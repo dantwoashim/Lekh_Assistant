@@ -3,6 +3,7 @@ import type { Candidate, CommitResult, KeyboardSession, SessionId } from "./type
 export function commitCandidateResult(session: KeyboardSession, candidate: Candidate): CommitResult {
   return {
     sessionId: session.sessionId,
+    action: "commit",
     committedText: candidate.text,
     consumedRange: candidate.replaceRange ?? [0, session.compositionText.length],
     followupCandidates: [],
@@ -14,6 +15,7 @@ export function commitCandidateResult(session: KeyboardSession, candidate: Candi
 export function commitRawResult(session: KeyboardSession): CommitResult {
   return {
     sessionId: session.sessionId,
+    action: "commit",
     committedText: session.compositionText,
     consumedRange: [0, session.compositionText.length],
     followupCandidates: [],
@@ -25,6 +27,7 @@ export function commitRawResult(session: KeyboardSession): CommitResult {
 export function emptyCommitResult(sessionId: SessionId): CommitResult {
   return {
     sessionId,
+    action: "errorFallback",
     committedText: "",
     consumedRange: [0, 0],
     followupCandidates: [],

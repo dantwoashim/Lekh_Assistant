@@ -28,7 +28,8 @@ Start here when changing the engine.
 ## Validation
 
 - Quality scorecard: `docs/ENGINE_QUALITY_SCORECARD.md`
-- Validation report: `docs/VALIDATION_REPORT.md`
+- Current readiness status: `docs/CURRENT_PRODUCTION_READINESS_STATUS.md`
+- Archived generated history: `docs/archive/generated-history/`
 - Failure taxonomy: `docs/FAILURE_TAXONOMY.md`
 - Real documents: `docs/REAL_DOCUMENT_COLLECTION_PROTOCOL.md`
 - Competitor probes: `docs/COMPETITOR_PROBE_PROTOCOL.md`

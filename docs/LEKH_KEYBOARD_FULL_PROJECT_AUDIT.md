@@ -24,6 +24,28 @@ That is not the same as a production-ready Windows/macOS keyboard. Lekh Keyboard
 Allowed claim today: the engine, lab, data pipeline, daemon scaffold, companion shell, and native proof paths are ready for platform validation.  
 Forbidden claim today: fully launched, production Windows IME, production macOS IMK, 99% universal accuracy, complete Traditional keyboard, signed public release, or competitor-beating quality.
 
+## 1.1 Follow-Up Closure on 2026-06-09
+
+This follow-up pass closed or tightened several repo-executable issues from the launch-blocker table:
+
+| Area | Current evidence |
+| --- | --- |
+| Test hang | `npm run test` completed cleanly in the latest verify run: 34 files / 208 tests passed. |
+| Native scaffold hang | `npm run test:native-scaffold` completed: 7 files / 21 tests passed. |
+| Daemon build | `npm run build:daemon` completed and emitted `native/daemon/dist/lekh-keyboard-daemon.mjs`. |
+| Scorecard | `npm run scorecard:engine` completed from fresh reports and still recommends `NOT_READY_BLOCKED_BY_EXTERNAL_NATIVE_REQUIREMENTS`. |
+| User-data safety | Git metadata inspection now fails closed; outside a Git checkout the check exits 1 instead of treating Git failure as an empty tracked-file list. |
+| Engine host action | `CandidateUpdate` and `CommitResult` now include explicit native host actions: `passThrough`, `compose`, `commit`, `cancel`, and `errorFallback`. |
+| Native key semantics | Space commits active composition, empty backspace/delete/space pass through, secure-field native keys pass through without mutating composition, and tests cover those paths. |
+| Session lifecycle | Session manager now has TTL cleanup and max-session LRU eviction for daemon/native lifecycle safety. |
+| Runtime pack lookup | Runtime suggestion packs now use a lazy prefix index instead of full-pack scans per keystroke. |
+| Traditional final gate | `npm run audit:traditional-layout:final` now fails until verified final layout files exist. The normal development audit still passes the honest pending scaffold. |
+| Windows IPC freeze risk | Windows TSF IPC client source uses overlapped named-pipe read/write with bounded timeout and cancellation. |
+| Daemon IPC hardening | JSONL IPC has a 64KB line cap, named-pipe sockets have idle timeout, and oversized payloads return a recoverable IPC error. |
+| Docs hygiene | Historical completion and validation narratives were moved to `docs/archive/generated-history/`; active status lives in `docs/CURRENT_PRODUCTION_READINESS_STATUS.md` and `docs/ENGINE_QUALITY_SCORECARD.md`. |
+
+Remaining launch blockers are still real: Windows TSF must be built/tested on Windows, macOS IMK/XPC must be installed and tested in target apps, Traditional physical layout needs human/source-of-truth validation, signed installers need certificates, and pilot feedback must be collected with consent.
+
 ## 2. Audit Methodology
 
 This audit used fresh local command evidence and did not treat existing completion reports as proof. The command matrix was run after `npm ci`, and each command wrote a log under the evidence folder.
@@ -77,7 +99,7 @@ Fresh command matrix summary:
 | --- | --- | ---: | --- |
 | `npm ci` | pass | 7.211s | Installed 454 packages, 0 vulnerabilities; deprecation warnings remain. |
 | `npm run typecheck` | pass | 8.783s | TypeScript project build passed. |
-| `npm run test` | pass | 42.096s | 34 files / 204 tests passed. |
+| `npm run test` | pass | latest verify | 34 files / 208 tests passed. |
 | `npm run build` | pass with controlled warning | latest verify | Vite build passed; shell/feature chunks are split, lazy lexicon/Hunspell data chunks remain large. |
 | `npm run check:privacy` | pass | 0.536s | Privacy scan passed. |
 | `npm run check:engine-local` | pass | 0.325s | Engine local-first check passed. |
@@ -99,18 +121,18 @@ Fresh command matrix summary:
 | `npm run test:keyboard` | pass | 7.598s | 3 files / 37 tests passed. |
 | `npm run test:dictionary` | pass | 7.402s | 1 file / 12 tests passed. |
 | `npm run test:companion` | pass | 7.082s | Companion smoke tests passed. |
-| `npm run test:native-scaffold` | pass | 9.833s | 7 files / 19 tests passed. |
+| `npm run test:native-scaffold` | pass | 10.70s | 7 files / 21 tests passed. |
 | `npm run benchmark:dictionary` | pass | 2.913s | Dictionary typing-session suite passed. |
 | `npm run benchmark:memory` | pass | 2.941s | Memory ranking/control suite passed. |
 | `npm run bench:perf:full` | pass | 4.554s | Full perf suite passed. |
 | `npm run build:companion` | pass | 23.361s | Daemon bundle, web build, and Electron dir build passed. |
 | `npm run build:daemon` | pass | 11.443s | Built `native/daemon/dist/lekh-keyboard-daemon.mjs`. |
-| `npm run build:windows` | blocked | 0.220s | Requires Windows host with MSVC and Windows SDK. |
+| `npm run build:windows` | blocked | 0.148s | Requires Windows host with MSVC and Windows SDK. |
 | `npm run build:macos` | pass | 1.282s | Swift IMK proof target builds. |
 | `npm run package:windows` | blocked | 0.173s | Signed Windows installer requires signing cert env. |
-| `npm run package:windows:unsigned` | blocked | 0.168s | Windows NSIS/TSF release must be produced on Windows. |
+| `npm run package:windows:unsigned` | blocked | 0.207s | Windows NSIS/TSF release must be produced on Windows. |
 | `npm run package:macos` | blocked | 0.165s | Requires Developer ID and notarization credentials. |
-| `npm run package:macos:unsigned` | pass | 20.165s | Produced unsigned companion app under `release/mac-arm64`. |
+| `npm run package:macos:unsigned` | pass | 21.599s | Produced unsigned companion app under `release/mac-arm64`. |
 
 The four failing commands are correctly categorized as external/native-environment blockers, not TypeScript or test failures. They still block production launch for the affected platforms.
 
@@ -247,11 +269,11 @@ Fresh full performance report from `bench/reports/perf-report.json`:
 | 5KB mixed Preeti paragraph | 19 ms | 100 ms | pass |
 | KeyboardEngine warm startup | 0 ms | 500 ms | pass |
 | Partial warm timeout | 0 ms | 50 ms | pass |
-| Romanized live update | 3 ms | 20 ms | pass |
+| Romanized live update | 1 ms | 20 ms | pass |
 | Candidate count cap | 1 ms | 20 ms | pass |
-| Traditional Unicode suggestion | 5 ms | 20 ms | pass |
+| Traditional Unicode suggestion | 3 ms | 20 ms | pass |
 | Proofread hint update | 0 ms | 40 ms | pass |
-| Dictionary lookup | 10 ms | 30 ms | pass |
+| Dictionary lookup | 8 ms | 30 ms | pass |
 | Memory ranking update | 0 ms | 10 ms | pass |
 | Candidate commit | 1 ms | 10 ms | pass |
 | Native IPC JSON envelope simulation | 0 ms | 10 ms | pass |

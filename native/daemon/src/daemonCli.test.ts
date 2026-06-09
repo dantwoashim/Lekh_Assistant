@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultTypingContext } from "../../../src/engine/keyboard";
 import { createIpcRequest } from "../../shared/ipc/messages";
-import { createDaemonLineHandler } from "./lineProtocol";
+import { MAX_IPC_LINE_BYTES, createDaemonLineHandler } from "./lineProtocol";
 
 describe("daemon CLI line protocol", () => {
   it("handles JSONL IPC requests and returns JSON responses", async () => {
@@ -30,6 +30,16 @@ describe("daemon CLI line protocol", () => {
 
     const empty = JSON.parse(await handler.handleLine(" "));
     expect(empty.error).toEqual(expect.objectContaining({ code: "IPC_EMPTY_LINE", recoverable: true }));
+
+    await handler.shutdown();
+  });
+
+  it("rejects oversized JSONL payloads before parsing", async () => {
+    const handler = createDaemonLineHandler();
+    const oversized = "x".repeat(MAX_IPC_LINE_BYTES + 1);
+    const response = JSON.parse(await handler.handleLine(oversized));
+    expect(response).toEqual(expect.objectContaining({ ok: false, type: "health.check" }));
+    expect(response.error).toEqual(expect.objectContaining({ code: "IPC_PAYLOAD_TOO_LARGE", recoverable: true }));
 
     await handler.shutdown();
   });

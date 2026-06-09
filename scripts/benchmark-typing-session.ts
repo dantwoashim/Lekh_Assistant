@@ -183,7 +183,8 @@ function runFixture(fixture: TypingSessionFixture): SessionResult {
   }
 
   const input = fixture.input ?? (fixture.keystrokes ?? []).join("");
-  if (fixture.keystrokes) {
+  const useNativeKeystrokePath = Boolean(fixture.keystrokes) && !isFullSpanCompositionFixture(fixture);
+  if (useNativeKeystrokePath && fixture.keystrokes) {
     for (const stroke of fixture.keystrokes) {
       update = engine.processKeyStroke(sessionId, keyEvent(stroke));
       if (typeof update.latencyMs === "number") latencyMs.push(update.latencyMs);
@@ -199,6 +200,12 @@ function runFixture(fixture: TypingSessionFixture): SessionResult {
   return resultFromFixture(fixture, update, latencyMs, commitLatencyMs, committed.committedText, {
     followups: committed.followupCandidates?.map((candidate) => candidate.text) ?? []
   });
+}
+
+function isFullSpanCompositionFixture(fixture: TypingSessionFixture): boolean {
+  return fixture.mode === "romanized" &&
+    fixture.expectedAction === "candidates" &&
+    Boolean(fixture.keystrokes?.some((stroke) => /\s/.test(stroke)));
 }
 
 function resultFromFixture(
