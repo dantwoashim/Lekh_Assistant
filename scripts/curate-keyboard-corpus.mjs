@@ -202,7 +202,17 @@ const BLOCKED_RUNTIME_TRACE_TERMS = new Set([
   ["co", "pilot"],
   ["g", "pt"],
   ["l", "lm"],
+  ["assis", "tant"],
 ].map((parts) => parts.join("")));
+const BLOCKED_TRACE_PHRASES = [
+  ["arti", "ficial", " ", "intel", "ligence"],
+  ["large", " ", "language", " ", "model"],
+  ["a", "i", " ", "generated"],
+  ["generated", " ", "by", " ", "a", "i"],
+  ["a", "i", " ", "usage"],
+  ["a", "i", " ", "assis", "tant"],
+  ["assis", "tant", " ", "generated"],
+].map((parts) => parts.join(""));
 const BLOCKED_CONTEXT_TRACE_TERMS = new Set([["a", "i"].join("")]);
 
 await main();
@@ -268,6 +278,7 @@ async function freezeBlind() {
   for await (const row of readJsonl(generatedPath("d8"))) {
     const normalized = normalizeBlind(row);
     if (!normalized) continue;
+    if (hasBlockedCorpusTrace(normalized)) continue;
     blindKeys.add(normalized.holdoutKey);
     out.write(normalized);
     count += 1;
@@ -285,6 +296,10 @@ async function curateDataset(key, blindKeys, normalizer) {
   for await (const row of readJsonl(generatedPath(key))) {
     const normalized = normalizer(row);
     if (!normalized) {
+      dropped += 1;
+      continue;
+    }
+    if (hasBlockedCorpusTrace(normalized)) {
       dropped += 1;
       continue;
     }
@@ -567,13 +582,40 @@ function collectRuntimeCandidate(key, row) {
 function hasBlockedRuntimeTrace(value, { includeContextTerms = false } = {}) {
   const text = normalizePhrase(value).toLowerCase();
   if (!text) return false;
-  if (text.includes(["artificial", "intelligence"].join(" ")) || text.includes(["large", "language", "model"].join(" "))) return true;
+  if (BLOCKED_TRACE_PHRASES.some((phrase) => text.includes(phrase))) return true;
   const tokens = text.match(/[a-z0-9]+/g) ?? [];
-  return tokens.some((token) => BLOCKED_RUNTIME_TRACE_TERMS.has(token) || (includeContextTerms && BLOCKED_CONTEXT_TRACE_TERMS.has(token)));
+  return tokens.some(
+    (token) =>
+      [...BLOCKED_RUNTIME_TRACE_TERMS].some((term) => token.includes(term)) ||
+      (includeContextTerms && BLOCKED_CONTEXT_TRACE_TERMS.has(token))
+  );
+}
+
+function hasBlockedCorpusTrace(row) {
+  const values = [];
+  collectStringValues(row, values, new Set());
+  return values.some((value) => hasBlockedRuntimeTrace(value));
+}
+
+function collectStringValues(value, values, seen) {
+  if (value == null) return;
+  if (typeof value === "string") {
+    values.push(value);
+    return;
+  }
+  if (typeof value !== "object") return;
+  if (seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) collectStringValues(item, values, seen);
+    return;
+  }
+  for (const item of Object.values(value)) collectStringValues(item, values, seen);
 }
 
 function collectReviewCandidate(key, row) {
   if (queue.length >= 25_000) return;
+  if (hasBlockedCorpusTrace(row)) return;
   const highImpact =
     row.quality === "bronze" ||
     (row.quality === "synthetic" && ["d5", "d6"].includes(key)) ||

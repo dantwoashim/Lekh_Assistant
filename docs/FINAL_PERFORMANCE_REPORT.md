@@ -1,6 +1,6 @@
 # Final Performance Report
 
-Generated: 2026-05-28
+Generated: 2026-06-08
 
 Report sources:
 
@@ -15,24 +15,24 @@ Report sources:
 | --- | ---: | ---: | --- |
 | KeyboardEngine warm startup | 0 | 500 | complete |
 | KeyboardEngine partial warm timeout | 0 | 50 | complete |
-| Romanized live update | 9 | 20 | complete |
-| Candidate count cap | 8 | 20 | complete |
-| Traditional Unicode suggestion | 9 | 20 | complete |
+| Romanized live update | 1 | 20 | complete |
+| Candidate count cap | 1 | 20 | complete |
+| Traditional Unicode suggestion | 2 | 20 | complete |
 | Proofread hint update | 0 | 40 | complete |
-| Dictionary lookup | 15 | 30 | complete |
-| Memory ranking update | 4 | 10 | complete |
-| Candidate commit | 4 | 10 | complete |
+| Dictionary lookup | 8 | 30 | complete |
+| Memory ranking update | 0 | 10 | complete |
+| Candidate commit | 1 | 10 | complete |
 | Native IPC JSON envelope simulation | 0 | 10 | complete |
 
 ## Typing Session Quality
 
 Main typing-session report:
 
-- fixture count: 60.
+- fixture count: 66.
 - failed sessions: 0.
-- candidate p50: 3 ms.
-- candidate p95: 6 ms.
-- update p95: 6 ms.
+- candidate p50: 0 ms.
+- candidate p95: 1 ms.
+- update p95: 1 ms.
 - commit p95: 0 ms.
 - duplicate candidate count: 0.
 - shortcut sequence validity: 1.
@@ -41,18 +41,18 @@ Main typing-session report:
 - memory boost success rate: 1.
 - next-word success rate: 1.
 - Romanized label hit rate: 1.
-- KSR mean baseline: 0.02133169490981017.
+- KSR mean baseline: 0.0162889756411158.
 
 Focused reports:
 
 - dictionary fixtures: 5, failed sessions: 0, dictionary hit rate: 1.
-- memory fixtures: 4, failed sessions: 0, memory boost success rate: 1, p95 update: 12 ms.
+- memory fixtures: 4, failed sessions: 0, memory boost success rate: 1, p95 update: 0 ms.
 
 ## Bundle and Side-Utility Status
 
 The production build remains functional and benchmark data is not bundled into runtime. The app still emits a large chunk warning because the shared engine/data and Hunspell assets are large. Keyboard surfaces are lazy-loaded enough for validation, but public release should keep chunking on the release checklist.
 
-The 5KB mixed Preeti paragraph p95 is 346 ms against a 100 ms side-utility target. This is not a keyboard hot-path blocker because Preeti is a side utility, but it remains a P2 performance item for the companion document tools.
+The 5KB mixed Preeti paragraph p95 is 21 ms against a 100 ms side-utility target in the latest smoke run. It is not in the keyboard hot path, but the target is now gated so future regressions fail instead of being buried in docs.
 
 ## Native Performance Status
 

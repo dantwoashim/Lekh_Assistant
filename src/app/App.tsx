@@ -14,15 +14,15 @@ const FeedbackPanel = lazy(() => import("../features/feedback/FeedbackPanel").th
 type ToolTab = "preeti" | "romanized" | "traditional" | "keyboard" | "companion";
 
 const tabs: TabItem<ToolTab>[] = [
-  { id: "preeti", label: "Preeti", icon: <Type size={17} aria-hidden="true" /> },
+  { id: "keyboard", label: "Keyboard Lab", icon: <PanelsTopLeft size={17} aria-hidden="true" /> },
   { id: "romanized", label: "Romanized", icon: <Keyboard size={17} aria-hidden="true" /> },
   { id: "traditional", label: "Traditional", icon: <LayoutGrid size={17} aria-hidden="true" /> },
-  { id: "keyboard", label: "Keyboard Lab", icon: <PanelsTopLeft size={17} aria-hidden="true" /> },
-  { id: "companion", label: "Companion", icon: <Settings size={17} aria-hidden="true" /> }
+  { id: "companion", label: "Companion", icon: <Settings size={17} aria-hidden="true" /> },
+  { id: "preeti", label: "Preeti Utility", icon: <Type size={17} aria-hidden="true" /> }
 ];
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<ToolTab>("preeti");
+  const [activeTab, setActiveTab] = useState<ToolTab>("keyboard");
   const [feedback, setFeedback] = useState<{ tool: FeedbackDraft["tool"]; actual: string }>({
     tool: "preeti",
     actual: ""
@@ -55,13 +55,13 @@ export function App() {
 
       <section className="hero-band">
         <div className="hero-copy">
-          <h1>Nepali text, clean Unicode.</h1>
-          <p>Preeti conversion, Romanized typing, local suggestions.</p>
+          <h1>Lekh Keyboard Companion.</h1>
+          <p>Native keyboard validation, Romanized typing, local suggestions, and privacy controls.</p>
         </div>
         <div className="hero-panel" aria-label="Workspace summary">
-          <span>Preeti → Unicode</span>
+          <span>Windows TSF path</span>
           <span>Romanized → नेपाली</span>
-          <span>Text stays local</span>
+          <span>Companion is not the keyboard</span>
         </div>
       </section>
 

@@ -1,6 +1,6 @@
 # Final Release Readiness Gate
 
-Generated: 2026-05-28
+Generated: 2026-06-08
 
 ## Engineering Release Candidate Gate
 
@@ -8,7 +8,7 @@ Status: complete.
 
 Evidence:
 
-- typecheck/test/build/checks pass in baseline and targeted runs.
+- typecheck/test/build/checks pass in the latest verification and targeted runs.
 - scorecard freshness gate passes.
 - keyboard hot-path performance passes.
 - no duplicate candidates.
@@ -22,7 +22,7 @@ Status: blocked-native-environment.
 Required evidence still missing:
 
 - Windows TSF text service registered and tested in real host apps.
-- macOS IMK input method installed and tested in real host apps.
+- macOS IMK proof target builds, but the input method is not yet packaged/installed/tested in real host apps.
 - Native named pipe/XPC latency measured on target platforms.
 - No host-app freeze under daemon/XPC failure.
 
@@ -40,6 +40,7 @@ Ready:
 Blocked:
 
 - native dev build validation for installed keyboard pilot.
+- signed/notarized companion and input method packages.
 - human feedback does not exist yet.
 - Traditional physical layout not validated.
 

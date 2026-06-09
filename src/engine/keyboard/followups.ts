@@ -31,7 +31,8 @@ const FOLLOWUP_ROWS: Record<string, Array<{ text: string; confidence: number; re
 
 export function nextWordCandidates(committedText: string, session: KeyboardSession): Candidate[] {
   if (!session.context.enableNextWordPrediction || session.context.secureInput) return [];
-  const lastWord = committedText.trim().split(/\s+/).at(-1) ?? "";
+  const words = committedText.trim().split(/\s+/);
+  const lastWord = words[words.length - 1] ?? "";
   const rows = FOLLOWUP_ROWS[lastWord] ?? [];
   return rows.slice(0, 4).map((row, index): Candidate => ({
     id: `followup-${index}-${lastWord}-${row.text}`,

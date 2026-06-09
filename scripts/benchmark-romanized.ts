@@ -55,6 +55,8 @@ export interface RomanizedBenchmarkReport {
 
 const root = process.cwd();
 const reportPath = join(root, "bench/reports/romanized-report.json");
+const caseTimeoutMs = Number(process.env.LEKH_BENCHMARK_CASE_TIMEOUT_MS ?? 5000);
+const progressEvery = Number(process.env.LEKH_BENCHMARK_PROGRESS_EVERY ?? (process.env.LEKH_BENCHMARK_SMOKE === "1" ? 0 : 1000));
 
 export async function runRomanizedBenchmark(): Promise<RomanizedBenchmarkReport> {
   const start = Date.now();
@@ -77,8 +79,16 @@ export async function runRomanizedBenchmark(): Promise<RomanizedBenchmarkReport>
   let suggestionChecks = 0;
   let suggestionHits = 0;
 
-  for (const item of cases) {
+  for (const [caseIndex, item] of cases.entries()) {
+    if (progressEvery > 0 && caseIndex > 0 && caseIndex % progressEvery === 0) {
+      process.stderr.write(`[romanized] processed ${caseIndex}/${cases.length} fixtures\n`);
+    }
+    const caseStart = Date.now();
     const result = transliterateRomanized(item.input, "common-nepali", optionsForCase(item));
+    const caseDurationMs = Date.now() - caseStart;
+    if (caseDurationMs > caseTimeoutMs) {
+      throw new Error(`Romanized fixture exceeded ${caseTimeoutMs}ms: ${item.id ?? item.input} took ${caseDurationMs}ms`);
+    }
     const expected = normalizeNepaliText(item.expected_top1 ?? item.expectedOutput ?? item.expected);
     const acceptable = [
       expected,

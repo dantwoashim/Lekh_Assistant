@@ -2,17 +2,21 @@
 import PackageDescription
 
 let package = Package(
-  name: "LekhInputMethodPlaceholder",
+  name: "LekhInputMethod",
   platforms: [.macOS(.v13)],
   products: [
-    .library(name: "LekhInputMethodPlaceholder", targets: ["LekhInputMethodPlaceholder"])
+    .library(name: "LekhInputMethod", targets: ["LekhInputMethod"])
   ],
   targets: [
     .target(
-      name: "LekhInputMethodPlaceholder",
+      name: "LekhInputMethod",
       path: ".",
       exclude: ["lekh_imk_contract.md"],
-      sources: ["LekhInputController.placeholder.swift"]
+      sources: [
+        "LekhCandidateController.swift",
+        "LekhInputController.swift",
+        "LekhXpcClient.swift"
+      ]
     )
   ]
 )

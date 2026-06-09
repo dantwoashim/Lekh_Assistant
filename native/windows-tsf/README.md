@@ -1,11 +1,15 @@
-# Windows TSF Scaffold
+# Windows TSF Text Service
 
-This folder documents and sketches the Windows Text Services Framework path for Lekh Keyboard.
+This folder contains the Windows Text Services Framework path for Lekh Keyboard.
 
-It is not a production Windows IME. Production requires a real TSF implementation, Windows testing, code signing, installer validation, and pilot feedback.
+The source is build-ready for a Windows/MSVC host, but it is not a proven production Windows release until it is compiled, registered, host-app tested, signed, and installer-validated on Windows.
 
 See:
 
 - `feasibility/README.md`
-- `skeleton/LekhTextService.placeholder.cpp`
+- `skeleton/LekhTextService.cpp`
+- `skeleton/Register.cpp`
+- `skeleton/IpcClient.cpp`
+- `skeleton/CMakeLists.txt`
+- `skeleton/build.ps1`
 - `skeleton/lekh_tsf_contract.md`

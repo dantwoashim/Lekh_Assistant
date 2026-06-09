@@ -162,8 +162,14 @@ function convertProtectedNodes(nodes: ProtectedNode[], options: ConvertOptions) 
     }
 
     const result = convertPreetiToUnicode(node.text);
-    const atomResult = decodeLegacyWithAtoms(node.text);
-    const selected = selectLegacyOutput(result.normalizedOutput, atomResult.output, atomResult.verification.status, options.legacyDecoder);
+    const atomResult = shouldRunAtomDecoder(options) ? decodeLegacyWithAtoms(node.text) : undefined;
+    const selected = atomResult
+      ? selectLegacyOutput(result.normalizedOutput, atomResult.output, atomResult.verification.status, options.legacyDecoder)
+      : {
+          output: result.normalizedOutput,
+          usedAtom: false,
+          reason: "Baseline decoder selected; atom compare skipped for the production mixed-mode hot path."
+        };
     outputBeforeRestore += selected.output;
     tokens.push({
       input: node.text,
@@ -178,22 +184,27 @@ function convertProtectedNodes(nodes: ProtectedNode[], options: ConvertOptions) 
       severity: warning.severity,
       range: warning.position === undefined ? undefined : [node.range[0] + warning.position, node.range[0] + warning.position + (warning.sourceChar?.length ?? 1)]
     })));
-    diagnostics.push(...atomResult.diagnostics);
+    if (atomResult) diagnostics.push(...atomResult.diagnostics);
     diagnostics.push({
       code: "LEGACY_DECODER_SELECTION",
       message: selected.reason,
       severity: selected.usedAtom ? "info" : "warning",
       data: {
-        legacyDecoder: options.legacyDecoder ?? "compare",
-        atomVerifierStatus: atomResult.verification.status,
+        legacyDecoder: options.legacyDecoder ?? "baseline",
+        atomVerifierStatus: atomResult?.verification.status ?? "not-run",
         baselineOutput: result.normalizedOutput,
-        atomOutput: atomResult.output
+        atomOutput: atomResult?.output
       }
     });
-    trace.push(...atomResult.trace);
+    if (atomResult) trace.push(...atomResult.trace);
   }
 
   return { outputBeforeRestore, tokens, warnings, diagnostics, trace };
+}
+
+function shouldRunAtomDecoder(options: ConvertOptions): boolean {
+  if (options.development) return true;
+  return options.legacyDecoder === "atom" || options.legacyDecoder === "auto" || options.legacyDecoder === "compare";
 }
 
 function selectLegacyOutput(

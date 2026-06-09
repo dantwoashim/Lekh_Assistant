@@ -1,6 +1,6 @@
 {
   "version": "keyboard-pack-v0.1",
-  "generatedAt": "2026-06-08T08:21:35.585Z",
+  "generatedAt": "2026-06-08T12:49:44.574Z",
   "sourceCorpus": "data/keyboard-corpus/curated/v0.1",
   "excludesSplit": "blind_holdout",
   "counts": {

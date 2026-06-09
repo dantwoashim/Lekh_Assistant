@@ -5,6 +5,7 @@ import { postpositionHints } from "./postpositions";
 const SPELLING_CORRECTIONS: Array<[string, string, string]> = [
   ["सवस्थ्य", "स्वास्थ्य", "common-spelling-swasthya"],
   ["प्रनलि", "प्रणाली", "common-spelling-pranali"],
+  ["राजनितिज्ञ", "राजनीतिज्ञ", "common-spelling-rajanitigya"],
   ["मरित्यु", "मृत्यु", "common-spelling-mrityu"],
   ["अन्तररस्त्रिय", "अन्तर्राष्ट्रिय", "common-spelling-antarrastriya"],
   ["अन्तरराष्ट्रिय", "अन्तर्राष्ट्रिय", "common-spelling-antarrastriya"],

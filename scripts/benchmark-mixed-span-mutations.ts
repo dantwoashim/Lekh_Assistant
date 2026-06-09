@@ -145,10 +145,18 @@ function readJsonl(path: string): MixedSpanFixture[] {
 }
 
 if (isDirectCli(import.meta.url)) {
+  const startedAt = Date.now();
   const report = runMixedSpanMutationBenchmark();
+  const reportWithMetadata = {
+    ...report,
+    command: "npm run benchmark:mixed-span-mutations",
+    suite: "mixed-span-mutations",
+    mode: "full",
+    durationMs: Date.now() - startedAt
+  };
   mkdirSync(join(root, "bench/reports"), { recursive: true });
-  writeFileSync(join(root, "bench/reports/mixed-span-mutation-report.json"), `${JSON.stringify(report, null, 2)}\n`);
-  console.log(JSON.stringify(report, null, 2));
+  writeFileSync(join(root, "bench/reports/mixed-span-mutation-report.json"), `${JSON.stringify(reportWithMetadata, null, 2)}\n`);
+  console.log(JSON.stringify(reportWithMetadata, null, 2));
   if (report.failures.some((failure) => failure.category === "silent-corruption")) {
     process.exitCode = 1;
   }

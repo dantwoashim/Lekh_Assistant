@@ -14,10 +14,22 @@ import { phoneticCandidatesForToken } from "./phonetic";
 import { buildCandidateScore } from "./rank";
 import { tokenizeRomanized } from "./tokenizer";
 
+const CONVERSION_CACHE_MAX = 128;
+const conversionCache = new Map<string, ConversionResult>();
+
 export function convertRomanized(input: string, options: ConvertOptions = {}): ConversionResult {
   const start = nowMs();
   const requestedMode = options.mode ?? "romanized-mixed";
   const mode = normalizeRomanizedMode(requestedMode);
+  const cacheKey = romanizedConversionCacheKey(input, options, mode);
+  if (cacheKey) {
+    const cached = conversionCache.get(cacheKey);
+    if (cached) {
+      const result = cloneConversionResult(cached);
+      if (options.benchmark || options.development) result.timingMs = nowMs() - start;
+      return result;
+    }
+  }
   const classified = classifyDocument(input, { ...options, mode });
   const protectedResult = mode === "romanized-strict" ? undefined : extractProtectedSpans(input, mode);
   const protectedConversion = protectedResult
@@ -54,7 +66,7 @@ export function convertRomanized(input: string, options: ConvertOptions = {}): C
     })) ?? [])
   ];
 
-  return attachProofread({
+  const result = attachProofread({
     input,
     output: normalizedOutput,
     normalizedOutput,
@@ -93,6 +105,32 @@ export function convertRomanized(input: string, options: ConvertOptions = {}): C
     timingMs: options.benchmark || options.development ? nowMs() - start : undefined,
     schemaVersion: 1
   }, options);
+  if (cacheKey) cacheConversionResult(cacheKey, result);
+  return result;
+}
+
+function romanizedConversionCacheKey(input: string, options: ConvertOptions, mode: EngineMode): string | undefined {
+  if ((options.localCorrections?.length ?? 0) > 0) return undefined;
+  if ((options.correctionMemoryEntries?.length ?? 0) > 0) return undefined;
+  return JSON.stringify({
+    input,
+    mode,
+    digitPolicy: options.digitPolicy ?? null,
+    proofread: options.proofread ?? null
+  });
+}
+
+function cacheConversionResult(key: string, result: ConversionResult): void {
+  if (conversionCache.has(key)) conversionCache.delete(key);
+  conversionCache.set(key, cloneConversionResult(result));
+  if (conversionCache.size > CONVERSION_CACHE_MAX) {
+    const oldest = conversionCache.keys().next().value;
+    if (oldest) conversionCache.delete(oldest);
+  }
+}
+
+function cloneConversionResult(result: ConversionResult): ConversionResult {
+  return JSON.parse(JSON.stringify(result)) as ConversionResult;
 }
 
 function convertProtectedNodes(nodes: ProtectedNode[], options: ConvertOptions, mode: EngineMode) {

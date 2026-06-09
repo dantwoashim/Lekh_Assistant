@@ -254,12 +254,20 @@ function levenshteinArray<T>(a: T[], b: T[]): number {
 }
 
 if (isDirectCli(import.meta.url)) {
+  const startedAt = Date.now();
   const report = runPreetiBenchmark();
+  const reportWithMetadata = {
+    ...report,
+    command: "npm run benchmark:preeti",
+    suite: "preeti",
+    mode: "full",
+    durationMs: Date.now() - startedAt
+  };
   mkdirSync(join(root, "bench/reports"), { recursive: true });
-  writeFileSync(join(root, "bench/reports/preeti-report.json"), `${JSON.stringify(report, null, 2)}\n`);
-  console.log(JSON.stringify(report, null, 2));
+  writeFileSync(join(root, "bench/reports/preeti-report.json"), `${JSON.stringify(reportWithMetadata, null, 2)}\n`);
+  console.log(JSON.stringify(reportWithMetadata, null, 2));
   if (process.argv.includes("--write")) {
     mkdirSync(join(root, "reports"), { recursive: true });
-    writeFileSync(join(root, "reports/preeti-benchmark.json"), `${JSON.stringify(report, null, 2)}\n`);
+    writeFileSync(join(root, "reports/preeti-benchmark.json"), `${JSON.stringify(reportWithMetadata, null, 2)}\n`);
   }
 }

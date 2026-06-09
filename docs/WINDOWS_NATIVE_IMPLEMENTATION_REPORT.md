@@ -24,20 +24,28 @@ Result on 2026-06-08: blocked in this environment because `cmake` is not install
 
 ## What Exists
 
-- Build-ready TSF proof-spike scaffold under `native/windows-tsf/skeleton`.
-- CMake target: `LekhTextServicePlaceholder`.
-- Placeholder key decision logic for:
-  - `k`/`K`: start dummy composition candidate.
-  - Enter: commit dummy candidate.
-  - Escape: cancel composition.
-  - daemon unavailable: pass through.
-- IPC contract points at `session.processKeyStroke` over a per-user named pipe with a 50 ms hot-path timeout.
-- Dev daemon dispatcher exists in `native/daemon/src/keyboardDaemon.ts`.
+- Build-ready TSF DLL source under `native/windows-tsf/skeleton`.
+- CMake target: `LekhTextService`.
+- COM DLL exports:
+  - `DllGetClassObject`
+  - `DllCanUnloadNow`
+  - `DllRegisterServer`
+  - `DllUnregisterServer`
+- TSF interfaces:
+  - `ITfTextInputProcessor`
+  - `ITfTextInputProcessorEx`
+  - `ITfKeyEventSink`
+- Per-user COM registration under `HKCU\Software\Classes`.
+- TSF language profile registration for Nepali.
+- Named-pipe IPC client for the local daemon, using `LEKH_KEYBOARD_PIPE_NAME` when set and otherwise deriving a per-user default such as `\\.\pipe\LekhKeyboard-{SID}`.
+- 50 ms hot-path timeout and pass-through fallback when the daemon is unavailable.
+- Key-eating is disabled by default and must be explicitly enabled with `LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING` after daemon/commit behavior is validated on Windows.
+- Dev daemon dispatcher and JSONL CLI in `native/daemon/src`.
 - IPC schema validation exists through `npm run check:ipc-schema`.
 
 ## What Is Not Claimed
 
-This is not a production Windows IME. It has not been registered as a Windows Text Services Framework text service in this execution environment, and it has not been tested in Notepad, Word, Chrome, Edge, VS Code, Excel, or government web forms.
+This is not yet a proven production Windows release. The source is build-ready, but it has not been compiled, registered, installed, and host-tested on a Windows machine in this execution environment.
 
 ## External Blocker Proof
 
@@ -49,25 +57,29 @@ On Windows with Visual Studio Build Tools and CMake:
 
 ```powershell
 cd native\windows-tsf\skeleton
-cmake -S . -B build -G "Visual Studio 17 2022"
-cmake --build build --config Debug
+.\build.ps1
+.\register-dev.ps1
 ```
 
 Expected proof-spike artifact:
 
-- `build\Debug\LekhTextServicePlaceholder.dll`
+- `build\bin\Release\LekhTextService.dll`
 
-This artifact is scaffold-only until COM registration, TSF profile registration, and host-app tests are implemented.
+Manual smoke:
+
+1. Start daemon: `npm run daemon:dev`
+2. Register TSF: `.\register-dev.ps1`
+3. Enable `Lekh Keyboard Nepali` in Windows language/input settings.
+4. Test Notepad, Word, Chrome, Edge, VS Code, Excel, and one government web form.
+5. Unregister: `.\unregister-dev.ps1`
 
 ## Required Production Implementation Steps
 
-1. Implement `ITfTextInputProcessor` and `ITfKeyEventSink`.
-2. Register/unregister CLSID and language profile per user.
-3. Create a composition manager that maps `CandidateUpdate.displayText` to TSF composition text.
-4. Create native candidate UI for `CandidateUpdate.candidates`.
-5. Add named pipe client with per-user ACL, 50 ms timeout, reconnect, and pass-through fallback.
-6. Detect password/secure input scope and disable memory/proofread/suggestions.
-7. Run test matrix:
+1. Build and register the TSF DLL on Windows.
+2. Validate the named-pipe daemon bridge with the host-app test matrix.
+3. Complete marked-text/candidate UI behavior after Windows host validation identifies app-specific TSF behavior.
+4. Detect password/secure input scope and disable memory/proofread/suggestions.
+5. Run test matrix:
    - Notepad
    - Word
    - Chrome
@@ -75,7 +87,7 @@ This artifact is scaffold-only until COM registration, TSF profile registration,
    - VS Code
    - Excel
    - government web form
-8. Build signed MSI installer and verify uninstall cleanup.
+6. Build signed NSIS `.exe` installer and verify uninstall cleanup.
 
 ## Owner / Action / Status
 
@@ -83,7 +95,7 @@ This artifact is scaffold-only until COM registration, TSF profile registration,
 | --- | --- | --- | --- |
 | Windows TSF native build machine | engineering | blocked-native-environment | Run CMake proof spike on Windows. |
 | Code-signing certificate | product/release | blocked-external | Acquire Windows code-signing certificate. |
-| TSF COM registration | engineering | pending | Implement after Windows environment is available. |
+| TSF COM registration | engineering | ready-for-windows-validation | Run `register-dev.ps1` on Windows. |
 | Host-app test matrix | QA/engineering | blocked-native-environment | Run after the TSF DLL registers locally. |
 | Signed installer | release | blocked-external | Build after certificate and TSF validation. |
 

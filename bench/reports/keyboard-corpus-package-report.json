@@ -1,0 +1,45 @@
+{
+  "generatedAt": "2026-06-09T06:07:26.705Z",
+  "command": "npm run corpus:keyboard:package-check",
+  "suite": "keyboard-corpus-package",
+  "durationMs": 0,
+  "fixtureCount": 11,
+  "sourceCount": 11,
+  "curatedRows": {
+    "d8": 100000,
+    "d1": 1000000,
+    "d1Dropped": 0,
+    "d2": 99998,
+    "d2Dropped": 2,
+    "d3": 249685,
+    "d3Dropped": 315,
+    "d4": 250000,
+    "d4Dropped": 0,
+    "d5": 100000,
+    "d5Dropped": 0,
+    "d6": 50000,
+    "d6Dropped": 0,
+    "d7": 1000000,
+    "d7Dropped": 0
+  },
+  "qualityCounts": {
+    "gold": 124,
+    "silver": 54876,
+    "bronze": 0,
+    "synthetic": 10000,
+    "blind": 100000
+  },
+  "humanReviewedGoldRows": 124,
+  "goldPromotions": 149,
+  "reviewedScaleStatus": "partial",
+  "reviewedScaleNote": "Large generated/auto-reviewed corpus rows are present, but only gold quality rows are human/project-reviewed evidence for public accuracy claims.",
+  "leakageStatus": "passed",
+  "packagedRuntimeCounts": {
+    "words": 2500,
+    "phrases": 1500,
+    "proofread": 1000,
+    "names": 1000
+  },
+  "status": "passed",
+  "violations": []
+}

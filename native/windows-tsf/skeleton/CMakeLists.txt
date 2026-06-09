@@ -1,6 +1,26 @@
 cmake_minimum_required(VERSION 3.20)
-project(LekhTextServicePlaceholder LANGUAGES CXX)
+project(LekhTextService LANGUAGES CXX)
 
-# Scaffold only. This target is intentionally not wired into npm verification.
-add_library(LekhTextServicePlaceholder SHARED LekhTextService.placeholder.cpp)
-target_compile_features(LekhTextServicePlaceholder PRIVATE cxx_std_20)
+if(NOT WIN32)
+  message(FATAL_ERROR "LekhTextService is a Windows TSF DLL and must be built on Windows with MSVC.")
+endif()
+
+add_library(LekhTextService SHARED
+  ClassFactory.cpp
+  DllMain.cpp
+  IpcClient.cpp
+  LekhTextService.cpp
+  Register.cpp
+)
+
+target_compile_features(LekhTextService PRIVATE cxx_std_20)
+target_compile_definitions(LekhTextService PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_include_directories(LekhTextService PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(LekhTextService PRIVATE ole32 uuid advapi32 msctf shlwapi)
+
+set_target_properties(LekhTextService PROPERTIES
+  OUTPUT_NAME "LekhTextService"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+)

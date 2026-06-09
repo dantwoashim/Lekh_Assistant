@@ -158,6 +158,55 @@ describe("KeyboardEngine session API", () => {
     }
   });
 
+  it("ranks full mixed Nepali-English spans instead of fragmenting the sentence", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const update = engine.updateComposition(sessionId, "mero NID form submit bhayena", 28);
+    expect(update.primary?.text).toBe("मेरो NID form submit भएन");
+    expect(update.candidates.map((candidate) => candidate.text)).toContain("मेरो NID फारम सबमिट भएन");
+  });
+
+  it("corrects Romanized typo and phrase forms before Unicode generation", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const typo = engine.updateComposition(sessionId, "swasthay", 8);
+    expect(typo.primary?.text).toBe("स्वास्थ्य");
+    expect(typo.primary?.label).toBe("swasthya");
+
+    const phrase = engine.updateComposition(sessionId, "nagrikta praman patr", 20);
+    expect(phrase.primary?.text).toBe("नागरिकता प्रमाणपत्र");
+    expect(phrase.candidates.map((candidate) => candidate.text)).toContain("नागरिकता प्रमाण पत्र");
+  });
+
+  it("protects only structured spans inside mixed sentences and preserves English-like unknown tokens", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const mixed = engine.updateComposition(sessionId, "PDF report upload garna milena", 30);
+    expect(mixed.primary?.text).toBe("PDF report upload गर्न मिलेन");
+    expect(mixed.primary?.text).not.toBe("PDF report upload garna milena");
+    expect(mixed.candidates.map((candidate) => candidate.text)).toContain("PDF रिपोर्ट अपलोड गर्न मिलेन");
+
+    const unknown = engine.updateComposition(sessionId, "unknownenglishlike", 18);
+    expect(unknown.primary?.text).toBe("unknownenglishlike");
+    expect(unknown.primary?.type).toBe("protected");
+  });
+
+  it("prefers exact short name candidates over longer prefix completions", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const update = engine.updateComposition(sessionId, "ram", 3);
+    expect(update.primary?.text).toBe("राम");
+  });
+
+  it("suppresses low-confidence proofread hints on active prefixes", () => {
+    const engine = createKeyboardEngine();
+    const activePrefix = engine.getProofHints("से");
+    expect(activePrefix).toHaveLength(0);
+
+    const fullTypo = engine.getProofHints("सवस्थ्य");
+    expect(fullTypo.some((hint) => hint.suggestion === "स्वास्थ्य")).toBe(true);
+  });
+
   it("dedupes candidate text, merges reasons, and assigns sequential shortcuts after sorting", () => {
     const candidates = finalizeCandidates([
       {

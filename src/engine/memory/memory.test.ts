@@ -22,7 +22,7 @@ describe("correction memory migration", () => {
     ], "2026-05-26T01:00:00.000Z");
 
     expect(snapshot.schemaVersion).toBe(2);
-    expect(snapshot.migratedFrom).toContain("lekh-assistant:romanized-corrections:v1");
+    expect(snapshot.migratedFrom).toContain("lekh-keyboard:romanized-corrections:v1");
     expect(snapshot.entries[0]).toMatchObject({
       inputRomanized: "niraj",
       chosenOutput: "नीरज",

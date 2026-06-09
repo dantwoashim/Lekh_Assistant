@@ -13,11 +13,20 @@ export function runRomanizedAliasCollisionReport() {
 }
 
 if (process.env.LEKH_SCRIPT === "alias-collisions") {
+  const startedAt = Date.now();
   const report = runRomanizedAliasCollisionReport();
-  mkdirSync(join(root, "bench/reports"), { recursive: true });
-  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-  console.log(JSON.stringify({
+  const reportWithMetadata = {
     ...report,
+    command: "npm run check:alias-collisions",
+    suite: "romanized-alias-collisions",
+    mode: "full",
+    durationMs: Date.now() - startedAt,
+    fixtureCount: report.variantCount
+  };
+  mkdirSync(join(root, "bench/reports"), { recursive: true });
+  writeFileSync(reportPath, `${JSON.stringify(reportWithMetadata, null, 2)}\n`);
+  console.log(JSON.stringify({
+    ...reportWithMetadata,
     collisions: report.collisions.slice(0, 20),
     truncatedCollisionCount: Math.max(0, report.collisions.length - 20),
     fullReportPath: "bench/reports/romanized-alias-collision-report.json"

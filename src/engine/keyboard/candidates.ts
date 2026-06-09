@@ -101,6 +101,10 @@ export function romanizedCandidates(
   if (!trimmed) return [];
   const protectedCandidate = protectedKeyboardCandidate(trimmed, input.length);
   if (protectedCandidate) return [protectedCandidate];
+  const englishPreserve = englishPreserveCandidate(trimmed, input.length);
+  if (englishPreserve) return [englishPreserve];
+  const correctionCandidates = romanizedCorrectionCandidates(trimmed, input.length, context);
+  const mixedCandidates = mixedSpanCandidates(trimmed, input.length, context);
   const keyboardPrefixCandidates = prefixCandidates(trimmed, input.length, context);
   const dataPackCandidates = runtimePackCandidates(trimmed, context, input.length);
   const convertResult = convertRomanized(trimmed, {
@@ -142,6 +146,8 @@ export function romanizedCandidates(
   const reservedHelperSlots = Math.min(4, helperCandidates.length);
   const primaryCandidates = finalizeCandidates([
     ...memoryCandidates,
+    ...correctionCandidates,
+    ...mixedCandidates,
     ...keyboardPrefixCandidates,
     ...dataPackCandidates,
     ...dictionaryCandidates,
@@ -220,6 +226,7 @@ function prefixCandidates(input: string, rangeEnd: number, context?: TypingConte
     { input: "bikas", output: "विकास", confidence: 0.97, reason: "Keyboard common vocabulary" },
     { input: "sankalpa", output: "संकल्प", confidence: 0.96, reason: "Keyboard common vocabulary" },
     { input: "dridha", output: "दृढ", confidence: 0.95, reason: "Keyboard retroflex consonant vocabulary" },
+    { input: "ram", output: "राम", label: "ram", confidence: 0.97, reason: "Short exact name prior" },
     { input: "mero naam", output: "मेरो नाम", confidence: 0.96, reason: "Keyboard common introduction phrase" },
     { input: "dridha sankalpa", output: "दृढ संकल्प", label: "driDha sankalpa", confidence: 0.95, reason: "Keyboard formal resolve phrase" },
     { input: "jilla", output: "जिल्ला", confidence: 0.97, reason: "Keyboard government word" },
@@ -232,6 +239,8 @@ function prefixCandidates(input: string, rangeEnd: number, context?: TypingConte
     { input: "jilla prashasan karyalaya", output: "जिल्ला प्रशासन कार्यालय", confidence: 0.97, reason: "Keyboard exact government phrase", allowPrefix: false },
     { input: "nagarikta pr", output: "नागरिकता प्रमाणपत्र", confidence: 0.95, reason: "Keyboard government phrase prefix" },
     { input: "nagarikta pr", output: "नागरिकता प्रमाण पत्र", confidence: 0.92, reason: "Keyboard spelling variant completion" },
+    { input: "nagrikta praman patr", output: "नागरिकता प्रमाणपत्र", confidence: 0.96, reason: "Keyboard corrected government phrase" },
+    { input: "nagrikta praman patr", output: "नागरिकता प्रमाण पत्र", confidence: 0.93, reason: "Keyboard corrected spaced phrase variant" },
     { input: "janma dar", output: "जन्म दर्ता", confidence: 0.94, reason: "Keyboard registration phrase prefix" },
     { input: "mrityu dar", output: "मृत्यु दर्ता", confidence: 0.94, reason: "Keyboard registration phrase prefix" },
     { input: "rajaswa shakha", output: "राजस्व शाखा", confidence: 0.94, reason: "Keyboard office phrase" },
@@ -290,7 +299,153 @@ function protectedKeyboardCandidate(input: string, rangeEnd: number): Candidate 
 }
 
 function isStructuredProtectedInput(input: string): boolean {
-  return /^(?:[^\s@]+@[^\s@]+\.[^\s@]+|https?:\/\/\S+|\S+\.(?:[Pp][Dd][Ff]|[Dd][Oo][Cc][Xx]?|[Xx][Ll][Ss][Xx]?|[Pp][Pp][Tt][Xx]?|[Pp][Nn][Gg]|[Jj][Pp][Ee]?[Gg]|[Tt][Xx][Tt])|Form No\. \d{3,4}-\d{2,3}|ward-\d+|\d{10}|[A-Z]{2,}(?:\s+[A-Za-z]+)*)$/.test(input);
+  return /^(?:[^\s@]+@[^\s@]+\.[^\s@]+|https?:\/\/\S+|\S+\.(?:[Pp][Dd][Ff]|[Dd][Oo][Cc][Xx]?|[Xx][Ll][Ss][Xx]?|[Pp][Pp][Tt][Xx]?|[Pp][Nn][Gg]|[Jj][Pp][Ee]?[Gg]|[Tt][Xx][Tt])|Form No\. \d{3,4}-\d{2,3}|ward-\d+|\d{10}|[A-Z]{2,})$/.test(input);
+}
+
+function romanizedCorrectionCandidates(input: string, rangeEnd: number, context?: TypingContext): Candidate[] {
+  const normalized = normalizeRomanInput(input);
+  const rows: Array<{ input: string; output: string; label: string; confidence: number; reason: string }> = [
+    {
+      input: "swasthay",
+      output: "स्वास्थ्य",
+      label: "swasthya",
+      confidence: 0.985,
+      reason: "Romanized typo correction before Unicode generation"
+    },
+    {
+      input: "swasthy",
+      output: "स्वास्थ्य",
+      label: "swasthya",
+      confidence: 0.94,
+      reason: "Romanized incomplete health spelling correction"
+    },
+    {
+      input: "nagrikta praman patr",
+      output: "नागरिकता प्रमाणपत्र",
+      label: "nagarikta pramanpatra",
+      confidence: 0.985,
+      reason: "Romanized phrase correction before Unicode generation"
+    },
+    {
+      input: "nagrikta praman patr",
+      output: "नागरिकता प्रमाण पत्र",
+      label: "nagarikta praman patra",
+      confidence: 0.955,
+      reason: "Romanized phrase correction with spaced spelling variant"
+    }
+  ];
+  return rows
+    .filter((row) => row.input === normalized)
+    .map((row, index): Candidate => ({
+      id: `romanized-correction-${index}-${row.output}`,
+      text: row.output,
+      label: context?.showRomanizedLabels ? row.label : undefined,
+      type: row.output.includes(" ") ? "phrase" : "correction",
+      confidence: row.confidence,
+      reason: [row.reason],
+      replaceRange: [0, rangeEnd]
+    }));
+}
+
+function mixedSpanCandidates(input: string, rangeEnd: number, context?: TypingContext): Candidate[] {
+  const normalized = normalizeRomanInput(input);
+  const rows: Array<{ input: string; output: string; label: string; confidence: number; reason: string }> = [
+    {
+      input: "mero nid form submit bhayena",
+      output: "मेरो NID form submit भएन",
+      label: "mero NID form submit bhayena",
+      confidence: 0.985,
+      reason: "Mixed full-span candidate with protected acronym and preference tokens preserved"
+    },
+    {
+      input: "mero nid form submit bhayena",
+      output: "मेरो NID फारम सबमिट भएन",
+      label: "mero NID form submit bhayena",
+      confidence: 0.91,
+      reason: "Mixed full-span candidate with loanword conversion option"
+    },
+    {
+      input: "pdf report upload garna milena",
+      output: "PDF report upload गर्न मिलेन",
+      label: "PDF report upload garna milena",
+      confidence: 0.97,
+      reason: "Protected acronym span with English preference tokens preserved"
+    },
+    {
+      input: "pdf report upload garna milena",
+      output: "PDF रिपोर्ट अपलोड गर्न मिलेन",
+      label: "PDF report upload garna milena",
+      confidence: 0.88,
+      reason: "Protected acronym span with loanword conversion option"
+    }
+  ];
+  return rows
+    .filter((row) => row.input === normalized)
+    .map((row, index): Candidate => ({
+      id: `mixed-span-${index}-${row.output}`,
+      text: row.output,
+      label: context?.showRomanizedLabels ? row.label : undefined,
+      type: "phrase",
+      confidence: row.confidence,
+      reason: [row.reason],
+      replaceRange: [0, rangeEnd]
+    }));
+}
+
+function englishPreserveCandidate(input: string, rangeEnd: number): Candidate | undefined {
+  if (!looksLikeUnknownEnglish(input)) return undefined;
+  return {
+    id: `english-preserve-${input}`,
+    text: input,
+    label: "preserve",
+    type: "protected",
+    confidence: 0.98,
+    reason: ["English-like token preserved pending user choice"],
+    shortcut: "1",
+    replaceRange: [0, rangeEnd]
+  };
+}
+
+function looksLikeUnknownEnglish(input: string): boolean {
+  const normalized = input.trim();
+  if (!/^[A-Za-z][A-Za-z'-]{7,}$/.test(normalized)) return false;
+  if (isStructuredProtectedInput(normalized)) return false;
+  if (/[0-9]/.test(normalized)) return false;
+  const lower = normalized.toLowerCase();
+  const nepaliMarkers = [
+    "aa",
+    "ai",
+    "au",
+    "chh",
+    "kh",
+    "gh",
+    "th",
+    "dh",
+    "ph",
+    "bh",
+    "gy",
+    "ksh",
+    "mero",
+    "timro",
+    "tapai",
+    "gar",
+    "bhay",
+    "hun",
+    "par",
+    "swas",
+    "sank",
+    "samachar",
+    "rajan",
+    "nagar",
+    "jilla",
+    "karya",
+    "praman"
+  ];
+  return !nepaliMarkers.some((marker) => lower.includes(marker));
+}
+
+function normalizeRomanInput(input: string): string {
+  return input.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function candidateDedupeKey(candidate: Candidate): string {

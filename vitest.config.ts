@@ -7,6 +7,14 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["src/tests/setup.ts"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/release/**",
+      "**/native/**/.build/**",
+      "**/native/daemon/dist/**"
+    ],
     pool: "forks",
     maxWorkers: 2,
     testTimeout: 20_000,

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-08T08:21:35.907Z",
+  "generatedAt": "2026-06-08T12:49:44.740Z",
   "version": "v0.1",
   "counters": {
     "d8": 100000,
@@ -19,8 +19,8 @@
     "d7Dropped": 0
   },
   "leakageAudit": {
-    "checkedTrainRows": 2653385,
-    "heldOutRows": 96298,
+    "checkedTrainRows": 2653382,
+    "heldOutRows": 96301,
     "violations": 0,
     "status": "passed",
     "rule": "No train row may share a holdout key with blind_v0.1; matching rows are marked split=blind_holdout."
