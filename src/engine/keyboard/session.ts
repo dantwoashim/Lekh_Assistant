@@ -63,6 +63,27 @@ export class KeyboardSessionManager {
     return session;
   }
 
+  updateContext(sessionId: SessionId, patch: Partial<TypingContext>): KeyboardSession {
+    const session = this.get(sessionId);
+    const mergedContext: TypingContext = {
+      ...session.context,
+      ...patch,
+      activeDomains: patch.activeDomains ?? session.context.activeDomains ?? [],
+      enabledSurfaces: patch.enabledSurfaces ?? session.context.enabledSurfaces ?? [],
+      preserveEnglish: patch.preserveEnglish ?? session.context.preserveEnglish ?? true
+    };
+    const secure = isSecureContext(mergedContext);
+    session.context = {
+      ...mergedContext,
+      secureInput: secure
+    };
+    session.mode = session.context.mode;
+    session.layoutId = session.context.layoutId;
+    session.warnings = secure ? ["Secure/code field: suggestions and memory are disabled."] : [];
+    session.lastUpdateTime = nowMs();
+    return session;
+  }
+
   updateCandidates(sessionId: SessionId, candidates: Candidate[], warnings: string[] = []): KeyboardSession {
     const session = this.get(sessionId);
     session.candidates = candidates.slice(0, 12);

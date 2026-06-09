@@ -1,0 +1,34 @@
+{
+  "startedAt": "2026-06-09T12:22:40.859Z",
+  "rowsRead": {
+    "d8": 100000,
+    "d3": 249685,
+    "d4": 250000,
+    "d7": 1000000,
+    "d1": 1000000,
+    "d2": 99998
+  },
+  "rowsUsed": {
+    "d3": 82209,
+    "d4": 23878,
+    "d7": 938478,
+    "d1": 998433,
+    "d2": 64999
+  },
+  "rowsSkipped": {
+    "d3": 167476,
+    "d4": 226122,
+    "d7": 61522,
+    "d1": 1567,
+    "d2": 34999
+  },
+  "contextEvents": 2954122,
+  "prefixEvents": 9816864,
+  "blindRowsExcluded": 73801,
+  "finishedAt": "2026-06-09T12:24:08.767Z",
+  "uniqueContextPairs": 1400001,
+  "uniquePrefixPairs": 1000001,
+  "emittedContextPredictions": 80000,
+  "emittedPrefixPredictions": 60000,
+  "checksum": "aaa3d9f2ae4debf0a18d5e0df6d1285cde2c8fdd2291d823b1cd24c4390c0ba5"
+}

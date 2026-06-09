@@ -1,6 +1,6 @@
 # Engine Quality Scorecard
 
-Updated: 2026-06-09T08:29:04.308Z
+Updated: 2026-06-09T13:15:05.602Z
 
 This scorecard reads existing fresh report files from `bench/reports`. It does not recompute the heavy benchmark universe. Missing, stale, zero-fixture, or schema-weak reports are visible below.
 
@@ -88,7 +88,7 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | candidate dedupe and shortcuts | complete |
 | ranking and phrase completion | complete |
 | next-word prediction | complete |
-| KSR baseline | 0.0162889756411158 |
+| KSR baseline | 0.025062567044890426 |
 | Traditional physical layout | blocked-human |
 | Traditional Unicode suggestions | complete |
 | Traditional proofread | complete |
@@ -98,7 +98,7 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | memory controls | complete |
 | Keyboard Lab | complete |
 | companion shell | complete |
-| typing latency p95 ms | 1 |
+| typing latency p95 ms | 7 |
 | native release readiness | pending |
 
 ## Performance
@@ -106,14 +106,14 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | Case | p95 ms | Gate ms | Status |
 | --- | ---: | ---: | --- |
 | 50-token hostile Romanized mixed sentence | 1 | 30 | pass |
-| 5KB mixed Preeti paragraph | 19 | 100 | pass |
+| 5KB mixed Preeti paragraph | 22 | 100 | pass |
 | KeyboardEngine warm startup | 0 | 500 | pass |
 | KeyboardEngine partial warm timeout | 0 | 50 | pass |
 | Keyboard Romanized live update | 1 | 20 | pass |
 | Keyboard candidate count cap | 1 | 20 | pass |
 | Keyboard Traditional Unicode suggestion | 3 | 20 | pass |
 | Keyboard proofread hint update | 0 | 40 | pass |
-| Keyboard dictionary lookup | 8 | 30 | pass |
+| Keyboard dictionary lookup | 0 | 30 | pass |
 | Keyboard memory ranking update | 0 | 10 | pass |
 | Keyboard candidate commit | 1 | 10 | pass |
 | Native IPC JSON envelope simulation | 0 | 10 | pass |

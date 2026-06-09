@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-06-08T12:49:44.870Z",
-  "buildReportGeneratedAt": "2026-06-08T12:48:52.941Z",
+  "generatedAt": "2026-06-09T13:11:13.006Z",
+  "buildReportGeneratedAt": "2026-06-09T12:20:20.278Z",
   "files": {
     "wordAliases": {
       "file": "word-aliases.auto-reviewed.jsonl",
@@ -52,7 +52,7 @@
     }
   },
   "curation": {
-    "generatedAt": "2026-06-08T12:49:44.740Z",
+    "generatedAt": "2026-06-09T12:22:40.503Z",
     "leakageAudit": {
       "checkedTrainRows": 2653382,
       "heldOutRows": 96301,

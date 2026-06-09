@@ -680,10 +680,11 @@ function writeRuntimePacks() {
   const bundledPack = {
     version: manifest.version,
     generatedAt: manifest.generatedAt,
-    words: runtime.words.slice(0, 2_500),
-    phrases: runtime.phrases.slice(0, 1_500),
-    proofread: runtime.proofread.slice(0, 1_000),
-    names: runtime.names.slice(0, 1_000),
+    words: runtime.words.slice(0, 15_000),
+    phrases: runtime.phrases.slice(0, 8_000),
+    proofread: runtime.proofread.slice(0, 3_000),
+    names: runtime.names.slice(0, 4_000),
+    nextContexts: runtime.contexts.slice(0, 20_000),
     mixedPolicy: {
       preserveAlways: Array.from(runtime.mixedPolicy.preserveAlways).sort().slice(0, 500),
       preferenceTokens: Array.from(runtime.mixedPolicy.preferenceTokens).sort().slice(0, 500),

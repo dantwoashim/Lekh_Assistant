@@ -80,6 +80,9 @@ for (const key of ["words", "phrases", "proofread", "names"]) {
     violations.push({ file: "src/data/keyboard-packs/v0.1/runtime-suggestions.json", reason: `empty-${key}` });
   }
 }
+if (!Array.isArray(pack.nextContexts) || pack.nextContexts.length === 0) {
+  violations.push({ file: "src/data/keyboard-packs/v0.1/runtime-suggestions.json", reason: "empty-nextContexts" });
+}
 
 for (const file of requiredFiles) {
   if (!fs.existsSync(file)) continue;
@@ -108,6 +111,7 @@ const report = {
     phrases: Array.isArray(pack.phrases) ? pack.phrases.length : 0,
     proofread: Array.isArray(pack.proofread) ? pack.proofread.length : 0,
     names: Array.isArray(pack.names) ? pack.names.length : 0,
+    nextContexts: Array.isArray(pack.nextContexts) ? pack.nextContexts.length : 0,
   },
   status: violations.length === 0 ? "passed" : "failed",
   violations,

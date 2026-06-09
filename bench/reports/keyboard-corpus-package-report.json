@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-09T08:28:40.337Z",
+  "generatedAt": "2026-06-09T13:14:20.352Z",
   "command": "npm run corpus:keyboard:package-check",
   "suite": "keyboard-corpus-package",
   "durationMs": 0,
@@ -35,10 +35,11 @@
   "reviewedScaleNote": "Large generated/auto-reviewed corpus rows are present, but only gold quality rows are human/project-reviewed evidence for public accuracy claims.",
   "leakageStatus": "passed",
   "packagedRuntimeCounts": {
-    "words": 2500,
-    "phrases": 1500,
-    "proofread": 1000,
-    "names": 1000
+    "words": 15000,
+    "phrases": 8000,
+    "proofread": 3000,
+    "names": 4000,
+    "nextContexts": 20000
   },
   "status": "passed",
   "violations": []

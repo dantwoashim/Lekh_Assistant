@@ -230,6 +230,7 @@ export interface KeyboardEngine {
 
   learnCorrection(entry: unknown): void;
 
+  setContext(sessionId: SessionId, patch: Partial<TypingContext>): void;
   setMode(sessionId: SessionId, mode: KeyboardMode): void;
   setLayout(sessionId: SessionId, layoutId: string): void;
 

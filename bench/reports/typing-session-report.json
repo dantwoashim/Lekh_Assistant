@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-09T08:28:43.248Z",
+  "generatedAt": "2026-06-09T13:14:26.461Z",
   "command": "npm run benchmark:typing-session",
   "suite": "typing-session",
   "mode": "full",
-  "durationMs": 239,
+  "durationMs": 869,
   "fixtureCount": 66,
   "romanized": {
     "totalSessions": 47,
@@ -107,11 +107,11 @@
   },
   "latency": {
     "candidateP50Ms": 1,
-    "candidateP95Ms": 1,
-    "updateP95Ms": 1,
+    "candidateP95Ms": 7,
+    "updateP95Ms": 7,
     "commitP95Ms": 0
   },
-  "keystrokeSavingsRatioMean": 0.0162889756411158,
+  "keystrokeSavingsRatioMean": 0.025062567044890426,
   "proofHintHitRate": 1,
   "dictionaryHitRate": 1,
   "memoryBoostSuccessRate": 1,
@@ -147,10 +147,10 @@
         "swasthy"
       ],
       "latencyMs": [
-        90,
-        17,
-        1,
-        1
+        217,
+        362,
+        4,
+        2
       ],
       "commitLatencyMs": 1,
       "keystrokeSavingsRatio": 0.5555555555555556,
@@ -185,13 +185,13 @@
       ],
       "latencyMs": [
         1,
-        0,
-        0,
-        0,
         1,
+        2,
+        0,
+        3,
         1,
-        1,
-        1
+        2,
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.11111111111111116,
@@ -216,24 +216,24 @@
       "finalDisplayText": "कार्यालय",
       "candidateTexts": [
         "कार्यालय",
-        "कर्यलय",
-        "कार्यालयको",
         "कार्यालयका",
         "कार्यालयकी",
-        "कार्यालयमा",
+        "कार्यालयको",
         "karyalaya",
-        "karyakram"
+        "karyalayabata",
+        "karyalayaka",
+        "karyalayaki"
       ],
       "latencyMs": [
-        0,
+        4,
+        7,
+        8,
+        5,
         2,
-        0,
         1,
+        2,
         1,
-        6,
-        1,
-        1,
-        1
+        3
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.125,
@@ -268,11 +268,11 @@
       ],
       "latencyMs": [
         1,
+        6,
+        10,
+        5,
         1,
-        0,
         1,
-        1,
-        0,
         1,
         1
       ],
@@ -304,16 +304,16 @@
       ],
       "latencyMs": [
         0,
-        0,
-        0,
         1,
-        0,
+        6,
         1,
         1,
-        0,
         1,
-        0,
         1,
+        1,
+        1,
+        1,
+        2,
         1
       ],
       "commitLatencyMs": 0,
@@ -348,7 +348,7 @@
         "सवसथय कार्यालय"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -382,7 +382,7 @@
         "जिल्ला प्र"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.3571428571428571,
@@ -416,7 +416,7 @@
         "नगरिकत प्रअ"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.368421052631579,
@@ -450,7 +450,7 @@
         "mero NID form"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -541,7 +541,7 @@
       "latencyMs": [
         0,
         0,
-        0,
+        1,
         0
       ],
       "commitLatencyMs": 0,
@@ -569,12 +569,14 @@
         "समाचार",
         "समचर",
         "समाचारपत्र",
-        "समाचारदाता",
-        "samachar",
-        "समछर"
+        "समाचारपत्रिका",
+        "समाचारप्रसारण",
+        "समाचारमाले",
+        "सामाचारमूलक",
+        "समाचारदाता"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.33333333333333326,
@@ -599,16 +601,16 @@
       "finalDisplayText": "विकास",
       "candidateTexts": [
         "विकास",
-        "बिकस",
         "विकसित",
-        "विकासशील",
-        "विकासोन्मुख",
-        "विकासक्रम",
-        "विकासित",
-        "विकासको"
+        "बिकस",
+        "विकास को हुनु",
+        "विकास गर्न",
+        "विकास भयो",
+        "विकास हुन",
+        "विकासशील"
       ],
       "latencyMs": [
-        1
+        6
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -636,11 +638,12 @@
         "सनकल्प",
         "सन्कल्प",
         "सनकलप",
+        "सङ्कल्परत",
         "शंकाअल्प",
         "sankalpa"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.33333333333333326,
@@ -665,6 +668,7 @@
       "finalDisplayText": "दृढ",
       "candidateTexts": [
         "दृढ",
+        "दृढ संकल्प",
         "दृढकर्मा",
         "दृढनिश्चय",
         "दृढव्रत",
@@ -672,7 +676,7 @@
         "driDha"
       ],
       "latencyMs": [
-        0
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -1,
@@ -765,7 +769,7 @@
         "swasthay"
       ],
       "latencyMs": [
-        0
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.11111111111111116,
@@ -791,15 +795,15 @@
       "candidateTexts": [
         "राम",
         "राम्रो",
-        "रमेश",
-        "रम",
-        "रामचन्द्र",
-        "रामायण",
-        "रामेछाप",
+        "रमर",
+        "रमरूओ",
+        "रामआरी",
+        "रामऔल",
+        "रामेश",
         "राम्ररी"
       ],
       "latencyMs": [
-        1
+        7
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -833,7 +837,7 @@
         "शिक्श मन्त्रालय"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.125,
@@ -867,7 +871,7 @@
         "जिलल प्रशासन"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.0714285714285714,
@@ -892,15 +896,16 @@
       "finalDisplayText": "नागरिकता प्रमाणपत्र",
       "candidateTexts": [
         "नागरिकता प्रमाणपत्र",
-        "nagarikta",
+        "नागरिकता प्रमाणपत्रका",
+        "नागरिकता प्रमाणपत्रकी",
+        "नागरिकता प्रमाणपत्रको",
         "nagarikta pramanpatra",
-        "नगरिक्त प्रमाणपत्र",
-        "नागरिकता प्रमनपत्र",
-        "नागरिकता प्रमन्पत्र",
-        "नगरिकत प्रमाणपत्र"
+        "nagarikta pramanpatraka",
+        "nagarikta pramanpatraki",
+        "nagarikta pramanpatrako"
       ],
       "latencyMs": [
-        1
+        3
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.10526315789473695,
@@ -925,13 +930,13 @@
       "finalDisplayText": "जिल्ला प्रशासन कार्यालय",
       "candidateTexts": [
         "जिल्ला प्रशासन कार्यालय",
+        "जिल्ला प्रशासन",
         "जिल्ल प्रशासन कार्यालय",
         "जिल्ल प्रशसन कर्यलय",
         "जिल्ल प्रशसन करयलय",
         "जिल्ल प्रषसन करयलय",
         "जिल्ल प्रषसन कर्यलय",
-        "जिल्ल प्रससन करयलय",
-        "जिल्ल प्रससन कर्यलय"
+        "जिल्ल प्रससन करयलय"
       ],
       "latencyMs": [
         2
@@ -1000,7 +1005,7 @@
         "मृत्यु दर"
       ],
       "latencyMs": [
-        0
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.16666666666666663,
@@ -1099,7 +1104,7 @@
       "latencyMs": [
         1
       ],
-      "commitLatencyMs": 0,
+      "commitLatencyMs": 1,
       "keystrokeSavingsRatio": -0.05263157894736836,
       "warnings": [],
       "proofHintHit": false,
@@ -1156,12 +1161,12 @@
       "finalDisplayText": "कार्यालय",
       "candidateTexts": [
         "कार्यालय",
+        "कार्यकर्ता",
         "कार्यविधि",
         "कार्यसूची",
-        "कार्यक्रम",
-        "कर्य",
-        "कार्यालयको",
         "karyalaya",
+        "karyabidhi",
+        "karyasuchi",
         "karyakram"
       ],
       "latencyMs": [
@@ -1191,15 +1196,15 @@
       "candidateTexts": [
         "नागरिक",
         "नागरिकता",
+        "नागरिकले",
+        "नागरिकता प्रमाण पत्र",
+        "नागरिकता प्रमाणपत्र",
         "नगरिक",
         "नागरिकको",
-        "नागरिकका",
-        "नागरिककी",
-        "नागरिकताको",
         "nagarikta"
       ],
       "latencyMs": [
-        1
+        3
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.16666666666666674,
@@ -1221,22 +1226,22 @@
       "top1Hit": true,
       "top3Hit": true,
       "primaryPrefixHit": true,
-      "finalDisplayText": "प्रशासन",
+      "finalDisplayText": "प्रबिन",
       "candidateTexts": [
+        "प्रबिन",
+        "प्रवीण",
         "प्रशासन",
         "प्रस्ताव",
-        "प्रमाणपत्र",
-        "प्रबिन",
         "prashasan",
         "pramanpatra",
         "praman",
         "pradesh"
       ],
       "latencyMs": [
-        1
+        7
       ],
       "commitLatencyMs": 0,
-      "keystrokeSavingsRatio": 0.5714285714285714,
+      "keystrokeSavingsRatio": 0.5,
       "warnings": [],
       "proofHintHit": false,
       "dictionaryHit": false,
@@ -1316,7 +1321,7 @@
       "latencyMs": [
         0
       ],
-      "commitLatencyMs": 0,
+      "commitLatencyMs": 1,
       "keystrokeSavingsRatio": 0,
       "warnings": [],
       "proofHintHit": false,
@@ -1367,15 +1372,15 @@
       "candidateTexts": [
         "मेरो NID form submit भएन",
         "मेरो NID फारम सबमिट भएन",
-        "मेरो",
-        " form submit भएन",
-        " फारम submit भएन",
-        " form सबमिट भएन",
+        "मेरो NID form submit भएनका",
+        "मेरो NID form submit भएनकी",
         "mero NID form submit bhayena",
-        " form submit भयेन"
+        "mero NID form submit bhayenaka",
+        "mero NID form submit bhayenaki",
+        "mero NID form submit bhayenako"
       ],
       "latencyMs": [
-        1
+        3
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.16666666666666674,
@@ -1401,14 +1406,15 @@
       "candidateTexts": [
         "PDF report upload गर्न मिलेन",
         "PDF रिपोर्ट अपलोड गर्न मिलेन",
-        " report upload गर्न मिलेन",
-        " रिपोर्ट upload गर्न मिलेन",
-        " report अपलोड गर्न मिलेन",
+        "PDF report upload गर्न मिलेनका",
+        "PDF report upload गर्न मिलेनकी",
         "PDF report upload garna milena",
-        " report upload गरन मिलेन"
+        "PDF report upload garna milenaka",
+        "PDF report upload garna milenaki",
+        "PDF report upload garna milenako"
       ],
       "latencyMs": [
-        1
+        3
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.0714285714285714,
@@ -1461,17 +1467,17 @@
       "candidateTexts": [
         "स्वास्थ्य",
         "स्वागत",
-        "स्वाद",
         "स्वास्थ्य कार्यालय",
         "स्वास्थ्य बीमा",
-        "स्वायत्त",
+        "स्वामित्व",
         "स्वामी",
-        "स्वामित्व"
+        "स्वायत्त",
+        "स्वाद"
       ],
       "latencyMs": [
-        0
+        1
       ],
-      "commitLatencyMs": 1,
+      "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.5555555555555556,
       "warnings": [],
       "proofHintHit": false,
@@ -1495,11 +1501,11 @@
       "candidateTexts": [
         "कार्यालय",
         "कार्यक्रम",
-        "कार्यालयको",
         "कार्यालयका",
         "कार्यालयकी",
+        "कार्यालयको",
+        "कार्यालयबाट",
         "कार्यालयमा",
-        "कार्यालयले",
         "कार्यालयलाई"
       ],
       "latencyMs": [
@@ -1528,7 +1534,11 @@
       "finalDisplayText": "जिल्ला प्रशासन",
       "candidateTexts": [
         "जिल्ला प्रशासन",
-        "जिल्ला प्रशासन कार्यालय"
+        "जिल्ला प्रशासन कार्यालय",
+        "जिल्ला प्रशासनिक",
+        "जिल्ला प्रशान्त",
+        "जिल्ला प्रशासक",
+        "जिल्ला प्रशासित"
       ],
       "latencyMs": [
         0
@@ -1578,13 +1588,22 @@
       "top1Hit": true,
       "top3Hit": true,
       "primaryPrefixHit": true,
-      "finalDisplayText": "विद्यालय को",
-      "candidateTexts": [],
+      "finalDisplayText": "विद्यालय कोइराला",
+      "candidateTexts": [
+        "विद्यालय कोइराला",
+        "विद्यालय कोशी",
+        "विद्यालय कोशी प्रदेश",
+        "विद्यालय कोड",
+        "विद्यालय कोरिया",
+        "विद्यालय कोलकाता",
+        "विद्यालय कोष",
+        "विद्यालय कोही"
+      ],
       "latencyMs": [
         1
       ],
       "commitLatencyMs": 0,
-      "keystrokeSavingsRatio": 0,
+      "keystrokeSavingsRatio": 0.3125,
       "warnings": [],
       "proofHintHit": true,
       "dictionaryHit": false,
@@ -1603,13 +1622,21 @@
       "top1Hit": true,
       "top3Hit": true,
       "primaryPrefixHit": true,
-      "finalDisplayText": "मन्त्रालय ले",
-      "candidateTexts": [],
+      "finalDisplayText": "मन्त्रालय लेख्नुस",
+      "candidateTexts": [
+        "मन्त्रालय लेख्नुस",
+        "मन्त्रालय लेखा",
+        "मन्त्रालय ले",
+        "मन्त्रालय लेख",
+        "मन्त्रालय लेखक",
+        "मन्त्रालय लेखन",
+        "मन्त्रालय लेखापरीक्षण"
+      ],
       "latencyMs": [
         0
       ],
       "commitLatencyMs": 0,
-      "keystrokeSavingsRatio": 0,
+      "keystrokeSavingsRatio": 0.2941176470588235,
       "warnings": [],
       "proofHintHit": true,
       "dictionaryHit": false,
@@ -2034,16 +2061,16 @@
       "finalDisplayText": "जिल्ला",
       "candidateTexts": [
         "जिल्ला",
+        "जिल्ला प्रशासन",
+        "जिल्ला प्रशासन कार्यालय",
         "जिलल",
         "जिल्ल",
         "जिल्ला अदालत",
-        "जिल्ला प्रशासन कार्यालय",
         "जिल्लाको",
-        "जिल्लाका",
-        "जिल्लाकी"
+        "जिल्लाका"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.16666666666666663,
@@ -2102,16 +2129,16 @@
       "finalDisplayText": "नेपाल",
       "candidateTexts": [
         "नेपाल",
-        "नेपालगञ्ज",
-        "नेपालगन्ज",
-        "नेपाली",
-        "नेपल",
+        "नेपलस",
+        "नेपलेसे",
         "नेपालको",
-        "नेपालका",
-        "नेपालकी"
+        "nepal",
+        "nepalganj",
+        "nepalgunj",
+        "nepali"
       ],
       "latencyMs": [
-        1
+        6
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -2136,16 +2163,16 @@
       "finalDisplayText": "जन्म",
       "candidateTexts": [
         "जन्म",
-        "जन्मदिन",
-        "जन्मस्थान",
-        "जन्मभूमि",
-        "जन्मजात",
-        "जन्मस्थल",
-        "जन्मको",
-        "जन्म दर्ता"
+        "जन्मभुमि",
+        "जन्म दर्ता",
+        "जन्म कैद",
+        "जन्म थलो हुम्ला",
+        "जन्म पानी",
+        "जन्म पानी लिउल",
+        "जन्म पानी लिउल मा"
       ],
       "latencyMs": [
-        0
+        7
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.25,
@@ -2170,8 +2197,8 @@
       "finalDisplayText": "मृत्यु",
       "candidateTexts": [
         "मृत्यु",
-        "मृत्युदण्ड",
         "मृत्यु दर्ता",
+        "मृत्युदण्ड",
         "मृत्युवरण",
         "मृत्युशय्या",
         "मृत्युपछि",
@@ -2179,7 +2206,7 @@
         "मृत्युले"
       ],
       "latencyMs": [
-        0
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,

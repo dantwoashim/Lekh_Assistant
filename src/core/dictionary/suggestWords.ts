@@ -73,13 +73,18 @@ function getPrefixIndex(): PrefixIndex {
 }
 
 function addToBucket(buckets: Map<string, IndexedSuggestion[]>, searchText: string, suggestion: IndexedSuggestion): void {
-  const key = bucketKey(searchText);
-  const bucket = buckets.get(key);
-  if (bucket) {
-    bucket.push(suggestion);
-    return;
+  const keys = new Set<string>();
+  for (let length = 1; length <= Math.min(2, searchText.length); length += 1) {
+    keys.add(searchText.slice(0, length));
   }
-  buckets.set(key, [suggestion]);
+  for (const key of keys) {
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(suggestion);
+    } else {
+      buckets.set(key, [suggestion]);
+    }
+  }
 }
 
 function bucketKey(value: string): string {

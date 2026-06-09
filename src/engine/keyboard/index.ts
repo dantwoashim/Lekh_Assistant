@@ -145,6 +145,12 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     this.memoryEntries = importKeyboardMemoryEntry(this.memoryEntries, entry);
   }
 
+  setContext(sessionId: SessionId, patch: Partial<TypingContext>): void {
+    if (!this.sessions.has(sessionId)) return;
+    this.sessions.updateContext(sessionId, patch);
+    this.cache.clear(sessionId);
+  }
+
   setMode(sessionId: SessionId, mode: KeyboardMode): void {
     if (!this.sessions.has(sessionId)) return;
     this.sessions.setMode(sessionId, mode);

@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-09T08:28:47.359Z",
+  "generatedAt": "2026-06-09T13:14:34.887Z",
   "command": "npm run benchmark:typing-session -- memory-ranking,memory-controls",
   "suite": "typing-session:memory-ranking,memory-controls",
   "mode": "full",
-  "durationMs": 140,
+  "durationMs": 513,
   "fixtureCount": 4,
   "romanized": {
     "totalSessions": 4,
@@ -146,7 +146,7 @@
       "latencyMs": [
         0
       ],
-      "commitLatencyMs": 1,
+      "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
       "warnings": [],
       "proofHintHit": false,

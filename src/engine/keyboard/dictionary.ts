@@ -4,11 +4,18 @@ import { loadLexicalAuthority } from "../lexicon";
 import { queryLexiconByRomanized, queryRuntimeDictionary } from "../lexicon/authority";
 import type { DictionaryResult, TypingContext } from "./types";
 
+const LOOKUP_CACHE_MAX = 512;
+const lookupCache = new Map<string, DictionaryResult[]>();
+
 export function lookupKeyboardDictionary(query: string, context?: TypingContext): DictionaryResult[] {
   const trimmed = query.trim();
   if (!trimmed || context?.secureInput || context?.fieldType === "password" || context?.fieldType === "code") return [];
 
   const normalized = normalizeNepaliText(trimmed);
+  const cacheKey = `${normalized}\u0000${trimmed.toLowerCase()}`;
+  const cached = lookupCache.get(cacheKey);
+  if (cached) return cached.map((row) => ({ ...row, romanized: row.romanized?.slice(), variants: row.variants?.slice(), domains: row.domains?.slice() }));
+
   const byRomanized = [
     ...queryRuntimeDictionary(trimmed),
     ...queryLexiconByRomanized(loadLexicalAuthority(), trimmed)
@@ -41,7 +48,9 @@ export function lookupKeyboardDictionary(query: string, context?: TypingContext)
     confidence: entry.source.includes("dictionary-ne") ? 0.68 : 0.88
   }));
 
-  return dedupe([...rows, ...fallback]).slice(0, 8);
+  const result = dedupe([...rows, ...fallback]).slice(0, 8);
+  cacheLookup(cacheKey, result);
+  return result.map((row) => ({ ...row, romanized: row.romanized?.slice(), variants: row.variants?.slice(), domains: row.domains?.slice() }));
 }
 
 function dedupe(rows: DictionaryResult[]): DictionaryResult[] {
@@ -54,4 +63,13 @@ function dedupe(rows: DictionaryResult[]): DictionaryResult[] {
     result.push(row);
   }
   return result.sort((a, b) => b.confidence - a.confidence || a.word.localeCompare(b.word, "ne"));
+}
+
+function cacheLookup(key: string, rows: DictionaryResult[]): void {
+  if (lookupCache.has(key)) lookupCache.delete(key);
+  lookupCache.set(key, rows.map((row) => ({ ...row, romanized: row.romanized?.slice(), variants: row.variants?.slice(), domains: row.domains?.slice() })));
+  if (lookupCache.size > LOOKUP_CACHE_MAX) {
+    const oldest = lookupCache.keys().next().value;
+    if (oldest) lookupCache.delete(oldest);
+  }
 }

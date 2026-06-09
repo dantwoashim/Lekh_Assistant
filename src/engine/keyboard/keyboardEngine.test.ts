@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import predictionModel from "../../data/keyboard-packs/v0.1/prediction-model.json";
 import { createKeyboardEngine, defaultTypingContext } from "./index";
 import type { KeyboardKeyEvent } from "./types";
 import { finalizeCandidates } from "./candidates";
@@ -40,6 +41,35 @@ describe("KeyboardEngine session API", () => {
       showRomanizedLabels: true
     });
     expect(suggestions.some((candidate) => candidate.text === "मुस्कुराउँदै")).toBe(true);
+  });
+
+  it("uses the trained aggregate prediction model for contextual Romanized suggestions", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const update = engine.updateComposition(sessionId, "ramro x", 7);
+    const trainedCandidate = update.candidates.find((candidate) =>
+      candidate.label === "ramro xa" && candidate.reason.join(" ").includes("trained prediction model")
+    );
+
+    expect(trainedCandidate?.text).toBe("राम्रो छ");
+    expect(trainedCandidate?.confidence).toBeGreaterThan(0.7);
+  });
+
+  it("keeps unsafe public-comment tokens out of the default trained runtime model", () => {
+    const unsafeExact = new Set(["lado", "muji", "mugi", "randi", "radi", "chikne", "chikni", "machikne", "machikney", "khate", "khatey", "gandu", "boka"]);
+    const unsafePrefixes = ["lado", "muji", "mugi", "randi", "radi", "chikne", "machikne", "khate", "khatey", "gandu"];
+    const unsafe = (token: string) =>
+      unsafeExact.has(token) || unsafePrefixes.some((prefix) => token.startsWith(prefix) && token.length <= prefix.length + 5);
+    const model = predictionModel as {
+      contextPredictions: Array<{ c: string; n: string }>;
+      prefixPredictions: Array<{ p: string; m: string }>;
+    };
+
+    const contextHit = model.contextPredictions.find((row) => unsafe(row.n) || row.c.split(" ").some(unsafe));
+    const prefixHit = model.prefixPredictions.find((row) => row.p.split(" ").some(unsafe) || row.m.split(" ").some(unsafe));
+
+    expect(contextHit).toBeUndefined();
+    expect(prefixHit).toBeUndefined();
   });
 
   it("suppresses compiled runtime pack suggestions in secure fields", () => {
@@ -180,6 +210,115 @@ describe("KeyboardEngine session API", () => {
     }
   });
 
+  it("keeps live suggestions populated for active Romanized prefixes inside sentences", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const cases = [
+      ["k", "के", "k"],
+      ["mero k", "मेरो के छ अवस्था", "mero ke cha awastha"],
+      ["jilla p", "जिल्ला प्रशासन", "jilla prashasan"],
+      ["nagarikta p", "नागरिकता प्रमाणपत्र", "nagarikta pramanpatra"],
+      ["swasthya k", "स्वास्थ्य कार्यालय", "swasthya karyalaya"]
+    ] as const;
+
+    for (const [input, unicodeCandidate, romanizedCandidate] of cases) {
+      const update = engine.updateComposition(sessionId, input, input.length);
+      expect(update.shouldShowCandidateUI).toBe(true);
+      expect(update.candidates.length).toBeGreaterThan(0);
+      expect(update.candidates.map((candidate) => candidate.text)).toContain(unicodeCandidate);
+      expect(update.candidates.map((candidate) => candidate.label)).toContain(romanizedCandidate);
+      if (input === "mero k") {
+        expect(update.candidates.find((candidate) => candidate.text === unicodeCandidate)?.type).toBe("phrase");
+      }
+    }
+  });
+
+  it("covers casual Romanized Nepali words, slang spellings, and social phrases", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const cases = [
+      ["kasto", "कस्तो", "kasto"],
+      ["kasto cha", "कस्तो छ", "kasto cha"],
+      ["k gardai chau", "के गर्दै छौ", "k gardai chau"],
+      ["hunxa", "हुन्छ", "hunxa"],
+      ["garna", "गर्न", "garna"],
+      ["parxa", "पर्छ", "parxa"],
+      ["aaja", "आज", "aaja"],
+      ["bholi", "भोलि", "bholi"],
+      ["malai", "मलाई", "malai"],
+      ["timro", "तिम्रो", "timro"],
+      ["ramro", "राम्रो", "ramro"],
+      ["ramro lagyo", "राम्रो लाग्यो", "ramro lagyo"],
+      ["sanchai", "सञ्चै", "sanchai"],
+      ["ma aaudai xu", "म आउँदै छु", "ma aaudai xu"],
+      ["timi kaha chau", "तिमी कहाँ छौ", "timi kaha chau"],
+      ["ghar jane", "घर जाने", "ghar jane"],
+      ["dherai dhanyabad", "धेरै धन्यवाद", "dherai dhanyabad"]
+    ] as const;
+
+    for (const [input, expected, label] of cases) {
+      const update = engine.updateComposition(sessionId, input, input.length);
+      expect(update.shouldShowCandidateUI, input).toBe(true);
+      expect(update.candidates.map((candidate) => candidate.text), input).toContain(expected);
+      expect(update.candidates.map((candidate) => candidate.label), input).toContain(label);
+    }
+  });
+
+  it("normalizes casual Romanized shorthand instead of echoing raw text", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const update = engine.updateComposition(sessionId, "mero k xa awastha", 17);
+
+    expect(update.candidates.map((candidate) => candidate.text)).toContain("मेरो के छ अवस्था");
+    expect(update.candidates.some((candidate) => candidate.type === "romanized-helper" && candidate.text === "mero ke cha awastha")).toBe(true);
+    expect(update.candidates.find((candidate) => candidate.text === "मेरो के छ अवस्था")?.label).toBe("mero k xa awastha");
+  });
+
+  it("offers status phrase completions without relying on raw Romanized echoes", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const update = engine.updateComposition(sessionId, "mero ke cha", 11);
+
+    expect(update.candidates.map((candidate) => candidate.text)).toContain("मेरो के छ अवस्था");
+    expect(update.candidates.map((candidate) => candidate.label)).toContain("mero ke cha awastha");
+  });
+
+  it("progressively completes casual Romanized prefixes instead of waiting for exact words", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const cases = [
+      ["kas", "कस्तो", "kasto"],
+      ["kasto c", "कस्तो छ", "kasto cha"],
+      ["k gard", "के गर्दै छौ", "k gardai chau"],
+      ["ma aa", "म आउँदै छु", "ma aaudai xu"],
+      ["ramro l", "राम्रो लाग्यो", "ramro lagyo"],
+      ["dherai d", "धेरै धन्यवाद", "dherai dhanyabad"]
+    ] as const;
+
+    for (const [input, expected, label] of cases) {
+      const update = engine.updateComposition(sessionId, input, input.length);
+      expect(update.candidates.map((candidate) => candidate.text), input).toContain(expected);
+      expect(update.candidates.map((candidate) => candidate.label), input).toContain(label);
+    }
+  });
+
+  it("never returns an empty live suggestion list for alphabetic Romanized starts", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const starts = "abcdefghijklmnopqrstuvwxyz".split("");
+
+    for (const start of starts) {
+      const single = engine.updateComposition(sessionId, start, start.length);
+      expect(single.candidates.length, `single prefix ${start}`).toBeGreaterThan(0);
+      expect(single.shouldShowCandidateUI, `single prefix ${start}`).toBe(true);
+
+      const sentence = `mero ${start}`;
+      const sentenceUpdate = engine.updateComposition(sessionId, sentence, sentence.length);
+      expect(sentenceUpdate.candidates.length, `sentence prefix ${sentence}`).toBeGreaterThan(0);
+      expect(sentenceUpdate.shouldShowCandidateUI, `sentence prefix ${sentence}`).toBe(true);
+    }
+  });
+
   it("ranks full mixed Nepali-English spans instead of fragmenting the sentence", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
@@ -218,6 +357,80 @@ describe("KeyboardEngine session API", () => {
     const sessionId = engine.beginSession(defaultTypingContext("romanized"));
     const update = engine.updateComposition(sessionId, "ram", 3);
     expect(update.primary?.text).toBe("राम");
+  });
+
+  it("keeps exact words above phrase completions until the phrase boundary is typed", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+
+    expect(engine.updateComposition(sessionId, "dridha", 6).primary?.text).toBe("दृढ");
+    expect(engine.updateComposition(sessionId, "janma", 5).primary?.text).toBe("जन्म");
+    expect(engine.updateComposition(sessionId, "mrityu", 6).primary?.text).toBe("मृत्यु");
+    expect(engine.updateComposition(sessionId, "janma d", 7).primary?.text).toBe("जन्म दर्ता");
+  });
+
+  it("uses left-context signals for official, health, education, tech, and casual predictions", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({
+      ...defaultTypingContext("romanized"),
+      showRomanizedLabels: true,
+      activeDomains: ["general", "government", "office", "education", "health", "tech", "admin"]
+    });
+
+    const cases = [
+      {
+        leftTextWindow: "mero NID form submit bhayena. ward ko sifaris ko lagi ",
+        input: "jilla p",
+        expected: "जिल्ला प्रशासन",
+        label: "jilla prashasan"
+      },
+      {
+        leftTextWindow: "hospital ko report cha doctor le bima ko lagi ",
+        input: "swasthya b",
+        expected: "स्वास्थ्य बीमा",
+        label: "swasthya bima"
+      },
+      {
+        leftTextWindow: "school exam result ko notice aayo. ",
+        input: "shiksha m",
+        expected: "शिक्षा मन्त्रालय",
+        label: "shiksha mantralaya"
+      },
+      {
+        leftTextWindow: "website ma PDF form submit garna khojda ",
+        input: "file upload b",
+        expected: "file upload भएन",
+        label: "file upload bhayena"
+      },
+      {
+        leftTextWindow: "namaste sathi, k gardai chau? ",
+        input: "mero ke",
+        expected: "मेरो के छ अवस्था",
+        label: "mero ke cha awastha"
+      }
+    ] as const;
+
+    for (const item of cases) {
+      engine.setContext(sessionId, { leftTextWindow: item.leftTextWindow });
+      const update = engine.updateComposition(sessionId, item.input, item.input.length);
+      expect(update.candidates.map((candidate) => candidate.text), item.input).toContain(item.expected);
+      expect(update.candidates.map((candidate) => candidate.label), item.input).toContain(item.label);
+      expect(update.candidates.find((candidate) => candidate.text === item.expected)?.reason.join(" "), item.input).toMatch(/Context prediction/);
+    }
+  });
+
+  it("uses compiled next-context corpus rows for broad casual continuation", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({
+      ...defaultTypingContext("romanized"),
+      showRomanizedLabels: true
+    });
+
+    engine.setContext(sessionId, { leftTextWindow: "khusi " });
+    const update = engine.updateComposition(sessionId, "chh", 3);
+
+    expect(update.candidates.map((candidate) => candidate.label)).toContain("chhu");
+    expect(update.candidates.find((candidate) => candidate.label === "chhu")?.reason.join(" ")).toMatch(/trained prediction model|next-context pack/);
   });
 
   it("suppresses low-confidence proofread hints on active prefixes", () => {
@@ -397,6 +610,8 @@ describe("KeyboardEngine session API", () => {
     const sessionId = engine.beginSession(defaultTypingContext("traditional"));
     const update = engine.updateComposition(sessionId, "स्वा", 3);
     expect(update.candidates.some((candidate) => candidate.text === "स्वास्थ्य")).toBe(true);
+    const sentence = engine.updateComposition(sessionId, "मेरो स्वा", 8);
+    expect(sentence.candidates.some((candidate) => candidate.text === "मेरो स्वास्थ्य")).toBe(true);
     const typo = engine.updateComposition(sessionId, "सवस्थ्य", 7);
     expect(typo.proofHints.some((hint) => hint.suggestion === "स्वास्थ्य")).toBe(true);
   });

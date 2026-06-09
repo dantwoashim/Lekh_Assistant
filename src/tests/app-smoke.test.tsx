@@ -2,105 +2,191 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../app/App";
 
-describe("App", () => {
-  it("renders Keyboard Lab as the primary keyboard-first tab", async () => {
+describe("Minimal typing UI", () => {
+  it("renders only the typing box and four mode options", () => {
     render(<App />);
-    expect(screen.getByRole("tab", { name: /Keyboard Lab/i })).toHaveAttribute("aria-selected", "true");
-    expect(await screen.findByRole("heading", { name: "Keyboard Lab" }, { timeout: 8000 })).toBeInTheDocument();
+
+    expect(screen.getByRole("textbox", { name: "Romanized-Traditional" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Romanized-Romanized" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Romanized-Traditional" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Traditional-Traditional" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Traditional-Romanized" })).toBeInTheDocument();
+    expect(screen.queryByText(/Output/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Companion/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Preeti/i)).not.toBeInTheDocument();
   });
 
-  it("renders the Preeti converter as a side utility tab", async () => {
+  it("accepts Romanized-Traditional suggestions with Tab", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("tab", { name: /Preeti Utility/i }));
-    expect(await screen.findByLabelText(/Preeti text/i, {}, { timeout: 8000 })).toBeInTheDocument();
-    expect(await screen.findByDisplayValue("नमस्ते", {}, { timeout: 8000 })).toBeInTheDocument();
+
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.type(input, "swasthya karyalaya");
+
+    expectSuggestion("स्वास्थ्य कार्यालय");
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue("स्वास्थ्य कार्यालय");
   });
 
-  it("renders Romanized editor and suggestions", async () => {
+  it("accepts Romanized-Romanized completions with Tab", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("tab", { name: /^Romanized$/i }));
-    expect(await screen.findByLabelText(/Romanized input/i, {}, { timeout: 8000 })).toBeInTheDocument();
-    expect(await screen.findByDisplayValue(/NID form को नाम field/, {}, { timeout: 8000 })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
+    const input = screen.getByRole("textbox", { name: "Romanized-Romanized" });
+    await user.type(input, "swas");
+
+    expectSuggestion("swasthya");
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue("swasthya");
   });
 
-  it("applies a suggestion by replacing only the current romanized token", async () => {
+  it("shows completions immediately for short Romanized prefixes", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("tab", { name: /^Romanized$/i }));
-    const input = await screen.findByLabelText(/Romanized input/i, {}, { timeout: 8000 });
+
+    await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
+    const input = screen.getByRole("textbox", { name: "Romanized-Romanized" });
+    await user.type(input, "k");
+
+    expect(screen.getByText(/^Suggestion: k/i)).toBeInTheDocument();
+  });
+
+  it("updates suggestions for the active word inside a Romanized sentence", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.type(input, "mero k");
+
+    expectSuggestion("मेरो के छ अवस्था");
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue("मेरो के छ अवस्था");
+
+    await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
+    const romanizedInput = screen.getByRole("textbox", { name: "Romanized-Romanized" });
+    await user.type(romanizedInput, "mero k");
+
+    expectSuggestion("mero ke cha awastha");
+    await user.keyboard("{Tab}");
+    expect(romanizedInput).toHaveValue("mero ke cha awastha");
+  });
+
+  it("shows casual Romanized suggestions instead of only office/demo words", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.type(input, "kasto c");
+    expectSuggestion("कस्तो छ");
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue("कस्तो छ");
+
+    await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
+    const romanizedInput = screen.getByRole("textbox", { name: "Romanized-Romanized" });
+    await user.type(romanizedInput, "ramro l");
+    expectSuggestion("ramro lagyo");
+    await user.keyboard("{Tab}");
+    expect(romanizedInput).toHaveValue("ramro lagyo");
+  });
+
+  it("normalizes casual Romanized shorthand in Romanized-Romanized mode", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
+    const input = screen.getByRole("textbox", { name: "Romanized-Romanized" });
+    await user.type(input, "mero k xa awastha");
+
+    expectSuggestion("mero ke cha awastha");
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue("mero ke cha awastha");
+  });
+
+  it("offers useful Romanized sentence completions instead of no-op echoes", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const defaultInput = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.type(defaultInput, "mero ke cha");
+    expectSuggestion("मेरो के छ अवस्था");
+    await user.keyboard("{Tab}");
+    expect(defaultInput).toHaveValue("मेरो के छ अवस्था");
+
+    await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
+    const input = screen.getByRole("textbox", { name: "Romanized-Romanized" });
+    await user.type(input, "mero ke cha");
+
+    expectSuggestion("mero ke cha awastha");
+    expect(screen.queryByText("Suggestion: mero ke cha")).not.toBeInTheDocument();
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue("mero ke cha awastha");
+  });
+
+  it("suggests only for the active segment inside long casual and official text", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    const casualPrefix = "namaste mero naam prabin ho. ma bholi office jane ho.\n";
+    await user.type(input, `${casualPrefix}swasthya k`);
+    expectSuggestion("स्वास्थ्य कार्यालय");
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue(`${casualPrefix}स्वास्थ्य कार्यालय`);
+
     await user.clear(input);
-    await user.type(input, "mero pra");
-    const [suggestion] = await screen.findAllByRole("button", { name: /प्रशासन/i });
-    await user.click(suggestion);
-    expect(input).toHaveValue("mero prashasan");
-    expect(screen.getByDisplayValue("मेरो प्रशासन")).toBeInTheDocument();
+    const officialPrefix = "mero NID form submit bhayena. kripaya yo file heridinu.\n";
+    await user.type(input, `${officialPrefix}jilla pra`);
+    expectSuggestion("जिल्ला प्रशासन");
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue(`${officialPrefix}जिल्ला प्रशासन`);
+
+    await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
+    const romanizedInput = screen.getByRole("textbox", { name: "Romanized-Romanized" });
+    const messagePrefix = "hey sathi, k gardai chau?\n";
+    await user.type(romanizedInput, `${messagePrefix}mero ke cha`);
+    expectSuggestion("mero ke cha awastha");
+    await user.keyboard("{Tab}");
+    expect(romanizedInput).toHaveValue(`${messagePrefix}mero ke cha awastha`);
   });
 
-  it("applies romanized candidates as full-output alternatives", async () => {
+  it("keeps the visible suggestion lane populated for rare Romanized prefixes", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("tab", { name: /^Romanized$/i }));
-    const input = await screen.findByLabelText(/Romanized input/i, {}, { timeout: 8000 });
-    await user.clear(input);
-    await user.type(input, "niraj bhusal");
-    await user.click(screen.getByRole("button", { name: /नीरज भुसाल/i }));
 
-    expect(screen.getByDisplayValue("नीरज भुसाल")).toBeInTheDocument();
-    expect(screen.queryByDisplayValue("नीरज")).not.toBeInTheDocument();
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.type(input, "z");
+
+    expect(screen.getByText(/^Suggestion:/)).toBeInTheDocument();
   });
 
-  it("updates the feedback draft with the latest reported tool output", async () => {
+  it("accepts Traditional-Traditional suggestions with Tab", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("tab", { name: /^Romanized$/i }));
-    const input = await screen.findByLabelText(/Romanized input/i, {}, { timeout: 8000 });
-    await user.clear(input);
-    await user.type(input, "Thapa");
-    await user.click(screen.getByRole("button", { name: /report bad typing/i }));
 
-    expect(screen.getByLabelText(/Actual output/i)).toHaveValue("थापा");
+    await user.click(screen.getByRole("button", { name: "Traditional-Traditional" }));
+    const input = screen.getByRole("textbox", { name: "Traditional-Traditional" });
+    await user.type(input, "स्वा");
+
+    expectSuggestion("स्वास्थ्य");
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue("स्वास्थ्य");
   });
 
-  it("renders Traditional reference without creating a typing engine", async () => {
+  it("accepts Traditional-Romanized suggestions with Tab", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("tab", { name: /^Traditional$/i }));
-    expect(await screen.findByText(/not a full Traditional key map/i)).toBeInTheDocument();
-    expect(await screen.findByText("क्ष")).toBeInTheDocument();
-  });
 
-  it("renders Keyboard Lab with session candidates and warnings", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(screen.getByRole("tab", { name: /Keyboard Lab/i }));
-    expect(await screen.findByRole("heading", { name: "Keyboard Lab" }, { timeout: 8000 })).toBeInTheDocument();
-    expect((await screen.findAllByText("स्वास्थ्य कार्यालय")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("Dictionary")).toBeInTheDocument();
-    expect((await screen.findAllByText("स्वास्थ्य")).length).toBeGreaterThan(0);
-    await user.click(screen.getByLabelText(/Romanized labels/i));
-    expect((await screen.findAllByText("swasthya karyalaya")).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole("button", { name: /^Traditional$/i }));
-    expect(await screen.findByText(/Traditional layout mapping pending/i)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^Proofread$/i }));
-    const composition = await screen.findByLabelText(/Active composition/i);
-    await user.clear(composition);
-    await user.type(composition, "विद्यालय को");
-    expect(await screen.findByText(/विद्यालय को → विद्यालयको/i)).toBeInTheDocument();
-  });
+    await user.click(screen.getByRole("button", { name: "Traditional-Romanized" }));
+    const input = screen.getByRole("textbox", { name: "Traditional-Romanized" });
+    await user.type(input, "स्वास्थ्य");
 
-  it("renders the companion production shell without pretending it is an IME", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(screen.getByRole("tab", { name: /^Companion$/i }));
-    expect(await screen.findByText("Production Pages", {}, { timeout: 8000 })).toBeInTheDocument();
-    expect(await screen.findByText(/Per-user daemon/i)).toBeInTheDocument();
-    expect(await screen.findByText(/No global key hook in the companion/i)).toBeInTheDocument();
-    expect(await screen.findByText("Privacy Page Ready")).toBeInTheDocument();
-    expect((await screen.findAllByText(/redacted diagnostics/i)).length).toBeGreaterThan(0);
-    expect(await screen.findByText(/Companion app controls settings and diagnostics/i)).toBeInTheDocument();
-    expect((await screen.findAllByText("Privacy")).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("blocked-human")).length).toBeGreaterThan(0);
+    expectSuggestion("swasthya");
+    await user.keyboard("{Tab}");
+    expect(input).toHaveValue("swasthya");
   });
 });
+
+function expectSuggestion(text: string) {
+  expect(screen.getByText(`Suggestion: ${text}`)).toBeInTheDocument();
+}
