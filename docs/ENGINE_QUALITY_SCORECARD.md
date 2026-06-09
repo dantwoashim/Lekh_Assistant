@@ -1,6 +1,6 @@
 # Engine Quality Scorecard
 
-Updated: 2026-06-09T06:18:10.518Z
+Updated: 2026-06-09T06:58:26.213Z
 
 This scorecard reads existing fresh report files from `bench/reports`. It does not recompute the heavy benchmark universe. Missing, stale, zero-fixture, or schema-weak reports are visible below.
 
@@ -57,6 +57,10 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | frozen blind rows | 100000 |
 | real blind benchmark status | partial |
 | leakage audit | passed |
+| blind leakage gate | passed |
+| public-proof eligible fixtures | 1896 |
+| public-proof eligible suites | romanized-manual, romanized-hostile, romanized-hard-hostile-heldout, romanized-mixed-office-root-cause, romanized-admin-mixed, romanized-competitor, preeti-held-out, preeti-manual-hard, preeti-mixed-unicode-legacy-repair, preeti-competitor |
+| quarantined benchmark suites | romanized-held-out |
 | benchmark evidence risk | perfect benchmark scores require real frozen human-reviewed blind validation before public accuracy claims |
 
 ## Typing Sessions
@@ -102,14 +106,14 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | Case | p95 ms | Gate ms | Status |
 | --- | ---: | ---: | --- |
 | 50-token hostile Romanized mixed sentence | 1 | 30 | pass |
-| 5KB mixed Preeti paragraph | 19 | 100 | pass |
+| 5KB mixed Preeti paragraph | 64 | 100 | pass |
 | KeyboardEngine warm startup | 0 | 500 | pass |
 | KeyboardEngine partial warm timeout | 0 | 50 | pass |
 | Keyboard Romanized live update | 1 | 20 | pass |
 | Keyboard candidate count cap | 1 | 20 | pass |
-| Keyboard Traditional Unicode suggestion | 5 | 20 | pass |
-| Keyboard proofread hint update | 0 | 40 | pass |
-| Keyboard dictionary lookup | 19 | 30 | pass |
+| Keyboard Traditional Unicode suggestion | 3 | 20 | pass |
+| Keyboard proofread hint update | 1 | 40 | pass |
+| Keyboard dictionary lookup | 13 | 30 | pass |
 | Keyboard memory ranking update | 0 | 10 | pass |
 | Keyboard candidate commit | 1 | 10 | pass |
 | Native IPC JSON envelope simulation | 0 | 10 | pass |

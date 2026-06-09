@@ -1,5 +1,20 @@
 Third-Party Notices
 
+React 19.x
+Source: https://github.com/facebook/react
+License: MIT.
+Use: local companion app and browser validation UI rendering.
+
+react-dom 19.x
+Source: https://github.com/facebook/react
+License: MIT.
+Use: local companion app and browser validation UI rendering.
+
+lucide-react 0.468.x
+Source: https://github.com/lucide-icons/lucide
+License: ISC.
+Use: companion and validation UI icons.
+
 dictionary-ne 2.0.0
 Source: https://github.com/wooorm/dictionaries/tree/main/dictionaries/ne
 npm tarball: https://registry.npmjs.org/dictionary-ne/-/dictionary-ne-2.0.0.tgz
@@ -12,6 +27,21 @@ nspell 2.1.5
 Source: https://github.com/wooorm/nspell
 License: MIT.
 Use: local Hunspell-style spell validation in the browser.
+
+Electron 42.x
+Source: https://github.com/electron/electron
+License: MIT.
+Use: desktop companion shell. This is not the keyboard input method.
+
+electron-builder 26.x
+Source: https://github.com/electron-userland/electron-builder
+License: MIT.
+Use: unsigned development packaging and signed release packaging once platform credentials are available.
+
+Vite 7.x
+Source: https://github.com/vitejs/vite
+License: MIT.
+Use: browser and companion app build tooling.
 
 @nepalibhasha/converter 0.1.0
 Source: https://github.com/nepalibhasha/nepali-fonts/tree/main/packages/converter-js

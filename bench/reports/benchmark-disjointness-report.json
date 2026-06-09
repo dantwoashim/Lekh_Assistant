@@ -1,14 +1,28 @@
 {
-  "generatedAt": "2026-06-09T06:17:53.612Z",
+  "generatedAt": "2026-06-09T06:56:36.953Z",
   "command": "npm run check:benchmark-disjointness",
   "suite": "benchmark-disjointness",
   "mode": "full",
-  "durationMs": 232,
+  "durationMs": 434,
   "fixtureCount": 17001,
-  "rule": "Exact held-out input overlap with phrase/alias sources fails. Expected-output overlap is reported as warning because Nepali words can legitimately recur.",
+  "publicProofEligibleFixtureCount": 1896,
+  "rule": "Exact held-out input overlap with phrase/alias sources fails. Quarantined regression suites stay visible but are excluded from public-proof scorecards. Expected-output overlap is reported as warning because Nepali words can legitimately recur.",
   "suiteCount": 14,
-  "contaminatedSuites": [
+  "contaminatedSuites": [],
+  "quarantinedSuites": [
     "romanized-held-out"
+  ],
+  "publicScorecardEligibleSuites": [
+    "romanized-manual",
+    "romanized-hostile",
+    "romanized-hard-hostile-heldout",
+    "romanized-mixed-office-root-cause",
+    "romanized-admin-mixed",
+    "romanized-competitor",
+    "preeti-held-out",
+    "preeti-manual-hard",
+    "preeti-mixed-unicode-legacy-repair",
+    "preeti-competitor"
   ],
   "hardFailureSuites": [],
   "suites": [
@@ -142,6 +156,7 @@
         "itahari"
       ],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": false
     },
@@ -359,13 +374,14 @@
         "darta"
       ],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     },
     {
       "suiteId": "romanized-held-out",
       "path": "benchmarks/romanized/held-out.json",
-      "classification": "regression-contaminated",
+      "classification": "regression-quarantined",
       "fixtureCount": 100,
       "exactInputOverlap": [],
       "exactExpectedOutputOverlap": [],
@@ -420,7 +436,8 @@
       ],
       "aliasSourceOverlap": [],
       "generatedFromSameSourceWarning": false,
-      "contaminated": true,
+      "quarantined": true,
+      "contaminated": false,
       "publicScorecardEligible": false
     },
     {
@@ -595,6 +612,7 @@
         "sugam"
       ],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     },
@@ -621,6 +639,7 @@
         "buddhijibi"
       ],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     },
@@ -634,6 +653,7 @@
       "phraseSourceOverlap": [],
       "aliasSourceOverlap": [],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     },
@@ -716,6 +736,7 @@
         "ghimirey"
       ],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     },
@@ -837,6 +858,7 @@
         "laxmi"
       ],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     },
@@ -901,6 +923,7 @@
       "phraseSourceOverlap": [],
       "aliasSourceOverlap": [],
       "generatedFromSameSourceWarning": true,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": false
     },
@@ -914,6 +937,7 @@
       "phraseSourceOverlap": [],
       "aliasSourceOverlap": [],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     },
@@ -936,6 +960,7 @@
       ],
       "aliasSourceOverlap": [],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     },
@@ -949,6 +974,7 @@
       "phraseSourceOverlap": [],
       "aliasSourceOverlap": [],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     },
@@ -962,6 +988,7 @@
       "phraseSourceOverlap": [],
       "aliasSourceOverlap": [],
       "generatedFromSameSourceWarning": true,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": false
     },
@@ -984,6 +1011,7 @@
       ],
       "aliasSourceOverlap": [],
       "generatedFromSameSourceWarning": false,
+      "quarantined": false,
       "contaminated": false,
       "publicScorecardEligible": true
     }

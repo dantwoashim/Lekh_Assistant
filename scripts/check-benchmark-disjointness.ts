@@ -23,6 +23,7 @@ interface SuiteReport {
   phraseSourceOverlap: string[];
   aliasSourceOverlap: string[];
   generatedFromSameSourceWarning: boolean;
+  quarantined: boolean;
   contaminated: boolean;
   publicScorecardEligible: boolean;
 }
@@ -44,9 +45,14 @@ export function runBenchmarkDisjointnessCheck() {
     mode: "full",
     durationMs: Date.now() - start,
     fixtureCount: suites.reduce((sum, suite) => sum + suite.fixtureCount, 0),
-    rule: "Exact held-out input overlap with phrase/alias sources fails. Expected-output overlap is reported as warning because Nepali words can legitimately recur.",
+    publicProofEligibleFixtureCount: suites
+      .filter((suite) => suite.publicScorecardEligible)
+      .reduce((sum, suite) => sum + suite.fixtureCount, 0),
+    rule: "Exact held-out input overlap with phrase/alias sources fails. Quarantined regression suites stay visible but are excluded from public-proof scorecards. Expected-output overlap is reported as warning because Nepali words can legitimately recur.",
     suiteCount: suites.length,
     contaminatedSuites: suites.filter((suite) => suite.contaminated).map((suite) => suite.suiteId),
+    quarantinedSuites: suites.filter((suite) => suite.quarantined).map((suite) => suite.suiteId),
+    publicScorecardEligibleSuites: suites.filter((suite) => suite.publicScorecardEligible).map((suite) => suite.suiteId),
     hardFailureSuites: hardFailures.map((suite) => suite.suiteId),
     suites
   };
@@ -91,7 +97,8 @@ function analyzeSuite(
     if (/generated|roundtrip|dictionary-ne/i.test(item.source ?? "")) generatedFromSameSourceWarning = true;
   }
 
-  const contaminated = (suite.classification === "held-out" && inputOverlaps.size > 0) || suite.classification.includes("contaminated");
+  const quarantined = /quarantined|contaminated/.test(suite.classification);
+  const contaminated = suite.classification === "held-out" && inputOverlaps.size > 0;
   return {
     suiteId: suite.suiteId,
     path: suite.path,
@@ -102,8 +109,9 @@ function analyzeSuite(
     phraseSourceOverlap: [...phraseOverlaps].slice(0, 50),
     aliasSourceOverlap: [...aliasOverlaps].slice(0, 50),
     generatedFromSameSourceWarning,
+    quarantined,
     contaminated,
-    publicScorecardEligible: suite.classification !== "generated" && !contaminated
+    publicScorecardEligible: suite.classification !== "generated" && !quarantined && !contaminated
   };
 }
 
@@ -111,7 +119,7 @@ function benchmarkSuites() {
   return [
     { suiteId: "romanized-generated", path: "src/data/fixtures/romanized-fixtures.json", classification: "generated" },
     { suiteId: "romanized-manual", path: "benchmarks/romanized/manual-high-value.json", classification: "regression" },
-    { suiteId: "romanized-held-out", path: "benchmarks/romanized/held-out.json", classification: "regression-contaminated" },
+    { suiteId: "romanized-held-out", path: "benchmarks/romanized/held-out.json", classification: "regression-quarantined" },
     { suiteId: "romanized-hostile", path: "benchmarks/romanized/hostile-manual-v1.json", classification: "hostile" },
     { suiteId: "romanized-hard-hostile-heldout", path: "bench/fixtures/romanized/hostile-heldout/hard-long-prose.jsonl", classification: "held-out" },
     { suiteId: "romanized-mixed-office-root-cause", path: "bench/fixtures/romanized/hostile-heldout/mixed-office-root-cause.jsonl", classification: "hostile" },

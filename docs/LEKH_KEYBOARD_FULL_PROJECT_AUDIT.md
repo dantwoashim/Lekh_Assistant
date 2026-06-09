@@ -18,7 +18,7 @@ That is not the same as a production-ready Windows/macOS keyboard. Lekh Keyboard
 - macOS IMK proof code builds, but installed input-method behavior, XPC service integration, candidate UI, host-app testing, signing, and notarization are not complete.
 - Traditional physical key layout remains blocked by human/source-of-truth LTK validation.
 - The large corpus package is generated and quality-gated, but only 124 rows are human/project-reviewed gold evidence. It cannot support 99% universal accuracy claims yet.
-- The blind/held-out quality story is not fully clean because `romanized-held-out` is flagged as contaminated by the disjointness report.
+- The active blind/held-out leakage gate is clean, but the former `romanized-held-out` suite remains quarantined and excluded from public-proof scoring.
 - Real private pilot feedback is not yet collected.
 
 Allowed claim today: the engine, lab, data pipeline, daemon scaffold, companion shell, and native proof paths are ready for platform validation.  
@@ -78,12 +78,13 @@ Fresh command matrix summary:
 | `npm ci` | pass | 7.211s | Installed 454 packages, 0 vulnerabilities; deprecation warnings remain. |
 | `npm run typecheck` | pass | 8.783s | TypeScript project build passed. |
 | `npm run test` | pass | 42.096s | 34 files / 204 tests passed. |
-| `npm run build` | pass with warning | 4.328s | Vite build passed; large chunk warning remains. |
+| `npm run build` | pass with controlled warning | latest verify | Vite build passed; shell/feature chunks are split, lazy lexicon/Hunspell data chunks remain large. |
 | `npm run check:privacy` | pass | 0.536s | Privacy scan passed. |
 | `npm run check:engine-local` | pass | 0.325s | Engine local-first check passed. |
 | `npm run check:engine-no-dom` | pass | 0.342s | Engine DOM-free check passed. |
 | `npm run check:user-data` | pass | 0.353s | User-data safety check passed. |
-| `npm run check:benchmark-disjointness` | pass with warning | 0.804s | No hard failures, but `romanized-held-out` contaminated. |
+| `npm run check:bundle-budget` | pass | latest verify | Fails accidental oversized app chunks; allows known lazy local data/Hunspell packs. |
+| `npm run check:benchmark-disjointness` | pass | latest verify | Active contaminated suites `0`; `romanized-held-out` is quarantined and excluded from public-proof scoring. |
 | `npm run benchmark:typing-session` | pass | 3.556s | 66 fixtures, no failures in report. |
 | `npm run benchmark:romanized` | pass | 9.179s | Full Romanized benchmark passed; scores are suspiciously perfect and need harder blind data. |
 | `npm run benchmark:romanized:self:smoke` | pass | 3.058s | Smoke self-consistency passed. |
@@ -91,7 +92,7 @@ Fresh command matrix summary:
 | `npm run benchmark` | pass | 13.340s | Aggregate benchmark passed. |
 | `npm run bench:perf:smoke` | pass | 3.825s | Performance smoke passed. |
 | `npm run scorecard:engine` | pass | 0.542s | Scorecard generated honest blocked-native recommendation. |
-| `npm run verify` | pass | 76.578s | Default verification completed. |
+| `npm run verify` | pass | latest verify | Default verification completed with bundle budget and third-party notice checks included. |
 | `npm audit --audit-level=moderate` | pass | 1.132s | 0 vulnerabilities. |
 | `npm run lint` | pass | 1.324s | Typecheck/privacy/no-DOM lint target passed. |
 | `npm run format:check` | pass | 0.343s | Format check passed. |
@@ -162,7 +163,7 @@ Quality warning:
 
 - `benchmark:romanized` reported perfect top-1/top-3/top-5 and MRR over 6,756 fixtures in the command output. A real universal keyboard should not trust a perfect internal score without a frozen human-reviewed blind set.
 - `bench/reports/romanized-report.json` is the fresh smoke report from `benchmark:romanized:smoke`, 776 fixtures, top-1/top-3/top-5 all 1, suggestionHitAt5 0.926.
-- The disjointness report flags `romanized-held-out` as contaminated. Public quality claims must remain blocked until leakage is fixed and an independent blind set is frozen.
+- The disjointness report now separates active contamination from quarantine: active contaminated suites are `0`, `romanized-held-out` is quarantined, and 1,896 fixtures are public-proof eligible. Public 99% claims remain blocked because the reviewed blind/gold evidence is still too small.
 
 ## 8. Traditional Keyboard Review
 
@@ -255,13 +256,13 @@ Fresh full performance report from `bench/reports/perf-report.json`:
 | Candidate commit | 1 ms | 10 ms | pass |
 | Native IPC JSON envelope simulation | 0 ms | 10 ms | pass |
 
-Bundle warning:
+Bundle state:
 
-- `dist/assets/index-ClVuiqoh.js`: 2,604.77 kB minified, 434.78 kB gzip.
-- `dist/assets/nepaliHunspell-DuOsP0B_.js`: 956.48 kB minified, 176.60 kB gzip.
-- `dist/assets/KeyboardLab-Bi3SMlu8.js`: 627.35 kB minified, 70.18 kB gzip.
+- Feature shell chunks are now split: `KeyboardLab` is about 9.56 kB minified, `RomanizedEditor` about 7.96 kB, `CompanionShell` about 6.98 kB, and engine feature chunks are under 67 kB.
+- Known large lazy local data chunks remain: `keyboard-lexicon-data` about 2,537.64 kB, `vendor-hunspell` about 955.98 kB, and `keyboard-runtime-pack` about 582.35 kB.
+- `npm run check:bundle-budget` now gates this policy and passes with 19 checked JS assets.
 
-Performance is currently acceptable for engine smoke/full benchmarks, but bundle splitting remains a P2 release-hardening task.
+Performance is currently acceptable for engine smoke/full benchmarks. Bundle splitting is improved and gated; the remaining release-hardening task is replacing the large JSON/TSV runtime packs with compact indexed assets.
 
 ## 13. Tests / Benchmarks / Scorecards Review
 
@@ -275,7 +276,7 @@ Good:
 Not good enough for public accuracy claims:
 
 - Generated/internal fixtures dominate quality evidence.
-- `romanized-held-out` contamination must be fixed.
+- Active held-out contamination is fixed; `romanized-held-out` is quarantined and excluded from public-proof scoring.
 - The blind set exists in corpus packaging counts, but independent human-reviewed quality and leakage audits must be proven before 99% claims.
 - The scorecard should keep treating perfect benchmark scores as a review signal, not as production proof.
 
@@ -402,17 +403,17 @@ Remaining release/security blockers:
 | P0-04 | P0 | macOS IMK | open, blocked-native-environment | Swift builds, installed IMK not validated. | Install `.inputmethod`, enable, test marked text/commit/candidates in target apps. |
 | P0-05 | P0 | macOS signing | open, blocked-external | `package:macos` requires Developer ID/notarization env. | Add Developer ID credentials, hardened runtime, notarize, staple, verify. |
 | P0-06 | P0 | Traditional physical | open, blocked-human | Scorecard `traditionalPhysical=blocked-human`. | Complete LTK capture, fixtures, typist validation, and layout preview consistency. |
-| P0-07 | P0 | Blind benchmark | open | `romanized-held-out` contaminated. | Rebuild frozen blind set and enforce disjointness as hard public-claim gate. |
+| P0-07 | P0 | Blind benchmark | partially closed | Active contaminated suites are `0`; `romanized-held-out` is quarantined; public-proof eligible fixtures `1,896`. | Keep quarantined suite excluded, grow independent human-reviewed blind set, and block public 99% claims until reviewed evidence is sufficient. |
 | P0-08 | P0 | Corpus quality | open | 124 gold rows only. | Grow human-reviewed gold rows in high-impact queues before accuracy claims. |
 | P0-09 | P0 | Pilot feedback | open | No real pilot evidence. | Run consented private pilot and import redacted feedback into review queue. |
 | P0-10 | P0 | Launch claim policy | open until native gates pass | Scorecard blocks release. | Keep public claims conservative until native/signing/pilot gates pass. |
 | P1-01 | P1 | Alias collisions | open | 4,499 collisions, 4,237 review-needed. | Prioritize short aliases, names, loanwords, and high-frequency terms for review. |
 | P1-02 | P1 | Benchmark trust | open | Perfect Romanized scores. | Add hostile real-world blind mixed cases and fail on suspicious leakage. |
-| P1-03 | P1 | Bundle size | open | Main chunk 2.6 MB, Hunspell 956 kB. | Further lazy-load Keyboard Lab, heavy proofread/dictionary packs, and diagnostics. |
+| P1-03 | P1 | Bundle size | partially closed | App/feature shell split; bundle budget passes; large lazy local data packs remain. | Replace raw TSV/JSON runtime packs with compact indexed assets after native data-pack format is finalized. |
 | P1-04 | P1 | Daemon install | open | Dev daemon builds, service install unproven. | Add Windows login task/service and macOS LaunchAgent/XPC lifecycle tests. |
 | P1-05 | P1 | IPC security | open | ACL/XPC security not OS-tested. | Verify per-user named pipe ACL and macOS XPC service identity. |
 | P1-06 | P1 | Companion UX | partial | Tests/build pass, no native onboarding proof. | User-test install/status/settings/privacy/diagnostics flows. |
-| P1-07 | P1 | Release licenses | open | Electron dependency changes present. | Regenerate third-party notices/license manifest for release artifacts. |
+| P1-07 | P1 | Release licenses | closed for direct deps | `check:third-party-notices` is wired into `verify` and passes. | Regenerate full transitive license manifest before signed public release artifacts. |
 | P1-08 | P1 | Runtime data | open | `data` is 2.1 GB. | Keep only compiled/minimal runtime packs in app builds. |
 | P1-09 | P1 | Native candidate UI | open | No real OS candidate window evidence. | Implement and test native candidate UI selection on both platforms. |
 | P1-10 | P1 | Secure input native | open | Engine tests pass; native secure input unproven. | Test password/secure fields and ensure memory/proofread disabled. |
@@ -443,13 +444,13 @@ Objective: prevent fake accuracy claims.
 
 Actions:
 
-1. Fix `romanized-held-out` contamination.
-2. Freeze blind v0.2 from non-overlapping source rows.
+1. Keep quarantined `romanized-held-out` fixtures excluded from public-proof scoring.
+2. Freeze blind v0.2 from non-overlapping, human-reviewed source rows.
 3. Promote high-impact rows to gold by human review.
 4. Run benchmarks against blind and hostile mixed suites.
 5. Fail scorecard if blind leakage or perfect-score suspiciousness remains unresolved.
 
-Exit gate: fresh disjointness report has no contaminated suites and blind benchmark has meaningful failures/failure buckets.
+Exit gate: fresh disjointness report has no active contaminated suites, quarantined suites remain excluded, and blind benchmark has meaningful human-reviewed failure buckets.
 
 ### Phase 2: Traditional Physical Layout Validation
 

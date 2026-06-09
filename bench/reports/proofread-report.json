@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-09T06:18:04.330Z",
+  "generatedAt": "2026-06-09T06:56:47.398Z",
   "command": "npm run benchmark:proofread",
   "suite": "proofread",
   "mode": "full",
-  "durationMs": 132,
+  "durationMs": 55,
   "fixtureCount": 9,
   "autoFixCases": 8,
   "exactMatch": 9,
