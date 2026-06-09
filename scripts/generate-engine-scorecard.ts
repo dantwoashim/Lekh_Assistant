@@ -132,6 +132,10 @@ const mixedSpan = reportByKey.mixedSpan?.data ?? {};
 const aliasCollisions = reportByKey.aliasCollisions?.data ?? {};
 const corpusQualityCounts = corpusPackage.qualityCounts as JsonObject | undefined;
 const corpusHumanGoldRows = numberValue(corpusPackage.humanReviewedGoldRows);
+const disjointnessContaminatedSuites = arrayValue(disjointness.contaminatedSuites);
+const disjointnessQuarantinedSuites = arrayValue(disjointness.quarantinedSuites);
+const disjointnessHardFailureSuites = arrayValue(disjointness.hardFailureSuites);
+const publicScorecardEligibleSuites = arrayValue(disjointness.publicScorecardEligibleSuites);
 
 const scorecard = {
   generatedAt: new Date().toISOString(),
@@ -238,6 +242,12 @@ const scorecard = {
     leakageStatus: stringValue(corpusPackage.leakageStatus) ?? "unknown",
     blindRows: numberValue(corpusQualityCounts?.blind),
     realBlindBenchmarkStatus: corpusHumanGoldRows >= 100000 ? "complete" : "partial",
+    publicProofEligibleFixtureCount: numberValue(disjointness.publicProofEligibleFixtureCount),
+    publicProofEligibleSuites: publicScorecardEligibleSuites,
+    quarantinedBenchmarkSuites: disjointnessQuarantinedSuites,
+    blindLeakageGate: disjointnessHardFailureSuites.length === 0 && disjointnessContaminatedSuites.length === 0
+      ? "passed"
+      : "failed",
     benchmarkEvidenceRisk: numberValue(romanized.top1) >= 1 && corpusHumanGoldRows < 100000
       ? "perfect benchmark scores require real frozen human-reviewed blind validation before public accuracy claims"
       : "normal",
@@ -298,8 +308,11 @@ const scorecard = {
       : numberValue(aliasCollisions.reviewNeededCount)
   },
   disjointness: {
-    contaminatedSuites: (disjointness.contaminatedSuites as unknown[]) ?? [],
-    hardFailureSuites: (disjointness.hardFailureSuites as unknown[]) ?? []
+    contaminatedSuites: disjointnessContaminatedSuites,
+    quarantinedSuites: disjointnessQuarantinedSuites,
+    publicScorecardEligibleSuites,
+    publicProofEligibleFixtureCount: numberValue(disjointness.publicProofEligibleFixtureCount),
+    hardFailureSuites: disjointnessHardFailureSuites
   },
   publicClaims: {
     allowed: [
@@ -442,6 +455,10 @@ function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function stringValue(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
@@ -549,6 +566,10 @@ ${reportRows}
 | frozen blind rows | ${scorecard.corpusPackage.blindRows} |
 | real blind benchmark status | ${scorecard.corpusPackage.realBlindBenchmarkStatus} |
 | leakage audit | ${scorecard.corpusPackage.leakageStatus} |
+| blind leakage gate | ${scorecard.corpusPackage.blindLeakageGate} |
+| public-proof eligible fixtures | ${scorecard.corpusPackage.publicProofEligibleFixtureCount} |
+| public-proof eligible suites | ${scorecard.corpusPackage.publicProofEligibleSuites.join(", ") || "none"} |
+| quarantined benchmark suites | ${scorecard.corpusPackage.quarantinedBenchmarkSuites.join(", ") || "none"} |
 | benchmark evidence risk | ${scorecard.corpusPackage.benchmarkEvidenceRisk} |
 
 ## Typing Sessions
