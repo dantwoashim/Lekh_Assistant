@@ -48,6 +48,28 @@ const MODES: Array<{ id: TypingMode; label: string; engineMode: Extract<Keyboard
 ];
 
 const ACTIVE_DOMAINS = ["general", "government", "office", "education", "health", "tech", "legal", "admin"];
+const ROMANIZED_SOFT_BOUNDARY_WORDS = new Set([
+  "cha",
+  "chha",
+  "xa",
+  "ho",
+  "huncha",
+  "hunxa",
+  "bhayo",
+  "vayo",
+  "bhayena",
+  "vayena",
+  "chaina",
+  "chhaina",
+  "xaina",
+  "parcha",
+  "parxa",
+  "milena",
+  "sakina",
+  "sakincha",
+  "sakiyo",
+  "lagyo"
+]);
 
 export function FocusedKeyboard() {
   const engine = useMemo(() => createKeyboardEngine(), []);
@@ -95,6 +117,7 @@ export function FocusedKeyboard() {
   const activeSuggestion = suggestions[selectedIndex] ?? suggestions[0];
   const activeText = activeCompositionText(input);
   const inlineSuggestion = inlineSuggestionFor(activeText, activeSuggestion?.text);
+  const suggestionPreview = activeSuggestion ? previewSuggestion(activeText, activeSuggestion.text) : "";
 
   function changeMode(nextMode: TypingMode) {
     const nextDefinition = MODES.find((item) => item.id === nextMode) ?? MODES[1];
@@ -138,16 +161,14 @@ export function FocusedKeyboard() {
     };
   }, [refresh]);
 
-  function acceptSuggestion(suggestion = activeSuggestion) {
+  function acceptSuggestion(suggestion = activeSuggestion, options: { addSpace?: boolean } = {}) {
     if (!suggestion) return;
-    const nextInput = replaceActiveComposition(input, suggestion.text);
+    const nextInput = maybeAppendContinuationSpace(replaceActiveComposition(input, suggestion.text), options.addSpace ?? false);
     if (inputRef.current) inputRef.current.value = nextInput;
     refresh(nextInput);
-    window.requestAnimationFrame(() => {
-      const length = nextInput.length;
-      inputRef.current?.focus();
-      inputRef.current?.setSelectionRange(length, length);
-    });
+    const length = nextInput.length;
+    inputRef.current?.focus();
+    inputRef.current?.setSelectionRange(length, length);
   }
 
   function syncGhostScroll() {
@@ -159,7 +180,13 @@ export function FocusedKeyboard() {
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Tab" && activeSuggestion) {
       event.preventDefault();
-      acceptSuggestion(activeSuggestion);
+      acceptSuggestion(activeSuggestion, { addSpace: true });
+      return;
+    }
+
+    if (event.key === "Enter" && activeSuggestion && !event.shiftKey) {
+      event.preventDefault();
+      acceptSuggestion(activeSuggestion, { addSpace: true });
       return;
     }
 
@@ -184,6 +211,12 @@ export function FocusedKeyboard() {
   return (
     <main className="typing-shell">
       <section className="typing-surface" aria-label="Typing surface">
+        <div className="typing-guide" aria-label="Quick typing guide">
+          <span>Type naturally.</span>
+          <span>Gray text is the suggestion.</span>
+          <span>Press Tab/Enter or tap Accept.</span>
+        </div>
+
         <div className="typing-modes" aria-label="Typing mode options">
           {MODES.map((item) => (
             <button
@@ -218,6 +251,18 @@ export function FocusedKeyboard() {
             autoCorrect="off"
             rows={8}
           />
+          {activeSuggestion ? (
+            <button
+              type="button"
+              className="typing-accept"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => acceptSuggestion(activeSuggestion, { addSpace: true })}
+              aria-label={`Accept suggestion ${activeSuggestion.text}`}
+            >
+              <span className="typing-accept__label">Accept</span>
+              <span className="typing-accept__text">{suggestionPreview || activeSuggestion.text}</span>
+            </button>
+          ) : null}
           <div className="sr-only" aria-live="polite">
             {activeSuggestion ? `Suggestion: ${activeSuggestion.text}` : ""}
           </div>
@@ -315,8 +360,15 @@ function replaceActiveComposition(input: string, replacement: string): string {
   return `${input.slice(0, start)}${replacement}${input.slice(end)}`;
 }
 
+function maybeAppendContinuationSpace(value: string, enabled: boolean): string {
+  if (!enabled || !value || /\s$/.test(value) || /[।.!?]$/.test(value)) return value;
+  return `${value} `;
+}
+
 function activeCompositionRange(input: string): TextRange {
   const end = input.length;
+  if (end > 0 && /\s/.test(input[end - 1] ?? "")) return [end, end];
+
   const hardBoundary = Math.max(
     input.lastIndexOf("\n"),
     input.lastIndexOf("।"),
@@ -328,14 +380,45 @@ function activeCompositionRange(input: string): TextRange {
   while (start < end && /\s/.test(input[start])) start += 1;
 
   const segment = input.slice(start, end);
+  const latinTail = segment.match(/[A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*$/);
+  if (latinTail && typeof latinTail.index === "number" && latinTail.index > 0 && /[\u0900-\u097F]/.test(segment.slice(0, latinTail.index))) {
+    start += latinTail.index;
+  }
+
+  let activeSegment = input.slice(start, end);
+  const softBoundaryOffset = romanizedSoftBoundaryOffset(activeSegment);
+  if (softBoundaryOffset > 0) {
+    start += softBoundaryOffset;
+    activeSegment = input.slice(start, end);
+  }
+
   const maxWords = 9;
-  const matches = Array.from(segment.matchAll(/\S+/g));
+  const matches = Array.from(activeSegment.matchAll(/\S+/g));
   if (matches.length > maxWords) {
     const cutoff = matches[matches.length - maxWords]?.index;
     if (typeof cutoff === "number") start += cutoff;
   }
 
   return [start, end];
+}
+
+function romanizedSoftBoundaryOffset(segment: string): number {
+  if (/[\u0900-\u097F]/.test(segment)) return 0;
+  const tokens = Array.from(segment.matchAll(/[A-Za-z][A-Za-z'-]*/g));
+  let offset = 0;
+
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    const token = tokens[index];
+    const word = token[0].toLowerCase();
+    const wordsAfter = tokens.length - index - 1;
+    if (wordsAfter < 2 || !ROMANIZED_SOFT_BOUNDARY_WORDS.has(word)) continue;
+
+    const boundaryEnd = (token.index ?? 0) + token[0].length;
+    offset = boundaryEnd;
+    while (offset < segment.length && /\s/.test(segment[offset] ?? "")) offset += 1;
+  }
+
+  return offset;
 }
 
 function inlineSuggestionFor(activeText: string, suggestion?: string): string {
@@ -347,6 +430,13 @@ function inlineSuggestionFor(activeText: string, suggestion?: string): string {
   if (suggestion.startsWith(activeText)) return suggestion.slice(activeText.length);
   if (suggestion.startsWith(trimmedActive)) return `${trailingWhitespace}${suggestion.slice(trimmedActive.length)}`;
   return `  ${suggestion}`;
+}
+
+function previewSuggestion(activeText: string, suggestion: string): string {
+  const active = activeText.trim();
+  if (!active || suggestion.trim() === active) return suggestion;
+  if (suggestion.startsWith(active)) return suggestion.slice(active.length).trimStart() || suggestion;
+  return suggestion;
 }
 
 function dedupeSuggestions(suggestions: Suggestion[]) {

@@ -7,6 +7,9 @@ describe("Minimal typing UI", () => {
     render(<App />);
 
     expect(screen.getByRole("textbox", { name: "Romanized-Traditional" })).toBeInTheDocument();
+    expect(screen.getByText("Type naturally.")).toBeInTheDocument();
+    expect(screen.getByText("Gray text is the suggestion.")).toBeInTheDocument();
+    expect(screen.getByText("Press Tab/Enter or tap Accept.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Romanized-Romanized" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Romanized-Traditional" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Traditional-Traditional" })).toBeInTheDocument();
@@ -25,7 +28,7 @@ describe("Minimal typing UI", () => {
 
     expectSuggestion("स्वास्थ्य कार्यालय");
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue("स्वास्थ्य कार्यालय");
+    expect(input).toHaveValue("स्वास्थ्य कार्यालय ");
   });
 
   it("accepts Romanized-Romanized completions with Tab", async () => {
@@ -38,7 +41,48 @@ describe("Minimal typing UI", () => {
 
     expectSuggestion("swasthya");
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue("swasthya");
+    expect(input).toHaveValue("swasthya ");
+  });
+
+  it("accepts the active suggestion with Enter and keeps typing ready", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.type(input, "ramro x");
+
+    expectSuggestion("राम्रो छ");
+    await user.keyboard("{Enter}");
+    expect(input).toHaveValue("राम्रो छ ");
+    expect(screen.queryByRole("button", { name: /Accept suggestion राम्रो छ/ })).not.toBeInTheDocument();
+    await user.type(input, "dherai r");
+    expectSuggestion("धेरै राम्रो");
+  });
+
+  it("keeps suggestions alive when the user ignores a suggestion and keeps typing", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.type(input, "ramro x");
+
+    expectSuggestion("राम्रो छ");
+    await user.type(input, "a dherai r");
+
+    expect(input).toHaveValue("ramro xa dherai r");
+    expectSuggestion("धेरै राम्रो");
+  });
+
+  it("accepts the active suggestion from the mobile-friendly Accept control", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.type(input, "jilla pra");
+
+    expectSuggestion("जिल्ला प्रशासन");
+    await user.click(screen.getByRole("button", { name: /Accept suggestion जिल्ला प्रशासन/ }));
+    expect(input).toHaveValue("जिल्ला प्रशासन ");
   });
 
   it("shows completions immediately for short Romanized prefixes", async () => {
@@ -61,7 +105,7 @@ describe("Minimal typing UI", () => {
 
     expectSuggestion("मेरो के छ अवस्था");
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue("मेरो के छ अवस्था");
+    expect(input).toHaveValue("मेरो के छ अवस्था ");
 
     await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
     const romanizedInput = screen.getByRole("textbox", { name: "Romanized-Romanized" });
@@ -69,7 +113,7 @@ describe("Minimal typing UI", () => {
 
     expectSuggestion("mero ke cha awastha");
     await user.keyboard("{Tab}");
-    expect(romanizedInput).toHaveValue("mero ke cha awastha");
+    expect(romanizedInput).toHaveValue("mero ke cha awastha ");
   });
 
   it("shows casual Romanized suggestions instead of only office/demo words", async () => {
@@ -80,14 +124,14 @@ describe("Minimal typing UI", () => {
     await user.type(input, "kasto c");
     expectSuggestion("कस्तो छ");
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue("कस्तो छ");
+    expect(input).toHaveValue("कस्तो छ ");
 
     await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
     const romanizedInput = screen.getByRole("textbox", { name: "Romanized-Romanized" });
     await user.type(romanizedInput, "ramro l");
     expectSuggestion("ramro lagyo");
     await user.keyboard("{Tab}");
-    expect(romanizedInput).toHaveValue("ramro lagyo");
+    expect(romanizedInput).toHaveValue("ramro lagyo ");
   });
 
   it("normalizes casual Romanized shorthand in Romanized-Romanized mode", async () => {
@@ -100,7 +144,7 @@ describe("Minimal typing UI", () => {
 
     expectSuggestion("mero ke cha awastha");
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue("mero ke cha awastha");
+    expect(input).toHaveValue("mero ke cha awastha ");
   });
 
   it("offers useful Romanized sentence completions instead of no-op echoes", async () => {
@@ -111,7 +155,7 @@ describe("Minimal typing UI", () => {
     await user.type(defaultInput, "mero ke cha");
     expectSuggestion("मेरो के छ अवस्था");
     await user.keyboard("{Tab}");
-    expect(defaultInput).toHaveValue("मेरो के छ अवस्था");
+    expect(defaultInput).toHaveValue("मेरो के छ अवस्था ");
 
     await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
     const input = screen.getByRole("textbox", { name: "Romanized-Romanized" });
@@ -120,7 +164,7 @@ describe("Minimal typing UI", () => {
     expectSuggestion("mero ke cha awastha");
     expect(screen.queryByText("Suggestion: mero ke cha")).not.toBeInTheDocument();
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue("mero ke cha awastha");
+    expect(input).toHaveValue("mero ke cha awastha ");
   });
 
   it("suggests only for the active segment inside long casual and official text", async () => {
@@ -132,14 +176,14 @@ describe("Minimal typing UI", () => {
     await user.type(input, `${casualPrefix}swasthya k`);
     expectSuggestion("स्वास्थ्य कार्यालय");
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue(`${casualPrefix}स्वास्थ्य कार्यालय`);
+    expect(input).toHaveValue(`${casualPrefix}स्वास्थ्य कार्यालय `);
 
     await user.clear(input);
     const officialPrefix = "mero NID form submit bhayena. kripaya yo file heridinu.\n";
     await user.type(input, `${officialPrefix}jilla pra`);
     expectSuggestion("जिल्ला प्रशासन");
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue(`${officialPrefix}जिल्ला प्रशासन`);
+    expect(input).toHaveValue(`${officialPrefix}जिल्ला प्रशासन `);
 
     await user.click(screen.getByRole("button", { name: "Romanized-Romanized" }));
     const romanizedInput = screen.getByRole("textbox", { name: "Romanized-Romanized" });
@@ -147,7 +191,7 @@ describe("Minimal typing UI", () => {
     await user.type(romanizedInput, `${messagePrefix}mero ke cha`);
     expectSuggestion("mero ke cha awastha");
     await user.keyboard("{Tab}");
-    expect(romanizedInput).toHaveValue(`${messagePrefix}mero ke cha awastha`);
+    expect(romanizedInput).toHaveValue(`${messagePrefix}mero ke cha awastha `);
   });
 
   it("keeps the visible suggestion lane populated for rare Romanized prefixes", async () => {
@@ -170,7 +214,7 @@ describe("Minimal typing UI", () => {
 
     expectSuggestion("स्वास्थ्य");
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue("स्वास्थ्य");
+    expect(input).toHaveValue("स्वास्थ्य ");
   });
 
   it("accepts Traditional-Romanized suggestions with Tab", async () => {
@@ -183,7 +227,7 @@ describe("Minimal typing UI", () => {
 
     expectSuggestion("swasthya");
     await user.keyboard("{Tab}");
-    expect(input).toHaveValue("swasthya");
+    expect(input).toHaveValue("swasthya ");
   });
 });
 

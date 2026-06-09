@@ -56,7 +56,24 @@ button {
 .typing-surface {
   width: min(940px, 100%);
   display: grid;
-  gap: 12px;
+  gap: 10px;
+}
+
+.typing-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  min-height: 24px;
+  color: #8b928f;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.2;
+  padding: 0 2px;
+}
+
+.typing-guide span {
+  white-space: nowrap;
 }
 
 .typing-modes {
@@ -166,6 +183,60 @@ button {
   font-weight: 430;
 }
 
+.typing-accept {
+  position: absolute;
+  z-index: 3;
+  right: clamp(10px, 2vw, 18px);
+  bottom: clamp(10px, 2vw, 18px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(460px, calc(100% - 20px));
+  min-height: 40px;
+  border: 1px solid rgb(17 21 20 / 9%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 88%);
+  color: #111514;
+  box-shadow: 0 12px 34px rgb(17 21 20 / 10%);
+  backdrop-filter: blur(16px);
+  cursor: pointer;
+  padding: 7px 12px 7px 10px;
+  transition: transform 140ms var(--ease), box-shadow 140ms var(--ease), background 140ms var(--ease);
+}
+
+.typing-accept:hover {
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 14px 42px rgb(17 21 20 / 13%);
+}
+
+.typing-accept:active {
+  transform: translateY(1px);
+}
+
+.typing-accept__label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  background: #111514;
+  color: #fff;
+  padding: 0 9px;
+  font-size: 0.72rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.typing-accept__text {
+  min-width: 0;
+  overflow: hidden;
+  color: #5c6460;
+  font-family: "Noto Sans Devanagari", "Kohinoor Devanagari", "Mangal", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 690;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 760px) {
   .typing-shell {
     align-items: start;
@@ -174,6 +245,13 @@ button {
 
   .typing-surface {
     gap: 10px;
+  }
+
+  .typing-guide {
+    gap: 5px 10px;
+    font-size: 0.72rem;
+    justify-content: center;
+    text-align: center;
   }
 
   .typing-modes {
@@ -187,14 +265,36 @@ button {
   }
 
   .typing-box {
-    min-height: calc(100vh - 166px);
+    min-height: calc(100vh - 198px);
     font-size: clamp(1.24rem, 7vw, 1.65rem);
+    padding-bottom: 76px;
   }
 
   .typing-box-frame {
-    min-height: calc(100vh - 166px);
+    min-height: calc(100vh - 198px);
     --typing-pad: 15px;
     --typing-font-size: clamp(1.24rem, 7vw, 1.65rem);
+  }
+
+  .typing-accept {
+    left: 10px;
+    right: 10px;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .typing-accept__text {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .typing-guide span:first-child {
+    flex-basis: 100%;
+  }
+
+  .typing-mode {
+    font-size: 0.72rem;
   }
 }
 

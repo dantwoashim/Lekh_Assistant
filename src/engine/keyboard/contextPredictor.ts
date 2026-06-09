@@ -66,6 +66,17 @@ const CONTEXT_ROWS: ContextPredictionRow[] = [
     allowWithoutContext: true
   },
   {
+    romanized: "dherai ramro",
+    output: "धेरै राम्रो",
+    label: "dherai ramro",
+    confidence: 0.962,
+    domains: ["casual", "general"],
+    contextHints: ["ramro", "kasto", "post", "photo", "video", "yo", "sathi"],
+    reason: "casual intensifier phrase",
+    minPrefix: 4,
+    allowWithoutContext: true
+  },
+  {
     romanized: "ma aaudai xu",
     output: "म आउँदै छु",
     label: "ma aaudai xu",
