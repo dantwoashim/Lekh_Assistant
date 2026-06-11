@@ -4,6 +4,7 @@
 
 #include <msctf.h>
 #include <windows.h>
+#include <string>
 
 class LekhTextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink {
 public:
@@ -36,6 +37,7 @@ private:
   bool experimentalKeyEatingEnabled() const;
   bool daemonAvailable() const;
   bool sendKeyToDaemon(WPARAM wParam, LPARAM lParam) const;
+  void resetSessionId();
   HRESULT adviseKeySink();
   void unadviseKeySink();
 
@@ -44,6 +46,7 @@ private:
   TfClientId clientId_ = TF_CLIENTID_NULL;
   DWORD keyEventSinkCookie_ = TF_INVALID_COOKIE;
   LekhIpcClient ipc_;
+  std::wstring sessionId_;
 };
 
 STDAPI DllGetClassObject(REFCLSID clsid, REFIID iid, void** object);

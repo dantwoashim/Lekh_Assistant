@@ -1,6 +1,6 @@
 # Engine Quality Scorecard
 
-Updated: 2026-06-09T13:15:05.602Z
+Updated: 2026-06-10T13:45:40.114Z
 
 This scorecard reads existing fresh report files from `bench/reports`. It does not recompute the heavy benchmark universe. Missing, stale, zero-fixture, or schema-weak reports are visible below.
 
@@ -98,7 +98,7 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | memory controls | complete |
 | Keyboard Lab | complete |
 | companion shell | complete |
-| typing latency p95 ms | 7 |
+| typing latency p95 ms | 4 |
 | native release readiness | pending |
 
 ## Performance
@@ -106,7 +106,7 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | Case | p95 ms | Gate ms | Status |
 | --- | ---: | ---: | --- |
 | 50-token hostile Romanized mixed sentence | 1 | 30 | pass |
-| 5KB mixed Preeti paragraph | 22 | 100 | pass |
+| 5KB mixed Preeti paragraph | 17 | 100 | pass |
 | KeyboardEngine warm startup | 0 | 500 | pass |
 | KeyboardEngine partial warm timeout | 0 | 50 | pass |
 | Keyboard Romanized live update | 1 | 20 | pass |
@@ -125,11 +125,11 @@ Performance target misses: 0
 | Area | Status |
 | --- | --- |
 | Windows TSF source | present |
-| macOS IMK source | Swift proof target present |
+| macOS IMK source | dev input method install proof passed |
 | IPC schema | present |
 | daemon lifecycle | documented |
 | companion desktop shell | present |
-| release status | blocked until Windows/macOS platform tests, signing/notarization, and pilot feedback |
+| release status | blocked until Windows TSF host tests, macOS host-app matrix tests, signing/notarization, and pilot feedback |
 
 ## Final Production Scorecard
 
@@ -149,7 +149,7 @@ Performance target misses: 0
 | companion app | partial |
 | daemon/IPC | complete |
 | Windows native | blocked-native-environment |
-| macOS native | blocked-native-environment |
+| macOS native | partial native-dev proof |
 | storage | complete |
 | installer/signing | blocked-external |
 | privacy/security | complete |
@@ -168,6 +168,7 @@ Allowed if phrased honestly:
 - Traditional layout under source-of-truth audit
 - proofread/dictionary/memory prototype
 - native architecture/scaffold
+- unsigned macOS IMK development input method installs/registers/enables/launch-smokes without auto-selecting globally
 
 Forbidden until evidence exists:
 

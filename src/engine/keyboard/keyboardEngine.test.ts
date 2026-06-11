@@ -133,6 +133,17 @@ describe("KeyboardEngine session API", () => {
     expect(committed.compositionText).toBe("");
   });
 
+  it("commits native candidate shortcuts 1-9 without inserting the digit", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    engine.updateComposition(sessionId, "swas", 4);
+
+    const committed = engine.processKeyStroke(sessionId, key("2"));
+    expect(committed.action).toBe("commit");
+    expect(committed.committedText).toBe("स्वस्थ");
+    expect(committed.compositionText).toBe("");
+  });
+
   it("commits selected candidate and clears composition", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession(defaultTypingContext("romanized"));
@@ -325,6 +336,19 @@ describe("KeyboardEngine session API", () => {
     const update = engine.updateComposition(sessionId, "mero NID form submit bhayena", 28);
     expect(update.primary?.text).toBe("मेरो NID form submit भएन");
     expect(update.candidates.map((candidate) => candidate.text)).toContain("मेरो NID फारम सबमिट भएन");
+  });
+
+  it("applies mixed token policy beyond exact fixture rows", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+
+    const pan = engine.updateComposition(sessionId, "mero PAN file upload bhayena", 28);
+    expect(pan.candidates.map((candidate) => candidate.text)).toContain("मेरो PAN file upload भएन");
+    expect(pan.candidates.map((candidate) => candidate.text)).toContain("मेरो PAN फाइल अपलोड भएन");
+
+    const email = engine.updateComposition(sessionId, "email@test.com pathaunu", 22);
+    expect(email.primary?.text).toContain("email@test.com");
+    expect(email.candidates.map((candidate) => candidate.text)).toContain("email@test.com पठाउनु");
   });
 
   it("corrects Romanized typo and phrase forms before Unicode generation", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultTypingContext } from "../../../src/engine/keyboard";
+import { createKeyboardEngine, defaultTypingContext } from "../../../src/engine/keyboard";
 import { createIpcRequest } from "../../shared/ipc/messages";
 import { KeyboardDaemon } from "./keyboardDaemon";
 
@@ -85,5 +85,26 @@ describe("KeyboardDaemon IPC dispatcher", () => {
     const metrics = daemon.metrics();
     expect(metrics.counters.ipcTimeouts).toBe(1);
     expect(metrics.counters.passThroughFallbacks).toBe(1);
+  });
+
+  it("wraps native hot-path keystrokes with pass-through timeout fallback", async () => {
+    const engine = createKeyboardEngine();
+    engine.processKeyStroke = () =>
+      new Promise((resolve) => {
+        setTimeout(() => resolve({ action: "compose" }), 75);
+      }) as never;
+    const daemon = new KeyboardDaemon({ engine });
+    const response = await daemon.handle(
+      createIpcRequest("session.processKeyStroke", { sessionId: "slow-session", key: key("s") }, "slow_key_1", 1)
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.payload).toEqual(
+      expect.objectContaining({
+        action: "passThrough",
+        warnings: ["Native hot path exceeded 50ms; passing key through."]
+      })
+    );
+    expect(daemon.metrics().counters).toEqual(expect.objectContaining({ ipcTimeouts: 1, passThroughFallbacks: 1 }));
   });
 });

@@ -1,8 +1,21 @@
-# Lekh
+# Lekh Keyboard
 
-Lekh is a privacy-first Nepali typing workspace for desktop copy-paste workflows. It helps people convert legacy Preeti text to clean Unicode, type Romanized Nepali with local candidates, and copy normalized output into documents, forms, email, and browser tools.
+Lekh Keyboard is a local-first Nepali desktop keyboard project. The target product is a real Windows/macOS input method that lets people type Nepali inside normal apps such as Word, Chrome, Edge, Safari, WhatsApp, VS Code, TextEdit, Pages, and browser forms.
 
-This is a public web/PWA validation build. It is not a native keyboard, not a browser extension, and not a server-side text processor.
+Current repo status is deliberately narrower than that target:
+
+- The React/Vite browser surface is a typing-engine validation demo.
+- The Electron shell is a companion/demo shell for settings, diagnostics, packaging, and first-run validation.
+- The native Windows TSF and macOS IMK paths are under active proof-spike development.
+- The Electron/browser demo is **not** the keyboard app.
+- The companion app is **not** the keyboard app.
+- Preeti to Unicode is a side utility, not the main product.
+
+The real keyboard product is the native input-method layer:
+
+- Windows: TSF text service.
+- macOS: InputMethodKit input method.
+- Shared local keyboard engine for Romanized typing, Traditional typing, suggestions, proofread, dictionary, and personal memory.
 
 ## Contents
 
@@ -22,31 +35,50 @@ This is a public web/PWA validation build. It is not a native keyboard, not a br
 
 ## Why It Exists
 
-Nepali desktop work still has a rough edge: old Preeti documents, Unicode forms, Romanized typing habits, and mixed English/Nepali office text often meet in the same workflow. Lekh focuses on that narrow, practical problem.
+Nepali desktop users need a keyboard that works system-wide, understands real Romanized Nepali, preserves mixed English safely, and stays private by default. Existing copy-paste converters and browser boxes are not enough for the workflow Niraj requested.
 
-The product direction is deliberately conservative:
+The product direction is deliberately conservative and native-first:
 
-- Keep text processing local.
-- Prefer documented rules and fixtures over hidden magic.
+- Build real Windows TSF and macOS IMK input methods.
+- Keep typing local and offline in the hot path.
+- Prefer documented rules, reviewed data, and measurable benchmarks over hidden magic.
 - Show candidates when Romanized input is ambiguous.
-- Treat Preeti conversion as validation work, not as a perfect legacy-font oracle.
-- Avoid unclear-licensed language data.
+- Preserve protected tokens such as NID, PAN, PDF, emails, URLs, numbers, and IDs.
+- Treat Preeti conversion as a side utility.
+- Avoid unclear-license language data.
 
 ## What It Does
 
-### Preeti to Unicode
+### Native Keyboard Work
 
-Preeti conversion is the primary tool. It wraps a documented converter baseline, preserves unknown characters instead of dropping them, reports uncertain mappings, and normalizes output before copy.
+The production target is a native keyboard:
+
+- Windows TSF input method.
+- macOS InputMethodKit input method.
+- Per-user daemon/service for heavy packs, memory, dictionary, and diagnostics.
+- Companion app for settings, privacy, dictionary, memory, diagnostics, and install status.
+
+Native work is not yet public-launch-ready. Current native artifacts are proof-spike/build scaffolds and must pass real host-app testing before any production claim.
 
 ### Romanized Nepali Typing
 
-Romanized typing is a preview `common-nepali` profile. It uses:
+Romanized typing is the flagship first-launch experience. It uses:
 
 - phonology rules from [`docs/PHONOLOGY_CONTRACT.md`](docs/PHONOLOGY_CONTRACT.md)
-- a candidate lattice for phrase, dictionary, rule, variant, and local correction paths
+- keyboard candidate ranking for phrase, dictionary, rule, variant, context, and local memory paths
 - domain-ranked local suggestions for office, government, education, legal, names, and places
+- casual Nepali completions such as `ramro xa`, `kasto cha`, and `dherai ramro`
+- mixed Nepali-English policy candidates that preserve protected tokens and offer loanword preferences
 - full-output alternatives so selecting a candidate does not collapse a sentence into a single word
 - local correction memory after explicit candidate selection
+
+### Traditional Nepali Typing
+
+Traditional Unicode suggestions and proofread can be validated in the engine. Traditional physical key mapping remains blocked until an LTK-compatible/standard layout source of truth is captured and validated by experienced Traditional typists. The project must not claim Traditional physical keyboard completion before that validation.
+
+### Preeti to Unicode
+
+Preeti conversion remains a side utility. It wraps a documented converter baseline, preserves unknown characters instead of dropping them, reports uncertain mappings, and normalizes output before copy.
 
 ### Suggestions and Spell Hints
 
@@ -54,17 +86,19 @@ Suggestions and basic unknown-word hints run against bundled local data. They ar
 
 The larger Hunspell dictionary is lazy-loaded as a local browser chunk, so the first app load is not forced to carry the full spellchecking asset.
 
-### PWA Shell
+### Browser Demo and Companion Shell
 
-The production build writes a service worker that precaches the app shell and Vite hashed assets. Offline behavior is checked as part of `npm run verify`.
+The browser demo and Electron shell exist to validate the engine, demonstrate typing behavior, and manage companion-style settings. They are not substitutes for TSF/IMK native input methods.
+
+The production web build writes a service worker that precaches the app shell and Vite hashed assets. Offline behavior is checked as part of `npm run verify`.
 
 ## Privacy Model
 
-Typed text, converted text, dictionary queries, raw keystrokes, clipboard content, spell tokens, and output text stay in the browser. The app does not send them to a server.
+Typed text, converted text, dictionary queries, raw keystrokes, clipboard content, spell tokens, and output text stay local. The engine hot path must not use the network.
 
 Feedback is explicit. The app prepares a report only when the user chooses to copy or submit it. A deployment can enable email handoff with `VITE_FEEDBACK_EMAIL`; otherwise the report remains local.
 
-Romanized correction memory uses browser local storage. It is written only after a user selects an alternative candidate, stays on that device, and can be cleared from the Romanized editor.
+Correction memory is local, explicit, and user-controlled. It must not learn secure-field text, passwords, protected tokens, IDs, emails, URLs, or excluded app input.
 
 ## Current Quality Evidence
 

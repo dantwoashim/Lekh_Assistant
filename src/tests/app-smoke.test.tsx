@@ -10,6 +10,7 @@ describe("Minimal typing UI", () => {
     expect(screen.getByText("Type naturally.")).toBeInTheDocument();
     expect(screen.getByText("Gray text is the suggestion.")).toBeInTheDocument();
     expect(screen.getByText("Press Tab/Enter or tap Accept.")).toBeInTheDocument();
+    expect(screen.getByText("Ctrl+Alt+Space switches mode.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Romanized-Romanized" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Romanized-Traditional" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Traditional-Traditional" })).toBeInTheDocument();
@@ -29,6 +30,34 @@ describe("Minimal typing UI", () => {
     expectSuggestion("स्वास्थ्य कार्यालय");
     await user.keyboard("{Tab}");
     expect(input).toHaveValue("स्वास्थ्य कार्यालय ");
+  });
+
+  it("opens the mode shortcut menu and selects a mode by number", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.click(input);
+    await user.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");
+
+    expect(screen.getByRole("menu", { name: "Typing mode shortcut menu" })).toBeInTheDocument();
+    await user.keyboard("1");
+    expect(screen.getByRole("textbox", { name: "Romanized-Romanized" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Romanized-Romanized" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("opens the mode shortcut menu with the native-style shortcut", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByRole("textbox", { name: "Romanized-Traditional" });
+    await user.click(input);
+    await user.keyboard("{Control>}{Alt>}[Space]{/Alt}{/Control}");
+
+    expect(screen.getByRole("menu", { name: "Typing mode shortcut menu" })).toBeInTheDocument();
+    await user.keyboard("4");
+    expect(screen.getByRole("textbox", { name: "Traditional-Romanized" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Traditional-Romanized" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("accepts Romanized-Romanized completions with Tab", async () => {

@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-09T13:14:26.461Z",
+  "generatedAt": "2026-06-10T13:45:16.014Z",
   "command": "npm run benchmark:typing-session",
   "suite": "typing-session",
   "mode": "full",
-  "durationMs": 869,
+  "durationMs": 509,
   "fixtureCount": 66,
   "romanized": {
     "totalSessions": 47,
@@ -107,8 +107,8 @@
   },
   "latency": {
     "candidateP50Ms": 1,
-    "candidateP95Ms": 7,
-    "updateP95Ms": 7,
+    "candidateP95Ms": 4,
+    "updateP95Ms": 4,
     "commitP95Ms": 0
   },
   "keystrokeSavingsRatioMean": 0.025062567044890426,
@@ -147,10 +147,10 @@
         "swasthy"
       ],
       "latencyMs": [
-        217,
-        362,
-        4,
-        2
+        113,
+        207,
+        3,
+        1
       ],
       "commitLatencyMs": 1,
       "keystrokeSavingsRatio": 0.5555555555555556,
@@ -184,14 +184,14 @@
         "swasthy"
       ],
       "latencyMs": [
-        1,
-        1,
-        2,
         0,
-        3,
         1,
-        2,
-        2
+        0,
+        1,
+        1,
+        1,
+        1,
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.11111111111111116,
@@ -225,15 +225,15 @@
         "karyalayaki"
       ],
       "latencyMs": [
+        2,
         4,
-        7,
-        8,
         5,
-        2,
+        3,
         1,
-        2,
         1,
-        3
+        1,
+        1,
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.125,
@@ -268,12 +268,12 @@
       ],
       "latencyMs": [
         1,
+        3,
         6,
-        10,
-        5,
+        3,
         1,
         1,
-        1,
+        0,
         1
       ],
       "commitLatencyMs": 0,
@@ -305,15 +305,15 @@
       "latencyMs": [
         0,
         1,
-        6,
+        3,
         1,
+        0,
         1,
+        0,
         1,
+        0,
         1,
-        1,
-        1,
-        1,
-        2,
+        0,
         1
       ],
       "commitLatencyMs": 0,
@@ -348,7 +348,7 @@
         "सवसथय कार्यालय"
       ],
       "latencyMs": [
-        2
+        3
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -441,11 +441,11 @@
       "finalDisplayText": "मेरो NID form",
       "candidateTexts": [
         "मेरो NID form",
+        "मेरो NID फारम",
         "फारम",
         "फोर्म",
         "मेरो",
         "फोरम",
-        "मेरो NID फारम",
         " form",
         "mero NID form"
       ],
@@ -540,8 +540,8 @@
       ],
       "latencyMs": [
         0,
-        0,
         1,
+        0,
         0
       ],
       "commitLatencyMs": 0,
@@ -576,7 +576,7 @@
         "समाचारदाता"
       ],
       "latencyMs": [
-        2
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.33333333333333326,
@@ -610,7 +610,7 @@
         "विकासशील"
       ],
       "latencyMs": [
-        6
+        4
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -643,7 +643,7 @@
         "sankalpa"
       ],
       "latencyMs": [
-        2
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.33333333333333326,
@@ -803,7 +803,7 @@
         "राम्ररी"
       ],
       "latencyMs": [
-        7
+        4
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -905,7 +905,7 @@
         "nagarikta pramanpatrako"
       ],
       "latencyMs": [
-        3
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.10526315789473695,
@@ -973,7 +973,7 @@
         "janma dar"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.09999999999999998,
@@ -1005,7 +1005,7 @@
         "मृत्यु दर"
       ],
       "latencyMs": [
-        2
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.16666666666666663,
@@ -1038,7 +1038,7 @@
         "रजसव शाखा"
       ],
       "latencyMs": [
-        1
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.2727272727272727,
@@ -1102,9 +1102,9 @@
         "nagrikta praman patr"
       ],
       "latencyMs": [
-        1
+        2
       ],
-      "commitLatencyMs": 1,
+      "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.05263157894736836,
       "warnings": [],
       "proofHintHit": false,
@@ -1136,7 +1136,7 @@
         "swasthy"
       ],
       "latencyMs": [
-        0
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.5555555555555556,
@@ -1204,7 +1204,7 @@
         "nagarikta"
       ],
       "latencyMs": [
-        3
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.16666666666666674,
@@ -1238,7 +1238,7 @@
         "pradesh"
       ],
       "latencyMs": [
-        7
+        4
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.5,
@@ -1321,7 +1321,7 @@
       "latencyMs": [
         0
       ],
-      "commitLatencyMs": 1,
+      "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
       "warnings": [],
       "proofHintHit": false,
@@ -1380,7 +1380,7 @@
         "mero NID form submit bhayenako"
       ],
       "latencyMs": [
-        3
+        2
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.16666666666666674,
@@ -1509,7 +1509,7 @@
         "कार्यालयलाई"
       ],
       "latencyMs": [
-        1
+        0
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.25,
@@ -1600,7 +1600,7 @@
         "विद्यालय कोही"
       ],
       "latencyMs": [
-        1
+        0
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.3125,
@@ -1633,7 +1633,7 @@
         "मन्त्रालय लेखापरीक्षण"
       ],
       "latencyMs": [
-        0
+        1
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.2941176470588235,
@@ -2070,7 +2070,7 @@
         "जिल्लाका"
       ],
       "latencyMs": [
-        2
+        0
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.16666666666666663,
@@ -2138,7 +2138,7 @@
         "nepali"
       ],
       "latencyMs": [
-        6
+        5
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -2172,7 +2172,7 @@
         "जन्म पानी लिउल मा"
       ],
       "latencyMs": [
-        7
+        4
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": -0.25,

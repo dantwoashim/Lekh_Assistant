@@ -1,4 +1,5 @@
 import type { KeyboardMode } from "../../engine/keyboard";
+import type { SuggestionSurface, TypingContext } from "../../engine/keyboard";
 
 export interface CompanionSettings {
   defaultMode: KeyboardMode;
@@ -11,6 +12,8 @@ export interface CompanionSettings {
   proofreadAggressiveness: "conservative" | "balanced";
   enableDictionaryPanel: boolean;
   enableLocalMemory: boolean;
+  pauseLearning: boolean;
+  excludedMemoryApps: string[];
   enableNextWordPrediction: boolean;
   secureInputPassThrough: boolean;
   traditionalLayoutStatus: "pending-audit" | "verified";
@@ -30,6 +33,8 @@ export const defaultCompanionSettings: CompanionSettings = {
   proofreadAggressiveness: "conservative",
   enableDictionaryPanel: true,
   enableLocalMemory: true,
+  pauseLearning: false,
+  excludedMemoryApps: [],
   enableNextWordPrediction: true,
   secureInputPassThrough: true,
   traditionalLayoutStatus: "pending-audit",
@@ -133,3 +138,79 @@ export const companionPages: CompanionPageDefinition[] = [
     controls: ["version", "release channel", "license", "signed update path"]
   }
 ];
+
+export interface CompanionSettingsExport {
+  schemaVersion: 1;
+  exportedAt: string;
+  settings: CompanionSettings;
+}
+
+export function normalizeCompanionSettings(value: Partial<CompanionSettings> = {}): CompanionSettings {
+  const candidateCount = Number.isFinite(value.candidateCount)
+    ? Math.max(1, Math.min(9, Math.trunc(value.candidateCount ?? defaultCompanionSettings.candidateCount)))
+    : defaultCompanionSettings.candidateCount;
+  return {
+    ...defaultCompanionSettings,
+    ...value,
+    candidateCount,
+    telemetryEnabled: false,
+    excludedMemoryApps: Array.isArray(value.excludedMemoryApps)
+      ? Array.from(new Set(value.excludedMemoryApps.map((item) => item.trim()).filter(Boolean))).slice(0, 100)
+      : defaultCompanionSettings.excludedMemoryApps
+  };
+}
+
+export function exportCompanionSettings(settings: Partial<CompanionSettings>, exportedAt = new Date().toISOString()): CompanionSettingsExport {
+  return {
+    schemaVersion: 1,
+    exportedAt,
+    settings: normalizeCompanionSettings(settings)
+  };
+}
+
+export function importCompanionSettings(value: unknown): CompanionSettings {
+  if (!isRecord(value)) return defaultCompanionSettings;
+  const settings = isRecord(value.settings) ? value.settings : value;
+  return normalizeCompanionSettings(settings as Partial<CompanionSettings>);
+}
+
+export function companionSettingsToTypingContext(
+  settings: Partial<CompanionSettings>,
+  patch: Partial<TypingContext> = {}
+): TypingContext {
+  const normalized = normalizeCompanionSettings(settings);
+  const enabledSurfaces: SuggestionSurface[] = [
+    "romanized-to-unicode",
+    ...(normalized.enableRomanizedHelpers ? ["romanized-to-romanized" as const] : []),
+    ...(normalized.showRomanizedLabels ? ["romanized-to-unicode-with-labels" as const] : []),
+    "traditional-to-unicode",
+    "traditional-to-romanized-helper",
+    "traditional-to-traditional-proofread"
+  ];
+  const appName = patch.appName ?? "";
+  const appId = patch.appId ?? "";
+  const appExcluded = normalized.excludedMemoryApps.some((item) => {
+    const needle = item.toLowerCase();
+    return appName.toLowerCase().includes(needle) || appId.toLowerCase().includes(needle);
+  });
+  const secureInput = Boolean(patch.secureInput || patch.fieldType === "password" || patch.fieldType === "code" || !normalized.enableLocalMemory || normalized.pauseLearning || appExcluded);
+
+  return {
+    leftTextWindow: "",
+    rightTextWindow: "",
+    activeDomains: [],
+    locale: "ne-NP",
+    ...patch,
+    mode: patch.mode ?? normalized.defaultMode,
+    preserveEnglish: normalized.preserveEnglishTokens,
+    secureInput,
+    enabledSurfaces,
+    showRomanizedLabels: normalized.showRomanizedLabels,
+    enableNextWordPrediction: normalized.enableNextWordPrediction,
+    layoutId: normalized.traditionalLayoutStatus === "verified" ? "traditional-ltk-compatible" : "traditional-ltk-compatible.pending"
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

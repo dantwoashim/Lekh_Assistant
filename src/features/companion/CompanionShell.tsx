@@ -72,6 +72,8 @@ export function CompanionShell() {
             "Pinned entries can win when safe",
             "Never-suggest blocks known unwanted spellings",
             "Export/import/reset are local storage operations",
+            `Learning paused: ${defaultCompanionSettings.pauseLearning ? "yes" : "no"}`,
+            `Excluded apps: ${defaultCompanionSettings.excludedMemoryApps.length}`,
             "Secure input disables memory writes"
           ]}
         />

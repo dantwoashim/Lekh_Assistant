@@ -5,18 +5,35 @@ let package = Package(
   name: "LekhInputMethod",
   platforms: [.macOS(.v13)],
   products: [
-    .library(name: "LekhInputMethod", targets: ["LekhInputMethod"])
+    .library(name: "LekhInputMethod", targets: ["LekhInputMethod"]),
+    .executable(name: "LekhInputMethodApp", targets: ["LekhInputMethodApp"])
   ],
   targets: [
     .target(
       name: "LekhInputMethod",
       path: ".",
-      exclude: ["lekh_imk_contract.md"],
+      exclude: [
+        "App",
+        "Info.plist",
+        "install-dev.sh",
+        "lekh_imk_contract.md",
+        "macosImkSource.test.ts",
+        "register-dev.swift",
+        "restore-system-keyboard.sh",
+        "restore-system-keyboard.swift",
+        "uninstall-dev.sh"
+      ],
       sources: [
         "LekhCandidateController.swift",
         "LekhInputController.swift",
         "LekhXpcClient.swift"
       ]
+    ),
+    .executableTarget(
+      name: "LekhInputMethodApp",
+      dependencies: ["LekhInputMethod"],
+      path: "App",
+      sources: ["main.swift"]
     )
   ]
 )

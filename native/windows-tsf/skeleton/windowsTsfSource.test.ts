@@ -20,6 +20,16 @@ describe("Windows TSF source safety contract", () => {
     expect(guids).toContain("kLekhPipeNamePrefix");
   });
 
+  it("uses per-focus TSF session ids instead of a constant dev session", () => {
+    const header = readFileSync(join(root, "native/windows-tsf/skeleton/LekhTextService.h"), "utf8");
+    const source = readFileSync(join(root, "native/windows-tsf/skeleton/LekhTextService.cpp"), "utf8");
+    expect(header).toContain("std::wstring sessionId_");
+    expect(source).toContain("makeSessionId()");
+    expect(source).toContain("resetSessionId()");
+    expect(source).toContain("OnSetFocus(BOOL foreground)");
+    expect(source).not.toContain("windows-tsf-dev");
+  });
+
   it("uses overlapped named-pipe IO with bounded hot-path timeout", () => {
     const ipc = readFileSync(join(root, "native/windows-tsf/skeleton/IpcClient.cpp"), "utf8");
     expect(ipc).toContain("FILE_FLAG_OVERLAPPED");

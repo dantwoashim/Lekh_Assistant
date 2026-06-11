@@ -78,6 +78,7 @@ export function FocusedKeyboard() {
   const [input, setInput] = useState("");
   const [update, setUpdate] = useState<CandidateUpdate>(() => engine.updateComposition(sessionId, "", 0));
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const ghostRef = useRef<HTMLDivElement | null>(null);
 
@@ -124,6 +125,7 @@ export function FocusedKeyboard() {
     engine.endSession(sessionId);
     const nextSessionId = engine.beginSession(contextFor(nextDefinition.engineMode));
     setMode(nextMode);
+    setModeMenuOpen(false);
     setSessionId(nextSessionId);
     setInput("");
     setSelectedIndex(0);
@@ -178,6 +180,31 @@ export function FocusedKeyboard() {
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    const isModeShortcut =
+      (event.ctrlKey && event.altKey && event.code === "Space") ||
+      (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "m");
+
+    if (isModeShortcut) {
+      event.preventDefault();
+      setModeMenuOpen((isOpen) => !isOpen);
+      return;
+    }
+
+    if (modeMenuOpen) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setModeMenuOpen(false);
+        return;
+      }
+
+      const selectedMode = MODES[Number(event.key) - 1];
+      if (selectedMode) {
+        event.preventDefault();
+        changeMode(selectedMode.id);
+        return;
+      }
+    }
+
     if (event.key === "Tab" && activeSuggestion) {
       event.preventDefault();
       acceptSuggestion(activeSuggestion, { addSpace: true });
@@ -215,6 +242,7 @@ export function FocusedKeyboard() {
           <span>Type naturally.</span>
           <span>Gray text is the suggestion.</span>
           <span>Press Tab/Enter or tap Accept.</span>
+          <span>Ctrl+Alt+Space switches mode.</span>
         </div>
 
         <div className="typing-modes" aria-label="Typing mode options">
@@ -230,6 +258,25 @@ export function FocusedKeyboard() {
             </button>
           ))}
         </div>
+
+        {modeMenuOpen ? (
+          <div className="typing-mode-menu" role="menu" aria-label="Typing mode shortcut menu">
+            {MODES.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={item.id === mode}
+                className={item.id === mode ? "typing-mode-menu__item typing-mode-menu__item--active" : "typing-mode-menu__item"}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => changeMode(item.id)}
+              >
+                <span>{index + 1}</span>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <div className="typing-box-frame">
           <div ref={ghostRef} className="typing-ghost-layer" aria-hidden="true">

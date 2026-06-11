@@ -509,7 +509,7 @@ function mixedSpanCandidates(input: string, rangeEnd: number, context?: TypingCo
       reason: "Protected acronym span with loanword conversion option"
     }
   ];
-  return rows
+  const curated = rows
     .filter((row) => row.input === normalized)
     .map((row, index): Candidate => ({
       id: `mixed-span-${index}-${row.output}`,
@@ -520,6 +520,86 @@ function mixedSpanCandidates(input: string, rangeEnd: number, context?: TypingCo
       reason: [row.reason],
       replaceRange: [0, rangeEnd]
     }));
+  return [...curated, ...genericMixedPolicyCandidates(input, rangeEnd, context)];
+}
+
+function genericMixedPolicyCandidates(input: string, rangeEnd: number, context?: TypingContext): Candidate[] {
+  if (!input.includes(" ")) return [];
+  const parts = input.split(/(\s+)/);
+  let hasPolicyToken = false;
+  let convertiblePreferenceToken = false;
+
+  const preserved = parts.map((part) => {
+    if (/^\s+$/.test(part)) return part;
+    const policy = mixedTokenPolicy(part);
+    if (policy.kind === "protected" || policy.kind === "preference") hasPolicyToken = true;
+    if (policy.kind === "preference" && policy.converted) convertiblePreferenceToken = true;
+    if (policy.kind === "protected" || policy.kind === "preference") return part;
+    return convertRomanized(part, { mode: "romanized-mixed", digitPolicy: "context-dependent" }).normalizedOutput;
+  }).join("").trim();
+
+  if (!hasPolicyToken || !preserved || preserved === input.trim()) return [];
+
+  const candidates: Candidate[] = [{
+    id: `mixed-policy-preserve-${preserved}`,
+    text: preserved,
+    label: context?.showRomanizedLabels ? input : undefined,
+    type: "phrase",
+    confidence: 0.905,
+    reason: ["Mixed Nepali-English policy candidate with protected/preference tokens preserved"],
+    replaceRange: [0, rangeEnd]
+  }];
+
+  if (convertiblePreferenceToken) {
+    const converted = parts.map((part) => {
+      if (/^\s+$/.test(part)) return part;
+      const policy = mixedTokenPolicy(part);
+      if (policy.kind === "protected") return part;
+      if (policy.kind === "preference" && policy.converted) return policy.converted;
+      return convertRomanized(part, { mode: "romanized-mixed", digitPolicy: "context-dependent" }).normalizedOutput;
+    }).join("").trim();
+    if (converted && converted !== preserved) {
+      candidates.push({
+        id: `mixed-policy-convert-${converted}`,
+        text: converted,
+        label: context?.showRomanizedLabels ? input : undefined,
+        type: "phrase",
+        confidence: 0.84,
+        reason: ["Mixed Nepali-English policy candidate with preference loanwords converted"],
+        replaceRange: [0, rangeEnd]
+      });
+    }
+  }
+
+  return candidates;
+}
+
+function mixedTokenPolicy(token: string): { kind: "protected" | "preference" | "convert"; converted?: string } {
+  const cleaned = token.replace(/^[^\p{L}\p{N}@./:-]+|[^\p{L}\p{N}@./:-]+$/gu, "");
+  const lower = cleaned.toLowerCase();
+  if (
+    isStructuredProtectedInput(cleaned) ||
+    /^[A-Z]{2,}$/.test(cleaned) ||
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned) ||
+    /^https?:\/\//i.test(cleaned) ||
+    /^\d{2,4}(?:[-/]\d{1,4})*$/.test(cleaned)
+  ) {
+    return { kind: "protected" };
+  }
+
+  const preferenceLoanwords: Record<string, string> = {
+    file: "फाइल",
+    form: "फारम",
+    report: "रिपोर्ट",
+    submit: "सबमिट",
+    upload: "अपलोड",
+    download: "डाउनलोड",
+    system: "सिस्टम",
+    office: "अफिस",
+    record: "रेकर्ड"
+  };
+  if (preferenceLoanwords[lower]) return { kind: "preference", converted: preferenceLoanwords[lower] };
+  return { kind: "convert" };
 }
 
 function englishPreserveCandidate(input: string, rangeEnd: number): Candidate | undefined {

@@ -45,6 +45,15 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     if (isSecureContext(session.context)) {
       return withAction(this.refresh(sessionId), "passThrough", "Secure/code field: native key passed through without composition.");
     }
+    if (isCandidateShortcutKey(key) && session.compositionText.length > 0) {
+      const update = this.refresh(sessionId);
+      const candidate = update.candidates.find((item) => item.shortcut === key.key);
+      if (candidate) {
+        const commitResult = this.commitCandidate(sessionId, candidate.id);
+        return withCommit(this.refresh(sessionId), commitResult, commitResult.committedText);
+      }
+      return withAction(update, "compose", `Candidate shortcut ${key.key} had no matching candidate.`);
+    }
     const mutation = applyKeyToComposition(session.compositionText, session.caret, key);
     if (mutation.command === "pass-through") {
       return withAction(this.refresh(sessionId), "passThrough", mutation.warning);
@@ -182,6 +191,11 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     this.cache.set(sessionId, update.candidates);
     return update;
   }
+}
+
+function isCandidateShortcutKey(key: KeyboardKeyEvent): boolean {
+  if (key.modifiers?.ctrl || key.modifiers?.alt || key.modifiers?.meta) return false;
+  return /^[1-9]$/.test(typeof key.key === "string" ? key.key : "");
 }
 
 function unknownSessionUpdate(sessionId: SessionId, input: string, cursor: number): CandidateUpdate {

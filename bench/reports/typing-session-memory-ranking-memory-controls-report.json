@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-09T13:14:34.887Z",
+  "generatedAt": "2026-06-10T13:45:21.358Z",
   "command": "npm run benchmark:typing-session -- memory-ranking,memory-controls",
   "suite": "typing-session:memory-ranking,memory-controls",
   "mode": "full",
-  "durationMs": 513,
+  "durationMs": 319,
   "fixtureCount": 4,
   "romanized": {
     "totalSessions": 4,

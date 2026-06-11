@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-09T13:14:30.538Z",
+  "generatedAt": "2026-06-10T13:45:18.566Z",
   "command": "npm run benchmark:typing-session -- dictionary-lookup",
   "suite": "typing-session:dictionary-lookup",
   "mode": "full",
-  "durationMs": 184,
+  "durationMs": 113,
   "fixtureCount": 5,
   "romanized": {
     "totalSessions": 0,

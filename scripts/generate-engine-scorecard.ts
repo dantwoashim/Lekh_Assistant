@@ -260,6 +260,7 @@ const scorecard = {
     macosImkSkeleton: existsSync(join(root, "native/macos-imk/skeleton/LekhInputController.placeholder.swift"))
       || existsSync(join(root, "native/macos-imk/skeleton/LekhKeyboardIMK/Sources/LekhKeyboardIMK/LekhInputController.swift")),
     macosImkImplementation: hasMacosImkImplementation(),
+    macosImkDevInstallProof: hasMacosImkDevInstallProof(),
     ipcSchema: existsSync(join(root, "native/shared/ipc/lekh-keyboard-ipc.schema.json")),
     ipcValidator: existsSync(join(root, "scripts/check-ipc-schema.ts")),
     devDaemon: existsSync(join(root, "native/daemon/src/keyboardDaemon.ts")),
@@ -268,7 +269,7 @@ const scorecard = {
     companionDesktopShell: existsSync(join(root, "electron/main.cjs")) && existsSync(join(root, "electron-builder.config.cjs")),
     windowsNamedPipeStrategy: "per-user named pipe",
     macosXpcStrategy: "app-scoped XPC",
-    nativeReleaseStatus: "blocked until Windows/macOS platform tests, signing/notarization, and pilot feedback"
+    nativeReleaseStatus: "blocked until Windows TSF host tests, macOS host-app matrix tests, signing/notarization, and pilot feedback"
   },
   finalProduction: {
     verification: hardFailures.length === 0 && performanceTargetMissCount() === 0 ? "complete" : "failed",
@@ -285,7 +286,7 @@ const scorecard = {
     companionApp: existsSync(join(root, "electron/main.cjs")) && existsSync(join(root, "src/features/companion/CompanionShell.tsx")) ? "partial" : "pending",
     daemonIpc: existsSync(join(root, "native/daemon/src/daemonCli.ts")) && existsSync(join(root, "scripts/check-ipc-schema.ts")) ? "complete" : "partial",
     windowsNative: "blocked-native-environment",
-    macosNative: hasMacosImkImplementation() ? "blocked-native-environment" : "failed",
+    macosNative: hasMacosImkDevInstallProof() ? "partial native-dev proof" : hasMacosImkImplementation() ? "blocked-native-environment" : "failed",
     storage: existsSync(join(root, "native/shared/storage/jsonFileStores.ts")) ? "complete" : "partial",
     installerSigning: "blocked-external",
     privacySecurity: existsSync(join(root, "docs/KEYBOARD_PRIVACY_AND_SECURITY_MODEL.md")) ? "complete" : "partial",
@@ -321,7 +322,8 @@ const scorecard = {
       "Romanized live typing prototype",
       "Traditional layout under source-of-truth audit",
       "proofread/dictionary/memory prototype",
-      "native architecture/scaffold"
+      "native architecture/scaffold",
+      "unsigned macOS IMK development input method installs/registers/enables/launch-smokes without auto-selecting globally"
     ],
     forbiddenUntilEvidence: [
       "beats Gboard",
@@ -464,6 +466,16 @@ function stringValue(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function readJson(path: string): JsonObject {
+  const absolute = join(root, path);
+  if (!existsSync(absolute)) return {};
+  try {
+    return JSON.parse(readFileSync(absolute, "utf8")) as JsonObject;
+  } catch {
+    return {};
+  }
+}
+
 function reportBySpec(key: string): ReportSpec | undefined {
   return reportSpecs.find((spec) => spec.key === key);
 }
@@ -497,6 +509,14 @@ function hasMacosImkImplementation(): boolean {
   if (!existsSync(implementation)) return false;
   const source = readFileSync(implementation, "utf8");
   return /IMKInputController/.test(source) && !/placeholder/i.test(source);
+}
+
+function hasMacosImkDevInstallProof(): boolean {
+  const installReport = readJson("reports/macos-imk-dev-install-check.json");
+  return hasMacosImkImplementation()
+    && stringValue(installReport.status) === "passed"
+    && existsSync(join(root, "native/macos-imk/skeleton/register-dev.swift"))
+    && existsSync(join(root, "native/macos-imk/skeleton/install-dev.sh"));
 }
 
 function launchRecommendation(): string {
@@ -624,7 +644,7 @@ Performance target misses: ${scorecard.performance.targetMissCount}
 | Area | Status |
 | --- | --- |
 | Windows TSF source | ${scorecard.native.windowsTsfSource ? "present" : "missing"} |
-| macOS IMK source | ${scorecard.native.macosImkImplementation ? "Swift proof target present" : scorecard.native.macosImkSkeleton ? "placeholder present" : "missing"} |
+| macOS IMK source | ${scorecard.native.macosImkDevInstallProof ? "dev input method install proof passed" : scorecard.native.macosImkImplementation ? "Swift proof target present" : scorecard.native.macosImkSkeleton ? "placeholder present" : "missing"} |
 | IPC schema | ${scorecard.native.ipcSchema ? "present" : "missing"} |
 | daemon lifecycle | ${scorecard.native.daemonLifecycle ? "documented" : "missing"} |
 | companion desktop shell | ${scorecard.native.companionDesktopShell ? "present" : "missing"} |

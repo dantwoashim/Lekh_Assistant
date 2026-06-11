@@ -11,14 +11,28 @@ extern long g_objectCount;
 
 namespace {
 
-std::wstring makeKeyRequest(WPARAM wParam, LPARAM lParam) {
+std::wstring makeSessionId() {
+  static LONG counter = 0;
+  wchar_t buffer[128] = {};
+  swprintf_s(
+    buffer,
+    L"windows-tsf-%lu-%llu-%ld",
+    static_cast<unsigned long>(GetCurrentProcessId()),
+    static_cast<unsigned long long>(GetTickCount64()),
+    static_cast<long>(InterlockedIncrement(&counter))
+  );
+  return buffer;
+}
+
+std::wstring makeKeyRequest(const std::wstring& sessionId, WPARAM wParam, LPARAM lParam) {
   wchar_t buffer[512] = {};
   const unsigned long virtualKey = static_cast<unsigned long>(wParam);
   const unsigned long scanCode = static_cast<unsigned long>((lParam >> 16) & 0xff);
   swprintf_s(
     buffer,
-    L"{\"id\":\"windows_tsf_%lu\",\"type\":\"session.processKeyStroke\",\"version\":1,\"sentAt\":1,\"payload\":{\"sessionId\":\"windows-tsf-dev\",\"key\":{\"key\":\"%lc\",\"code\":\"VK_%lu\",\"modifiers\":{\"shift\":false,\"ctrl\":false,\"alt\":false,\"meta\":false},\"timestamp\":1,\"platform\":\"windows-tsf\"}}}",
+    L"{\"id\":\"windows_tsf_%lu\",\"type\":\"session.processKeyStroke\",\"version\":1,\"sentAt\":1,\"payload\":{\"sessionId\":\"%ls\",\"key\":{\"key\":\"%lc\",\"code\":\"VK_%lu\",\"modifiers\":{\"shift\":false,\"ctrl\":false,\"alt\":false,\"meta\":false},\"timestamp\":1,\"platform\":\"windows-tsf\"}}}",
     virtualKey,
+    sessionId.c_str(),
     virtualKey >= 0x20 && virtualKey <= 0x7e ? static_cast<wchar_t>(virtualKey) : L' ',
     scanCode
   );
@@ -27,7 +41,7 @@ std::wstring makeKeyRequest(WPARAM wParam, LPARAM lParam) {
 
 } // namespace
 
-LekhTextService::LekhTextService() {
+LekhTextService::LekhTextService() : sessionId_(makeSessionId()) {
   InterlockedIncrement(&g_objectCount);
 }
 
@@ -71,6 +85,7 @@ STDMETHODIMP LekhTextService::ActivateEx(ITfThreadMgr* threadMgr, TfClientId cli
   threadMgr_ = threadMgr;
   threadMgr_->AddRef();
   clientId_ = clientId;
+  resetSessionId();
   return adviseKeySink();
 }
 
@@ -81,10 +96,12 @@ STDMETHODIMP LekhTextService::Deactivate() {
     threadMgr_->Release();
     threadMgr_ = nullptr;
   }
+  sessionId_.clear();
   return S_OK;
 }
 
-STDMETHODIMP LekhTextService::OnSetFocus(BOOL) {
+STDMETHODIMP LekhTextService::OnSetFocus(BOOL foreground) {
+  if (foreground) resetSessionId();
   return S_OK;
 }
 
@@ -141,8 +158,12 @@ bool LekhTextService::daemonAvailable() const {
 }
 
 bool LekhTextService::sendKeyToDaemon(WPARAM wParam, LPARAM lParam) const {
-  const std::optional<std::wstring> response = ipc_.request(makeKeyRequest(wParam, lParam), kLekhHotPathTimeoutMs);
+  const std::optional<std::wstring> response = ipc_.request(makeKeyRequest(sessionId_, wParam, lParam), kLekhHotPathTimeoutMs);
   return response.has_value() && response->find(L"\"ok\":true") != std::wstring::npos;
+}
+
+void LekhTextService::resetSessionId() {
+  sessionId_ = makeSessionId();
 }
 
 HRESULT LekhTextService::adviseKeySink() {

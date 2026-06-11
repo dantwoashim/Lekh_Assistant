@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
@@ -9,6 +9,7 @@ const startedAt = performance.now();
 const signed = process.argv.includes("--signed");
 const unsigned = process.argv.includes("--unsigned") || !signed;
 const reportPath = join(root, "reports", signed ? "macos-signed-package-report.json" : "macos-unsigned-package-report.json");
+const stableAppBundle = join(root, "release", "Lekh Keyboard Companion.app");
 
 function finish(status, details, exitCode) {
   mkdirSync(join(root, "reports"), { recursive: true });
@@ -54,6 +55,8 @@ if (signed && !process.env.LEKH_MAC_DEVELOPER_ID) {
   );
 }
 
+rmSync(stableAppBundle, { recursive: true, force: true });
+
 const daemonBuild = spawnSync("npm", ["run", "build:daemon"], { cwd: root, encoding: "utf8", stdio: "pipe" });
 if (daemonBuild.status !== 0) {
   finish("failed", { step: "daemon-build", stdout: daemonBuild.stdout, stderr: daemonBuild.stderr }, daemonBuild.status ?? 1);
@@ -91,10 +94,25 @@ if (!appBundle) {
   finish("failed", { step: "artifact", reason: "No macOS .app bundle found in release/." }, 1);
 }
 
-finish(unsigned ? "passed-unsigned-dev" : "passed-signed", { artifact: appBundle, signed: !unsigned }, 0);
+if (appBundle !== stableAppBundle) {
+  rmSync(stableAppBundle, { recursive: true, force: true });
+  const copy = spawnSync("ditto", [appBundle, stableAppBundle], { cwd: root, encoding: "utf8", stdio: "pipe" });
+  if (copy.status !== 0) {
+    finish("failed", { step: "stable-artifact-copy", sourceArtifact: appBundle, stdout: copy.stdout, stderr: copy.stderr }, copy.status ?? 1);
+  }
+}
+
+finish(unsigned ? "passed-unsigned-dev" : "passed-signed", { artifact: stableAppBundle, sourceArtifact: appBundle, signed: !unsigned }, 0);
 
 function findAppBundle(dir) {
   if (!existsSync(dir)) return undefined;
+  const preferred = [
+    join(dir, `mac-${process.arch}`, "Lekh Keyboard Companion.app"),
+    join(dir, "mac-universal", "Lekh Keyboard Companion.app")
+  ];
+  for (const candidate of preferred) {
+    if (existsSync(candidate)) return candidate;
+  }
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {

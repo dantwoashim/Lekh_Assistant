@@ -1,5 +1,5 @@
 import { createKeyboardEngine } from "../../../src/engine/keyboard";
-import type { KeyboardEngine } from "../../../src/engine/keyboard";
+import type { CandidateUpdate, CommitResult, KeyboardEngine } from "../../../src/engine/keyboard";
 import {
   IPC_SCHEMA_VERSION,
   createIpcErrorResponse,
@@ -24,6 +24,7 @@ import type {
 } from "../../shared/ipc/messages";
 
 const DAEMON_VERSION = "0.1.0-dev";
+const HOT_PATH_TIMEOUT_MS = 50;
 
 export interface KeyboardDaemonOptions {
   engine?: KeyboardEngine;
@@ -148,21 +149,39 @@ export class KeyboardDaemon {
       case "session.processKeyStroke": {
         const { sessionId, key } = request.payload as ProcessKeyStrokePayload;
         this.counters.processedKeystrokes += 1;
-        return createIpcResponse(request, this.engine.processKeyStroke(sessionId, key));
+        const result = await this.withHotPathTimeout(
+          Promise.resolve().then(() => this.engine.processKeyStroke(sessionId, key)),
+          HOT_PATH_TIMEOUT_MS,
+          hotPathCandidateFallback(sessionId, "Native hot path exceeded 50ms; passing key through.")
+        );
+        return createIpcResponse(request, result.value);
       }
       case "session.updateComposition": {
         const { sessionId, input, cursor } = request.payload as UpdateCompositionPayload;
-        return createIpcResponse(request, this.engine.updateComposition(sessionId, input, cursor));
+        const result = await this.withHotPathTimeout(
+          Promise.resolve().then(() => this.engine.updateComposition(sessionId, input, cursor)),
+          HOT_PATH_TIMEOUT_MS,
+          hotPathCandidateFallback(sessionId, "Native composition update exceeded 50ms; preserving host input.", input, cursor)
+        );
+        return createIpcResponse(request, result.value);
       }
       case "session.commitCandidate": {
         const { sessionId, candidateId } = request.payload as { sessionId: string; candidateId: string };
-        const result = this.engine.commitCandidate(sessionId, candidateId);
+        const { value: result } = await this.withHotPathTimeout(
+          Promise.resolve().then(() => this.engine.commitCandidate(sessionId, candidateId)),
+          HOT_PATH_TIMEOUT_MS,
+          hotPathCommitFallback(sessionId, "Candidate commit exceeded 50ms; native host should pass through.")
+        );
         if (result.committedText) this.counters.committedCandidates += 1;
         return createIpcResponse(request, result);
       }
       case "session.commitRaw": {
         const { sessionId } = request.payload as SessionPayload;
-        const result = this.engine.commitRaw(sessionId);
+        const { value: result } = await this.withHotPathTimeout(
+          Promise.resolve().then(() => this.engine.commitRaw(sessionId)),
+          HOT_PATH_TIMEOUT_MS,
+          hotPathCommitFallback(sessionId, "Raw commit exceeded 50ms; native host should pass through.")
+        );
         if (result.committedText) this.counters.committedCandidates += 1;
         return createIpcResponse(request, result);
       }
@@ -223,6 +242,36 @@ export class KeyboardDaemon {
         );
     }
   }
+}
+
+function hotPathCandidateFallback(sessionId: string, warning: string, input = "", cursor = 0): CandidateUpdate {
+  return {
+    sessionId,
+    mode: "diagnostic",
+    surface: "romanized-to-unicode",
+    action: "passThrough",
+    compositionText: input,
+    displayText: input,
+    caret: Math.max(0, Math.min(input.length, Math.trunc(cursor))),
+    candidates: [],
+    proofHints: [],
+    shouldShowCandidateUI: false,
+    confidence: 0,
+    warnings: [warning],
+    latencyMs: HOT_PATH_TIMEOUT_MS,
+    schemaVersion: 1
+  };
+}
+
+function hotPathCommitFallback(sessionId: string, warning: string): CommitResult {
+  return {
+    sessionId,
+    action: "passThrough",
+    committedText: "",
+    followupCandidates: [],
+    memoryRecorded: false,
+    schemaVersion: 1
+  };
 }
 
 function isKnownType(value: unknown): value is IpcRequest["type"] {

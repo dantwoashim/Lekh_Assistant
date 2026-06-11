@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-09T13:15:05.602Z",
+  "generatedAt": "2026-06-10T13:45:40.114Z",
   "command": "npm run scorecard:engine",
   "mode": "read-existing-fresh-reports",
   "verificationStability": {
@@ -12,11 +12,11 @@
         "label": "Romanized benchmark",
         "path": "bench/reports/romanized-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T13:14:41.093Z",
+        "generatedAt": "2026-06-10T13:45:26.032Z",
         "command": "npm run benchmark:romanized:smoke",
         "suite": "romanized",
         "mode": "smoke",
-        "durationMs": 3660,
+        "durationMs": 3013,
         "fixtureCount": 776
       },
       {
@@ -24,11 +24,11 @@
         "label": "Romanized self-consistency",
         "path": "bench/reports/romanized-self-consistency-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T13:15:04.966Z",
+        "generatedAt": "2026-06-10T13:45:39.803Z",
         "command": "npm run benchmark:romanized:self:smoke",
         "suite": "romanized-self-consistency",
         "mode": "smoke",
-        "durationMs": 545,
+        "durationMs": 190,
         "fixtureCount": 140
       },
       {
@@ -36,11 +36,11 @@
         "label": "Typing-session benchmark",
         "path": "bench/reports/typing-session-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T13:14:26.461Z",
+        "generatedAt": "2026-06-10T13:45:16.014Z",
         "command": "npm run benchmark:typing-session",
         "suite": "typing-session",
         "mode": "full",
-        "durationMs": 869,
+        "durationMs": 509,
         "fixtureCount": 66
       },
       {
@@ -48,11 +48,11 @@
         "label": "Typing-session dictionary benchmark",
         "path": "bench/reports/typing-session-dictionary-lookup-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T13:14:30.538Z",
+        "generatedAt": "2026-06-10T13:45:18.566Z",
         "command": "npm run benchmark:typing-session -- dictionary-lookup",
         "suite": "typing-session:dictionary-lookup",
         "mode": "full",
-        "durationMs": 184,
+        "durationMs": 113,
         "fixtureCount": 5
       },
       {
@@ -60,11 +60,11 @@
         "label": "Typing-session memory benchmark",
         "path": "bench/reports/typing-session-memory-ranking-memory-controls-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T13:14:34.887Z",
+        "generatedAt": "2026-06-10T13:45:21.358Z",
         "command": "npm run benchmark:typing-session -- memory-ranking,memory-controls",
         "suite": "typing-session:memory-ranking,memory-controls",
         "mode": "full",
-        "durationMs": 513,
+        "durationMs": 319,
         "fixtureCount": 4
       },
       {
@@ -72,11 +72,11 @@
         "label": "Proofread benchmark",
         "path": "bench/reports/proofread-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T13:14:43.799Z",
+        "generatedAt": "2026-06-10T13:45:27.724Z",
         "command": "npm run benchmark:proofread",
         "suite": "proofread",
         "mode": "full",
-        "durationMs": 78,
+        "durationMs": 54,
         "fixtureCount": 9
       },
       {
@@ -84,11 +84,11 @@
         "label": "Performance smoke benchmark",
         "path": "bench/reports/perf-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T13:14:55.522Z",
+        "generatedAt": "2026-06-10T13:45:33.693Z",
         "command": "npm run bench:perf:smoke",
         "suite": "performance",
         "mode": "smoke",
-        "durationMs": 885,
+        "durationMs": 770,
         "fixtureCount": 12
       },
       {
@@ -96,11 +96,11 @@
         "label": "Benchmark disjointness",
         "path": "bench/reports/benchmark-disjointness-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T13:14:22.032Z",
+        "generatedAt": "2026-06-10T13:45:13.049Z",
         "command": "npm run check:benchmark-disjointness",
         "suite": "benchmark-disjointness",
         "mode": "full",
-        "durationMs": 307,
+        "durationMs": 254,
         "fixtureCount": 17001
       },
       {
@@ -108,7 +108,7 @@
         "label": "Keyboard corpus package",
         "path": "bench/reports/keyboard-corpus-package-report.json",
         "status": "fresh",
-        "generatedAt": "2026-06-09T13:14:20.352Z",
+        "generatedAt": "2026-06-10T13:45:12.250Z",
         "command": "npm run corpus:keyboard:package-check",
         "suite": "keyboard-corpus-package",
         "durationMs": 0,
@@ -289,8 +289,8 @@
     },
     "latency": {
       "candidateP50Ms": 1,
-      "candidateP95Ms": 7,
-      "updateP95Ms": 7,
+      "candidateP95Ms": 4,
+      "updateP95Ms": 4,
       "commitP95Ms": 0
     },
     "keystrokeSavingsRatioMean": 0.025062567044890426,
@@ -320,7 +320,7 @@
     "memoryControls": "complete",
     "keyboardLab": "complete",
     "companionShell": "complete",
-    "typingLatencyP95Ms": 7,
+    "typingLatencyP95Ms": 4,
     "nativeReleaseReadiness": "pending"
   },
   "proofread": {
@@ -347,10 +347,10 @@
         "name": "5KB mixed Preeti paragraph",
         "iterations": 20,
         "gateMs": 100,
-        "minMs": 18,
-        "meanMs": 19.6,
-        "p95Ms": 22,
-        "maxMs": 25,
+        "minMs": 15,
+        "meanMs": 16.45,
+        "p95Ms": 17,
+        "maxMs": 24,
         "targetMissed": false,
         "grosslySlow": false
       },
@@ -381,7 +381,7 @@
         "iterations": 30,
         "gateMs": 20,
         "minMs": 0,
-        "meanMs": 0.23,
+        "meanMs": 0.33,
         "p95Ms": 1,
         "maxMs": 1,
         "targetMissed": false,
@@ -392,7 +392,7 @@
         "iterations": 30,
         "gateMs": 20,
         "minMs": 0,
-        "meanMs": 0.17,
+        "meanMs": 0.13,
         "p95Ms": 1,
         "maxMs": 1,
         "targetMissed": false,
@@ -403,7 +403,7 @@
         "iterations": 30,
         "gateMs": 20,
         "minMs": 1,
-        "meanMs": 1.9,
+        "meanMs": 1.6,
         "p95Ms": 3,
         "maxMs": 4,
         "targetMissed": false,
@@ -436,9 +436,9 @@
         "iterations": 30,
         "gateMs": 10,
         "minMs": 0,
-        "meanMs": 0,
+        "meanMs": 0.03,
         "p95Ms": 0,
-        "maxMs": 0,
+        "maxMs": 1,
         "targetMissed": false,
         "grosslySlow": false
       },
@@ -447,7 +447,7 @@
         "iterations": 30,
         "gateMs": 10,
         "minMs": 0,
-        "meanMs": 0.23,
+        "meanMs": 0.13,
         "p95Ms": 1,
         "maxMs": 1,
         "targetMissed": false,
@@ -458,9 +458,9 @@
         "iterations": 30,
         "gateMs": 10,
         "minMs": 0,
-        "meanMs": 0.03,
+        "meanMs": 0,
         "p95Ms": 0,
-        "maxMs": 1,
+        "maxMs": 0,
         "targetMissed": false,
         "grosslySlow": false
       }
@@ -526,6 +526,7 @@
     "windowsTsfSource": true,
     "macosImkSkeleton": false,
     "macosImkImplementation": true,
+    "macosImkDevInstallProof": true,
     "ipcSchema": true,
     "ipcValidator": true,
     "devDaemon": true,
@@ -534,7 +535,7 @@
     "companionDesktopShell": true,
     "windowsNamedPipeStrategy": "per-user named pipe",
     "macosXpcStrategy": "app-scoped XPC",
-    "nativeReleaseStatus": "blocked until Windows/macOS platform tests, signing/notarization, and pilot feedback"
+    "nativeReleaseStatus": "blocked until Windows TSF host tests, macOS host-app matrix tests, signing/notarization, and pilot feedback"
   },
   "finalProduction": {
     "verification": "complete",
@@ -551,7 +552,7 @@
     "companionApp": "partial",
     "daemonIpc": "complete",
     "windowsNative": "blocked-native-environment",
-    "macosNative": "blocked-native-environment",
+    "macosNative": "partial native-dev proof",
     "storage": "complete",
     "installerSigning": "blocked-external",
     "privacySecurity": "complete",
@@ -598,7 +599,8 @@
       "Romanized live typing prototype",
       "Traditional layout under source-of-truth audit",
       "proofread/dictionary/memory prototype",
-      "native architecture/scaffold"
+      "native architecture/scaffold",
+      "unsigned macOS IMK development input method installs/registers/enables/launch-smokes without auto-selecting globally"
     ],
     "forbiddenUntilEvidence": [
       "beats Gboard",
