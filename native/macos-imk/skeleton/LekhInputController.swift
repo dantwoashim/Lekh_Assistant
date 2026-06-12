@@ -168,7 +168,7 @@ open class LekhInputController: IMKInputController {
   open override func inputText(_ string: String!, key keyCode: Int, modifiers flags: Int, client sender: Any!) -> Bool {
     let modifiers = NSEvent.ModifierFlags(rawValue: UInt(flags)).intersection(.deviceIndependentFlagsMask)
     let key = keyString(from: string, keyCode: keyCode)
-    lekhNativeLog("event.inputTextKey keyCode=\(keyCode) flags=\(flags) units=\(string?.count ?? 0)")
+    lekhNativeLog("event.inputTextKey flags=\(flags) units=\(string?.count ?? 0)")
     guard !key.isEmpty else { return false }
     return processKeyInput(key, keyCode: keyCode, modifiers: modifiers, client: sender, route: "inputTextKey")
   }
@@ -179,7 +179,7 @@ open class LekhInputController: IMKInputController {
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     let key = keyString(from: event)
     guard !key.isEmpty else { return false }
-    lekhNativeLog("event.handle keyCode=\(event.keyCode) route=handle")
+    lekhNativeLog("event.handle route=handle")
     return processKeyInput(key, keyCode: Int(event.keyCode), modifiers: modifiers, client: sender, route: "handle")
   }
 
@@ -192,7 +192,7 @@ open class LekhInputController: IMKInputController {
   ) -> Bool {
     if IsSecureEventInputEnabled() {
       cancelLocalComposition(client: sender as? IMKTextInput)
-      lekhNativeLog("event.passThrough route=\(route) reason=secureInput keyCode=\(keyCode)")
+      lekhNativeLog("event.passThrough route=\(route) reason=secureInput")
       return false
     }
 
@@ -232,12 +232,12 @@ open class LekhInputController: IMKInputController {
       if engineClient.hasComposition(sessionId: sessionId), let client = sender as? IMKTextInput {
         _ = commitCurrentComposition(client: client, suffix: "")
       }
-      lekhNativeLog("event.passThrough route=\(route) reason=modifier keyCode=\(keyCode)")
+      lekhNativeLog("event.passThrough route=\(route) reason=modifier")
       return false
     }
 
     if shouldPassThroughWithoutComposition(key: key) {
-      lekhNativeLog("event.passThrough route=\(route) reason=noComposition keyCode=\(keyCode)")
+      lekhNativeLog("event.passThrough route=\(route) reason=noComposition")
       return false
     }
 
@@ -247,7 +247,7 @@ open class LekhInputController: IMKInputController {
       } else {
         engineClient.resetSession(sessionId)
       }
-      lekhNativeLog("event.passThrough route=\(route) reason=unsupportedAfterCommit keyCode=\(keyCode)")
+      lekhNativeLog("event.passThrough route=\(route) reason=unsupportedAfterCommit")
       return false
     }
 
@@ -423,24 +423,24 @@ open class LekhInputController: IMKInputController {
       engineClient.resetSession(sessionId)
       candidateState.updateCandidates([])
       hideCandidates()
-      lekhNativeLog("failOpen route=\(route) action=escape keyCode=\(keyCode)")
+      lekhNativeLog("failOpen route=\(route) action=escape")
       return false
     }
 
     if key == "\u{7f}" {
       _ = engineDecision(for: key, route: route)
-      lekhNativeLog("failOpen route=\(route) action=backspace keyCode=\(keyCode)")
+      lekhNativeLog("failOpen route=\(route) action=backspace")
       return false
     }
 
     if shouldAppendToFailOpenBuffer(key) {
       _ = engineDecision(for: key, route: route)
       guard let client = sender as? IMKTextInput else {
-        lekhNativeLog("failOpen route=\(route) action=bufferNoClient keyCode=\(keyCode)")
+        lekhNativeLog("failOpen route=\(route) action=bufferNoClient")
         return false
       }
       client.insertText(key, replacementRange: notFoundRange())
-      lekhNativeLog("failOpen route=\(route) action=insertRaw keyCode=\(keyCode)")
+      lekhNativeLog("failOpen route=\(route) action=insertRaw")
       return true
     }
 
@@ -452,12 +452,12 @@ open class LekhInputController: IMKInputController {
     let decision = engineDecision(for: key, route: route)
 
     guard let committed = decision.committedText, !committed.isEmpty else {
-      lekhNativeLog("failOpen route=\(route) action=commitMiss keyCode=\(keyCode)")
+      lekhNativeLog("failOpen route=\(route) action=commitMiss")
       return false
     }
 
     guard let client = sender as? IMKTextInput else {
-      lekhNativeLog("failOpen route=\(route) action=noClient keyCode=\(keyCode)")
+      lekhNativeLog("failOpen route=\(route) action=noClient")
       return false
     }
 
@@ -468,7 +468,7 @@ open class LekhInputController: IMKInputController {
       return true
     }
 
-    lekhNativeLog("failOpen route=\(route) action=replaceFailed rawLength=\(raw.utf16.count) keyCode=\(keyCode)")
+    lekhNativeLog("failOpen route=\(route) action=replaceFailed rawLength=\(raw.utf16.count)")
     return false
   }
 

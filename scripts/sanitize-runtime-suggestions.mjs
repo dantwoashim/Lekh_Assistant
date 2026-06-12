@@ -8,6 +8,17 @@ const ROOT = process.cwd();
 const DEFAULT_INPUT = join(ROOT, "src", "data", "keyboard-packs", "v0.1", "runtime-suggestions.json");
 const DEFAULT_OUTPUT = join(ROOT, "release", "native", "macos", "runtime-suggestions.sanitized.json");
 const DEFAULT_REPORT = join(ROOT, "reports", "runtime-suggestions-sanitizer-report.json");
+const REQUIRED_PRESERVE_TOKENS = [
+  "eSewa",
+  "Khalti",
+  "IME Pay",
+  "NTC",
+  "Ncell",
+  "Wi-Fi",
+  "TikTok",
+  "WhatsApp",
+  "Viber"
+];
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
@@ -77,7 +88,8 @@ export function sanitizeRuntimeSuggestionPack(inputPack, options = {}) {
     proofreadPingPong: 0,
     proofreadChains: 0,
     disconnectedNextContexts: 0,
-    mixedPreserveDemotions: 0
+    mixedPreserveDemotions: 0,
+    malformedUnicode: 0
   };
 
   const words = normalizeRows(inputPack.words ?? [], "words", removed)
@@ -164,7 +176,15 @@ function normalizeRows(rows, rowType, removed) {
   const output = [];
   for (const row of rows) {
     if (typeof row?.romanized !== "string" || typeof row?.unicode !== "string") continue;
-    const normalized = { ...row, romanized: normalizeRomanized(row.romanized), unicode: row.unicode.trim() };
+    const normalized = {
+      ...row,
+      romanized: normalizeRomanized(row.romanized),
+      unicode: normalizeDevanagari(row.unicode, removed)
+    };
+    if (hasMalformedDevanagariMatraSequence(normalized.unicode)) {
+      removed.malformedUnicode += 1;
+      continue;
+    }
     const key = `${rowType}\u0000${normalized.romanized}\u0000${normalized.unicode}`;
     if (seen.has(key)) {
       removed.duplicateRows += 1;
@@ -192,8 +212,12 @@ function sanitizeProofread(rows, validUnicode, removed) {
   const errorSet = new Set();
   for (const row of rows) {
     if (typeof row?.error !== "string" || typeof row?.correction !== "string") continue;
-    const error = row.error.trim();
-    const correction = row.correction.trim();
+    const error = normalizeDevanagari(row.error, removed);
+    const correction = normalizeDevanagari(row.correction, removed);
+    if (hasMalformedDevanagariMatraSequence(error) || hasMalformedDevanagariMatraSequence(correction)) {
+      removed.malformedUnicode += 1;
+      continue;
+    }
     if (!error || !correction || error === correction) continue;
     const key = `${error}\u0000${correction}`;
     if (pairSet.has(key)) {
@@ -248,6 +272,7 @@ function sanitizeNextContexts(rows, validRomanTokens, removed) {
 function sanitizeMixedPolicy(policy, removed) {
   const preserve = new Set();
   const preference = new Set();
+  for (const token of REQUIRED_PRESERVE_TOKENS) preserve.add(token);
   for (const token of [...(policy.preferenceTokens ?? [])]) {
     if (typeof token === "string" && token.trim()) preference.add(token.trim());
   }
@@ -551,6 +576,22 @@ function clampNumber(value, min, max) {
 
 function normalizeRomanized(value) {
   return value.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function normalizeDevanagari(value, removed) {
+  const before = String(value).trim().normalize("NFC");
+  const after = before
+    .replace(/\u093E\u0947/g, "\u094B")
+    .replace(/\u094B\u0947/g, "\u094B")
+    .replace(/\u093F\u0940/g, "\u0940")
+    .replace(/\u0947{2,}/g, "\u0947")
+    .normalize("NFC");
+  if (after !== before) removed.malformedUnicode += 1;
+  return after;
+}
+
+function hasMalformedDevanagariMatraSequence(value) {
+  return /[\u093E]\u0947|\u094B\u0947|\u093F\u0940|\u0947{2,}/.test(value);
 }
 
 function localeSort(a, b) {

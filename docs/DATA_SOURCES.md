@@ -1,5 +1,9 @@
 # Data Sources
 
+## Runtime Data License Statement
+
+The shipped Lekh runtime keyboard packs are compiled from project-owned/manual curation plus documented third-party sources listed below. Project-owned rows are distributed with the project under the repository license. Rows derived from third-party sources keep their original license obligations and notices; `dictionary-ne` derived rows are LGPL-2.1 data and must remain replaceable with regenerated packs from the documented pipeline. No unclear-license, noncommercial, scraped private-like, or raw upstream corpus text may be bundled in a release pack.
+
 ## Included Sources
 
 | Source name | Source URL | License | Allowed use | Word count | Imported | Reason | Normalization notes | Date checked |

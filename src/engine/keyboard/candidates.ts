@@ -24,6 +24,30 @@ const TYPE_PRIORITY: Record<Candidate["type"], number> = {
   "romanized-helper": 30
 };
 
+const NEPAL_MIXED_BRANDS = new Set([
+  "esewa",
+  "khalti",
+  "ime",
+  "ntc",
+  "ncell",
+  "wi-fi",
+  "wifi",
+  "tiktok",
+  "whatsapp",
+  "viber"
+]);
+
+const NEPAL_MIXED_CONTEXT_TOKENS = new Set([
+  "account",
+  "email",
+  "id",
+  "login",
+  "message",
+  "password",
+  "recharge",
+  "username"
+]);
+
 export interface CandidateUpdateOptions {
   memoryEntries?: CorrectionMemoryEntry[];
 }
@@ -528,7 +552,41 @@ function mixedSpanCandidates(input: string, rangeEnd: number, context?: TypingCo
       reason: [row.reason],
       replaceRange: [0, rangeEnd]
     }));
-  return [...curated, ...genericMixedPolicyCandidates(input, rangeEnd, context)];
+  const forcedBrandCandidate = forcedNepalBrandMixedCandidate(input, rangeEnd, context);
+  return [...curated, ...(forcedBrandCandidate ? [forcedBrandCandidate] : []), ...genericMixedPolicyCandidates(input, rangeEnd, context)];
+}
+
+function forcedNepalBrandMixedCandidate(input: string, rangeEnd: number, context?: TypingContext): Candidate | undefined {
+  if (!input.includes(" ")) return undefined;
+  const parts = input.split(/(\s+)/);
+  let previousToken = "";
+  let hasBrandTrigger = false;
+  const text = parts.map((part) => {
+    if (/^\s+$/.test(part)) return part;
+    const visible = cleanMixedToken(part);
+    const lower = visible.toLowerCase();
+    const preserve =
+      NEPAL_MIXED_BRANDS.has(lower) ||
+      NEPAL_MIXED_CONTEXT_TOKENS.has(lower) ||
+      (lower === "pay" && previousToken === "ime") ||
+      /^[A-Z]{2,}$/.test(visible);
+    if (NEPAL_MIXED_BRANDS.has(lower) || (lower === "pay" && previousToken === "ime")) {
+      hasBrandTrigger = true;
+    }
+    previousToken = lower;
+    return preserve ? part : convertSmartRomanizedToken(part, context);
+  }).join("").trim();
+
+  if (!hasBrandTrigger || !text || text === input.trim()) return undefined;
+  return {
+    id: `mixed-nepal-brand-preserve-${text}`,
+    text,
+    label: context?.showRomanizedLabels ? input : undefined,
+    type: "protected",
+    confidence: 0.965,
+    reason: ["Nepal wallet, telco, or messaging token preserved locally"],
+    replaceRange: [0, rangeEnd]
+  };
 }
 
 function genericMixedPolicyCandidates(input: string, rangeEnd: number, context?: TypingContext): Candidate[] {
@@ -561,8 +619,8 @@ function genericMixedPolicyCandidates(input: string, rangeEnd: number, context?:
     id: `mixed-policy-preserve-${preserved}`,
     text: preserved,
     label: context?.showRomanizedLabels ? input : undefined,
-    type: "phrase",
-    confidence: 0.905,
+    type: "protected",
+    confidence: 0.94,
     reason: ["Mixed Nepali-English policy candidate with protected/preference tokens preserved"],
     replaceRange: [0, rangeEnd]
   }];
@@ -597,6 +655,10 @@ function mixedTokenPolicy(token: string, leftTokens: string[]): ReturnType<typeo
 
 function mixedPolicyVisibleText(token: string, policy: ReturnType<typeof classifyMixedLatinToken>): string {
   if (policy.kind === "protected" && policy.text) return policy.text;
+  return cleanMixedToken(token);
+}
+
+function cleanMixedToken(token: string): string {
   return token.replace(/^[^\p{L}\p{N}@./:=_-]+|[^\p{L}\p{N}@./:=_-]+$/gu, "");
 }
 

@@ -23,7 +23,7 @@ const legacyAppBundle = join(releaseDir, "Lekh Keyboard.app");
 const legacyDevBundle = join(releaseDir, "Lekh Keyboard Dev.imkdevbundle");
 const executableName = "LekhInputMethodApp";
 const iconSource = join(root, "build", "icon.icns");
-const runtimeJsonOutputPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.json");
+const runtimeJsonOutputPath = join(releaseDir, "runtime-suggestions.sanitized.json");
 const runtimeBinaryOutputPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
 const universalExecutable = join(releaseDir, `${executableName}.universal`);
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
@@ -146,6 +146,11 @@ if (process.env.LEKH_PACK_ED25519_PUBLIC_KEY_BASE64) {
     `Set :LekhDictionaryPackEd25519PublicKeyBase64 ${process.env.LEKH_PACK_ED25519_PUBLIC_KEY_BASE64}`,
     join(appBundle, "Contents", "Info.plist")
   ]);
+  run("enable-pack-updates", "/usr/libexec/PlistBuddy", [
+    "-c",
+    "Set :LekhDictionaryPackUpdatesEnabled true",
+    join(appBundle, "Contents", "Info.plist")
+  ]);
 }
 copyFileSync(join(skeletonDir, "PkgInfo"), join(appBundle, "Contents", "PkgInfo"));
 copyFileSync(universalExecutable, join(appBundle, "Contents", "MacOS", executableName));
@@ -188,7 +193,6 @@ if (neuralModelPackaged) {
   run("copy-neural-model", "ditto", [
     "--norsrc",
     "--noextattr",
-    "--noqtn",
     "--noacl",
     neuralModelSource,
     join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.mlmodelc")
@@ -249,9 +253,6 @@ if (strings.includes(root)) packagingFailures.push("Executable still contains th
 if (entitlements.includes("com.apple.security.get-task-allow")) {
   packagingFailures.push("Signed bundle contains com.apple.security.get-task-allow entitlement.");
 }
-if (!existsSync(runtimeJsonOutputPath) || statSync(runtimeJsonOutputPath).size > 5 * 1024 * 1024) {
-  packagingFailures.push("Packaged runtime JSON fallback must exist and stay under 5 MB after minification/sanitization.");
-}
 if (!existsSync(runtimeBinaryOutputPath) || statSync(runtimeBinaryOutputPath).size > 5 * 1024 * 1024) {
   packagingFailures.push("Packaged runtime binary lexicon must exist and stay under 5 MB.");
 }
@@ -275,7 +276,7 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-r
   signed: signingIdentity === "-" ? "ad-hoc-hardened-runtime" : signingIdentity,
   archs: lipoInfo,
   fileInfo,
-  runtimeJsonBytes: statSync(runtimeJsonOutputPath).size,
+  sanitizedRuntimeJsonBytes: statSync(runtimeJsonOutputPath).size,
   runtimeBinaryBytes: statSync(runtimeBinaryOutputPath).size,
   frequencyReport: "reports/nepali-frequency-model-report.json",
   sanitizerReport: "reports/runtime-suggestions-sanitizer-report.json",

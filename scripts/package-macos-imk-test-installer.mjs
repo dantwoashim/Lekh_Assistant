@@ -88,7 +88,15 @@ function signPath(path, step) {
   if (firstAttempt.status === 0) return;
   if (`${firstAttempt.stdout}\n${firstAttempt.stderr}`.includes("resource fork, Finder information, or similar detritus not allowed")) {
     stripCodeSignBlockedXattrs(path);
-    run(step, "codesign", args);
+    const tempRoot = mkdtempSync(join(tmpdir(), "lekh-codesign-clean-"));
+    const tempPath = join(tempRoot, basename(path));
+    run(`${step}-copy-clean`, "ditto", ["--norsrc", "--noextattr", "--noacl", path, tempPath]);
+    stripCodeSignBlockedXattrs(tempPath);
+    run(`${step}-temp`, "codesign", [...args.slice(0, -1), tempPath]);
+    verifySignedPathRaw(tempPath, `${step}-temp-raw-verify`);
+    rmSync(path, { recursive: true, force: true });
+    run(`${step}-copy-back`, "ditto", ["--norsrc", "--noextattr", "--noacl", tempPath, path]);
+    rmSync(tempRoot, { recursive: true, force: true });
     return;
   }
   finish("failed", { step, command: "codesign", args, stdout: firstAttempt.stdout, stderr: firstAttempt.stderr }, firstAttempt.status ?? 1);
@@ -125,6 +133,29 @@ function verifySignedPath(path, step) {
   );
 }
 
+function verifySignedPathRaw(path, step) {
+  const result = spawnSync("codesign", ["--verify", "--deep", "--strict", path], {
+    cwd: root,
+    env: toolchainEnv,
+    encoding: "utf8",
+    stdio: "pipe",
+    maxBuffer: 80 * 1024 * 1024
+  });
+  if (result.status !== 0) {
+    finish(
+      "failed",
+      {
+        step,
+        command: "codesign",
+        args: ["--verify", "--deep", "--strict", path],
+        stdout: result.stdout,
+        stderr: result.stderr
+      },
+      result.status ?? 1
+    );
+  }
+}
+
 function stripCodeSignBlockedXattrs(path) {
   spawnSync("dot_clean", ["-m", path], {
     cwd: root,
@@ -132,7 +163,7 @@ function stripCodeSignBlockedXattrs(path) {
     encoding: "utf8",
     stdio: "ignore"
   });
-  for (const attribute of ["com.apple.FinderInfo", "com.apple.ResourceFork", "com.apple.fileprovider.fpfs#P"]) {
+  for (const attribute of ["com.apple.FinderInfo", "com.apple.ResourceFork", "com.apple.fileprovider.fpfs#P", "com.apple.provenance"]) {
     spawnSync("xattr", ["-r", "-d", attribute, path], {
       cwd: root,
       env: toolchainEnv,
@@ -147,7 +178,7 @@ function stripCodeSignBlockedXattrs(path) {
       encoding: "utf8",
       stdio: "ignore"
     });
-    for (const attribute of ["com.apple.FinderInfo", "com.apple.ResourceFork", "com.apple.fileprovider.fpfs#P"]) {
+    for (const attribute of ["com.apple.FinderInfo", "com.apple.ResourceFork", "com.apple.fileprovider.fpfs#P", "com.apple.provenance"]) {
       spawnSync("xattr", ["-d", attribute, currentPath], {
         cwd: root,
         env: toolchainEnv,
@@ -156,7 +187,7 @@ function stripCodeSignBlockedXattrs(path) {
       });
     }
   }
-  for (const attribute of ["com.apple.FinderInfo", "com.apple.ResourceFork", "com.apple.fileprovider.fpfs#P"]) {
+  for (const attribute of ["com.apple.FinderInfo", "com.apple.ResourceFork", "com.apple.fileprovider.fpfs#P", "com.apple.provenance"]) {
     spawnSync("xattr", ["-r", "-d", attribute, path], {
       cwd: root,
       env: toolchainEnv,
@@ -200,7 +231,7 @@ function writeAppShellBundle({ appPath, displayName, identifier, executableName,
   writeFileSync(
     join(appPath, "Contents", "Info.plist"),
     `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key>
@@ -286,22 +317,31 @@ LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchS
 LOG_DIR="$HOME/Library/Logs/LekhKeyboard"
 LOG_FILE="$LOG_DIR/install.log"
 TMP_DEST="$HOME/Library/Input Methods/.Lekh Keyboard.app.installing.$$"
-BACKUP_ROOT="$HOME/Library/Caches/LekhKeyboardInstall"
+SUPPORT_DIR="$HOME/Library/Application Support/Lekh Keyboard"
+BACKUP_ROOT="$SUPPORT_DIR/InstallBackups"
 BACKUP_DEST=""
+OLD_DEST=""
 DEST_REPLACED=0
 
-mkdir -p "$LOG_DIR" "$BACKUP_ROOT"
-log() { printf '%s %s\\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG_FILE"; }
+mkdir -p "$LOG_DIR" "$BACKUP_ROOT" || exit 1
+log() { printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG_FILE"; }
 dialog() {
-  /usr/bin/osascript <<APPLESCRIPT >/dev/null 2>&1
-display dialog "$1" buttons {"OK"} default button "OK" with title "Lekh Keyboard" with icon note
+  LEKH_DIALOG_MESSAGE="$1" /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1
+display dialog (system attribute "LEKH_DIALOG_MESSAGE") buttons {"OK"} default button "OK" with title "Lekh Keyboard" with icon note
 APPLESCRIPT
 }
 rollback() {
+  if [[ -n "$OLD_DEST" && -d "$OLD_DEST" ]]; then
+    log "rollback moving previous bundle back into place"
+    /bin/rm -rf "$DEST"
+    /bin/mv "$OLD_DEST" "$DEST" >/dev/null 2>&1 || true
+    "$RESOURCE_DIR/register-lekh-input-source" "$DEST" >/dev/null 2>&1 || true
+    return
+  fi
   if [[ "$DEST_REPLACED" == "1" && -n "$BACKUP_DEST" && -d "$BACKUP_DEST" ]]; then
     log "rollback restoring previous bundle"
     /bin/rm -rf "$DEST"
-    /usr/bin/ditto --norsrc --noextattr --noqtn --noacl "$BACKUP_DEST" "$DEST" >/dev/null 2>&1 || true
+    /usr/bin/ditto --norsrc --noextattr --noacl "$BACKUP_DEST" "$DEST" >/dev/null 2>&1 || true
     "$RESOURCE_DIR/register-lekh-input-source" "$DEST" >/dev/null 2>&1 || true
   fi
 }
@@ -315,41 +355,47 @@ fail() {
 cleanup() {
   /bin/rm -rf "$TMP_DEST"
 }
-trap cleanup EXIT
+trap 'rollback; cleanup' EXIT
+trap 'fail "installation interrupted"' INT TERM HUP
 
-log "install started payload=$PAYLOAD dest=$DEST"
+APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PAYLOAD/Contents/Info.plist" 2>/dev/null || printf 'unknown')"
+APP_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PAYLOAD/Contents/Info.plist" 2>/dev/null || printf 'unknown')"
+log "install started payload=$PAYLOAD dest=$DEST version=$APP_VERSION build=$APP_BUILD"
 [[ -d "$PAYLOAD" ]] || fail "missing embedded payload"
 /usr/bin/codesign --verify --deep --strict "$PAYLOAD" >> "$LOG_FILE" 2>&1 || fail "embedded payload signature failed"
 /bin/mkdir -p "$HOME/Library/Input Methods" || fail "could not create Input Methods directory"
 
 "$RESOURCE_DIR/register-lekh-input-source" "$DEST" --disable >> "$LOG_FILE" 2>&1 || true
 /usr/bin/pkill -x LekhInputMethodApp >> "$LOG_FILE" 2>&1 || true
+"$RESOURCE_DIR/restore-system-keyboard" --snapshot >> "$LOG_FILE" 2>&1 || true
 
 if [[ -d "$DEST" ]]; then
   BACKUP_DEST="$BACKUP_ROOT/Lekh Keyboard.app.backup.$(/bin/date -u '+%Y%m%dT%H%M%SZ')"
-  /usr/bin/ditto --norsrc --noextattr --noqtn --noacl "$DEST" "$BACKUP_DEST" >> "$LOG_FILE" 2>&1 || fail "could not back up existing install"
+  /usr/bin/ditto --norsrc --noextattr --noacl "$DEST" "$BACKUP_DEST" >> "$LOG_FILE" 2>&1 || fail "could not back up existing install"
 fi
 
 /bin/rm -rf "$TMP_DEST"
-/usr/bin/ditto --norsrc --noextattr --noqtn --noacl "$PAYLOAD" "$TMP_DEST" >> "$LOG_FILE" 2>&1 || fail "could not copy payload"
+/usr/bin/ditto --norsrc --noextattr --noacl "$PAYLOAD" "$TMP_DEST" >> "$LOG_FILE" 2>&1 || fail "could not copy payload"
 /usr/bin/codesign --verify --deep --strict "$TMP_DEST" >> "$LOG_FILE" 2>&1 || fail "copied payload signature failed"
 
 if [[ -d "$DEST" ]]; then
-  /bin/rm -rf "$DEST" || fail "could not remove old install"
+  OLD_DEST="$HOME/Library/Input Methods/.Lekh Keyboard.app.previous.$$"
+  /bin/rm -rf "$OLD_DEST"
+  /bin/mv "$DEST" "$OLD_DEST" || fail "could not move old install aside"
   DEST_REPLACED=1
 fi
 /bin/mv "$TMP_DEST" "$DEST" || fail "could not move install into place"
 DEST_REPLACED=0
+/bin/rm -rf "$OLD_DEST"
+OLD_DEST=""
 
 "$LSREGISTER" -f "$DEST" >> "$LOG_FILE" 2>&1 || log "LaunchServices registration returned non-zero"
 "$RESOURCE_DIR/register-lekh-input-source" "$DEST" >> "$LOG_FILE" 2>&1 || fail "input source registration failed"
-/usr/bin/killall TextInputMenuAgent TextInputSwitcher >> "$LOG_FILE" 2>&1 || true
 
 log "install completed"
-dialog "Lekh Keyboard installed and enabled. Open the input menu in the menu bar to switch between ABC and Lekh Keyboard."
+dialog "Lekh Keyboard installed and enabled. Open the input menu in the menu bar to switch between ABC and Lekh Keyboard. If it does not appear immediately, log out and back in."
 exit 0
-`;
-
+`
 writeAppShellBundle({
   appPath: installerApp,
   displayName: "Lekh Keyboard Test Installer",
@@ -366,13 +412,25 @@ DEST="$HOME/Library/Input Methods/Lekh Keyboard.app"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 LOG_DIR="$HOME/Library/Logs/LekhKeyboard"
 LOG_FILE="$LOG_DIR/uninstall.log"
-mkdir -p "$LOG_DIR"
+SUPPORT_DIR="$HOME/Library/Application Support/Lekh Keyboard"
+CACHE_DIR="$HOME/Library/Caches/LekhKeyboardInstall"
+mkdir -p "$LOG_DIR" || exit 1
 log() { printf '%s %s\\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG_FILE"; }
 dialog() {
-  /usr/bin/osascript <<APPLESCRIPT >/dev/null 2>&1
-display dialog "$1" buttons {"OK"} default button "OK" with title "Lekh Keyboard" with icon note
+  LEKH_DIALOG_MESSAGE="$1" /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1
+display dialog (system attribute "LEKH_DIALOG_MESSAGE") buttons {"OK"} default button "OK" with title "Lekh Keyboard" with icon note
 APPLESCRIPT
 }
+confirm_uninstall() {
+  /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1
+display dialog "Remove Lekh Keyboard from this Mac? This deletes the keyboard, local learned words, dictionary packs, model files, backups, caches, and Lekh logs." buttons {"Cancel", "Uninstall"} default button "Cancel" cancel button "Cancel" with title "Lekh Keyboard" with icon caution
+APPLESCRIPT
+}
+
+if ! confirm_uninstall; then
+  log "uninstall cancelled by user"
+  exit 0
+fi
 
 log "uninstall started"
 "$RESOURCE_DIR/restore-system-keyboard" >> "$LOG_FILE" 2>&1 || true
@@ -383,9 +441,10 @@ fi
 /usr/bin/pkill -x LekhInputMethodApp >> "$LOG_FILE" 2>&1 || true
 /bin/rm -rf "$DEST"
 "$RESOURCE_DIR/purge-lekh-input-sources" >> "$LOG_FILE" 2>&1 || true
-/usr/bin/killall TextInputMenuAgent TextInputSwitcher >> "$LOG_FILE" 2>&1 || true
+/bin/rm -rf "$SUPPORT_DIR" "$CACHE_DIR"
 log "uninstall completed"
-dialog "Lekh Keyboard was removed. Your keyboard was restored to ABC if macOS allowed the change."
+dialog "Lekh Keyboard was removed. Local learned words, dictionary packs, model files, backups, caches, and Lekh logs were deleted. Your previous keyboard was restored if macOS allowed the change."
+/bin/rm -rf "$LOG_DIR"
 exit 0
 `;
 
@@ -397,10 +456,12 @@ writeAppShellBundle({
   script: uninstallerScript
 });
 
-const metadataSafeDittoFlags = ["--norsrc", "--noextattr", "--noqtn", "--noacl"];
+const metadataSafeDittoFlags = ["--norsrc", "--noextattr", "--noacl"];
 for (const appPath of [installerApp, uninstallerApp]) {
   const resourcesDir = join(appPath, "Contents", "Resources");
-  run("copy-imk-payload", "ditto", [...metadataSafeDittoFlags, imkBundle, join(resourcesDir, "Lekh Keyboard.app")]);
+  if (appPath === installerApp) {
+    run("copy-imk-payload", "ditto", [...metadataSafeDittoFlags, imkBundle, join(resourcesDir, "Lekh Keyboard.app")]);
+  }
   for (const [sourceFile, binaryName] of [
     ["register-dev.swift", "register-lekh-input-source"],
     ["restore-system-keyboard.swift", "restore-system-keyboard"],
@@ -422,16 +483,21 @@ writeFileSync(
   [
     "Lekh Keyboard Test Installer",
     "",
+    "Version: 0.1.0 build 4",
+    "Signature: ad-hoc unless this package was built with LEKH_MAC_DEVELOPER_ID.",
+    "",
     "Install:",
     "1. Open Lekh Keyboard Test Installer.app.",
-    "2. After it finishes, use the macOS input menu in the menu bar to choose Lekh Keyboard.",
+    "2. If macOS blocks the app because it is an unsigned test build, open System Settings > Privacy & Security and choose Open Anyway for Lekh Keyboard Test Installer.",
+    "3. After it finishes, use the macOS input menu in the menu bar to choose Lekh Keyboard.",
+    "4. If Lekh Keyboard does not appear immediately, log out and back in, then open Keyboard Settings > Text Input > Edit and add it under Nepali.",
     "",
     "Uninstall:",
-    "Open Lekh Keyboard Uninstaller.app.",
+    "Open Lekh Keyboard Uninstaller.app. It asks for confirmation, restores the previous keyboard when possible, and deletes local learned words, packs, models, backups, caches, and logs.",
     "",
     "Logs:",
     "~/Library/Logs/LekhKeyboard/install.log",
-    "~/Library/Logs/LekhKeyboard/uninstall.log",
+    "Uninstall logs are deleted at the end of uninstall for privacy.",
     "",
     "This test build is local-first and does not send typing data to a server.",
     "Production distribution still requires Developer ID signing and notarization if this zip is built without LEKH_MAC_DEVELOPER_ID.",
@@ -442,14 +508,10 @@ if (existsSync(join(root, "LICENSE"))) {
   copyFileSync(join(root, "LICENSE"), join(distFolder, "LICENSE.txt"));
 }
 
-const checksumTargets = [
-  join(distFolder, "Lekh Keyboard Test Installer.app", "Contents", "MacOS", "install-lekh-keyboard"),
-  join(distFolder, "Lekh Keyboard Test Installer.app", "Contents", "Resources", "Lekh Keyboard.app", "Contents", "MacOS", "LekhInputMethodApp"),
-  join(distFolder, "Lekh Keyboard Test Installer.app", "Contents", "Resources", "register-lekh-input-source"),
-  join(distFolder, "Lekh Keyboard Uninstaller.app", "Contents", "MacOS", "uninstall-lekh-keyboard"),
-  join(distFolder, "README.txt"),
-  existsSync(join(distFolder, "LICENSE.txt")) ? join(distFolder, "LICENSE.txt") : null
-].filter(Boolean);
+const checksumTargets = walkPaths(distFolder)
+  .filter((target) => lstatSync(target).isFile())
+  .filter((target) => basename(target) !== "SHA256SUMS.txt")
+  .sort((a, b) => relative(distFolder, a).localeCompare(relative(distFolder, b), "en"));
 const checksumLines = checksumTargets.map((target) => {
   const output = run(`checksum-${basename(target)}`, "shasum", ["-a", "256", target]).stdout.trim();
   return output.replace(target, relative(distFolder, target));
@@ -461,7 +523,7 @@ stripCodeSignBlockedXattrs(distFolder);
 verifySignedPath(installerApp, "verify-final-installer-app");
 verifySignedPath(uninstallerApp, "verify-final-uninstaller-app");
 
-run("zip-installer-folder", "ditto", ["-c", "-k", "--keepParent", "--norsrc", "--noextattr", "--noqtn", "--noacl", distFolder, zipPath], {
+run("zip-installer-folder", "ditto", ["-c", "-k", "--keepParent", "--norsrc", "--noextattr", "--noacl", distFolder, zipPath], {
   cwd: releaseDir
 });
 
@@ -472,6 +534,16 @@ const extractedInstaller = join(extractedRoot, "Lekh Keyboard Test Installer.app
 const extractedUninstaller = join(extractedRoot, "Lekh Keyboard Uninstaller.app");
 verifySignedPath(extractedInstaller, "verify-extracted-installer");
 verifySignedPath(extractedUninstaller, "verify-extracted-uninstaller");
+stripCodeSignBlockedXattrs(extractedInstaller);
+stripCodeSignBlockedXattrs(extractedUninstaller);
+verifySignedPathRaw(extractedInstaller, "verify-extracted-installer-raw");
+verifySignedPathRaw(extractedUninstaller, "verify-extracted-uninstaller-raw");
+if (existsSync(join(extractedUninstaller, "Contents", "Resources", "Lekh Keyboard.app"))) {
+  finish("failed", {
+    step: "verify-extracted-uninstaller",
+    reason: "Uninstaller must not embed the full keyboard payload."
+  }, 1);
+}
 const extractedPayloadArchs = run(
   "verify-extracted-payload-archs",
   "lipo",
@@ -500,6 +572,7 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-r
   extractedPayloadArchs,
   zipVerification: "passed",
   zipBytes,
+  checksumEntries: checksumLines.length,
   note: signingIdentity === "-"
     ? "Ad-hoc signed test artifact. Developer ID signing and notarization are still required for production distribution."
     : "Developer ID signed artifact. Notarization/stapling gate must run before public distribution."

@@ -262,10 +262,15 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     self.fallbackRows = rows
     self.exactCandidates = exact.mapValues { Self.ranked($0, limit: 8) }
     self.prefixBuckets = buckets.mapValues { Self.ranked($0, limit: 64) }
-    self.packWatcher = LekhDictionaryPackWatcher { [weak self] in
-      self?.reloadBinaryLexicon()
+    if LekhDictionaryPackVerifier.hasUsableEmbeddedPublicKey() {
+      let watcher = LekhDictionaryPackWatcher { [weak self] in
+        self?.reloadBinaryLexicon()
+      }
+      self.packWatcher = watcher
+      watcher.start()
+    } else {
+      self.packWatcher = nil
     }
-    self.packWatcher?.start()
   }
 
   private func currentBinaryLexicon() -> LekhBinaryLexicon? {

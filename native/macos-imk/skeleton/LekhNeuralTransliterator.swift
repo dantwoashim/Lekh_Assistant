@@ -26,10 +26,8 @@ public final class LekhNeuralTransliterator {
   }
 
   public static func loadPreferred() -> LekhNeuralTransliterator? {
-    if FileManager.default.fileExists(atPath: activeModelURL.path),
-       let loaded = load(from: activeModelURL) {
-      return loaded
-    }
+    // User-writable model hot-swap stays disabled until model packs have a
+    // signature verifier equivalent to dictionary packs.
     if let bundleURL = Bundle.main.url(forResource: "LekhNeuralTransliterator", withExtension: "mlmodelc"),
        let loaded = load(from: bundleURL) {
       return loaded

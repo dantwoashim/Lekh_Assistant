@@ -1,8 +1,10 @@
 {
-  "generatedAt": "2026-06-10T13:45:12.250Z",
+  "generatedAt": "2026-06-12T18:29:40.098Z",
   "command": "npm run corpus:keyboard:package-check",
   "suite": "keyboard-corpus-package",
   "durationMs": 0,
+  "production": false,
+  "requiredGoldRows": 1,
   "fixtureCount": 11,
   "sourceCount": 11,
   "curatedRows": {

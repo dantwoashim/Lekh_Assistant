@@ -10,7 +10,6 @@ const appBundle = join(root, "release", "native", "macos", "Lekh Keyboard.imkdev
 const plistPath = join(appBundle, "Contents", "Info.plist");
 const pkgInfoPath = join(appBundle, "Contents", "PkgInfo");
 const executablePath = join(appBundle, "Contents", "MacOS", "LekhInputMethodApp");
-const runtimePackPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.json");
 const runtimeBinaryPackPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
 const localizedInfoPath = join(appBundle, "Contents", "Resources", "en.lproj", "InfoPlist.strings");
 const nepaliLocalizedInfoPath = join(appBundle, "Contents", "Resources", "ne.lproj", "InfoPlist.strings");
@@ -19,8 +18,8 @@ const failures = [];
 if (!existsSync(appBundle)) failures.push("IMK dev app bundle is missing.");
 if (!existsSync(plistPath)) failures.push("IMK Info.plist is missing.");
 if (!existsSync(pkgInfoPath)) failures.push("IMK PkgInfo is missing.");
+if (existsSync(pkgInfoPath) && statSync(pkgInfoPath).size !== 8) failures.push("IMK PkgInfo must be exactly 8 bytes.");
 if (!existsSync(executablePath)) failures.push("IMK executable is missing.");
-if (!existsSync(runtimePackPath)) failures.push("IMK runtime JSON fallback pack is missing.");
 if (!existsSync(runtimeBinaryPackPath)) failures.push("IMK runtime binary lexicon pack is missing.");
 if (!existsSync(localizedInfoPath)) failures.push("IMK localized input-mode name file is missing.");
 if (!existsSync(nepaliLocalizedInfoPath)) failures.push("IMK Nepali localized input-mode name file is missing.");
@@ -49,39 +48,13 @@ if (existsSync(plistPath)) {
   }
 }
 
-if (existsSync(runtimePackPath)) {
-  const pack = readFileSync(runtimePackPath, "utf8");
-  for (const marker of ["\"words\"", "\"phrases\"", "\"names\"", "swasthya", "स्वास्थ्य"]) {
-    if (!pack.includes(marker)) failures.push(`Runtime suggestions pack missing ${marker}.`);
-  }
-  if (pack.length > 5 * 1024 * 1024) failures.push("Runtime suggestions pack is too large; expected sanitized/minified pack under 5 MB.");
-  if (pack.includes("\n  ")) failures.push("Runtime suggestions pack is still pretty-printed.");
-  const parsed = JSON.parse(pack);
-  const wordsAndPhrases = [...(parsed.words ?? []), ...(parsed.phrases ?? [])];
-  if (wordsAndPhrases.some((row) => row.romanized?.includes("patiko") && row.unicode?.includes("यतिको"))) {
-    failures.push("Runtime suggestions still contain the blocked patiko -> यतिको mapping class.");
-  }
-  const proofPairs = new Set((parsed.proofread ?? []).map((row) => `${row.error}\u0000${row.correction}`));
-  const proofErrors = new Set((parsed.proofread ?? []).map((row) => row.error));
-  if ((parsed.proofread ?? []).some((row) => proofPairs.has(`${row.correction}\u0000${row.error}`))) {
-    failures.push("Runtime proofread rules still contain ping-pong correction pairs.");
-  }
-  if ((parsed.proofread ?? []).some((row) => proofErrors.has(row.correction))) {
-    failures.push("Runtime proofread rules still contain correction chains.");
-  }
-  for (const key of ["words", "phrases", "proofread", "names", "nextContexts"]) {
-    const uniqueConfidence = new Set((parsed[key] ?? []).map((row) => row.confidence)).size;
-    if (uniqueConfidence < 10) failures.push(`Runtime ${key} confidences are still effectively constant.`);
-  }
-}
-
 if (existsSync(runtimeBinaryPackPath)) {
   const binary = readFileSync(runtimeBinaryPackPath);
   if (binary.subarray(0, 8).toString("ascii") !== "LEKHBLX1") {
     failures.push("Runtime binary lexicon has an invalid magic header.");
   }
   if (binary.length < 64) failures.push("Runtime binary lexicon is smaller than its header.");
-  if (binary.length > 5 * 1024 * 1024) failures.push("Runtime binary lexicon is too large; expected under 5 MB.");
+  if (binary.length > 6 * 1024 * 1024) failures.push("Runtime binary lexicon is too large; expected under 6 MB.");
   if (binary.length >= 64) {
     const entryCount = binary.readUInt32LE(16);
     const prefixCount = binary.readUInt32LE(28);

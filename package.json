@@ -88,6 +88,7 @@
     "corpus:keyboard:curate": "node scripts/curate-keyboard-corpus.mjs",
     "corpus:keyboard:train": "node scripts/train-keyboard-prediction-engine.mjs",
     "corpus:keyboard:package-check": "node scripts/check-keyboard-corpus-package.mjs",
+    "corpus:keyboard:package-check:production": "node scripts/check-keyboard-corpus-package.mjs --production",
     "corpus:keyboard:pipeline": "npm run corpus:keyboard && npm run corpus:keyboard:curate && npm run corpus:keyboard:train && npm run corpus:keyboard:validate",
     "benchmark:keyboard:failure-buckets": "node scripts/analyze-keyboard-benchmark-failures.mjs",
     "report:quality": "vite-node scripts/evaluate-quality.ts",

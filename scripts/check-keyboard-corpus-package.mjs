@@ -2,6 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
+const args = new Set(process.argv.slice(2));
+const production = args.has("--production");
+const requiredGoldRows = production ? 2000 : 1;
 const CORPUS_DIR = path.join(ROOT, "data", "keyboard-corpus");
 const REPORTS_DIR = path.join(CORPUS_DIR, "reports");
 const SRC_RUNTIME_PACK = path.join(ROOT, "src", "data", "keyboard-packs", "v0.1", "runtime-suggestions.json");
@@ -68,6 +71,14 @@ if (curation.leakageAudit?.status !== "passed") {
 if ((curation.goldPromotions ?? 0) < 1) {
   violations.push({ file: "data/keyboard-corpus/reports/keyboard-corpus-curation-report.json", reason: "no-gold-promotions" });
 }
+if ((curation.qualityCounts?.gold ?? 0) < requiredGoldRows) {
+  violations.push({
+    file: "data/keyboard-corpus/reports/keyboard-corpus-curation-report.json",
+    reason: production ? "production-gold-tier-too-small" : "no-human-reviewed-gold-tier",
+    requiredGoldRows,
+    actualGoldRows: curation.qualityCounts?.gold ?? 0
+  });
+}
 
 const validation = readJson(path.join(REPORTS_DIR, "keyboard-corpus-validation-report.json"));
 if (Array.isArray(validation.violations) && validation.violations.length > 0) {
@@ -97,6 +108,8 @@ const report = {
   command: "npm run corpus:keyboard:package-check",
   suite: "keyboard-corpus-package",
   durationMs: 0,
+  production,
+  requiredGoldRows,
   fixtureCount: sources.length,
   sourceCount: sources.length,
   curatedRows: curation.counters ?? {},

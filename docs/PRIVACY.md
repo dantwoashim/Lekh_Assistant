@@ -14,9 +14,13 @@ Feedback is explicit. The feedback form prepares a message from fields the user 
 
 Romanized candidate choices can be stored in browser local storage after the user explicitly selects an alternative. This data stays on the same device, is not synced by the app, and can be cleared from the Romanized editor.
 
+The native macOS input method stores its learned user lexicon locally under `~/Library/Application Support/Lekh Keyboard/`. It is used only to rank local candidates on that Mac. The uninstaller deletes this lexicon, dictionary packs, model files, install backups, caches, and Lekh logs.
+
 ## Metrics
 
 The current app does not send analytics. A local guard exists for any future event-only metrics. If metrics are added later, they may include event names such as mode selection or copy clicked, but never text content.
+
+Native diagnostics are opt-in and local-only. Diagnostic logs must not record raw typed text, committed text, candidate text, or physical key codes. Secure-input/password contexts are pass-through and must not be learned.
 
 ## Offline
 

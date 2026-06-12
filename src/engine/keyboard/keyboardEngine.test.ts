@@ -418,6 +418,26 @@ describe("KeyboardEngine session API", () => {
     expect(texts.indexOf("म hospital गये")).toBeLessThan(texts.indexOf("म अस्पताल गये"));
   });
 
+  it("preserves Nepal-specific wallet, telco, and messaging brands", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+
+    const cases = [
+      ["eSewa pathaunu", "eSewa पठाउनु"],
+      ["Khalti login garna", "Khalti login गर्न"],
+      ["Ncell recharge garnu", "Ncell recharge गर्नु"],
+      ["WhatsApp ma pathaunu", "WhatsApp म पठाउनु"],
+      ["IME Pay pathaunu", "IME Pay पठाउनु"],
+      ["Wi-Fi password pathaunu", "Wi-Fi password पठाउनु"],
+      ["Viber ma message pathaunu", "Viber म message पठाउनु"]
+    ] as const;
+
+    for (const [input, expected] of cases) {
+      const update = engine.updateComposition(sessionId, input, input.length);
+      expect(update.candidates.map((candidate) => candidate.text), input).toContain(expected);
+    }
+  });
+
   it("honors explicit keep-English gestures", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession(defaultTypingContext("romanized"));

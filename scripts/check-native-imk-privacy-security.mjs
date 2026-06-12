@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 
@@ -34,9 +34,37 @@ for (const file of swiftFiles) {
   if (/lekhNativeLog\([^)]*key=\\\(/s.test(source) || /lekhNativeLog\([^)]*string=\\\(/s.test(source)) {
     violations.push(`${relative(ROOT, file)}: diagnostic log appears to include raw key/string value`);
   }
+  if (/lekhNativeLog\([^)]*keyCode=/s.test(source) || source.includes("keyCode=")) {
+    violations.push(`${relative(ROOT, file)}: diagnostic log must not include physical key codes`);
+  }
   for (const forbidden of ["LekhXpcEngineClient", "EngineXPC", "makeProcessKeyStrokeRequest", "session.processKeyStroke"]) {
     if (source.includes(forbidden)) {
       violations.push(`${relative(ROOT, file)}: forbidden per-keystroke XPC marker ${forbidden}`);
+    }
+  }
+  if (file.endsWith("LekhNeuralTransliterator.swift") && source.includes("fileExists(atPath: activeModelURL.path)")) {
+    violations.push(`${relative(ROOT, file)}: unsigned user-writable Core ML model loading is forbidden`);
+  }
+}
+
+for (const policyFile of [
+  join(sourceDir, "register-dev.swift"),
+  join(sourceDir, "purge-lekh-input-sources.swift"),
+  join(sourceDir, "restore-system-keyboard.swift"),
+  join(sourceDir, "install-dev.sh"),
+  join(ROOT, "scripts", "package-macos-imk-test-installer.mjs")
+]) {
+  if (!existsSync(policyFile)) continue;
+  const source = readFileSync(policyFile, "utf8");
+  for (const forbidden of [
+    "--noqtn",
+    "TextInputMenuAgent",
+    "TextInputSwitcher",
+    "com.apple.HIToolbox.plist",
+    "com.apple.inputsources.plist"
+  ]) {
+    if (source.includes(forbidden)) {
+      violations.push(`${relative(ROOT, policyFile)}: forbidden installer/input-source marker ${forbidden}`);
     }
   }
 }

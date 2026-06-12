@@ -28,13 +28,29 @@ const CONTEXT_LATIN_CUES = new Set([
   "url",
   "link",
   "website",
+  "login",
   "username",
   "password",
   "otp",
   "pin",
   "code",
   "account",
-  "id"
+  "id",
+  "recharge"
+]);
+
+const NEPAL_BRAND_PRESERVE = new Set([
+  "esewa",
+  "khalti",
+  "ime",
+  "imepay",
+  "ntc",
+  "ncell",
+  "wi-fi",
+  "wifi",
+  "tiktok",
+  "whatsapp",
+  "viber"
 ]);
 
 const LOANWORD_CONVERSIONS: Record<string, string> = {
@@ -92,8 +108,13 @@ export function classifyMixedLatinToken(token: string, leftTokens: string[]): Mi
   ) {
     return { kind: "protected", reason: "structured protected Latin token" };
   }
-  const previousToken = leftTokens[leftTokens.length - 1];
-  if (CONTEXT_LATIN_CUES.has(lower) || (previousToken ? CONTEXT_LATIN_CUES.has(previousToken) : false)) {
+  const previousToken = leftTokens[leftTokens.length - 1]?.toLowerCase();
+  if (
+    NEPAL_BRAND_PRESERVE.has(lower) ||
+    (lower === "pay" && previousToken === "ime") ||
+    CONTEXT_LATIN_CUES.has(lower) ||
+    (previousToken ? CONTEXT_LATIN_CUES.has(previousToken) : false)
+  ) {
     return { kind: "protected", reason: "Latin token preserved by local context classifier" };
   }
   const converted = LOANWORD_CONVERSIONS[lower];

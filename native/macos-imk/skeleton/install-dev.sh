@@ -26,7 +26,7 @@ if [[ -d "$DEST" ]]; then
   "$LSREGISTER" -u "$DEST" >/dev/null 2>&1 || true
 fi
 rm -rf "$DEST" "$OLD_DEST"
-/usr/bin/ditto --norsrc --noextattr --noqtn --noacl "$APP" "$DEST"
+/usr/bin/ditto --norsrc --noextattr --noacl "$APP" "$DEST"
 "$LSREGISTER" -u "$LEGACY_APP" >/dev/null 2>&1 || true
 "$LSREGISTER" -u "$APP" >/dev/null 2>&1 || true
 /bin/rm -rf "$LEGACY_APP" "$OLD_APP"

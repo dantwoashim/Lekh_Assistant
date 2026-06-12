@@ -20,12 +20,23 @@ public enum LekhDictionaryPackVerifier {
 
   public static let activeManifestURL = LekhDictionaryPackWatcher.packsDirectory.appendingPathComponent("runtime-suggestions.current.json")
 
-  public static func verifiedInstalledPackURL() -> URL? {
-    #if canImport(CryptoKit)
-    guard FileManager.default.fileExists(atPath: LekhDictionaryPackWatcher.activePackURL.path),
-          FileManager.default.fileExists(atPath: activeManifestURL.path),
+  public static func hasUsableEmbeddedPublicKey() -> Bool {
+    guard Bundle.main.object(forInfoDictionaryKey: "LekhDictionaryPackUpdatesEnabled") as? Bool == true,
           let publicKeyBase64 = Bundle.main.object(forInfoDictionaryKey: "LekhDictionaryPackEd25519PublicKeyBase64") as? String,
           !publicKeyBase64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          let publicKeyBytes = Data(base64Encoded: publicKeyBase64.trimmingCharacters(in: .whitespacesAndNewlines)),
+          publicKeyBytes.count == 32 else {
+      return false
+    }
+    return true
+  }
+
+  public static func verifiedInstalledPackURL() -> URL? {
+    #if canImport(CryptoKit)
+    guard hasUsableEmbeddedPublicKey(),
+          FileManager.default.fileExists(atPath: LekhDictionaryPackWatcher.activePackURL.path),
+          FileManager.default.fileExists(atPath: activeManifestURL.path),
+          let publicKeyBase64 = Bundle.main.object(forInfoDictionaryKey: "LekhDictionaryPackEd25519PublicKeyBase64") as? String,
           let publicKeyBytes = Data(base64Encoded: publicKeyBase64.trimmingCharacters(in: .whitespacesAndNewlines)),
           let manifestData = try? Data(contentsOf: activeManifestURL),
           let manifest = try? JSONDecoder().decode(Manifest.self, from: manifestData),

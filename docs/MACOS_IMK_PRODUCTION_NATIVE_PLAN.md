@@ -278,13 +278,13 @@ Use unified logging with subsystem `com.lekh.inputmethod.keyboard`.
 Categories:
 
 - `lifecycle`: app start, server start, activate/deactivate.
-- `event`: route, keyCode, modifier class, action. Do not log typed text by default.
+- `event`: route, modifier class, action, and lengths only. Do not log typed text or physical key codes.
 - `composition`: buffer length, display length, candidate count, commit/cancel.
 - `candidate`: show/hide/update/selected.
 - `xpc`: health, warm, latency, timeout, fallback.
 - `install`: register/select/restore results.
 
-QA debug builds may allow typed token logging only behind `LEKH_IMK_DEBUG_LOG=1`, with clear labeling and no network output.
+QA debug builds may enable extra lifecycle diagnostics behind `LEKH_IMK_DEBUG_LOG=1`, but they must still avoid raw text, candidate text, committed text, clipboard content, and physical key codes.
 
 ### Recovery
 
