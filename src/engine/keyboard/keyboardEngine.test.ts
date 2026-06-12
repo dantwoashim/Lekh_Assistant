@@ -403,6 +403,45 @@ describe("KeyboardEngine session API", () => {
     expect(email.candidates.map((candidate) => candidate.text)).toContain("email@test.com पठाउनु");
   });
 
+  it("uses context-aware code switching instead of a static preserve list", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+
+    const email = engine.updateComposition(sessionId, "mero email gmail pathaunu", 26);
+    expect(email.candidates.map((candidate) => candidate.text)).toContain("मेरो email gmail पठाउनु");
+    expect(email.primary?.text).toBe("मेरो email gmail पठाउनु");
+
+    const hospital = engine.updateComposition(sessionId, "ma hospital gaye", 16);
+    const texts = hospital.candidates.map((candidate) => candidate.text);
+    expect(texts).toContain("म hospital गये");
+    expect(texts).toContain("म अस्पताल गये");
+    expect(texts.indexOf("म hospital गये")).toBeLessThan(texts.indexOf("म अस्पताल गये"));
+  });
+
+  it("honors explicit keep-English gestures", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+
+    const equals = engine.updateComposition(sessionId, "hospital=", 9);
+    expect(equals.primary?.text).toBe("hospital");
+    expect(equals.primary?.type).toBe("protected");
+
+    const doubleSpace = engine.updateComposition(sessionId, "hello  world", 12);
+    expect(doubleSpace.primary?.text).toBe("hello world");
+    expect(doubleSpace.primary?.reason.join(" ")).toMatch(/keep-English/);
+  });
+
+  it("adds smart dates, numbers, emoji shortcuts, and text-expansion candidates", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+
+    expect(engine.updateComposition(sessionId, "2081 saal", 9).primary?.text).toBe("२०८१ साल");
+    expect(engine.updateComposition(sessionId, "ru 1200", 7).primary?.text).toBe("रु १,२००");
+    expect(engine.updateComposition(sessionId, ":namaste:", 9).primary?.text).toBe("🙏");
+    expect(engine.updateComposition(sessionId, "@@addr", 6).primary?.text).toBe("काठमाडौं, नेपाल");
+    expect(engine.updateComposition(sessionId, "aja", 3).candidates.some((candidate) => candidate.text.startsWith("आज ("))).toBe(true);
+  });
+
   it("corrects Romanized typo and phrase forms before Unicode generation", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
@@ -516,6 +555,15 @@ describe("KeyboardEngine session API", () => {
 
     const fullTypo = engine.getProofHints("सवस्थ्य");
     expect(fullTypo.some((hint) => hint.suggestion === "स्वास्थ्य")).toBe(true);
+  });
+
+  it("surfaces grammar-aware proof hints as underline-style suggestions", () => {
+    const engine = createKeyboardEngine();
+    const hints = engine.getProofHints("हामी आयौ। उहाँ आयो।");
+
+    expect(hints.find((hint) => hint.suggestion === "हामी आयौं")?.type).toBe("agreement");
+    expect(hints.find((hint) => hint.suggestion === "उहाँ आउनुभयो")?.type).toBe("honorific");
+    expect(hints.every((hint) => hint.action !== "auto-suggest")).toBe(true);
   });
 
   it("dedupes candidate text, merges reasons, and assigns sequential shortcuts after sorting", () => {

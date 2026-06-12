@@ -7,6 +7,7 @@ import { keyboardBlockedCandidateTexts, keyboardMemoryCandidates } from "./memor
 import { isSecureContext, surfaceForMode } from "./modes";
 import { inlineCompletionForSession } from "./ngramLanguageModel";
 import { runtimePackCandidates } from "./runtimePacks";
+import { classifyMixedLatinToken, convertSmartRomanizedToken, smartTransformCandidates } from "./smartTransforms";
 import type { CorrectionMemoryEntry } from "../memory";
 import type { Candidate, CandidateUpdate, KeyboardSession, TypingContext } from "./types";
 
@@ -110,6 +111,7 @@ export function romanizedCandidates(
   if (protectedCandidate) return [protectedCandidate];
   const englishPreserve = englishPreserveCandidate(trimmed, input.length);
   if (englishPreserve) return [englishPreserve];
+  const smartCandidates = smartTransformCandidates(input, input.length, context);
   const correctionCandidates = romanizedCorrectionCandidates(trimmed, input.length, context);
   const mixedCandidates = mixedSpanCandidates(trimmed, input.length, context);
   const contextCandidates = contextualPredictionCandidates(trimmed, input.length, context);
@@ -162,6 +164,7 @@ export function romanizedCandidates(
   const reservedHelperSlots = Math.min(4, helperCandidates.length);
   const primaryCandidates = finalizeCandidates([
     ...memoryCandidates,
+    ...smartCandidates,
     ...contextCandidates,
     ...correctionCandidates,
     ...mixedCandidates,
@@ -533,14 +536,23 @@ function genericMixedPolicyCandidates(input: string, rangeEnd: number, context?:
   const parts = input.split(/(\s+)/);
   let hasPolicyToken = false;
   let convertiblePreferenceToken = false;
+  const seenTokens: string[] = [];
+  const policies = parts.map((part) => {
+    if (/^\s+$/.test(part)) return undefined;
+    const policy = mixedTokenPolicy(part, seenTokens);
+    const cleaned = mixedPolicyVisibleText(part, policy);
+    if (cleaned) seenTokens.push(cleaned.toLowerCase());
+    return policy;
+  });
 
-  const preserved = parts.map((part) => {
+  const preserved = parts.map((part, index) => {
     if (/^\s+$/.test(part)) return part;
-    const policy = mixedTokenPolicy(part);
+    const policy = policies[index] ?? mixedTokenPolicy(part, []);
     if (policy.kind === "protected" || policy.kind === "preference") hasPolicyToken = true;
     if (policy.kind === "preference" && policy.converted) convertiblePreferenceToken = true;
-    if (policy.kind === "protected" || policy.kind === "preference") return part;
-    return convertRomanized(part, { mode: "romanized-mixed", digitPolicy: "context-dependent" }).normalizedOutput;
+    if (policy.kind === "protected") return policy.text ?? part;
+    if (policy.kind === "preference") return part;
+    return convertSmartRomanizedToken(part, context);
   }).join("").trim();
 
   if (!hasPolicyToken || !preserved || preserved === input.trim()) return [];
@@ -556,12 +568,12 @@ function genericMixedPolicyCandidates(input: string, rangeEnd: number, context?:
   }];
 
   if (convertiblePreferenceToken) {
-    const converted = parts.map((part) => {
+    const converted = parts.map((part, index) => {
       if (/^\s+$/.test(part)) return part;
-      const policy = mixedTokenPolicy(part);
-      if (policy.kind === "protected") return part;
+      const policy = policies[index] ?? mixedTokenPolicy(part, []);
+      if (policy.kind === "protected") return policy.text ?? part;
       if (policy.kind === "preference" && policy.converted) return policy.converted;
-      return convertRomanized(part, { mode: "romanized-mixed", digitPolicy: "context-dependent" }).normalizedOutput;
+      return convertSmartRomanizedToken(part, context);
     }).join("").trim();
     if (converted && converted !== preserved) {
       candidates.push({
@@ -579,32 +591,13 @@ function genericMixedPolicyCandidates(input: string, rangeEnd: number, context?:
   return candidates;
 }
 
-function mixedTokenPolicy(token: string): { kind: "protected" | "preference" | "convert"; converted?: string } {
-  const cleaned = token.replace(/^[^\p{L}\p{N}@./:-]+|[^\p{L}\p{N}@./:-]+$/gu, "");
-  const lower = cleaned.toLowerCase();
-  if (
-    isStructuredProtectedInput(cleaned) ||
-    /^[A-Z]{2,}$/.test(cleaned) ||
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned) ||
-    /^https?:\/\//i.test(cleaned) ||
-    /^\d{2,4}(?:[-/]\d{1,4})*$/.test(cleaned)
-  ) {
-    return { kind: "protected" };
-  }
+function mixedTokenPolicy(token: string, leftTokens: string[]): ReturnType<typeof classifyMixedLatinToken> {
+  return classifyMixedLatinToken(token, leftTokens);
+}
 
-  const preferenceLoanwords: Record<string, string> = {
-    file: "फाइल",
-    form: "फारम",
-    report: "रिपोर्ट",
-    submit: "सबमिट",
-    upload: "अपलोड",
-    download: "डाउनलोड",
-    system: "सिस्टम",
-    office: "अफिस",
-    record: "रेकर्ड"
-  };
-  if (preferenceLoanwords[lower]) return { kind: "preference", converted: preferenceLoanwords[lower] };
-  return { kind: "convert" };
+function mixedPolicyVisibleText(token: string, policy: ReturnType<typeof classifyMixedLatinToken>): string {
+  if (policy.kind === "protected" && policy.text) return policy.text;
+  return token.replace(/^[^\p{L}\p{N}@./:=_-]+|[^\p{L}\p{N}@./:=_-]+$/gu, "");
 }
 
 function englishPreserveCandidate(input: string, rangeEnd: number): Candidate | undefined {

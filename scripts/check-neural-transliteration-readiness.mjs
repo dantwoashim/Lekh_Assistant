@@ -53,7 +53,17 @@ if (!manifestExists) {
     failures.push("Model parameterCount must be between 1M and 5M.");
   }
   if (manifest.runtime !== "CoreML") failures.push("Model manifest runtime must be CoreML.");
+  if (manifest.selectedArtifact !== "lekh-small-coreml-student-v1") {
+    failures.push("Model manifest selectedArtifact must be lekh-small-coreml-student-v1.");
+  }
   if (manifest.localOnly !== true) failures.push("Model manifest must declare localOnly=true.");
+  const trainingSources = new Set((manifest.trainingSources ?? []).map(String));
+  for (const requiredSource of ["syubraj-roman2nepali-transliteration"]) {
+    if (!trainingSources.has(requiredSource)) {
+      failures.push(`Model manifest trainingSources must include ${requiredSource}.`);
+    }
+  }
+  if (manifest.neuralTailOnly !== true) failures.push("Model manifest must declare neuralTailOnly=true.");
   if (Number(manifest.metrics?.tailTop1Accuracy) < 0.82) failures.push("tailTop1Accuracy must be >= 0.82.");
   if (Number(manifest.metrics?.chatConventionTop1Accuracy) < 0.90) failures.push("chatConventionTop1Accuracy must be >= 0.90.");
   if (Number(manifest.performance?.p99Ms) > 3) failures.push("Core ML p99 latency must be <= 3ms.");

@@ -43,6 +43,8 @@ function mapHintType(kind: EngineProofreadHint["kind"]): ProofHint["type"] {
   if (kind === "postposition") return "postposition";
   if (kind === "halant") return "halanta";
   if (kind === "matra") return "matra";
+  if (kind === "agreement") return "agreement";
+  if (kind === "honorific") return "honorific";
   if (kind === "style") return "name-variant";
   return "spelling";
 }

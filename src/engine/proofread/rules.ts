@@ -30,11 +30,142 @@ export interface RuleOptions {
 export function collectProofreadHints(input: string, offset: number, options: RuleOptions): ProofreadHint[] {
   return [
     ...spellingHints(input, offset),
+    ...grammarAwareHints(input, offset),
     ...halantHints(input, offset),
     ...(options.normalizePluralHaru ? pluralHaruHints(input, offset) : []),
     ...(options.normalizePostpositions ? postpositionHints(input, offset) : []),
     ...(options.normalizeDanda ? dandaHints(input, offset) : [])
   ].sort((a, b) => a.range[0] - b.range[0] || b.confidence - a.confidence);
+}
+
+function grammarAwareHints(input: string, offset: number): ProofreadHint[] {
+  return [
+    ...subjectAgreementHints(input, offset),
+    ...honorificHints(input, offset),
+    ...anusvaraRuleHints(input, offset),
+    ...matraContextHints(input, offset)
+  ];
+}
+
+function subjectAgreementHints(input: string, offset: number): ProofreadHint[] {
+  const rules: Array<{
+    pattern: RegExp;
+    suggestion(subject: string): string;
+    ruleId: string;
+    explanation: string;
+  }> = [
+    {
+      pattern: /(म)\s+आयौ/g,
+      suggestion: (subject) => `${subject} आएँ`,
+      ruleId: "agreement-ma-aaye",
+      explanation: "First-person singular subject normally takes आएँ, not आयौ."
+    },
+    {
+      pattern: /(हामी)\s+आयौ/g,
+      suggestion: (subject) => `${subject} आयौं`,
+      ruleId: "agreement-hami-aayaun",
+      explanation: "First-person plural subject normally takes आयौं/आयौँ; suggest the common आयौं form."
+    },
+    {
+      pattern: /(तिमी)\s+आयौं/g,
+      suggestion: (subject) => `${subject} आयौ`,
+      ruleId: "agreement-timi-aayau",
+      explanation: "Second-person familiar subject तिमी normally takes आयौ, not आयौं."
+    }
+  ];
+  return rules.flatMap((rule) =>
+    Array.from(input.matchAll(rule.pattern)).map((match): ProofreadHint => {
+      const start = offset + (match.index ?? 0);
+      const original = match[0];
+      return {
+        id: `${rule.ruleId}-${start}`,
+        range: [start, start + original.length],
+        input: original,
+        suggestion: rule.suggestion(match[1]),
+        ruleId: rule.ruleId,
+        kind: "agreement",
+        confidence: 0.9,
+        action: "hint-only",
+        explanation: rule.explanation
+      };
+    })
+  );
+}
+
+function honorificHints(input: string, offset: number): ProofreadHint[] {
+  const rules: Array<{
+    pattern: RegExp;
+    suggestion(subject: string): string;
+    ruleId: string;
+    explanation: string;
+  }> = [
+    {
+      pattern: /(तपाईं|तपाईँ|हजुर|उहाँ)\s+आयो/g,
+      suggestion: (subject) => `${subject} आउनुभयो`,
+      ruleId: "honorific-aayo-aaunubhayo",
+      explanation: "Honorific subjects should be reviewed; suggest आउनुभयो instead of आयो."
+    },
+    {
+      pattern: /(तपाईं|तपाईँ|हजुर|उहाँ)\s+गयो/g,
+      suggestion: (subject) => `${subject} जानुभयो`,
+      ruleId: "honorific-gayo-janubhayo",
+      explanation: "Honorific subjects should be reviewed; suggest जानुभयो instead of गयो."
+    },
+    {
+      pattern: /(तपाईं|तपाईँ|हजुर|उहाँ)\s+छ/g,
+      suggestion: (subject) => `${subject} हुनुहुन्छ`,
+      ruleId: "honorific-cha-hunuhuncha",
+      explanation: "Honorific subjects usually take हुनुहुन्छ instead of छ."
+    }
+  ];
+  return rules.flatMap((rule) =>
+    Array.from(input.matchAll(rule.pattern)).map((match): ProofreadHint => {
+      const start = offset + (match.index ?? 0);
+      const original = match[0];
+      return {
+        id: `${rule.ruleId}-${start}`,
+        range: [start, start + original.length],
+        input: original,
+        suggestion: rule.suggestion(match[1]),
+        ruleId: rule.ruleId,
+        kind: "honorific",
+        confidence: 0.9,
+        action: "hint-only",
+        explanation: rule.explanation
+      };
+    })
+  );
+}
+
+function anusvaraRuleHints(input: string, offset: number): ProofreadHint[] {
+  return replacementHints(
+    input,
+    offset,
+    [
+      ["सस्कृति", "संस्कृति", "anusvara-drop-sanskriti"],
+      ["सचार", "सञ्चार", "anusvara-drop-sanchar"],
+      ["सघीय", "संघीय", "anusvara-drop-sanghiya"],
+      ["संबिधान", "संविधान", "anusvara-context-sambidhan"]
+    ],
+    "spelling",
+    0.91,
+    "Rule-generated anusvara/nasalization correction, rescored conservatively by lexical context."
+  ).map((hint) => ({ ...hint, action: "hint-only" as const }));
+}
+
+function matraContextHints(input: string, offset: number): ProofreadHint[] {
+  return replacementHints(
+    input,
+    offset,
+    [
+      ["राम्रो लग्यो", "राम्रो लाग्यो", "matra-context-ramro-lagyo"],
+      ["मन पर्यो", "मन पर्‍यो", "matra-context-man-paryo"],
+      ["गरि सके", "गरी सके", "matra-context-gari-sake"]
+    ],
+    "matra",
+    0.88,
+    "Contextual matra/verb-form suggestion; review before accepting."
+  ).map((hint) => ({ ...hint, action: "hint-only" as const }));
 }
 
 function spellingHints(input: string, offset: number): ProofreadHint[] {

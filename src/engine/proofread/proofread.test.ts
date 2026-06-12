@@ -28,6 +28,24 @@ describe("proofread engine", () => {
     expect(result.output).toBe("मन्त्रिपरिषद् आयो। ठीक।");
   });
 
+  it("suggests subject agreement and honorific fixes without silent autocorrect", () => {
+    const result = applyProofread("हामी आयौ। उहाँ आयो। राम्रो लग्यो।", { autoFix: true });
+    expect(result.output).toBe("हामी आयौ। उहाँ आयो। राम्रो लग्यो।");
+    expect(result.applied).toHaveLength(0);
+    expect(result.hints.map((hint) => hint.suggestion)).toEqual(
+      expect.arrayContaining(["हामी आयौं", "उहाँ आउनुभयो", "राम्रो लाग्यो"])
+    );
+    expect(result.hints.find((hint) => hint.suggestion === "उहाँ आउनुभयो")?.kind).toBe("honorific");
+    expect(result.hints.find((hint) => hint.suggestion === "हामी आयौं")?.kind).toBe("agreement");
+  });
+
+  it("adds rule-generated anusvara hints without relying only on pair-list auto-fixes", () => {
+    const result = applyProofread("सस्कृति र सघीय विषय", { autoFix: true });
+    expect(result.output).toBe("सस्कृति र सघीय विषय");
+    expect(result.hints.map((hint) => hint.suggestion)).toEqual(expect.arrayContaining(["संस्कृति", "संघीय"]));
+    expect(result.hints.every((hint) => hint.action === "hint-only")).toBe(true);
+  });
+
   it("does not modify protected spans", () => {
     const result = applyProofread("email@test.com PDF सवस्थ्य.", { autoFix: true });
     expect(result.output).toBe("email@test.com PDF स्वास्थ्य।");

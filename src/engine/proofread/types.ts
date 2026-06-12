@@ -7,7 +7,9 @@ export type ProofreadHintKind =
   | "punctuation"
   | "halant"
   | "matra"
-  | "style";
+  | "style"
+  | "agreement"
+  | "honorific";
 
 export interface ProofreadHint {
   id: string;

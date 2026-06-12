@@ -89,6 +89,7 @@ Romanized typing is the flagship first-launch experience. It uses:
 - phonology rules from [`docs/PHONOLOGY_CONTRACT.md`](docs/PHONOLOGY_CONTRACT.md)
 - keyboard candidate ranking for phrase, dictionary, rule, variant, context, and local memory paths
 - a quantized local n-gram model for context-aware next-word inline completion
+- a gated neural transliteration path for a future small Core ML tail model; no oversized downloaded model is shipped
 - domain-ranked local suggestions for office, government, education, legal, names, and places
 - casual Nepali completions such as `ramro xa`, `kasto cha`, and `dherai ramro`
 - mixed Nepali-English policy candidates that preserve protected tokens and offer loanword preferences
@@ -131,6 +132,7 @@ Current keyboard-specific evidence is produced by committed scripts and generate
 | --- | --- |
 | Shared keyboard engine | `npm run test:keyboard` covers Romanized, Traditional Unicode suggestions, memory, protected tokens, secure pass-through, runtime pack candidates, trained context candidates, and inline next-word completion |
 | Quantized inline completion model | `npm run build:ngram-lm` emits `35,000` local n-gram rows with NFC, self-loop, unsafe-token, duplicate, and spelling-quality validation |
+| Neural transliteration readiness | `npm run check:neural-transliteration` selects upstream training/teacher sources and blocks production unless a small Core ML model, manifest, metrics, and local-only policy pass |
 | macOS native bundle | `npm run package:macos:imk:test-installer` produces the unsigned IMK test installer zip for manual host-app validation |
 | Privacy guard | `npm run check:privacy` blocks text telemetry payloads |
 | Local-first guard | `npm run check:engine-local` verifies the hot path stays local |
@@ -161,6 +163,8 @@ npm run test
 npm run build
 npm run check:privacy
 npm run build:ngram-lm
+npm run neural:dataset
+npm run check:neural-transliteration
 npm run check:offline
 npm run check:runtime-data
 npm run verify
@@ -255,6 +259,7 @@ The current real-document collection count is `0`. Public real-document quality 
 - Controlled testing is acceptable; broad demo and comparative claims stay blocked by missing consented real Preeti documents and pending manual competitor probes.
 - The dictionary has curated domain packs, phrase/alias packs, and generated surface forms, not a complete Nepali dictionary.
 - Spell hints are local unknown-word hints only. They are not grammar checks.
+- The neural transliteration model is not production-shipped yet. Public model research is wired into source selection and readiness gates, but production requires a trained small Core ML artifact under `models/macos/`.
 - The larger Hunspell spell asset is lazy-loaded locally; first-use spell hints can lag slightly on slower machines.
 - Suggestions focus on the trailing typed token. Candidate alternatives are full-output ranked paths, but full cursor-aware replacement in the middle of a sentence is future work.
 - Local correction memory improves exact repeated inputs on the same browser only.

@@ -130,7 +130,9 @@ export interface ProofHint {
     | "matra"
     | "halanta"
     | "compound"
-    | "name-variant";
+    | "name-variant"
+    | "agreement"
+    | "honorific";
   confidence: number;
   action: "auto-suggest" | "hint-only" | "ask";
   explanation: string;
