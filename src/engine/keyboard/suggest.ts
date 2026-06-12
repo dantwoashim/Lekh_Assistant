@@ -1,10 +1,13 @@
 import { suggestWords } from "../../core/dictionary/suggestWords";
 import { finalizeCandidates } from "./candidates";
+import { nextWordCandidatesFromContext } from "./ngramLanguageModel";
 import { runtimePackSuggestions } from "./runtimePacks";
 import type { Candidate, TypingContext } from "./types";
 
 export function getKeyboardSuggestions(context: TypingContext): Candidate[] {
   if (context.secureInput || context.fieldType === "password" || context.fieldType === "code") return [];
+  const nextWordCandidates = nextWordCandidatesFromContext(context, 8);
+  if (nextWordCandidates.length > 0) return finalizeCandidates(nextWordCandidates, 8);
   const lastToken = currentToken(context.leftTextWindow);
   if (!lastToken) return [];
   const dictionaryCandidates = suggestWords(lastToken, 8).map((suggestion, index): Candidate => ({

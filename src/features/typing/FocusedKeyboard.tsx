@@ -117,7 +117,7 @@ export function FocusedKeyboard() {
   const suggestions = suggestionsForMode(update, mode);
   const activeSuggestion = suggestions[selectedIndex] ?? suggestions[0];
   const activeText = activeCompositionText(input);
-  const inlineSuggestion = inlineSuggestionFor(activeText, activeSuggestion?.text);
+  const inlineSuggestion = inlineSuggestionForUpdate(update, activeText, activeSuggestion?.text);
   const suggestionPreview = activeSuggestion ? previewSuggestion(activeText, activeSuggestion.text) : "";
 
   function changeMode(nextMode: TypingMode) {
@@ -331,6 +331,17 @@ function contextFor(mode: Extract<KeyboardMode, "romanized" | "traditional">) {
 }
 
 function suggestionsForMode(update: CandidateUpdate, mode: TypingMode): Suggestion[] {
+  if (!update.compositionText.trim() && update.inlineCompletion) {
+    const candidate = update.inlineCompletion.candidate;
+    if (mode === "romanized-romanized" && candidate.label && /[a-z]/i.test(candidate.label)) {
+      return [{ id: `${candidate.id}-label`, text: candidate.label }];
+    }
+    if (mode === "traditional-romanized" && candidate.label && /[a-z]/i.test(candidate.label)) {
+      return [{ id: `${candidate.id}-label`, text: candidate.label }];
+    }
+    return [{ id: candidate.id, text: update.inlineCompletion.text }];
+  }
+
   if (!update.compositionText.trim()) return [];
 
   if (mode === "romanized-romanized") {
@@ -466,6 +477,11 @@ function romanizedSoftBoundaryOffset(segment: string): number {
   }
 
   return offset;
+}
+
+function inlineSuggestionForUpdate(update: CandidateUpdate, activeText: string, suggestion?: string): string {
+  if (!activeText.trim() && update.inlineCompletion) return update.inlineCompletion.displayText;
+  return inlineSuggestionFor(activeText, suggestion);
 }
 
 function inlineSuggestionFor(activeText: string, suggestion?: string): string {

@@ -47,6 +47,7 @@
     "package:macos:imk:dev": "node scripts/package-macos-imk-dev.mjs",
     "package:macos:imk:test-installer": "node scripts/package-macos-imk-test-installer.mjs",
     "build:frequency-model": "node scripts/build-nepali-frequency-model.mjs",
+    "build:ngram-lm": "vite-node scripts/build-keyboard-ngram-lm.ts",
     "sanitize:runtime-suggestions": "node scripts/sanitize-runtime-suggestions.mjs",
     "compile:runtime-lexicon": "node scripts/compile-runtime-lexicon-binary.mjs",
     "neural:dataset": "node scripts/build-neural-transliteration-dataset.mjs",

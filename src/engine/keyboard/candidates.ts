@@ -5,6 +5,7 @@ import { contextualPredictionCandidates } from "./contextPredictor";
 import { canonicalRomanizedLabel, romanizedHelperCandidates } from "./helpers";
 import { keyboardBlockedCandidateTexts, keyboardMemoryCandidates } from "./memory";
 import { isSecureContext, surfaceForMode } from "./modes";
+import { inlineCompletionForSession } from "./ngramLanguageModel";
 import { runtimePackCandidates } from "./runtimePacks";
 import type { CorrectionMemoryEntry } from "../memory";
 import type { Candidate, CandidateUpdate, KeyboardSession, TypingContext } from "./types";
@@ -76,6 +77,7 @@ export function buildCandidateUpdate(session: KeyboardSession, options: Candidat
   const candidates = romanizedCandidates(session.compositionText, session.context, options.memoryEntries ?? [], session);
   const primary = candidates[0];
   const displayText = primary?.text ?? session.compositionText;
+  const inlineCompletion = inlineCompletionForSession(session, primary);
   return {
     sessionId: session.sessionId,
     mode: session.mode,
@@ -86,6 +88,7 @@ export function buildCandidateUpdate(session: KeyboardSession, options: Candidat
     caret: session.caret,
     candidates,
     primary,
+    inlineCompletion,
     proofHints: session.proofHints,
     shouldShowCandidateUI: candidates.length > 0 || session.proofHints.length > 0,
     confidence: primary?.confidence ?? 0,
@@ -182,6 +185,7 @@ function traditionalUpdate(session: KeyboardSession, start: number): CandidateUp
       : [])
   ]);
   const primary = unicodeCandidates[0];
+  const inlineCompletion = inlineCompletionForSession(session, primary);
   return {
     sessionId: session.sessionId,
     mode: session.mode,
@@ -192,6 +196,7 @@ function traditionalUpdate(session: KeyboardSession, start: number): CandidateUp
     caret: session.caret,
     candidates: unicodeCandidates,
     primary,
+    inlineCompletion,
     proofHints: session.proofHints,
     shouldShowCandidateUI: unicodeCandidates.length > 0 || session.proofHints.length > 0 || warnings.length > 0,
     confidence: primary?.confidence ?? (warnings.length > 0 ? 0.5 : 0.82),

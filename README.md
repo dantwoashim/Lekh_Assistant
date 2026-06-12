@@ -6,7 +6,8 @@ Current repo status is deliberately narrower than that target:
 
 - The React/Vite browser surface is a typing-engine validation demo.
 - The Electron shell is a companion/demo shell for settings, diagnostics, packaging, and first-run validation.
-- The native Windows TSF and macOS IMK paths are under active proof-spike development.
+- The native macOS IMK path has a test installer for host-app validation.
+- The native Windows TSF path is under active proof-spike development.
 - The Electron/browser demo is **not** the keyboard app.
 - The companion app is **not** the keyboard app.
 - Preeti to Unicode is a side utility, not the main product.
@@ -20,6 +21,7 @@ The real keyboard product is the native input-method layer:
 ## Contents
 
 - [Why It Exists](#why-it-exists)
+- [macOS Test Build](#macos-test-build)
 - [What It Does](#what-it-does)
 - [Privacy Model](#privacy-model)
 - [Current Quality Evidence](#current-quality-evidence)
@@ -35,7 +37,7 @@ The real keyboard product is the native input-method layer:
 
 ## Why It Exists
 
-Nepali desktop users need a keyboard that works system-wide, understands real Romanized Nepali, preserves mixed English safely, and stays private by default. Existing copy-paste converters and browser boxes are not enough for the workflow Niraj requested.
+Nepali desktop users need a keyboard that works system-wide, understands real Romanized Nepali, preserves mixed English safely, and stays private by default. Existing copy-paste converters and browser boxes are not enough for daily desktop typing.
 
 The product direction is deliberately conservative and native-first:
 
@@ -46,6 +48,26 @@ The product direction is deliberately conservative and native-first:
 - Preserve protected tokens such as NID, PAN, PDF, emails, URLs, numbers, and IDs.
 - Treat Preeti conversion as a side utility.
 - Avoid unclear-license language data.
+
+## macOS Test Build
+
+The GitHub-visible macOS keyboard test artifact is:
+
+- [`release/native/macos/Lekh-Keyboard-Test-Installer.zip`](release/native/macos/Lekh-Keyboard-Test-Installer.zip)
+
+This zip is the current unsigned test installer for the native macOS InputMethodKit build. It is intended for development and host-app validation, not for public production distribution. A production macOS release still requires Developer ID signing, notarization, the full host-app matrix, secure-field evidence, install/uninstall evidence, and multi-day pilot use.
+
+Build or refresh the local macOS test installer with:
+
+```bash
+npm run package:macos:imk:test-installer
+```
+
+The recovery command remains:
+
+```bash
+npm run restore:macos-keyboard
+```
 
 ## What It Does
 
@@ -66,6 +88,7 @@ Romanized typing is the flagship first-launch experience. It uses:
 
 - phonology rules from [`docs/PHONOLOGY_CONTRACT.md`](docs/PHONOLOGY_CONTRACT.md)
 - keyboard candidate ranking for phrase, dictionary, rule, variant, context, and local memory paths
+- a quantized local n-gram model for context-aware next-word inline completion
 - domain-ranked local suggestions for office, government, education, legal, names, and places
 - casual Nepali completions such as `ramro xa`, `kasto cha`, and `dherai ramro`
 - mixed Nepali-English policy candidates that preserve protected tokens and offer loanword preferences
@@ -102,22 +125,19 @@ Correction memory is local, explicit, and user-controlled. It must not learn sec
 
 ## Current Quality Evidence
 
-Latest local validation, recorded on 2026-05-26:
+Current keyboard-specific evidence is produced by committed scripts and generated local reports:
 
 | Gate | Status |
 | --- | --- |
-| TypeScript typecheck | Passing: `tsc -b --noEmit` |
-| Unit and smoke tests | 115 passing tests |
-| Production build | Passing; initial JS `2,801.18 kB` minified / `500.41 kB` gzip after the expanded local lexicon; lazy Hunspell chunk `956.45 kB` / `176.58 kB` gzip |
-| Privacy guard | No text telemetry payloads found |
-| Offline gate | Service worker precaches app shell, notices, and hashed assets; 8 precached URLs |
-| Runtime data guard | Benchmark/probe fixtures are excluded from production source and build output |
-| npm audit | 0 moderate-or-higher vulnerabilities |
-| Preeti benchmark | 10,225 fixtures; generated/manual/held-out/competitor exact `1.0000`; CER/WER `0`; English preservation `1.0000` |
-| Romanized benchmark | 6,730 fixtures; generated/manual/regression/hostile/competitor top-1/top-3/top-5/MRR `1.0000`; mixed-English corruption `0`; suggestion hit@5 `0.9872`; no current benchmark failures |
-| Benchmark disjointness | Passing, with `romanized-held-out` quarantined as contaminated regression data and excluded from public proof |
+| Shared keyboard engine | `npm run test:keyboard` covers Romanized, Traditional Unicode suggestions, memory, protected tokens, secure pass-through, runtime pack candidates, trained context candidates, and inline next-word completion |
+| Quantized inline completion model | `npm run build:ngram-lm` emits `35,000` local n-gram rows with NFC, self-loop, unsafe-token, duplicate, and spelling-quality validation |
+| macOS native bundle | `npm run package:macos:imk:test-installer` produces the unsigned IMK test installer zip for manual host-app validation |
+| Privacy guard | `npm run check:privacy` blocks text telemetry payloads |
+| Local-first guard | `npm run check:engine-local` verifies the hot path stays local |
+| Runtime data guard | `npm run check:runtime-data` keeps benchmark/probe fixtures out of production source and build output |
+| Production readiness | Still blocked until the signed/notarized app and real host-app matrix pass |
 
-Those numbers are internal fixture metrics. They are useful for regression control, but they are not a public superiority claim and they are not a substitute for consented real-document validation or manually filled competitor outputs.
+Internal fixture metrics are useful for regression control, but they are not public superiority claims and they are not a substitute for consented real-document validation or manually filled competitor outputs.
 
 ## Run Locally
 
@@ -140,6 +160,7 @@ http://127.0.0.1:5173/
 npm run test
 npm run build
 npm run check:privacy
+npm run build:ngram-lm
 npm run check:offline
 npm run check:runtime-data
 npm run verify
@@ -148,6 +169,8 @@ npm run report:quality
 npm run report:preeti
 npm run dictionary:review
 npm run rank:hunspell -- --apply --limit 36000
+npm run package:macos:imk:test-installer
+npm run restore:macos-keyboard
 npm audit --audit-level=moderate
 ```
 
@@ -177,6 +200,7 @@ src/
   features/            Product surfaces
 scripts/               Fixture, dictionary, quality, privacy, and offline gates
 docs/                  Contracts, validation plans, data policy, notices
+native/                macOS IMK and Windows TSF native input-method source
 public/                Manifest and icons
 ```
 
@@ -200,6 +224,7 @@ Bundled data must have a documented source and license status. The app currently
 - seed-derived surface forms
 - a reviewed `dictionary-ne` ranked lexical expansion derived from LGPL dictionary entries, with local Wikipedia frequency counts used only as ignored research input
 - Romanized phrase and alias ranking packs
+- local aggregate n-gram prediction packs
 - 5,000 generated Romanized fixtures plus manual, hostile, contaminated-regression, and competitor-probe benchmark cases
 - 10,000+ Preeti round-trip fixtures plus hard manual, held-out paragraph, and competitor-probe benchmark cases
 - separate Preeti manual, generated, held-out, competitor-probe, and user-submitted fixture buckets
@@ -251,4 +276,4 @@ MIT. See [`LICENSE`](LICENSE).
 
 ## What It Does Not Claim
 
-Lekh does not claim official language authority, government endorsement, perfect Preeti conversion, perfect transliteration, official spellchecking, grammar correction, native Windows/macOS keyboard support, a browser extension, sync, accounts, payments, or server-side text processing.
+Lekh does not claim official language authority, government endorsement, perfect Preeti conversion, perfect transliteration, official spellchecking, grammar correction, signed/notarized production native release status, a browser extension, sync, accounts, payments, or server-side text processing.

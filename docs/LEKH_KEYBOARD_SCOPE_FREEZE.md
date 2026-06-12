@@ -67,7 +67,7 @@ Avoid positioning Lekh Keyboard as:
 - a Preeti-first product;
 - a document repair app;
 - a clone of older layout tools;
-- a cloud writing assistant.
+- a cloud writing service.
 
 ## Current Browser Prototype Role
 

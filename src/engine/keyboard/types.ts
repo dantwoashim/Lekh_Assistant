@@ -96,6 +96,29 @@ export interface Candidate {
   replaceRange?: [number, number];
 }
 
+export interface InlineCompletion {
+  /**
+   * Text inserted if the inline completion is accepted.
+   * This is a whole completion token/phrase, not necessarily only a suffix.
+   */
+  text: string;
+
+  /**
+   * Text rendered as the grey inline preview.
+   */
+  displayText: string;
+
+  /**
+   * Context suffix that produced the prediction.
+   */
+  contextText: string;
+
+  candidate: Candidate;
+  confidence: number;
+  source: "active-candidate" | "ngram-lm";
+  acceptKeys: Array<"Tab" | "Enter">;
+}
+
 export interface ProofHint {
   range: [number, number];
   original: string;
@@ -155,6 +178,7 @@ export interface CandidateUpdate {
   caret: number;
   candidates: Candidate[];
   primary?: Candidate;
+  inlineCompletion?: InlineCompletion;
   proofHints: ProofHint[];
   committedText?: string;
   consumedRange?: [number, number];

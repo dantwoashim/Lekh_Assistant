@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import ngramModel from "../../data/keyboard-packs/v0.1/ngram-lm.json";
 import predictionModel from "../../data/keyboard-packs/v0.1/prediction-model.json";
 import { createKeyboardEngine, defaultTypingContext } from "./index";
 import type { KeyboardKeyEvent } from "./types";
@@ -53,6 +54,57 @@ describe("KeyboardEngine session API", () => {
 
     expect(trainedCandidate?.text).toBe("राम्रो छ");
     expect(trainedCandidate?.confidence).toBeGreaterThan(0.7);
+  });
+
+  it("uses the quantized local n-gram model for inline next-word completion", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({
+      ...defaultTypingContext("romanized"),
+      leftTextWindow: "मेरो ",
+      showRomanizedLabels: true
+    });
+    const update = engine.updateComposition(sessionId, "", 0);
+
+    expect(update.inlineCompletion?.source).toBe("ngram-lm");
+    expect(update.inlineCompletion?.text).toBe("नाम");
+    expect(update.inlineCompletion?.displayText).toBe("नाम");
+    expect(update.inlineCompletion?.candidate.label).toBe("naam");
+  });
+
+  it("returns n-gram follow-up candidates after a committed word", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const update = engine.updateComposition(sessionId, "swasthya", 8);
+    const result = engine.commitCandidate(sessionId, update.primary?.id ?? "");
+
+    expect(result.followupCandidates?.[0]?.text).toBe("कार्यालय");
+    expect(result.followupCandidates?.[0]?.label).toBe("karyalaya");
+    expect(result.followupCandidates?.[0]?.reason.join(" ")).toMatch(/local n-gram/);
+  });
+
+  it("suppresses n-gram inline completions in secure fields", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({
+      ...defaultTypingContext("romanized"),
+      leftTextWindow: "मेरो ",
+      secureInput: true,
+      fieldType: "password"
+    });
+    const update = engine.updateComposition(sessionId, "", 0);
+
+    expect(update.action).toBe("passThrough");
+    expect(update.inlineCompletion).toBeUndefined();
+    expect(update.candidates).toHaveLength(0);
+  });
+
+  it("keeps curated inline n-gram spellings natural", () => {
+    const model = ngramModel as { rows: Array<{ c: string; n: string; r?: string }> };
+    const swasthya = model.rows.find((row) => row.c === "स्वास्थ्य" && row.r === "bima");
+    const ramro = model.rows.find((row) => row.c === "राम्रो" && row.r === "lagyo");
+
+    expect(swasthya?.n).toBe("बीमा");
+    expect(ramro?.n).toBe("लाग्यो");
+    expect(model.rows.some((row) => row.n === "लज्ञो" || row.n === "वीमा")).toBe(false);
   });
 
   it("keeps unsafe public-comment tokens out of the default trained runtime model", () => {
