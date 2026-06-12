@@ -26,6 +26,8 @@ for (let index = 2; index < process.argv.length; index += 1) {
 
 const version = args.get("version") ?? new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "Z");
 const channel = args.get("channel") ?? "dev";
+const minAppBuild = Number(args.get("min-app-build") ?? 4);
+const maxAppBuild = args.has("max-app-build") ? Number(args.get("max-app-build")) : null;
 const binaryPath = args.get("binary") ?? join(ROOT, "release", "native", "macos", "runtime-suggestions.lkb");
 const previousPath = args.get("previous");
 const outDir = args.get("out-dir") ?? join(ROOT, "release", "native", "macos", "dictionary-packs", version);
@@ -54,10 +56,13 @@ try {
     channel,
     version,
     binaryFormat: "LEKHBLX1",
+    binaryFormatVersion: 1,
     bytes: pack.length,
     sha256,
     path: packFileName,
     minAppVersion: args.get("min-app-version") ?? "0.1.0",
+    minAppBuild: Number.isFinite(minAppBuild) ? minAppBuild : 4,
+    maxAppBuild: Number.isFinite(maxAppBuild) ? maxAppBuild : null,
     installName: "runtime-suggestions.current.lkb",
     signature: null
   };

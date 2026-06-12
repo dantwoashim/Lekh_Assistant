@@ -61,6 +61,8 @@ describe("macOS IMK proof target source", () => {
     expect(source).toContain("बाटो");
     expect(source).toContain("LekhUserLexiconStore");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("Ed25519");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("minAppVersion");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("compareVersion");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralTransliterator.swift"), "utf8")).toContain("CoreML");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhMetricReporter.swift"), "utf8")).toContain("LekhMetricKitOptIn");
     expect(source).toContain("lekh-keyboard.sqlite3");
@@ -233,6 +235,8 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).toContain("checksumEntries");
     expect(installerPackager).toContain("Uninstaller must not embed the full keyboard payload");
     expect(installerPackager).toContain("InstallBackups");
+    expect(installerPackager).toContain("rotate_backups");
+    expect(installerPackager).toContain("keep_count=3");
     expect(installerPackager).toContain("restore-system-keyboard\" --snapshot");
     expect(installerPackager).not.toContain("xattr -cr");
     expect(installerPackager).not.toContain("--noqtn");

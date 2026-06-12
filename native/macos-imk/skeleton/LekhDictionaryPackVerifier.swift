@@ -13,8 +13,12 @@ public enum LekhDictionaryPackVerifier {
 
     let version: String
     let binaryFormat: String
+    let binaryFormatVersion: Int?
     let sha256: String
     let bytes: Int
+    let minAppVersion: String
+    let minAppBuild: Int?
+    let maxAppBuild: Int?
     let signature: Signature?
   }
 
@@ -45,6 +49,8 @@ public enum LekhDictionaryPackVerifier {
     }
 
     guard manifest.binaryFormat == "LEKHBLX1",
+          (manifest.binaryFormatVersion ?? 1) == 1,
+          isCompatible(manifest),
           manifest.bytes == packData.count,
           packData.starts(with: Array("LEKHBLX1".utf8)),
           sha256Hex(packData) == manifest.sha256.lowercased(),
@@ -67,6 +73,34 @@ public enum LekhDictionaryPackVerifier {
 
   private static func signatureMessage(version: String, sha256: String, bytes: Int, format: String) -> Data {
     Data("LEKH_PACK_V1\n\(version)\n\(sha256)\n\(bytes)\n\(format)".utf8)
+  }
+
+  private static func isCompatible(_ manifest: Manifest) -> Bool {
+    let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    let appBuild = Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") ?? 0
+    if compareVersion(appVersion, manifest.minAppVersion) == .orderedAscending {
+      return false
+    }
+    if let minBuild = manifest.minAppBuild, appBuild < minBuild {
+      return false
+    }
+    if let maxBuild = manifest.maxAppBuild, appBuild > maxBuild {
+      return false
+    }
+    return true
+  }
+
+  private static func compareVersion(_ left: String, _ right: String) -> ComparisonResult {
+    let leftParts = left.split(separator: ".").map { Int($0) ?? 0 }
+    let rightParts = right.split(separator: ".").map { Int($0) ?? 0 }
+    let count = max(leftParts.count, rightParts.count)
+    for index in 0..<count {
+      let leftValue = index < leftParts.count ? leftParts[index] : 0
+      let rightValue = index < rightParts.count ? rightParts[index] : 0
+      if leftValue < rightValue { return .orderedAscending }
+      if leftValue > rightValue { return .orderedDescending }
+    }
+    return .orderedSame
   }
 
   #if canImport(CryptoKit)

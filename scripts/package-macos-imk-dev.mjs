@@ -202,6 +202,8 @@ if (neuralModelPackaged) {
 if (existsSync(iconSource)) {
   copyFileSync(iconSource, join(appBundle, "Contents", "Resources", "Lekh.icns"));
 }
+mkdirSync(join(appBundle, "Contents", "Resources", "en.lproj"), { recursive: true });
+mkdirSync(join(appBundle, "Contents", "Resources", "ne.lproj"), { recursive: true });
 writeFileSync(
   join(appBundle, "Contents", "Resources", "en.lproj", "InfoPlist.strings"),
   [

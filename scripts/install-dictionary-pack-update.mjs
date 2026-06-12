@@ -29,6 +29,8 @@ for (let index = 2; index < process.argv.length; index += 1) {
 const manifestPath = args.get("manifest") ? resolve(args.get("manifest")) : null;
 const production = args.has("production");
 const allowUnsignedDev = args.has("allow-unsigned-dev");
+const appVersion = args.get("app-version") ?? "0.1.0";
+const appBuild = Number(args.get("app-build") ?? 4);
 const packDirectory = join(homedir(), "Library", "Application Support", "Lekh Keyboard", "Packs");
 const activePackPath = join(packDirectory, "runtime-suggestions.current.lkb");
 const activeManifestPath = join(packDirectory, "runtime-suggestions.current.json");
@@ -44,6 +46,18 @@ try {
   const pack = readFileSync(packPath);
   const sha256 = createHash("sha256").update(pack).digest("hex");
   if (manifest.binaryFormat !== "LEKHBLX1") fail("invalid-format", { binaryFormat: manifest.binaryFormat }, 1);
+  if ((manifest.binaryFormatVersion ?? 1) !== 1) {
+    fail("invalid-format-version", { binaryFormatVersion: manifest.binaryFormatVersion }, 1);
+  }
+  if (!isCompatibleManifest(manifest, appVersion, appBuild)) {
+    fail("incompatible-pack", {
+      appVersion,
+      appBuild,
+      minAppVersion: manifest.minAppVersion,
+      minAppBuild: manifest.minAppBuild,
+      maxAppBuild: manifest.maxAppBuild
+    }, 1);
+  }
   if (pack.subarray(0, 8).toString("ascii") !== "LEKHBLX1") fail("invalid-pack-magic", {}, 1);
   if (manifest.bytes !== pack.length) fail("byte-mismatch", { expected: manifest.bytes, actual: pack.length }, 1);
   if (manifest.sha256 !== sha256) fail("sha-mismatch", { expected: manifest.sha256, actual: sha256 }, 1);
@@ -89,6 +103,32 @@ try {
 
 function signatureMessage(manifest) {
   return Buffer.from(`LEKH_PACK_V1\n${manifest.version}\n${manifest.sha256}\n${manifest.bytes}\n${manifest.binaryFormat}`, "utf8");
+}
+
+function isCompatibleManifest(manifest, currentVersion, currentBuild) {
+  if (!manifest.minAppVersion || compareVersion(currentVersion, manifest.minAppVersion) < 0) return false;
+  if (manifest.minAppBuild !== null && manifest.minAppBuild !== undefined) {
+    const minBuild = Number(manifest.minAppBuild);
+    if (Number.isFinite(minBuild) && currentBuild < minBuild) return false;
+  }
+  if (manifest.maxAppBuild !== null && manifest.maxAppBuild !== undefined) {
+    const maxBuild = Number(manifest.maxAppBuild);
+    if (Number.isFinite(maxBuild) && currentBuild > maxBuild) return false;
+  }
+  return true;
+}
+
+function compareVersion(left, right) {
+  const leftParts = String(left).split(".").map((part) => Number(part) || 0);
+  const rightParts = String(right).split(".").map((part) => Number(part) || 0);
+  const count = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < count; index += 1) {
+    const leftValue = leftParts[index] ?? 0;
+    const rightValue = rightParts[index] ?? 0;
+    if (leftValue < rightValue) return -1;
+    if (leftValue > rightValue) return 1;
+  }
+  return 0;
 }
 
 function fail(status, details, exitCode) {

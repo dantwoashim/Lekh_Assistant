@@ -349,11 +349,25 @@ fail() {
   local message="$1"
   log "FAILED: $message"
   rollback
-  dialog "Lekh Keyboard installation failed. Nothing was left half-installed. Details were written to ~/Library/Logs/LekhKeyboard/install.log."
+  dialog "Lekh Keyboard installation failed. Nothing was left half-installed. Details were written to ~/Library/Logs/LekhKeyboard/install.log.\n\nलेख किबोर्ड स्थापना असफल भयो। आधा-स्थापित अवस्थामा केही छोडिएको छैन। विवरण ~/Library/Logs/LekhKeyboard/install.log मा लेखिएको छ।"
   exit 1
 }
 cleanup() {
   /bin/rm -rf "$TMP_DEST"
+}
+rotate_backups() {
+  local keep_count=3
+  local existing_count
+  existing_count="$(/usr/bin/find "$BACKUP_ROOT" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+  if [[ "\${existing_count:-0}" -le "$keep_count" ]]; then
+    return
+  fi
+  /usr/bin/find "$BACKUP_ROOT" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print0 2>/dev/null |
+    /usr/bin/xargs -0 /bin/ls -td 2>/dev/null |
+    /usr/bin/tail -n +"$((keep_count + 1))" |
+    while IFS= read -r old_backup; do
+      [[ -n "$old_backup" ]] && /bin/rm -rf "$old_backup"
+    done
 }
 trap 'rollback; cleanup' EXIT
 trap 'fail "installation interrupted"' INT TERM HUP
@@ -372,6 +386,7 @@ log "install started payload=$PAYLOAD dest=$DEST version=$APP_VERSION build=$APP
 if [[ -d "$DEST" ]]; then
   BACKUP_DEST="$BACKUP_ROOT/Lekh Keyboard.app.backup.$(/bin/date -u '+%Y%m%dT%H%M%SZ')"
   /usr/bin/ditto --norsrc --noextattr --noacl "$DEST" "$BACKUP_DEST" >> "$LOG_FILE" 2>&1 || fail "could not back up existing install"
+  rotate_backups
 fi
 
 /bin/rm -rf "$TMP_DEST"
@@ -393,7 +408,7 @@ OLD_DEST=""
 "$RESOURCE_DIR/register-lekh-input-source" "$DEST" >> "$LOG_FILE" 2>&1 || fail "input source registration failed"
 
 log "install completed"
-dialog "Lekh Keyboard installed and enabled. Open the input menu in the menu bar to switch between ABC and Lekh Keyboard. If it does not appear immediately, log out and back in."
+dialog "Lekh Keyboard installed and enabled. Open the input menu in the menu bar to switch between ABC and Lekh Keyboard. If it does not appear immediately, log out and back in.\n\nलेख किबोर्ड स्थापना र सक्षम भयो। ABC र लेख किबोर्डबीच स्विच गर्न menu bar को input menu खोल्नुहोस्। तुरुन्त नदेखिए log out गरेर फेरि log in गर्नुहोस्।"
 exit 0
 `
 writeAppShellBundle({
@@ -423,7 +438,7 @@ APPLESCRIPT
 }
 confirm_uninstall() {
   /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1
-display dialog "Remove Lekh Keyboard from this Mac? This deletes the keyboard, local learned words, dictionary packs, model files, backups, caches, and Lekh logs." buttons {"Cancel", "Uninstall"} default button "Cancel" cancel button "Cancel" with title "Lekh Keyboard" with icon caution
+display dialog "Remove Lekh Keyboard from this Mac? This deletes the keyboard, local learned words, dictionary packs, model files, backups, caches, and Lekh logs.\n\nयो Mac बाट लेख किबोर्ड हटाउने? यसले किबोर्ड, local learned words, dictionary packs, model files, backups, caches, र Lekh logs हटाउँछ।" buttons {"Cancel", "Uninstall"} default button "Cancel" cancel button "Cancel" with title "Lekh Keyboard" with icon caution
 APPLESCRIPT
 }
 
@@ -443,7 +458,7 @@ fi
 "$RESOURCE_DIR/purge-lekh-input-sources" >> "$LOG_FILE" 2>&1 || true
 /bin/rm -rf "$SUPPORT_DIR" "$CACHE_DIR"
 log "uninstall completed"
-dialog "Lekh Keyboard was removed. Local learned words, dictionary packs, model files, backups, caches, and Lekh logs were deleted. Your previous keyboard was restored if macOS allowed the change."
+dialog "Lekh Keyboard was removed. Local learned words, dictionary packs, model files, backups, caches, and Lekh logs were deleted. Your previous keyboard was restored if macOS allowed the change.\n\nलेख किबोर्ड हटाइयो। local learned words, dictionary packs, model files, backups, caches, र Lekh logs मेटाइयो। macOS ले अनुमति दिएको भए पहिलेको keyboard restore गरिएको छ।"
 /bin/rm -rf "$LOG_DIR"
 exit 0
 `;
@@ -491,6 +506,7 @@ writeFileSync(
     "2. If macOS blocks the app because it is an unsigned test build, open System Settings > Privacy & Security and choose Open Anyway for Lekh Keyboard Test Installer.",
     "3. After it finishes, use the macOS input menu in the menu bar to choose Lekh Keyboard.",
     "4. If Lekh Keyboard does not appear immediately, log out and back in, then open Keyboard Settings > Text Input > Edit and add it under Nepali.",
+    "5. Installer rollback backups are stored under ~/Library/Application Support/Lekh Keyboard/InstallBackups and rotated to the newest 3 copies.",
     "",
     "Uninstall:",
     "Open Lekh Keyboard Uninstaller.app. It asks for confirmation, restores the previous keyboard when possible, and deletes local learned words, packs, models, backups, caches, and logs.",
@@ -501,6 +517,13 @@ writeFileSync(
     "",
     "This test build is local-first and does not send typing data to a server.",
     "Production distribution still requires Developer ID signing and notarization if this zip is built without LEKH_MAC_DEVELOPER_ID.",
+    "",
+    "नेपाली:",
+    "१. Lekh Keyboard Test Installer.app खोल्नुहोस्।",
+    "२. macOS ले unsigned test build भनेर block गरेमा System Settings > Privacy & Security मा Open Anyway छान्नुहोस्।",
+    "३. स्थापना भएपछि menu bar को input menu बाट Lekh Keyboard छान्नुहोस्।",
+    "४. तुरुन्त नदेखिए log out गरेर फेरि log in गर्नुहोस्, अनि Keyboard Settings > Text Input > Edit > Nepali बाट थप्नुहोस्।",
+    "५. Uninstaller ले confirmation माग्छ र local learned words, packs, models, backups, caches, logs हटाउँछ।",
     ""
   ].join("\n")
 );
