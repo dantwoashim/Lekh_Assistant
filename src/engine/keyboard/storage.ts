@@ -41,6 +41,7 @@ export interface PersonalDictionaryStore {
 export interface KeyboardCorrectionMemoryStore {
   record(entry: CorrectionMemoryEntry): Promise<void>;
   query(input: string, context: TypingContext): Promise<CorrectionMemoryEntry[]>;
+  forget(input: string, chosenOutput?: string): Promise<void>;
   reset(): Promise<void>;
   export(): Promise<unknown>;
   import(data: unknown): Promise<void>;
@@ -126,6 +127,16 @@ export class InMemoryKeyboardCorrectionMemoryStore implements KeyboardCorrection
     if (context.secureInput || context.fieldType === "password" || context.fieldType === "code") return [];
     const normalizedInput = input.trim().toLowerCase();
     return this.entries.filter((entry) => entry.normalizedInput.toLowerCase().startsWith(normalizedInput));
+  }
+
+  async forget(input: string, chosenOutput?: string): Promise<void> {
+    const normalizedInput = input.trim().toLowerCase();
+    const normalizedOutput = chosenOutput?.trim().toLowerCase();
+    this.entries = this.entries.filter((entry) => {
+      if (entry.normalizedInput.toLowerCase() !== normalizedInput) return true;
+      if (!normalizedOutput) return false;
+      return entry.normalizedOutput.toLowerCase() !== normalizedOutput && entry.chosenOutput.trim().toLowerCase() !== normalizedOutput;
+    });
   }
 
   async reset(): Promise<void> {

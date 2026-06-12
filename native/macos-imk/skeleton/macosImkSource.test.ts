@@ -18,12 +18,16 @@ describe("macOS IMK proof target source", () => {
     expect(source).toContain("insertText");
   });
 
-  it("keeps XPC unavailable behavior fail-open by committing raw printable text", () => {
+  it("deletes the per-keystroke XPC path and keeps local fail-open behavior", () => {
     const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhXpcClient.swift"), "utf8");
-    expect(source).toContain("LekhXpcEngineClient");
-    expect(source).toContain("safeFallback");
-    expect(source).toContain("committedText: key");
-    expect(source).toContain("LekhInputDecision.passThrough");
+    const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
+
+    expect(source).not.toContain("LekhXpcEngineClient");
+    expect(source).not.toContain("LekhXpcRequestEnvelope");
+    expect(source).not.toContain("EngineXPC");
+    expect(controller).toContain("processFailOpenKey");
+    expect(controller).toContain("insertRaw");
+    expect(source).toContain("return .passThrough");
   });
 
   it("loads the packaged native runtime suggestion pack for flagship Romanized typing", () => {
@@ -31,18 +35,48 @@ describe("macOS IMK proof target source", () => {
     const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhXpcClient.swift"), "utf8");
     const packageScript = readFileSync(join(root, "scripts/package-macos-imk-dev.mjs"), "utf8");
 
-    expect(controller).toContain("LEKH_IMK_USE_XPC");
+    expect(controller).not.toContain("LEKH_IMK_USE_XPC");
+    expect(controller).not.toContain("/tmp/lekh");
+    expect(controller).toContain("LEKH_IMK_DIAGNOSTICS");
     expect(controller).toContain("LekhStaticProofEngineClient");
     expect(packageScript).toContain("runtime-suggestions.json");
-    expect(source).toContain("Bundle.main.url(forResource: \"runtime-suggestions\"");
+    expect(packageScript).toContain("runtime-suggestions.lkb");
+    expect(packageScript).toContain("--configuration");
+    expect(packageScript).toContain("release");
+    expect(packageScript).toContain("lipo");
+    expect(packageScript).toContain("sanitize-runtime-suggestions");
+    expect(packageScript).toContain("compile-runtime-lexicon-binary");
+    expect(source).toContain("Data(contentsOf: url, options: [.mappedIfSafe])");
+    expect(source).toContain("withExtension: \"lkb\"");
+    expect(source).toContain("withExtension: \"json\"");
     expect(source).toContain("RuntimeSuggestionPack");
+    expect(source).toContain("LekhBinaryLexicon");
+    expect(source).toContain("LEKHBLX1");
+    expect(source).toContain("LekhDictionaryPackVerifier.verifiedInstalledPackURL");
+    expect(source).toContain("confidence: row.confidence");
+    expect(source).toContain("LekhRomanizedComposer");
+    expect(source).toContain("casualTailOverrides");
+    expect(source).toContain("composePhraseCandidates");
+    expect(source).toContain("xaina");
+    expect(source).toContain("बाटो");
+    expect(source).toContain("LekhUserLexiconStore");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("Ed25519");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralTransliterator.swift"), "utf8")).toContain("CoreML");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhMetricReporter.swift"), "utf8")).toContain("LekhMetricKitOptIn");
+    expect(source).toContain("lekh-keyboard.sqlite3");
+    expect(source).toContain("CREATE TABLE IF NOT EXISTS user_lexicon");
+    expect(source).toContain("userLexicon.record");
+    expect(source).toContain("userLexicon.candidates");
+    expect(source).toContain("composeToken");
+    expect(source).toContain("ruleCandidates(for:");
+    expect(source).toContain("genericConjunctPairs");
     expect(source).toContain("swasthya");
     expect(source).toContain("स्वास्थ्य");
     expect(source).toContain("nagarikta pr");
     expect(source).toContain("नागरिकता प्रमाणपत्र");
   });
 
-  it("contains native mode switching for the four typing surfaces", () => {
+  it("contains native mode switching for all four typing surfaces", () => {
     const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
     const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhXpcClient.swift"), "utf8");
 
@@ -51,10 +85,47 @@ describe("macOS IMK proof target source", () => {
     expect(source).toContain("romanized-traditional");
     expect(source).toContain("traditional-traditional");
     expect(source).toContain("traditional-romanized");
+    expect(source).toContain("visibleModes");
+    expect(source).toContain(".traditionalRomanized");
     expect(controller).toContain("Control+Option+Space");
     expect(controller).toContain("modeMenuOpen");
+    expect(controller).toContain("modePromptPending");
+    expect(controller).toContain("modePrompt.activate");
+    expect(controller).toContain("menu() -> NSMenu!");
+    expect(controller).toContain("selectModeFromInputMenu");
+    expect(controller).toContain("Forget Current Candidate");
+    expect(controller).toContain("forgetCurrentCandidateFromInputMenu");
+    expect(controller).toContain("engineClient.learnCommit");
+    expect(controller).toContain("engineClient.forgetCandidate");
     expect(controller).toContain("modeFromMenuKey");
-    expect(controller).toContain("modifiers.contains(.control), modifiers.contains(.option), event.keyCode == 49");
+    expect(controller).toContain("modeHotkey");
+    expect(controller).toContain("LekhNativeTypingModeChosen");
+    expect(controller).toContain("modifiers.contains(.control), modifiers.contains(.option), keyCode == 49");
+    expect(controller).toContain("inputText(_ string: String!, key keyCode: Int, modifiers flags: Int, client sender: Any!)");
+    expect(controller).toContain("event.inputTextKey");
+    expect(controller).toContain("TISSetInputMethodKeyboardLayoutOverride");
+    expect(controller).toContain("com.apple.keylayout.ABC");
+    expect(controller).toContain("com.apple.keylayout.Nepali");
+    expect(controller).toContain("usesTraditionalKeyboardLayout");
+    expect(controller).toContain("processFailOpenKey");
+    expect(controller).toContain("replacePreviouslyPassedThroughRawText");
+    expect(controller).toContain("selectedRange()");
+    expect(controller).toContain("return true");
+    expect(controller).toContain("LEKH_IMK_INLINE_COMPOSITION");
+    expect(controller).toContain("LekhLatencyRingBuffer");
+    expect(controller).toContain("Diagnostics...");
+    expect(controller).toContain("visiblePreviewText");
+    expect(source).toContain("previewText(rawBuffer");
+  });
+
+  it("keeps native runtime candidates multi-valued and confidence-ranked", () => {
+    const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhXpcClient.swift"), "utf8");
+
+    expect(source).toContain("private let exactCandidates: [String: [NativeCandidateRow]]");
+    expect(source).toContain("exact[row.romanized, default: []].append(row)");
+    expect(source).toContain("private static func ranked(_ rows: [NativeCandidateRow]");
+    expect(source).toContain("if $0.confidence != $1.confidence { return $0.confidence > $1.confidence }");
+    expect(source).not.toContain("private let exactCandidates: [String: [String]]");
   });
 
   it("keeps Devanagari Traditional input in the native composition buffer", () => {
@@ -69,17 +140,30 @@ describe("macOS IMK proof target source", () => {
     const plist = readFileSync(join(root, "native/macos-imk/skeleton/Info.plist"), "utf8");
     const appMain = readFileSync(join(root, "native/macos-imk/skeleton/App/main.swift"), "utf8");
 
-    expect(plist).toContain("com.lekh.inputmethod.keyboard");
+    expect(plist).toContain("com.lekh.inputmethod.LekhKeyboard");
+    expect(plist).toContain("TISInputSourceID");
+    expect(plist).toContain("TISIntendedLanguage");
+    expect(plist).toContain("<string>ne</string>");
+    expect(plist).not.toContain("ne-Deva");
     expect(plist).toContain("InputMethodConnectionName");
-    expect(plist).toContain("Lekh_Keyboard_Connection");
+    expect(plist).toContain("com.lekh.inputmethod.LekhKeyboard_Connection");
     expect(plist).toContain("InputMethodServerControllerClass");
     expect(plist).toContain("LekhInputController");
+    expect(plist).toContain("NSPrincipalClass");
+    expect(plist).toContain("LekhInputMethodApplication");
+    expect(plist).toContain("LekhDictionaryPackEd25519PublicKeyBase64");
+    expect(plist).toContain("tsInputMethodIconFileKey");
     expect(plist).toContain("tsInputMethodCharacterRepertoireKey");
+    expect(plist).toContain("ComponentInputModeDict");
+    expect(plist).toContain("tsInputModeListKey");
+    expect(plist).toContain("com.lekh.inputmethod.LekhKeyboard.Romanized");
+    expect(plist).toContain("tsVisibleInputModeOrderedArrayKey");
     expect(plist).toContain("Latn");
     expect(plist).toContain("Deva");
     expect(appMain).toContain("IMKServer");
-    expect(appMain).toContain("Lekh_Keyboard_Connection");
+    expect(appMain).toContain("com.lekh.inputmethod.LekhKeyboard_Connection");
     expect(existsSync(join(root, "native/macos-imk/skeleton/install-dev.sh"))).toBe(true);
+    expect(existsSync(join(root, "native/macos-imk/skeleton/PkgInfo"))).toBe(true);
     expect(existsSync(join(root, "native/macos-imk/skeleton/register-dev.swift"))).toBe(true);
     expect(existsSync(join(root, "native/macos-imk/skeleton/restore-system-keyboard.swift"))).toBe(true);
     expect(existsSync(join(root, "native/macos-imk/skeleton/restore-system-keyboard.sh"))).toBe(true);
@@ -104,10 +188,44 @@ describe("macOS IMK proof target source", () => {
     const checkScript = readFileSync(join(root, "scripts/check-macos-imk-dev-install.mjs"), "utf8");
 
     expect(registerScript).toContain("--select");
+    expect(registerScript).toContain("--disable");
     expect(registerScript).toContain("shouldSelect");
-    expect(installScript).toContain("restore-system-keyboard.sh");
+    expect(registerScript).toContain("CFBundleIdentifier");
+    expect(installScript).not.toContain("restore-system-keyboard.sh");
+    expect(installScript).not.toContain("purge-lekh-input-sources.swift");
+    expect(installScript).not.toContain("defaults delete");
+    expect(installScript).not.toContain("codesign --force");
+    expect(installScript).not.toContain("xattr -cr");
     expect(installScript).toContain('swift "$(dirname "$0")/register-dev.swift" "$DEST"');
     expect(installScript).not.toContain('swift "$(dirname "$0")/register-dev.swift" "$DEST" --select');
     expect(checkScript).toContain("unsafe until host-app typing is proven");
+  });
+
+  it("keeps registration idempotent once the Lekh input source already exists", () => {
+    const registerScript = readFileSync(join(root, "native/macos-imk/skeleton/register-dev.swift"), "utf8");
+    const existingBranch = registerScript.slice(
+      registerScript.indexOf("if let existing = findInputSource"),
+      registerScript.indexOf("let status = TISRegisterInputSource")
+    );
+
+    expect(existingBranch).toContain("return (existing");
+    expect(existingBranch).not.toContain("TISRegisterInputSource");
+  });
+
+  it("packages a non-destructive installer with rollback and a visible uninstaller", () => {
+    const installerPackager = readFileSync(join(root, "scripts/package-macos-imk-test-installer.mjs"), "utf8");
+
+    expect(installerPackager).toContain("Lekh Keyboard Uninstaller.app");
+    expect(installerPackager).toContain("rollback()");
+    expect(installerPackager).toContain("install.log");
+    expect(installerPackager).toContain("uninstall.log");
+    expect(installerPackager).toContain("SHA256SUMS.txt");
+    expect(installerPackager).toContain("README.txt");
+    expect(installerPackager).toContain("compileUniversalHelper");
+    expect(installerPackager).toContain("lipo");
+    expect(installerPackager).not.toContain("xattr -cr");
+    expect(installerPackager).not.toContain("codesign --force --sign - --timestamp=none \"$DEST\"");
+    expect(installerPackager).not.toContain("SystemUIServer");
+    expect(installerPackager).not.toContain("defaults delete com.lekh.inputmethod.LekhKeyboard");
   });
 });

@@ -15,9 +15,12 @@ let package = Package(
       exclude: [
         "App",
         "Info.plist",
+        "PkgInfo",
         "install-dev.sh",
         "lekh_imk_contract.md",
         "macosImkSource.test.ts",
+        "manual-host-textedit-test.sh",
+        "purge-lekh-input-sources.swift",
         "register-dev.swift",
         "restore-system-keyboard.sh",
         "restore-system-keyboard.swift",
@@ -25,8 +28,16 @@ let package = Package(
       ],
       sources: [
         "LekhCandidateController.swift",
+        "LekhDictionaryPackVerifier.swift",
+        "LekhDictionaryPackWatcher.swift",
+        "LekhDiagnostics.swift",
         "LekhInputController.swift",
+        "LekhMetricReporter.swift",
+        "LekhNeuralTransliterator.swift",
         "LekhXpcClient.swift"
+      ],
+      linkerSettings: [
+        .linkedLibrary("sqlite3")
       ]
     ),
     .executableTarget(

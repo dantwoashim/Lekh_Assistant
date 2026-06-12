@@ -7,9 +7,11 @@ Planned locations:
 - Windows: `%APPDATA%/Lekh Keyboard/`
 - macOS: `~/Library/Application Support/Lekh Keyboard/`
 
-Prompt 3 defines storage contracts in `src/engine/keyboard/storage.ts` and adds repo-executable JSON file adapters in:
+Prompt 3 defines storage contracts in `src/engine/keyboard/storage.ts` and adds repo-executable local adapters in:
 
 - `native/shared/storage/jsonFileStores.ts`
 - `native/shared/storage/jsonFileStores.test.ts`
+- `native/shared/storage/sqliteStores.ts`
+- `native/shared/storage/sqliteStores.test.ts`
 
-These adapters are suitable for development daemon builds and local proof spikes. SQLite remains the recommended production hardening path once native packaging, migrations, locking, and corruption recovery are validated. Browser Keyboard Lab may use in-memory or browser-local adapters. Secure fields must not record correction memory.
+The SQLite adapter is the production path for user lexicon and correction memory. It uses a per-user local database under `~/Library/Application Support/Lekh Keyboard/` on macOS, enables WAL mode, never enables telemetry, and suppresses correction-memory reads in secure/password/code contexts. Browser Keyboard Lab may use in-memory or browser-local adapters. Secure fields must not record correction memory.

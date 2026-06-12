@@ -72,6 +72,21 @@ describe("native JSON file keyboard stores", () => {
     expect(await memory.query("pra", defaultTypingContext("romanized"))).toHaveLength(0);
   });
 
+  it("forgets correction memory by input and chosen output", async () => {
+    const storage = new JsonFileKeyboardStorage(await tempStoragePath());
+    const memory = storage.correctionMemory();
+    await memory.record(memoryEntry("mem_1", "niraj", "निरज"));
+    await memory.record(memoryEntry("mem_2", "niraj", "नीरज"));
+
+    await memory.forget("niraj", "निरज");
+    expect(await memory.query("niraj", defaultTypingContext("romanized"))).toEqual([
+      expect.objectContaining({ chosenOutput: "नीरज" })
+    ]);
+
+    await memory.forget("niraj");
+    expect(await memory.query("niraj", defaultTypingContext("romanized"))).toHaveLength(0);
+  });
+
   it("documents per-user platform storage directories", () => {
     expect(nativeKeyboardDataDir("windows", "C:\\Users\\rohan")).toContain("AppData");
     expect(nativeKeyboardDataDir("macos", "/Users/rohan")).toBe("/Users/rohan/Library/Application Support/Lekh Keyboard");
@@ -82,4 +97,22 @@ describe("native JSON file keyboard stores", () => {
 async function tempStoragePath(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "lekh-keyboard-storage-"));
   return join(dir, "keyboard-store.json");
+}
+
+function memoryEntry(id: string, normalizedInput: string, chosenOutput: string): CorrectionMemoryEntry {
+  return {
+    id,
+    normalizedInput,
+    chosenOutput,
+    normalizedOutput: chosenOutput,
+    rejectedAlternatives: [],
+    context: { leftWindow: "", rightWindow: "" },
+    source: "user-accept",
+    frequency: 1,
+    confidenceAtSelection: 0.9,
+    timestamps: {
+      firstSeen: "2026-05-28T00:00:00.000Z",
+      lastUsed: "2026-05-28T00:00:00.000Z"
+    }
+  };
 }

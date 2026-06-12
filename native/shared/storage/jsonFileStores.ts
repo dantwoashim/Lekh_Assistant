@@ -158,6 +158,20 @@ export class JsonFileCorrectionMemoryStore implements KeyboardCorrectionMemorySt
     return current.correctionMemory.filter((entry) => entry.normalizedInput.toLowerCase().startsWith(normalizedInput));
   }
 
+  async forget(input: string, chosenOutput?: string): Promise<void> {
+    const normalizedInput = input.trim().toLowerCase();
+    const normalizedOutput = chosenOutput?.trim().toLowerCase();
+    const current = await this.storage.read();
+    await this.storage.write({
+      ...current,
+      correctionMemory: current.correctionMemory.filter((entry) => {
+        if (entry.normalizedInput.toLowerCase() !== normalizedInput) return true;
+        if (!normalizedOutput) return false;
+        return entry.normalizedOutput.toLowerCase() !== normalizedOutput && entry.chosenOutput.trim().toLowerCase() !== normalizedOutput;
+      })
+    });
+  }
+
   async reset(): Promise<void> {
     const current = await this.storage.read();
     await this.storage.write({ ...current, correctionMemory: [] });

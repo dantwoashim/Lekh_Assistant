@@ -128,6 +128,20 @@ const FORMAL_TOKEN_OVERRIDES = new Map<string, string>([
   ["bikaassangai", "विकाससँगै"]
 ]);
 
+const CASUAL_TAIL_OVERRIDES = new Map<string, string>([
+  ["baato", "बाटो"],
+  ["bato", "बाटो"],
+  ["vato", "बाटो"],
+  ["chha", "छ"],
+  ["cha", "छ"],
+  ["xa", "छ"],
+  ["xaina", "छैन"],
+  ["xau", "छौ"],
+  ["xu", "छु"],
+  ["xan", "छन्"],
+  ["xas", "छस्"]
+]);
+
 export function transliterateRomanized(
   input: string,
   profile: RomanizationProfile = "common-nepali",
@@ -317,6 +331,41 @@ function convertToken(token: string, profile: RomanizationProfile, options: Tran
           output: formalOverride,
           rule: "formal-token-override",
           notes: ["Reviewed high-value formal Romanized case."]
+        },
+        ...ruleConversion.trace
+      ]
+    };
+  }
+  const casualTailOverride = CASUAL_TAIL_OVERRIDES.get(normalizedToken);
+  if (casualTailOverride) {
+    const parseToken = normalizeRomanizedTokenForParsing(token);
+    const ruleConversion = composeRomanizedToken(parseToken);
+    return {
+      input: token,
+      output: casualTailOverride,
+      candidates: uniqueRankedCandidates([
+        {
+          text: casualTailOverride,
+          normalizedText: normalizeNepaliText(casualTailOverride),
+          score: SCORE.exactAlias + 10,
+          source: "variant",
+          reason: "Reviewed casual Nepali typing convention"
+        },
+        {
+          text: ruleConversion.output,
+          normalizedText: normalizeNepaliText(ruleConversion.output),
+          score: SCORE.rule,
+          source: "rule",
+          reason: "Rule-only parse candidate"
+        },
+        ...ambiguityCandidates(parseToken, ruleConversion.output)
+      ], 8),
+      trace: [
+        {
+          input: token,
+          output: casualTailOverride,
+          rule: "casual-tail-override",
+          notes: ["Messenger-style Nepali spelling convention."]
         },
         ...ruleConversion.trace
       ]
@@ -735,6 +784,28 @@ function ambiguityCandidates(token: string, defaultOutput: string): Candidate[] 
       score: 540,
       source: "variant",
       reason: "x can be selected as क्ष by profile or dictionary candidate"
+    });
+    if (/[aeiou]/i.test(lower.slice(lower.indexOf("x") + 1, lower.indexOf("x") + 2))) {
+      const chhaCandidate = composeRomanizedToken(token.replace(/x/gi, "chh")).output;
+      candidates.push({
+        text: chhaCandidate,
+        normalizedText: normalizeNepaliText(chhaCandidate),
+        score: 570,
+        source: "variant",
+        reason: "x can be selected as छ in common Nepali chat typing"
+      });
+    }
+  }
+
+  if (/^[bv]a[a-z]+$/i.test(token)) {
+    const longAInput = token.replace(/^[bv]a/i, "baa");
+    const longA = composeRomanizedToken(longAInput).output;
+    candidates.push({
+      text: longA,
+      normalizedText: normalizeNepaliText(longA),
+      score: 565,
+      source: "variant",
+      reason: "initial ba/va can imply long बा in casual road/place words"
     });
   }
 

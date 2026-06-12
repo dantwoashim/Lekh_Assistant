@@ -63,4 +63,36 @@ describe("keyboard native storage contracts", () => {
     expect(await store.query("pra", defaultTypingContext("romanized"))).toHaveLength(1);
     expect(await store.query("pra", { ...defaultTypingContext("romanized"), secureInput: true })).toHaveLength(0);
   });
+
+  it("forgets correction memory entries by input and optional output", async () => {
+    const store = new InMemoryKeyboardCorrectionMemoryStore();
+    await store.record(memoryEntry("mem_1", "niraj", "निरज"));
+    await store.record(memoryEntry("mem_2", "niraj", "नीरज"));
+
+    await store.forget("niraj", "निरज");
+    expect(await store.query("niraj", defaultTypingContext("romanized"))).toEqual([
+      expect.objectContaining({ chosenOutput: "नीरज" })
+    ]);
+
+    await store.forget("niraj");
+    expect(await store.query("niraj", defaultTypingContext("romanized"))).toHaveLength(0);
+  });
 });
+
+function memoryEntry(id: string, normalizedInput: string, chosenOutput: string): CorrectionMemoryEntry {
+  return {
+    id,
+    normalizedInput,
+    chosenOutput,
+    normalizedOutput: chosenOutput,
+    rejectedAlternatives: [],
+    context: { leftWindow: "", rightWindow: "" },
+    source: "user-accept",
+    frequency: 1,
+    confidenceAtSelection: 0.9,
+    timestamps: {
+      firstSeen: "2026-05-27T00:00:00.000Z",
+      lastUsed: "2026-05-27T00:00:00.000Z"
+    }
+  };
+}

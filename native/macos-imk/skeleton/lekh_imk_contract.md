@@ -3,31 +3,34 @@
 The IMK bundle must be thin:
 
 - receive key events through `IMKInputController`;
-- translate them into `KeyboardKeyEvent`;
-- call the engine through an XPC service;
+- keep the keystroke hot path inside the local IMK process;
+- query the memory-mapped `runtime-suggestions.lkb` binary lexicon;
 - use marked text for composition preview;
 - use `IMKCandidates` for first candidate UI;
 - commit selected text through IMK APIs;
-- pass through on XPC timeout or unavailability.
+- pass through safely if a host app cannot accept composition.
 
-The skeleton feasibility behavior is:
+The minimum native behavior is:
 
-- test key `k` sets marked text and may show dummy candidate `क`;
-- Enter commits dummy text;
+- `swasthya ` commits `स्वास्थ्य `;
+- Enter/Space commit the selected composition;
+- Backspace edits composition;
 - Escape cancels marked text;
-- XPC failure or timeout passes through.
+- Command/Control/Option shortcuts pass through.
 
 Hot path requirements:
 
-- XPC service name: `com.lekh.keyboard.EngineXPC`;
-- common target: under 10 to 20 ms;
-- hard timeout: 50 ms;
-- timeout fallback: preserve marked text if already active, otherwise pass through raw key;
-- never block host apps while launching or reconnecting the XPC service.
+- binary lexicon ready target: under 5 ms from mmap open/header parse;
+- candidate lookup target: under 1 ms p99;
+- steady-state keyboard RSS target: under 25 MB;
+- no per-keystroke XPC, network, daemon launch, or synchronous file decoding;
+- any XPC/file-watching mechanism is allowed only for signed dictionary-pack hot-swap outside the key event path;
+- never block host apps while refreshing packs.
 
 Secure input:
 
 - password/secure fields pass through or suppress suggestions/memory according to OS policy;
-- no typed text leaves the local XPC boundary.
+- no typed text leaves the local process boundary;
+- diagnostics record timing counters only, not keys or text.
 
 Production requires Developer ID signing and notarization.

@@ -65,6 +65,18 @@ describe("transliterateRomanized", () => {
     expect(transliterateRomanized("shram").normalizedOutput).toBe("श्रम");
   });
 
+  it("handles common chat-style tail spellings without requiring a server model", () => {
+    expect(transliterateRomanized("vato").normalizedOutput).toBe("बाटो");
+    expect(transliterateRomanized("bato").normalizedOutput).toBe("बाटो");
+    expect(transliterateRomanized("baato").normalizedOutput).toBe("बाटो");
+    expect(transliterateRomanized("chha").normalizedOutput).toBe("छ");
+    expect(transliterateRomanized("cha").normalizedOutput).toBe("छ");
+    expect(transliterateRomanized("xa").normalizedOutput).toBe("छ");
+    expect(transliterateRomanized("xaina").normalizedOutput).toBe("छैन");
+    expect(transliterateRomanized("x").normalizedOutput).toBe("x");
+    expect(transliterateRomanized("xetra").candidates.some((candidate) => candidate.normalizedText === "क्षेत्र")).toBe(true);
+  });
+
   it("preserves mixed English/Nepali desktop text", () => {
     expect(transliterateRomanized("NID form ko naam field").normalizedOutput).toBe("NID form को नाम field");
     expect(transliterateRomanized("PDF ma naam").normalizedOutput).toBe("PDF मा नाम");
