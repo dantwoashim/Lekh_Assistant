@@ -439,7 +439,6 @@ log "install started payload=$PAYLOAD dest=$DEST version=$APP_VERSION build=$APP
 "$RESOURCE_DIR/register-lekh-input-source" "$DEST" --disable >> "$LOG_FILE" 2>&1 || true
 /usr/bin/pkill -x LekhInputMethodApp >> "$LOG_FILE" 2>&1 || true
 "$RESOURCE_DIR/restore-system-keyboard" --snapshot >> "$LOG_FILE" 2>&1 || true
-"$RESOURCE_DIR/purge-lekh-input-sources" >> "$LOG_FILE" 2>&1 || true
 
 if [[ -d "$DEST" ]]; then
   BACKUP_DEST="$BACKUP_ROOT/Lekh Keyboard.app.backup.$(/bin/date -u '+%Y%m%dT%H%M%SZ')"
@@ -454,9 +453,11 @@ fi
 if [[ -d "$DEST" ]]; then
   OLD_DEST="$HOME/Library/Input Methods/.Lekh Keyboard.app.previous.$$"
   /bin/rm -rf "$OLD_DEST"
+  "$LSREGISTER" -u "$DEST" >> "$LOG_FILE" 2>&1 || true
   /bin/mv "$DEST" "$OLD_DEST" || fail "could not move old install aside"
   DEST_REPLACED=1
 fi
+"$RESOURCE_DIR/purge-lekh-input-sources" >> "$LOG_FILE" 2>&1 || true
 /bin/mv "$TMP_DEST" "$DEST" || fail "could not move install into place"
 DEST_REPLACED=0
 /bin/rm -rf "$OLD_DEST"
