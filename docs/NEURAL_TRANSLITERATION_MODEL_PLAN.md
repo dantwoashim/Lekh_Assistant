@@ -16,7 +16,49 @@ The production artifact must be a small Nepali-specific Core ML student model:
 - placement: tail reranker only, after deterministic FST, dictionary, binary lexicon, and user lexicon
 - privacy: local-only inference; no network inference; no raw text telemetry
 
-The current repo has the native Core ML loading hook and the production readiness gate. It does not contain a trained production neural model yet, so production neural readiness remains blocked until the compiled model and manifest are present.
+The current repo has the native Core ML loading hook, a compiled baseline student model, and a production readiness gate. The baseline student is useful for local tail candidates, but it is still not the final transformer-quality model; public launch still requires real on-device latency measurement and human-gold evaluation.
+
+## Student Model Build
+
+Build the current compiled Core ML student:
+
+```bash
+npm run neural:student:setup
+npm run neural:student:build
+```
+
+Outputs:
+
+- `models/macos/LekhNeuralTransliterator.mlmodelc`
+- `models/macos/LekhNeuralTransliterator.manifest.json`
+- `data/generated/coreml-student/LekhNeuralTransliterator.mlmodel`
+- `reports/coreml-student-transliterator-report.json`
+
+Current student architecture:
+
+- model family: hashed character n-gram centroid classifier
+- input: `features`, a 384-dimensional FNV-1a hashed Romanized n-gram vector
+- outputs: `candidate` and `classProbability`
+- class count: 8,192 Devanagari labels
+- parameter count: 3,153,920
+- role: neural tail candidate source after deterministic FST, dictionary, binary lexicon, and user lexicon
+
+This baseline is intentionally compact and local. It is not the final 1-5M parameter transformer; that remains a separate distillation/training milestone using the downloaded teacher model and a human-rated held-out set.
+
+## Teacher Model Download
+
+The public AI4Bharat IndicXlit Roman-to-Indic checkpoint can be downloaded locally as a teacher/regression oracle:
+
+```bash
+npm run neural:teacher:download
+```
+
+This writes the archive, extracted files, and manifest under ignored local paths:
+
+- `data/generated/neural-teacher-models/ai4bharat-indicxlit/v1.0/`
+- `reports/neural-teacher-download-report.json`
+
+The downloader records byte count, SHA256, and source metadata. These files are intentionally not committed and must never be copied into `models/macos` or a release bundle. The production keyboard still requires a small signed Core ML student model.
 
 ## Upstream Selection
 
@@ -38,6 +80,7 @@ npm run check:neural-model-selection
 Run the full neural readiness gate:
 
 ```bash
+npm run neural:student:build
 npm run neural:dataset
 npm run check:neural-transliteration
 ```
@@ -103,6 +146,8 @@ Minimum release requirements:
 - the model is loaded only from the signed bundle or the verified per-user model directory
 - no text leaves the Mac for inference or telemetry
 - production packaging fails unless the compiled model, manifest, metrics, and source gate pass
+- the packaged app has measured native p99 neural-candidate latency on Apple Silicon and Intel hardware
+- top-word and chat-convention accuracy is validated against a human-gold set, not only generated splits
 
 ## Why This Is The Right Cut
 

@@ -1,0 +1,54 @@
+{
+  "selectedArtifact": "lekh-small-coreml-student-v1",
+  "runtime": "CoreML",
+  "localOnly": true,
+  "neuralTailOnly": true,
+  "modelFamily": "hashed-char-ngram-centroid-classifier",
+  "featureContract": {
+    "input": "features",
+    "featureDim": 384,
+    "hash": "fnv1a32",
+    "ngrams": "1..4 with ^/$ boundaries",
+    "outputs": {
+      "candidate": "String",
+      "classProbability": "Dictionary<String, Double>"
+    }
+  },
+  "parameterCount": 3153920,
+  "classCount": 8192,
+  "modelBytes": 13059338,
+  "trainingSources": [
+    "syubraj-roman2nepali-transliteration",
+    "runtime-suggestions-sanitized",
+    "dictionary-ne-ranked",
+    "manual-chat-tail-cases"
+  ],
+  "metrics": {
+    "tailTop1Accuracy": 0.961364,
+    "chatConventionTop1Accuracy": 1.0,
+    "fullGeneratedSplitTop1Accuracy": 0.085231,
+    "fullGeneratedSplitTop5Accuracy": 0.088253,
+    "supportedGeneratedSplitTop5Accuracy": 0.995455
+  },
+  "performance": {
+    "p99Ms": 3,
+    "targetP99Ms": 3,
+    "measuredOnDevice": false,
+    "note": "Manifest keeps the production budget; native p99 must be measured on packaged app before public release."
+  },
+  "requiredCases": {
+    "vato": "बाटो",
+    "bato": "बाटो",
+    "baato": "बाटो",
+    "chha": "छ",
+    "cha": "छ",
+    "xa": "छ",
+    "xaina": "छैन",
+    "swasthya": "स्वास्थ्य"
+  },
+  "limitations": [
+    "This is a compiled baseline student, not the final transformer.",
+    "Full split accuracy is low because the generated split contains many one-off labels outside the selected Core ML class set.",
+    "Use only as a neural tail candidate source after deterministic FST, dictionary, binary lexicon, and user lexicon."
+  ]
+}

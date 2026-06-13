@@ -1,6 +1,6 @@
 # macOS Neural Model Slot
 
-This directory is intentionally empty until a real production Core ML transliteration model is trained, evaluated, and compiled.
+This directory contains the compiled baseline Core ML transliteration student.
 
 Required production files:
 
@@ -18,3 +18,20 @@ node scripts/check-neural-transliteration-readiness.mjs --production
 all pass.
 
 Do not place large Hugging Face checkpoints here. The shipping artifact must be a small local Core ML student model, not a research/teacher model.
+
+Rebuild the current student:
+
+```bash
+npm run neural:student:setup
+npm run neural:student:build
+```
+
+The current compiled baseline is a 384-feature hashed character n-gram classifier with 8,192 Devanagari output labels. It is a local neural tail candidate source, not the final transformer-quality model.
+
+To download the current offline teacher model for distillation and regression testing, run:
+
+```bash
+npm run neural:teacher:download
+```
+
+That command stores AI4Bharat IndicXlit under ignored `data/generated/` paths and records a manifest. It does not make the app production-neural-ready.
