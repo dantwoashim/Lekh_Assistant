@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+  xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+  xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Lekh Keyboard Updates</title>
+    <link>https://lekh-assistant.pages.dev/</link>
+    <description>Signed test-adhoc updates for Lekh Keyboard</description>
+    <language>en</language>
+    <item>
+      <title>Lekh Keyboard 0.1.0</title>
+      <sparkle:version>5</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:minimumAutoupdateVersion>5</sparkle:minimumAutoupdateVersion>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Sat, 13 Jun 2026 09:19:42 GMT</pubDate>
+      <description><![CDATA[Local-first Nepali keyboard update.]]></description>
+      <enclosure
+        url="https://lekh-assistant.pages.dev/updates/macos/Lekh-Keyboard-Test-Installer.zip"
+        sparkle:version="5"
+        sparkle:shortVersionString="0.1.0"
+        type="application/zip"
+        length="4735579"
+        sparkle:edSignature="qI/eXagN5KYbhzDEkbt32ZvuA5udOCWv4+yKXMtD/8Cs+NUc1E9efr7zPZtUk5f8WhMtbTscxT2uAERwwL38Cw=="
+        sparkle:sha256="8355ad4cf2415cee403353d316e1192f9edd9a7745a62a29770d1cc42df82402" />
+    </item>
+  </channel>
+</rss>

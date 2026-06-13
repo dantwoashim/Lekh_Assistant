@@ -57,6 +57,7 @@ private final class LekhBinaryLexicon {
   private let prefixCount: Int
   private let prefixOffset: Int
   private let prefixStride: Int
+  private let refCount: Int
   private let refOffset: Int
   private let stringOffset: Int
   private let stringBytes: Int
@@ -96,19 +97,29 @@ private final class LekhBinaryLexicon {
     self.prefixCount = Int(Self.u32(data, 28))
     self.prefixOffset = Int(Self.u32(data, 32))
     self.prefixStride = Int(Self.u32(data, 36))
+    self.refCount = Int(Self.u32(data, 40))
     self.refOffset = Int(Self.u32(data, 44))
     self.stringOffset = Int(Self.u32(data, 48))
     self.stringBytes = Int(Self.u32(data, 52))
     self.maxPrefixLength = Int(Self.u32(data, 56))
 
-    guard entryStride >= 24, prefixStride >= 16 else { return nil }
-    guard entryOffset >= 64,
-          entryOffset + entryCount * entryStride <= data.count,
-          prefixOffset >= entryOffset,
-          prefixOffset + prefixCount * prefixStride <= data.count,
-          refOffset >= prefixOffset,
-          stringOffset >= refOffset,
-          stringOffset + stringBytes <= data.count else {
+    guard entryStride >= 24,
+          prefixStride >= 16,
+          maxPrefixLength >= 1,
+          maxPrefixLength <= 12,
+          entryOffset >= 64,
+          entryOffset <= prefixOffset,
+          prefixOffset <= refOffset,
+          refOffset <= stringOffset,
+          Self.sectionFits(offset: entryOffset, count: entryCount, stride: entryStride, fileBytes: data.count),
+          Self.sectionFits(offset: prefixOffset, count: prefixCount, stride: prefixStride, fileBytes: data.count),
+          Self.sectionFits(offset: refOffset, count: refCount, stride: 4, fileBytes: data.count),
+          Self.sectionFits(offset: stringOffset, count: stringBytes, stride: 1, fileBytes: data.count) else {
+      return nil
+    }
+    guard Self.validateEntries(data, entryCount: entryCount, entryOffset: entryOffset, entryStride: entryStride, stringBytes: stringBytes),
+          Self.validatePrefixes(data, prefixCount: prefixCount, prefixOffset: prefixOffset, prefixStride: prefixStride, refCount: refCount, stringBytes: stringBytes),
+          Self.validateRefs(data, refCount: refCount, refOffset: refOffset, entryCount: entryCount) else {
       return nil
     }
   }
@@ -237,6 +248,75 @@ private final class LekhBinaryLexicon {
     data.withUnsafeBytes { rawBuffer in
       UInt32(littleEndian: rawBuffer.loadUnaligned(fromByteOffset: offset, as: UInt32.self))
     }
+  }
+
+  private static func sectionFits(offset: Int, count: Int, stride: Int, fileBytes: Int) -> Bool {
+    guard offset >= 64, count >= 0, stride > 0 else { return false }
+    let byteCount = UInt64(count) * UInt64(stride)
+    let end = UInt64(offset) + byteCount
+    return end <= UInt64(fileBytes)
+  }
+
+  private static func rangeFits(offset: Int, length: Int, limit: Int) -> Bool {
+    guard offset >= 0, length >= 0 else { return false }
+    return UInt64(offset) + UInt64(length) <= UInt64(limit)
+  }
+
+  private static func validateEntries(
+    _ data: Data,
+    entryCount: Int,
+    entryOffset: Int,
+    entryStride: Int,
+    stringBytes: Int
+  ) -> Bool {
+    for index in 0..<entryCount {
+      let offset = entryOffset + index * entryStride
+      let romanOffset = Int(u32(data, offset))
+      let romanLength = Int(u16(data, offset + 4))
+      let unicodeLength = Int(u16(data, offset + 6))
+      let unicodeOffset = Int(u32(data, offset + 8))
+      guard rangeFits(offset: romanOffset, length: romanLength, limit: stringBytes),
+            rangeFits(offset: unicodeOffset, length: unicodeLength, limit: stringBytes) else {
+        return false
+      }
+    }
+    return true
+  }
+
+  private static func validatePrefixes(
+    _ data: Data,
+    prefixCount: Int,
+    prefixOffset: Int,
+    prefixStride: Int,
+    refCount: Int,
+    stringBytes: Int
+  ) -> Bool {
+    for index in 0..<prefixCount {
+      let offset = prefixOffset + index * prefixStride
+      let prefixStringOffset = Int(u32(data, offset))
+      let prefixStringLength = Int(u16(data, offset + 4))
+      let startRef = Int(u32(data, offset + 8))
+      let count = Int(u32(data, offset + 12))
+      guard rangeFits(offset: prefixStringOffset, length: prefixStringLength, limit: stringBytes),
+            rangeFits(offset: startRef, length: count, limit: refCount) else {
+        return false
+      }
+    }
+    return true
+  }
+
+  private static func validateRefs(
+    _ data: Data,
+    refCount: Int,
+    refOffset: Int,
+    entryCount: Int
+  ) -> Bool {
+    for index in 0..<refCount {
+      let offset = refOffset + index * 4
+      guard offset + 4 <= data.count else { return false }
+      guard Int(u32(data, offset)) < entryCount else { return false }
+    }
+    return true
   }
 
   private static func ranked(_ rows: [NativeCandidateRow], limit: Int) -> [NativeCandidateRow] {

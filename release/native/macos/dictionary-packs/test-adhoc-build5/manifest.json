@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-13T09:19:42.129Z",
+  "channel": "test-adhoc",
+  "version": "test-adhoc-build5",
+  "binaryFormat": "LEKHBLX1",
+  "binaryFormatVersion": 1,
+  "bytes": 5211222,
+  "sha256": "313a41598949e5450a1f053f8d22c5dba85db03aefa4811c86639958ca7d574e",
+  "path": "runtime-suggestions-test-adhoc-build5.lkb",
+  "minAppVersion": "0.1.0",
+  "minAppBuild": 5,
+  "maxAppBuild": null,
+  "installName": "runtime-suggestions.current.lkb",
+  "signature": {
+    "algorithm": "Ed25519",
+    "valueBase64": "G2Lr1lnVkY974smeeDBJisNgyNIk3PTDnG1YIB9uKgvt0vqXgM8cKhMkEQMk0SZ+1lmE+e2HXXRSdeTtoeMBCg==",
+    "message": "LEKH_PACK_V2\\nversion\\nsha256\\nbytes\\nformat\\nformatVersion\\nminAppVersion\\nminAppBuild\\nmaxAppBuild\\npath",
+    "signedAt": "2026-06-13T09:19:42.130Z"
+  }
+}

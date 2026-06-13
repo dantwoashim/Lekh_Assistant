@@ -8,6 +8,7 @@ const requiredGoldRows = production ? 3500 : 1;
 const requiredGoldWords = production ? 3000 : 0;
 const requiredGoldPhrases = production ? 500 : 0;
 const requiredHumanRatedHoldoutRows = production ? 500 : 0;
+const minRuntimeSourceK = 3;
 const CORPUS_DIR = path.join(ROOT, "data", "keyboard-corpus");
 const REPORTS_DIR = path.join(CORPUS_DIR, "reports");
 const SRC_RUNTIME_PACK = path.join(ROOT, "src", "data", "keyboard-packs", "v0.1", "runtime-suggestions.json");
@@ -155,6 +156,7 @@ const report = {
   requiredGoldWords,
   requiredGoldPhrases,
   requiredHumanRatedHoldoutRows,
+  minRuntimeSourceK,
   fixtureCount: sources.length,
   sourceCount: sources.length,
   curatedRows: curation.counters ?? {},
@@ -251,8 +253,20 @@ function validateRuntimePackFirewall(runtimePack) {
         variants.add(unicode);
         romanizedMap.set(romanized, variants);
       }
+      for (const reason of privacyFirewallFailures(row)) {
+        runtimeViolations.push({ reason, location, romanized, unicode });
+      }
     });
     validateExplicitCandidateRanks(key, rows, romanizedMap, runtimeViolations);
+  }
+  for (const key of ["nextContexts", "proofread"]) {
+    const rows = Array.isArray(runtimePack[key]) ? runtimePack[key] : [];
+    rows.forEach((row, index) => {
+      const location = `${key}[${index}]`;
+      for (const reason of privacyFirewallFailures(row)) {
+        runtimeViolations.push({ reason, location });
+      }
+    });
   }
   return runtimeViolations;
 }
@@ -316,4 +330,49 @@ function normalizeRomanized(value) {
 
 function normalizeUnicode(value) {
   return String(value).trim().normalize("NFC");
+}
+
+function privacyFirewallFailures(row) {
+  const failures = [];
+  if (row?.learned === true || row?.private === true || row?.userGenerated === true) {
+    failures.push("runtime-private-source-row");
+  }
+  const sourceText = [
+    row?.source,
+    row?.sourceType,
+    row?.origin,
+    row?.provenance,
+    row?.reviewStatus
+  ]
+    .filter((value) => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+  if (/\b(user|personal|private|clipboard|notes|import|learned|local-lexicon|diagnostic)\b/.test(sourceText)) {
+    failures.push("runtime-private-source-row");
+  }
+  for (const key of ["distinctSourceCount", "sourceCount", "sourceK", "kAnonymity", "kAnonymousCount"]) {
+    if (!(key in row)) continue;
+    const value = Number(row[key]);
+    if (Number.isFinite(value) && value > 0 && value < minRuntimeSourceK) {
+      failures.push("runtime-source-k-anonymity-too-low");
+    }
+  }
+  const text = [
+    row?.romanized,
+    row?.unicode,
+    row?.context,
+    row?.next,
+    row?.error,
+    row?.correction
+  ]
+    .filter((value) => typeof value === "string")
+    .join(" ");
+  if (/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(text) ||
+      /\b(?:\+?977[-\s]?)?(?:98|97)\d{8}\b/.test(text) ||
+      /\b\d{6,}\b/.test(text) ||
+      /\b(?:otp|pin|pan|password|passcode)[:=\s-]+[a-z0-9]{3,}\b/i.test(text) ||
+      /\b[a-z]{2,}\d{3,}[a-z0-9]*\b/i.test(text)) {
+    failures.push("runtime-personal-token-like-row");
+  }
+  return [...new Set(failures)];
 }

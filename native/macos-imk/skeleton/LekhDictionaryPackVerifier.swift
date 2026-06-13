@@ -91,8 +91,8 @@ public enum LekhDictionaryPackVerifier {
     guard manifest.bytes == packData.count else {
       return rejected("dictionary update rejected: byte count mismatch")
     }
-    guard packData.starts(with: Array("LEKHBLX1".utf8)) else {
-      return rejected("dictionary update rejected: invalid pack header")
+    guard isValidBinaryPack(packData) else {
+      return rejected("dictionary update rejected: invalid or truncated pack layout")
     }
     guard sha256Hex(packData) == manifest.sha256.lowercased() else {
       return rejected("dictionary update rejected: sha256 mismatch")
@@ -168,6 +168,96 @@ public enum LekhDictionaryPackVerifier {
   }
 
   #if canImport(CryptoKit)
+  private static func isValidBinaryPack(_ data: Data) -> Bool {
+    let magic = Array("LEKHBLX1".utf8)
+    guard data.count >= 64, Array(data.prefix(8)) == magic else { return false }
+    let version = Int(u32(data, 8))
+    let headerSize = Int(u32(data, 12))
+    let entryCount = Int(u32(data, 16))
+    let entryOffset = Int(u32(data, 20))
+    let entryStride = Int(u32(data, 24))
+    let prefixCount = Int(u32(data, 28))
+    let prefixOffset = Int(u32(data, 32))
+    let prefixStride = Int(u32(data, 36))
+    let refCount = Int(u32(data, 40))
+    let refOffset = Int(u32(data, 44))
+    let stringOffset = Int(u32(data, 48))
+    let stringBytes = Int(u32(data, 52))
+    let maxPrefixLength = Int(u32(data, 56))
+
+    guard version == 1,
+          headerSize == 64,
+          entryStride >= 24,
+          prefixStride >= 16,
+          maxPrefixLength >= 1,
+          maxPrefixLength <= 12,
+          64 <= entryOffset,
+          entryOffset <= prefixOffset,
+          prefixOffset <= refOffset,
+          refOffset <= stringOffset,
+          sectionFits(offset: entryOffset, count: entryCount, stride: entryStride, fileBytes: data.count),
+          sectionFits(offset: prefixOffset, count: prefixCount, stride: prefixStride, fileBytes: data.count),
+          sectionFits(offset: refOffset, count: refCount, stride: 4, fileBytes: data.count),
+          sectionFits(offset: stringOffset, count: stringBytes, stride: 1, fileBytes: data.count) else {
+      return false
+    }
+
+    for index in 0..<entryCount {
+      let offset = entryOffset + index * entryStride
+      let romanOffset = Int(u32(data, offset))
+      let romanLength = Int(u16(data, offset + 4))
+      let unicodeLength = Int(u16(data, offset + 6))
+      let unicodeOffset = Int(u32(data, offset + 8))
+      guard rangeFits(offset: romanOffset, length: romanLength, limit: stringBytes),
+            rangeFits(offset: unicodeOffset, length: unicodeLength, limit: stringBytes) else {
+        return false
+      }
+    }
+
+    for index in 0..<prefixCount {
+      let offset = prefixOffset + index * prefixStride
+      let prefixStringOffset = Int(u32(data, offset))
+      let prefixStringLength = Int(u16(data, offset + 4))
+      let startRef = Int(u32(data, offset + 8))
+      let count = Int(u32(data, offset + 12))
+      guard rangeFits(offset: prefixStringOffset, length: prefixStringLength, limit: stringBytes),
+            rangeFits(offset: startRef, length: count, limit: refCount) else {
+        return false
+      }
+    }
+
+    for index in 0..<refCount {
+      let offset = refOffset + index * 4
+      guard offset + 4 <= data.count else { return false }
+      guard Int(u32(data, offset)) < entryCount else { return false }
+    }
+    return true
+  }
+
+  private static func sectionFits(offset: Int, count: Int, stride: Int, fileBytes: Int) -> Bool {
+    guard offset >= 64, count >= 0, stride > 0 else { return false }
+    let byteCount = UInt64(count) * UInt64(stride)
+    let end = UInt64(offset) + byteCount
+    return end <= UInt64(fileBytes)
+  }
+
+  private static func rangeFits(offset: Int, length: Int, limit: Int) -> Bool {
+    guard offset >= 0, length >= 0 else { return false }
+    return UInt64(offset) + UInt64(length) <= UInt64(limit)
+  }
+
+  private static func u16(_ data: Data, _ offset: Int) -> UInt16 {
+    data.withUnsafeBytes { rawBuffer in
+      UInt16(littleEndian: rawBuffer.loadUnaligned(fromByteOffset: offset, as: UInt16.self))
+    }
+  }
+
+  private static func u32(_ data: Data, _ offset: Int) -> UInt32 {
+    data.withUnsafeBytes { rawBuffer in
+      UInt32(littleEndian: rawBuffer.loadUnaligned(fromByteOffset: offset, as: UInt32.self))
+    }
+  }
+
   private static func sha256Hex(_ data: Data) -> String {
     SHA256.hash(data: data)
       .map { String(format: "%02x", $0) }

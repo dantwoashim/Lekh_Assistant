@@ -40,6 +40,15 @@ try {
   }
 
   const compiled = compileLexicon(pack);
+  const binaryValidation = validateBinaryLexiconBuffer(compiled.buffer);
+  if (binaryValidation.failures.length > 0) {
+    finish("failed", {
+      input: relative(ROOT, inputPath),
+      output: relative(ROOT, outputPath),
+      format: "LEKHBLX1",
+      binaryValidation
+    }, 1);
+  }
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, compiled.buffer);
 
@@ -72,6 +81,7 @@ try {
       steadyStateRssTargetMb: 25
     },
     validation,
+    binaryValidation,
     benchmark,
     failures
   }, failures.length === 0 ? 0 : 1);
@@ -463,7 +473,10 @@ function benchmarkBinaryLookup(buffer, queries) {
 
 class BinaryReader {
   constructor(buffer) {
-    if (!buffer.subarray(0, 8).equals(MAGIC)) throw new Error("invalid binary lexicon magic");
+    const validation = validateBinaryLexiconBuffer(buffer);
+    if (validation.failures.length > 0) {
+      throw new Error(`invalid binary lexicon: ${validation.failures.join("; ")}`);
+    }
     this.buffer = buffer;
     this.entryCount = buffer.readUInt32LE(16);
     this.entryOffset = buffer.readUInt32LE(20);
@@ -471,6 +484,7 @@ class BinaryReader {
     this.prefixCount = buffer.readUInt32LE(28);
     this.prefixOffset = buffer.readUInt32LE(32);
     this.prefixStride = buffer.readUInt32LE(36);
+    this.refCount = buffer.readUInt32LE(40);
     this.refOffset = buffer.readUInt32LE(44);
     this.stringOffset = buffer.readUInt32LE(48);
     this.stringBytes = buffer.readUInt32LE(52);
@@ -515,7 +529,7 @@ class BinaryReader {
   }
 
   entryAt(index) {
-    const offset = this.entryOffset + index * this.entryStride;
+      const offset = this.entryOffset + index * this.entryStride;
     return {
       romanized: this.stringAt(this.buffer.readUInt32LE(offset), this.buffer.readUInt16LE(offset + 4)),
       unicode: this.stringAt(this.buffer.readUInt32LE(offset + 8), this.buffer.readUInt16LE(offset + 6))
@@ -525,6 +539,131 @@ class BinaryReader {
   stringAt(offset, length) {
     return this.buffer.toString("utf8", this.stringOffset + offset, this.stringOffset + offset + length);
   }
+}
+
+function validateBinaryLexiconBuffer(buffer) {
+  const failures = [];
+  if (!Buffer.isBuffer(buffer)) failures.push("binary lexicon is not a buffer");
+  if (!buffer || buffer.length < HEADER_SIZE) {
+    return { status: "failed", failures: ["binary lexicon is smaller than the 64-byte header"] };
+  }
+  if (!buffer.subarray(0, 8).equals(MAGIC)) failures.push("invalid LEKHBLX1 magic");
+
+  const version = buffer.readUInt32LE(8);
+  const headerSize = buffer.readUInt32LE(12);
+  const entryCount = buffer.readUInt32LE(16);
+  const entryOffset = buffer.readUInt32LE(20);
+  const entryStride = buffer.readUInt32LE(24);
+  const prefixCount = buffer.readUInt32LE(28);
+  const prefixOffset = buffer.readUInt32LE(32);
+  const prefixStride = buffer.readUInt32LE(36);
+  const refCount = buffer.readUInt32LE(40);
+  const refOffset = buffer.readUInt32LE(44);
+  const stringOffset = buffer.readUInt32LE(48);
+  const stringBytes = buffer.readUInt32LE(52);
+  const maxPrefixLength = buffer.readUInt32LE(56);
+
+  if (version !== 1) failures.push(`unsupported binary version ${version}`);
+  if (headerSize !== HEADER_SIZE) failures.push(`invalid header size ${headerSize}`);
+  if (entryStride < ENTRY_STRIDE) failures.push(`entry stride ${entryStride} is smaller than ${ENTRY_STRIDE}`);
+  if (prefixStride < PREFIX_STRIDE) failures.push(`prefix stride ${prefixStride} is smaller than ${PREFIX_STRIDE}`);
+  if (maxPrefixLength < 1 || maxPrefixLength > MAX_PREFIX_LENGTH) {
+    failures.push(`max prefix length ${maxPrefixLength} outside supported range`);
+  }
+
+  checkSection("entries", entryOffset, entryCount, entryStride, buffer.length, failures);
+  checkSection("prefixes", prefixOffset, prefixCount, prefixStride, buffer.length, failures);
+  checkSection("refs", refOffset, refCount, 4, buffer.length, failures);
+  checkSection("strings", stringOffset, stringBytes, 1, buffer.length, failures);
+  if (!(HEADER_SIZE <= entryOffset && entryOffset <= prefixOffset && prefixOffset <= refOffset && refOffset <= stringOffset)) {
+    failures.push("binary lexicon sections are not monotonically ordered");
+  }
+
+  if (failures.length === 0) {
+    for (let index = 0; index < entryCount; index += 1) {
+      const offset = entryOffset + index * entryStride;
+      const romanOffset = buffer.readUInt32LE(offset);
+      const romanLength = buffer.readUInt16LE(offset + 4);
+      const unicodeLength = buffer.readUInt16LE(offset + 6);
+      const unicodeOffset = buffer.readUInt32LE(offset + 8);
+      if (!rangeInside(romanOffset, romanLength, stringBytes)) {
+        failures.push(`entry[${index}] romanized string is out of bounds`);
+        break;
+      }
+      if (!rangeInside(unicodeOffset, unicodeLength, stringBytes)) {
+        failures.push(`entry[${index}] unicode string is out of bounds`);
+        break;
+      }
+    }
+  }
+
+  if (failures.length === 0) {
+    for (let index = 0; index < prefixCount; index += 1) {
+      const offset = prefixOffset + index * prefixStride;
+      const prefixStringOffset = buffer.readUInt32LE(offset);
+      const prefixStringLength = buffer.readUInt16LE(offset + 4);
+      const startRef = buffer.readUInt32LE(offset + 8);
+      const count = buffer.readUInt32LE(offset + 12);
+      if (!rangeInside(prefixStringOffset, prefixStringLength, stringBytes)) {
+        failures.push(`prefix[${index}] string is out of bounds`);
+        break;
+      }
+      if (!rangeInside(startRef, count, refCount)) {
+        failures.push(`prefix[${index}] ref range is out of bounds`);
+        break;
+      }
+    }
+  }
+
+  if (failures.length === 0) {
+    for (let index = 0; index < refCount; index += 1) {
+      const entryIndex = buffer.readUInt32LE(refOffset + index * 4);
+      if (entryIndex >= entryCount) {
+        failures.push(`ref[${index}] points outside entry table`);
+        break;
+      }
+    }
+  }
+
+  return {
+    status: failures.length === 0 ? "passed" : "failed",
+    failures,
+    header: {
+      version,
+      headerSize,
+      entryCount,
+      entryOffset,
+      entryStride,
+      prefixCount,
+      prefixOffset,
+      prefixStride,
+      refCount,
+      refOffset,
+      stringOffset,
+      stringBytes,
+      maxPrefixLength,
+      fileBytes: buffer.length
+    }
+  };
+}
+
+function checkSection(name, offset, count, stride, fileBytes, failures) {
+  if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(count) || !Number.isSafeInteger(stride)) {
+    failures.push(`${name} section has unsafe integer metadata`);
+    return;
+  }
+  if (offset < HEADER_SIZE) failures.push(`${name} section starts before header end`);
+  const bytes = count * stride;
+  if (!Number.isSafeInteger(bytes) || bytes < 0) failures.push(`${name} section byte size overflows`);
+  if (offset + bytes > fileBytes) failures.push(`${name} section exceeds file length`);
+}
+
+function rangeInside(offset, length, limit) {
+  return Number.isSafeInteger(offset) &&
+    Number.isSafeInteger(length) &&
+    offset >= 0 &&
+    length >= 0 &&
+    offset + length <= limit;
 }
 
 function assertNfc(value, location, failures) {

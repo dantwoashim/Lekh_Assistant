@@ -22,6 +22,9 @@ const manifestPath = args.get("manifest") ?? join(releaseDir, "RELEASE-MANIFEST.
 const signaturePath = args.get("signature") ?? `${manifestPath}.minisig`;
 const checksumPath = args.get("checksums") ?? join(releaseDir, "SHA256SUMS.txt");
 const reportPath = args.get("report") ?? join(ROOT, "reports", "release-directory-manifest-report.json");
+const manifestVersion = args.get("version") ?? "0.1.0";
+const manifestBuild = Number(args.get("build") ?? 5);
+const releaseChannel = args.get("channel") ?? (process.env.LEKH_MAC_DEVELOPER_ID ? "developer-id" : "test-adhoc");
 const minisignSecretKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY ||
   join(ROOT, "data", "private", "lekh-release-manifest-minisign.sec");
 const minisignPublicKey = join(ROOT, "public", "security", "lekh-release-manifest-minisign.pub");
@@ -33,6 +36,9 @@ try {
   if (!existsSync(minisignSecretKey)) {
     finish("failed", { reason: "missing minisign secret key", expected: relative(ROOT, minisignSecretKey) }, 1);
   }
+  if (!Number.isFinite(manifestBuild) || manifestBuild < 1) {
+    finish("failed", { reason: "invalid manifest build", build: args.get("build") }, 1);
+  }
 
   const files = collectFiles(releaseDir)
     .filter((file) => !isGeneratedManifestFile(file))
@@ -41,9 +47,9 @@ try {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     product: "Lekh Keyboard",
-    channel: process.env.LEKH_MAC_DEVELOPER_ID ? "developer-id" : "test-adhoc",
-    version: "0.1.0",
-    build: 4,
+    channel: releaseChannel,
+    version: manifestVersion,
+    build: manifestBuild,
     hashAlgorithm: "SHA-256",
     signature: {
       algorithm: "minisign",
@@ -67,6 +73,7 @@ try {
   if (sign.status !== 0) {
     finish("failed", { reason: "minisign failed", stdout: sign.stdout, stderr: sign.stderr }, sign.status ?? 1);
   }
+  verifyMinisignSignature(manifestPath, signaturePath);
 
   const checksumFiles = collectFiles(releaseDir)
     .filter((file) => file !== checksumPath)
@@ -102,6 +109,29 @@ function isGeneratedManifestFile(file) {
 
 function sha256File(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
+function verifyMinisignSignature(manifest, signature) {
+  if (!existsSync(minisignPublicKey)) {
+    finish("failed", { reason: "missing minisign public key", expected: relative(ROOT, minisignPublicKey) }, 1);
+  }
+  const signatureLines = readFileSync(signature, "utf8").trim().split(/\r?\n/);
+  if (!signatureLines.some((line) => /^[A-Za-z0-9+/]+={0,2}$/.test(line))) {
+    finish("failed", { reason: "minisign signature has no base64 payload", signature: relative(ROOT, signature) }, 1);
+  }
+  const publicKey = readFileSync(minisignPublicKey, "utf8").trim().split(/\r?\n/).at(-1);
+  const verify = spawnSync("minisign", ["-Vm", manifest, "-x", signature, "-P", publicKey], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: "pipe"
+  });
+  if (verify.status !== 0) {
+    finish("failed", {
+      reason: "minisign verification failed after signing",
+      stdout: verify.stdout,
+      stderr: verify.stderr
+    }, verify.status ?? 1);
+  }
 }
 
 function finish(status, details, exitCode) {

@@ -18,8 +18,9 @@ for (let index = 2; index < process.argv.length; index += 1) {
 
 const zipPath = args.get("zip") ?? join(ROOT, "release", "native", "macos", "Lekh-Keyboard-Test-Installer.zip");
 const appcastPath = args.get("out") ?? join(ROOT, "release", "native", "macos", "appcast.xml");
-const version = args.get("version") ?? "4";
+const version = args.get("version") ?? "5";
 const shortVersion = args.get("short-version") ?? "0.1.0";
+const minimumAutoupdateVersion = args.get("minimum-autoupdate-version") ?? version;
 const channel = args.get("channel") ?? "monthly";
 const updateURL = args.get("url") ?? "https://lekh-assistant.pages.dev/updates/macos/Lekh-Keyboard-Test-Installer.zip";
 const privateKeyPath = args.get("private-key") ?? join(ROOT, "data", "private", "lekh-sparkle-ed25519-private.pem");
@@ -46,6 +47,7 @@ try {
     updateURL,
     version,
     shortVersion,
+    minimumAutoupdateVersion,
     length,
     signature,
     sha256,
@@ -58,6 +60,7 @@ try {
     channel,
     version,
     shortVersion,
+    minimumAutoupdateVersion,
     length,
     sha256,
     signatureAlgorithm: "Ed25519"
@@ -80,6 +83,7 @@ function appcastXml(details) {
       <title>${escapeXml(details.title)} ${escapeXml(details.shortVersion)}</title>
       <sparkle:version>${escapeXml(details.version)}</sparkle:version>
       <sparkle:shortVersionString>${escapeXml(details.shortVersion)}</sparkle:shortVersionString>
+      <sparkle:minimumAutoupdateVersion>${escapeXml(details.minimumAutoupdateVersion)}</sparkle:minimumAutoupdateVersion>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
       <pubDate>${escapeXml(details.pubDate)}</pubDate>
       <description><![CDATA[Local-first Nepali keyboard update.]]></description>
@@ -87,7 +91,7 @@ function appcastXml(details) {
         url="${escapeXml(details.updateURL)}"
         sparkle:version="${escapeXml(details.version)}"
         sparkle:shortVersionString="${escapeXml(details.shortVersion)}"
-        type="application/octet-stream"
+        type="application/zip"
         length="${details.length}"
         sparkle:edSignature="${escapeXml(details.signature)}"
         sparkle:sha256="${escapeXml(details.sha256)}" />

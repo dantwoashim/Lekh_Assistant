@@ -36,9 +36,15 @@ const zipPath = join(releaseDir, "Lekh-Keyboard-Test-Installer.zip");
 const skeletonDir = join(root, "native", "macos-imk", "skeleton");
 const iconSource = join(root, "build", "icon.icns");
 const signingIdentity = process.env.LEKH_MAC_DEVELOPER_ID || "-";
+const appShortVersion = process.env.LEKH_APP_SHORT_VERSION || "0.1.0";
+const appBuild = Number(process.env.LEKH_APP_BUILD || 5);
+const releaseChannel = signingIdentity === "-" ? "test-adhoc" : "developer-id";
 const minisignSecretKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY ||
   join(root, "data", "private", "lekh-release-manifest-minisign.sec");
 const minisignPublicKey = join(root, "public", "security", "lekh-release-manifest-minisign.pub");
+const sparklePrivateKey = process.env.LEKH_SPARKLE_EDDSA_PRIVATE_KEY_PATH ||
+  join(root, "data", "private", "lekh-sparkle-ed25519-private.pem");
+const appcastPath = join(releaseDir, "appcast.xml");
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const toolchainCacheDir = join(root, ".build-cache", "macos-toolchain");
 const toolchainEnv = {
@@ -80,6 +86,33 @@ function run(step, command, args, options = {}) {
     finish("failed", { step, command, args, stdout: result.stdout, stderr: result.stderr }, result.status ?? 1);
   }
   return result;
+}
+
+function minisignPublicKeyValue() {
+  if (!existsSync(minisignPublicKey)) {
+    finish("failed", {
+      step: "verify-minisign-signature",
+      reason: "Missing minisign public key.",
+      expected: minisignPublicKey
+    }, 1);
+  }
+  return readFileSync(minisignPublicKey, "utf8").trim().split(/\r?\n/).at(-1);
+}
+
+function verifyMinisignSignature(manifestPath, signaturePath, step) {
+  if (!existsSync(signaturePath)) {
+    finish("failed", { step, reason: "Missing minisign signature.", signaturePath }, 1);
+  }
+  const lines = readFileSync(signaturePath, "utf8").trim().split(/\r?\n/);
+  const base64Payloads = lines.filter((line) => /^[A-Za-z0-9+/]+={0,2}$/.test(line));
+  if (base64Payloads.length < 1) {
+    finish("failed", {
+      step,
+      reason: "Minisign signature has no base64 signature payload.",
+      signaturePath
+    }, 1);
+  }
+  run(step, "minisign", ["-Vm", manifestPath, "-x", signaturePath, "-P", minisignPublicKeyValue()]);
 }
 
 function signPath(path, step) {
@@ -263,9 +296,9 @@ function writeAppShellBundle({ appPath, displayName, identifier, executableName,
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>${appShortVersion}</string>
   <key>CFBundleVersion</key>
-  <string>4</string>
+  <string>${appBuild}</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>
@@ -323,6 +356,9 @@ mkdirSync(buildReleaseDir, { recursive: true });
 rmSync(join(releaseDir, "Lekh Keyboard Test Installer.app"), { recursive: true, force: true });
 rmSync(join(releaseDir, "Lekh Keyboard Uninstaller.app"), { recursive: true, force: true });
 rmSync(join(releaseDir, "Lekh Keyboard Test Installer"), { recursive: true, force: true });
+rmSync(join(releaseDir, "LekhInputMethodApp.universal"), { force: true });
+rmSync(join(releaseDir, "runtime-suggestions.lkb"), { force: true });
+rmSync(join(releaseDir, "runtime-suggestions.sanitized.json"), { force: true });
 
 const installerScript = `#!/usr/bin/env bash
 set -uo pipefail
@@ -537,7 +573,7 @@ writeFileSync(
   [
     "Lekh Keyboard Test Installer",
     "",
-    "Version: 0.1.0 build 4",
+    `Version: ${appShortVersion} build ${appBuild}`,
     "Signature: ad-hoc unless this package was built with LEKH_MAC_DEVELOPER_ID.",
     "",
     "Install:",
@@ -548,7 +584,7 @@ writeFileSync(
     "5. Installer rollback backups are stored under ~/Library/Application Support/Lekh Keyboard/InstallBackups and rotated to the newest 3 copies.",
     "",
     "Uninstall:",
-    "Open Lekh Keyboard Uninstaller.app. It asks for confirmation, restores the previous keyboard when possible, and deletes local learned words, packs, models, backups, caches, and logs.",
+    "Open Lekh Keyboard Uninstaller.app. It asks for confirmation, restores the previous keyboard when possible, deletes packs, models, backups, caches, and logs, and can optionally delete local learned words.",
     "",
     "Logs:",
     "~/Library/Logs/LekhKeyboard/install.log",
@@ -585,9 +621,9 @@ const releaseManifest = {
   schemaVersion: 1,
   generatedAt: new Date().toISOString(),
   product: "Lekh Keyboard",
-  channel: signingIdentity === "-" ? "test-adhoc" : "developer-id",
-  version: "0.1.0",
-  build: 4,
+  channel: releaseChannel,
+  version: appShortVersion,
+  build: appBuild,
   hashAlgorithm: "SHA-256",
   signature: {
     algorithm: "minisign",
@@ -615,6 +651,7 @@ if (!existsSync(manifestSignaturePath)) {
     reason: "minisign did not create RELEASE-MANIFEST.json.minisig"
   }, 1);
 }
+verifyMinisignSignature(releaseManifestPath, manifestSignaturePath, "verify-dist-manifest-minisign");
 
 const checksumTargets = walkPaths(distFolder)
   .filter((target) => lstatSync(target).isFile())
@@ -628,18 +665,17 @@ writeFileSync(join(distFolder, "SHA256SUMS.txt"), `${checksumLines.join("\n")}\n
 const releaseManifestSidecarPath = join(releaseDir, "RELEASE-MANIFEST.json");
 const manifestSignatureSidecarPath = join(releaseDir, "RELEASE-MANIFEST.json.minisig");
 const checksumSidecarPath = join(releaseDir, "SHA256SUMS.txt");
-copyFileSync(releaseManifestPath, releaseManifestSidecarPath);
-copyFileSync(manifestSignaturePath, manifestSignatureSidecarPath);
-copyFileSync(join(distFolder, "SHA256SUMS.txt"), checksumSidecarPath);
 stripCodeSignBlockedXattrs(installerApp);
 stripCodeSignBlockedXattrs(uninstallerApp);
 stripCodeSignBlockedXattrs(distFolder);
 verifySignedPath(installerApp, "verify-final-installer-app");
 verifySignedPath(uninstallerApp, "verify-final-uninstaller-app");
 
+rmSync(zipPath, { force: true });
 run("zip-installer-folder", "ditto", ["-c", "-k", "--keepParent", "--norsrc", "--noextattr", "--noacl", distFolder, zipPath], {
   cwd: releaseDir
 });
+run("verify-zip-central-directory", "unzip", ["-t", zipPath], { maxBuffer: 120 * 1024 * 1024 });
 
 const zipCheckDir = mkdtempSync(join(tmpdir(), "lekh-installer-verify-"));
 run("verify-zip-extract", "ditto", ["-x", "-k", zipPath, zipCheckDir]);
@@ -664,6 +700,70 @@ const extractedPayloadArchs = run(
   ["-archs", join(extractedInstaller, "Contents", "Resources", "Lekh Keyboard.app", "Contents", "MacOS", "LekhInputMethodApp")]
 ).stdout.trim();
 rmSync(zipCheckDir, { recursive: true, force: true });
+
+const dictionaryPackVersion = `${releaseChannel}-build${appBuild}`;
+const dictionaryPackDir = join(releaseDir, "dictionary-packs", dictionaryPackVersion);
+const bundledRuntimeBinary = join(imkBundle, "Contents", "Resources", "runtime-suggestions.lkb");
+rmSync(join(releaseDir, "dictionary-packs"), { recursive: true, force: true });
+run("package-signed-dictionary-pack", process.execPath, [
+  join(root, "scripts", "package-dictionary-pack-update.mjs"),
+  "--binary",
+  bundledRuntimeBinary,
+  "--version",
+  dictionaryPackVersion,
+  "--channel",
+  releaseChannel,
+  "--min-app-version",
+  appShortVersion,
+  "--min-app-build",
+  String(appBuild),
+  "--out-dir",
+  dictionaryPackDir,
+  "--report",
+  join(root, "reports", "dictionary-pack-update-report.json")
+]);
+rmSync(join(releaseDir, "runtime-suggestions.lkb"), { force: true });
+rmSync(join(releaseDir, "runtime-suggestions.sanitized.json"), { force: true });
+
+if (!existsSync(sparklePrivateKey)) {
+  finish("failed", {
+    step: "package-appcast",
+    reason: "Missing Sparkle EdDSA private key for appcast signing.",
+    expected: sparklePrivateKey
+  }, 1);
+}
+run("package-appcast", process.execPath, [
+  join(root, "scripts", "package-macos-appcast.mjs"),
+  "--zip",
+  zipPath,
+  "--out",
+  appcastPath,
+  "--version",
+  String(appBuild),
+  "--short-version",
+  appShortVersion,
+  "--channel",
+  releaseChannel,
+  "--private-key",
+  sparklePrivateKey,
+  "--report",
+  join(root, "reports", "macos-appcast-report.json")
+]);
+
+run("sign-release-directory-manifest", process.execPath, [
+  join(root, "scripts", "sign-release-directory-manifest.mjs"),
+  "--dir",
+  releaseDir,
+  "--version",
+  appShortVersion,
+  "--build",
+  String(appBuild),
+  "--channel",
+  releaseChannel,
+  "--report",
+  join(root, "reports", "release-directory-manifest-report.json")
+]);
+verifyMinisignSignature(releaseManifestSidecarPath, manifestSignatureSidecarPath, "verify-release-directory-minisign");
 unregisterReleaseArtifacts();
 sleep(500);
 unregisterReleaseArtifacts();

@@ -8,6 +8,7 @@ const ROOT = process.cwd();
 const DEFAULT_INPUT = join(ROOT, "src", "data", "keyboard-packs", "v0.1", "runtime-suggestions.json");
 const DEFAULT_OUTPUT = join(ROOT, "release", "native", "macos", "runtime-suggestions.sanitized.json");
 const DEFAULT_REPORT = join(ROOT, "reports", "runtime-suggestions-sanitizer-report.json");
+const MIN_RUNTIME_SOURCE_K = Number(process.env.LEKH_RUNTIME_MIN_SOURCE_K ?? 3);
 const REQUIRED_PRESERVE_TOKENS = [
   "eSewa",
   "Khalti",
@@ -89,7 +90,10 @@ export function sanitizeRuntimeSuggestionPack(inputPack, options = {}) {
     proofreadChains: 0,
     disconnectedNextContexts: 0,
     mixedPreserveDemotions: 0,
-    malformedUnicode: 0
+    malformedUnicode: 0,
+    privateSourceRows: 0,
+    sourceKAnonymityRows: 0,
+    personalTokenRows: 0
   };
 
   const words = normalizeRows(inputPack.words ?? [], "words", removed)
@@ -154,6 +158,14 @@ export function sanitizeRuntimeSuggestionPack(inputPack, options = {}) {
         maxBigramFrequency: frequencyModel.maxBigramFrequency,
         matchedRankedRows: rankingContext.matchedRows,
         unmatchedRankedRows: rankingContext.unmatchedRows
+      },
+      privacyFirewall: {
+        status: "passed",
+        minSourceK: MIN_RUNTIME_SOURCE_K,
+        policy: "Rows explicitly marked learned/private/user-imported, rows with source-count below k, and email/phone/OTP-like personal tokens are stripped before runtime packaging.",
+        removedPrivateSourceRows: removed.privateSourceRows,
+        removedSourceKAnonymityRows: removed.sourceKAnonymityRows,
+        removedPersonalTokenRows: removed.personalTokenRows
       }
     }
   };
@@ -181,6 +193,11 @@ function normalizeRows(rows, rowType, removed) {
       romanized: normalizeRomanized(row.romanized),
       unicode: normalizeDevanagari(row.unicode, removed)
     };
+    const privacyReason = privacyBlockReason(normalized);
+    if (privacyReason) {
+      removed[privacyReason] += 1;
+      continue;
+    }
     if (hasMalformedDevanagariMatraSequence(normalized.unicode) || hasInvalidDevanagariGrapheme(normalized.unicode)) {
       removed.malformedUnicode += 1;
       continue;
@@ -259,6 +276,11 @@ function sanitizeNextContexts(rows, validRomanTokens, removed) {
     const context = normalizeRomanized(row.context);
     const next = normalizeRomanized(row.next);
     if (!context || !next) continue;
+    const privacyReason = privacyBlockReason({ ...row, romanized: `${context} ${next}`, unicode: row.unicode ?? row.next ?? "" });
+    if (privacyReason) {
+      removed[privacyReason] += 1;
+      continue;
+    }
     if (!validRomanTokens.has(next)) {
       removed.disconnectedNextContexts += 1;
       continue;
@@ -272,6 +294,55 @@ function sanitizeNextContexts(rows, validRomanTokens, removed) {
     output.push({ ...row, context, next });
   }
   return output;
+}
+
+function privacyBlockReason(row) {
+  if (isPrivateSourceRow(row)) return "privateSourceRows";
+  if (violatesSourceKAnonymity(row)) return "sourceKAnonymityRows";
+  if (looksLikePersonalToken(row)) return "personalTokenRows";
+  return null;
+}
+
+function isPrivateSourceRow(row) {
+  if (row?.learned === true || row?.private === true || row?.userGenerated === true) return true;
+  const sourceText = [
+    row?.source,
+    row?.sourceType,
+    row?.origin,
+    row?.provenance,
+    row?.reviewStatus
+  ]
+    .filter((value) => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+  return /\b(user|personal|private|clipboard|notes|import|learned|local-lexicon|diagnostic)\b/.test(sourceText);
+}
+
+function violatesSourceKAnonymity(row) {
+  for (const key of ["distinctSourceCount", "sourceCount", "sourceK", "kAnonymity", "kAnonymousCount"]) {
+    if (!(key in row)) continue;
+    const value = Number(row[key]);
+    if (Number.isFinite(value) && value > 0 && value < MIN_RUNTIME_SOURCE_K) return true;
+  }
+  return false;
+}
+
+function looksLikePersonalToken(row) {
+  const text = [
+    row?.romanized,
+    row?.unicode,
+    row?.context,
+    row?.next,
+    row?.error,
+    row?.correction
+  ]
+    .filter((value) => typeof value === "string")
+    .join(" ");
+  return /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(text) ||
+    /\b(?:\+?977[-\s]?)?(?:98|97)\d{8}\b/.test(text) ||
+    /\b\d{6,}\b/.test(text) ||
+    /\b(?:otp|pin|pan|password|passcode)[:=\s-]+[a-z0-9]{3,}\b/i.test(text) ||
+    /\b[a-z]{2,}\d{3,}[a-z0-9]*\b/i.test(text);
 }
 
 function sanitizeMixedPolicy(policy, removed) {
