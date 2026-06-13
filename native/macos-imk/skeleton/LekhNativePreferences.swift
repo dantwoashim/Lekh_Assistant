@@ -16,8 +16,8 @@ public enum LekhNativePreferences {
 
   public static func registerDefaults() {
     UserDefaults.standard.register(defaults: [
-      Keys.inlinePreviewEnabled: true,
-      Keys.customCandidatePanelEnabled: true,
+      Keys.inlinePreviewEnabled: false,
+      Keys.customCandidatePanelEnabled: false,
       Keys.proofreadAsYouTypeEnabled: true,
       Keys.smartPunctuationEnabled: true,
       Keys.traditionalOptionLayerEnabled: true,
@@ -30,11 +30,11 @@ public enum LekhNativePreferences {
   }
 
   public static var inlinePreviewEnabled: Bool {
-    value(defaultKey: Keys.inlinePreviewEnabled, defaultValue: true)
+    value(defaultKey: Keys.inlinePreviewEnabled, defaultValue: false)
   }
 
   public static var customCandidatePanelEnabled: Bool {
-    value(defaultKey: Keys.customCandidatePanelEnabled, defaultValue: true)
+    value(defaultKey: Keys.customCandidatePanelEnabled, defaultValue: false)
   }
 
   public static var proofreadAsYouTypeEnabled: Bool {

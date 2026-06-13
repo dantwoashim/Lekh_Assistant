@@ -117,11 +117,6 @@ private final class LekhBinaryLexicon {
           Self.sectionFits(offset: stringOffset, count: stringBytes, stride: 1, fileBytes: data.count) else {
       return nil
     }
-    guard Self.validateEntries(data, entryCount: entryCount, entryOffset: entryOffset, entryStride: entryStride, stringBytes: stringBytes),
-          Self.validatePrefixes(data, prefixCount: prefixCount, prefixOffset: prefixOffset, prefixStride: prefixStride, refCount: refCount, stringBytes: stringBytes),
-          Self.validateRefs(data, refCount: refCount, refOffset: refOffset, entryCount: entryCount) else {
-      return nil
-    }
   }
 
   func rows(for normalizedInput: String, exactOnly: Bool, limit: Int) -> [NativeCandidateRow] {

@@ -96,7 +96,8 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("Control+Option+Space");
     expect(controller).toContain("modeMenuOpen");
     expect(controller).toContain("modePromptPending");
-    expect(controller).toContain("modePrompt.activate");
+    expect(controller).not.toContain("modePrompt.activate");
+    expect(controller).not.toContain("showTutorialIfNeeded");
     expect(controller).toContain("menu() -> NSMenu!");
     expect(controller).toContain("selectModeFromInputMenu");
     expect(controller).toContain("menu.forgetCandidate");
@@ -124,6 +125,8 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("LekhCandidatePanel");
     expect(controller).toContain("showPreferencesFromInputMenu");
     expect(controller).toContain("traditionalOptionText");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNativePreferences.swift"), "utf8")).toContain("Keys.inlinePreviewEnabled: false");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNativePreferences.swift"), "utf8")).toContain("Keys.customCandidatePanelEnabled: false");
     expect(source).toContain("previewText(rawBuffer");
     expect(source).toContain("loadProofreadRows");
     expect(source).toContain("smartPunctuation(for:");
@@ -165,13 +168,15 @@ describe("macOS IMK proof target source", () => {
     expect(plist).toContain("LekhInputMethodApplication");
     expect(plist).toContain("LekhDictionaryPackEd25519PublicKeyBase64");
     expect(plist).toContain("leXuq4+d5aRli02qEchU+UEo7qRbrzB1kpA21t+5nHY=");
-    expect(plist).toContain("SUFeedURL");
-    expect(plist).toContain("SUPublicEDKey");
+    expect(plist).not.toContain("SUFeedURL");
+    expect(plist).not.toContain("SUPublicEDKey");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/Package.swift"), "utf8")).not.toContain("Sparkle");
     expect(plist).toContain("tsInputMethodIconFileKey");
     expect(plist).toContain("tsInputMethodCharacterRepertoireKey");
     expect(plist).toContain("ComponentInputModeDict");
     expect(plist).toContain("tsInputModeListKey");
-    expect(plist).toContain("com.lekh.inputmethod.LekhKeyboard.Romanized");
+    expect(plist).toContain("com.lekh.inputmethod.LekhKeyboard.Main");
+    expect(plist).not.toContain("com.lekh.inputmethod.LekhKeyboard.Romanized");
     expect(plist).toContain("tsVisibleInputModeOrderedArrayKey");
     expect(plist).toContain("Latn");
     expect(plist).toContain("Deva");

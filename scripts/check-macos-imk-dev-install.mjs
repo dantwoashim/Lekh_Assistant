@@ -17,7 +17,7 @@ const legacyPackageArtifact = join(root, "release", "native", "macos", "Lekh Key
 const plistPath = join(installedBundle, "Contents", "Info.plist");
 const executablePath = join(installedBundle, "Contents", "MacOS", "LekhInputMethodApp");
 const reportPath = join(root, "reports", "macos-imk-dev-install-check.json");
-const inputSourceId = "com.lekh.inputmethod.LekhKeyboard.Romanized";
+const inputSourceId = "com.lekh.inputmethod.LekhKeyboard.Main";
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const failures = [];
 const toolchainCacheDir = join(root, ".build-cache", "macos-toolchain");
@@ -81,7 +81,7 @@ if (existsSync(plistPath)) {
     "tsInputMethodCharacterRepertoireKey",
     "ComponentInputModeDict",
     "tsInputModeListKey",
-    "com.lekh.inputmethod.LekhKeyboard.Romanized",
+    "com.lekh.inputmethod.LekhKeyboard.Main",
     "tsVisibleInputModeOrderedArrayKey",
     "Latn",
     "Deva"
@@ -190,12 +190,17 @@ const launchServices = spawnSync(lsregister, ["-dump"], {
   encoding: "utf8",
   maxBuffer: 80 * 1024 * 1024
 });
-if (launchServices.status === 0 && (
-  launchServices.stdout.includes(`path:                       ${stagedPackageArtifact}`) ||
-  launchServices.stdout.includes(`path:                       ${packageArtifact}`) ||
-  launchServices.stdout.includes(`path:                       ${oldPackageArtifact}`) ||
-  launchServices.stdout.includes(`path:                       ${legacyPackageArtifact}`)
-)) {
+const staleRegisteredPaths = new Set(
+  launchServices.status === 0
+    ? [...launchServices.stdout.matchAll(/^path:\s+(.+)$/gm)].map((match) => match[1].trim())
+    : []
+);
+if (
+  staleRegisteredPaths.has(stagedPackageArtifact) ||
+  staleRegisteredPaths.has(packageArtifact) ||
+  staleRegisteredPaths.has(oldPackageArtifact) ||
+  staleRegisteredPaths.has(legacyPackageArtifact)
+) {
   failures.push("LaunchServices still has a packaged IMK artifact registered. Re-run npm run package:macos:imk:dev && native/macos-imk/skeleton/install-dev.sh so only ~/Library/Input Methods is authoritative.");
 }
 

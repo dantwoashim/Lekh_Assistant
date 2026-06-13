@@ -32,16 +32,6 @@ const iconSource = join(root, "build", "icon.icns");
 const runtimeJsonOutputPath = join(releaseDir, "runtime-suggestions.sanitized.json");
 const runtimeBinaryOutputPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
 const universalExecutable = join(releaseDir, `${executableName}.universal`);
-const sparkleFrameworkSource = join(
-  skeletonDir,
-  ".build",
-  "artifacts",
-  "sparkle",
-  "Sparkle",
-  "Sparkle.xcframework",
-  "macos-arm64_x86_64",
-  "Sparkle.framework"
-);
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const archs = (process.env.LEKH_MAC_ARCHS ?? "arm64,x86_64")
   .split(",")
@@ -222,16 +212,6 @@ if (process.env.LEKH_PACK_ED25519_PUBLIC_KEY_BASE64) {
 copyFileSync(join(skeletonDir, "PkgInfo"), join(appBundle, "Contents", "PkgInfo"));
 copyFileSync(universalExecutable, join(appBundle, "Contents", "MacOS", executableName));
 chmodSync(join(appBundle, "Contents", "MacOS", executableName), 0o755);
-if (existsSync(sparkleFrameworkSource)) {
-  run("copy-sparkle-framework", "ditto", [
-    "--norsrc",
-    "--noextattr",
-    "--noacl",
-    sparkleFrameworkSource,
-    join(appBundle, "Contents", "Frameworks", "Sparkle.framework")
-  ]);
-  stripCodeSignBlockedXattrs(join(appBundle, "Contents", "Frameworks", "Sparkle.framework"));
-}
 
 const frequencyBuild = run(
   "build-frequency-model",
@@ -286,7 +266,7 @@ writeFileSync(
   [
     '"CFBundleDisplayName" = "Lekh Keyboard";',
     '"CFBundleName" = "Lekh Keyboard";',
-    '"com.lekh.inputmethod.LekhKeyboard.Romanized" = "Lekh Keyboard";',
+    '"com.lekh.inputmethod.LekhKeyboard.Main" = "Lekh Keyboard";',
     ""
   ].join("\n")
 );
@@ -295,7 +275,7 @@ writeFileSync(
   [
     '"CFBundleDisplayName" = "लेख";',
     '"CFBundleName" = "लेख";',
-    '"com.lekh.inputmethod.LekhKeyboard.Romanized" = "लेख";',
+    '"com.lekh.inputmethod.LekhKeyboard.Main" = "लेख";',
     ""
   ].join("\n")
 );
@@ -303,10 +283,6 @@ writeFileSync(
 const signArgs = ["--force", "--options", "runtime", "--sign", signingIdentity];
 if (signingIdentity === "-") signArgs.push("--timestamp=none");
 else signArgs.push("--timestamp");
-const embeddedSparkleFramework = join(appBundle, "Contents", "Frameworks", "Sparkle.framework");
-if (existsSync(embeddedSparkleFramework)) {
-  stripCodeSignBlockedXattrs(embeddedSparkleFramework);
-}
 signArgs.push(appBundle);
 stripCodeSignBlockedXattrs(appBundle);
 run("codesign", "codesign", signArgs);
@@ -340,9 +316,7 @@ if (entitlements.includes("com.apple.security.get-task-allow")) {
 if (!existsSync(runtimeBinaryOutputPath) || statSync(runtimeBinaryOutputPath).size > 5 * 1024 * 1024) {
   packagingFailures.push("Packaged runtime binary lexicon must exist and stay under 5 MB.");
 }
-if (strings.includes("@rpath/Sparkle.framework") && !existsSync(join(appBundle, "Contents", "Frameworks", "Sparkle.framework"))) {
-  packagingFailures.push("Executable links Sparkle.framework but the framework is not embedded.");
-}
+if (strings.includes("@rpath/Sparkle.framework")) packagingFailures.push("IMK executable must not link Sparkle.framework.");
 
 if (packagingFailures.length > 0) {
   finish("failed", {

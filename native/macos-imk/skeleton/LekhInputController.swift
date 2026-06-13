@@ -41,7 +41,7 @@ open class LekhInputController: IMKInputController {
   private var sessionId = UUID().uuidString
   private var nativeMode = LekhNativeTypingMode.romanizedTraditional
   private var modeMenuOpen = false
-  private var modePromptPending = true
+  private var modePromptPending = false
   private var usesInlineComposition: Bool {
     let value = ProcessInfo.processInfo.environment["LEKH_IMK_INLINE_COMPOSITION"]?.lowercased()
     if value == "0" || value == "false" || value == "no" {
@@ -93,14 +93,7 @@ open class LekhInputController: IMKInputController {
   open override func activateServer(_ sender: Any!) {
     setKeyboardLayoutOverride()
     lekhNativeLog("lifecycle.activate")
-    if !LekhNativePreferences.firstRunTutorialSeen {
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-        LekhPreferencesWindowController.shared.showTutorialIfNeeded()
-      }
-    }
-    guard modePromptPending, let client = sender as? IMKTextInput else { return }
-    modeMenuOpen = true
-    _ = apply(modeMenuDecision(), client: client, route: "modePrompt.activate")
+    modeMenuOpen = false
   }
 
   open override func deactivateServer(_ sender: Any!) {
@@ -481,7 +474,8 @@ open class LekhInputController: IMKInputController {
     }
 
     if shouldAppendToFailOpenBuffer(key) {
-      _ = engineDecision(for: key, route: route)
+      let decision = engineDecision(for: key, route: route)
+      candidateState.updateCandidates(decision.candidates, rawBuffer: engineClient.rawBuffer(sessionId: sessionId), modeLabel: nativeMode.menuLabel)
       guard let client = sender as? IMKTextInput else {
         lekhNativeLog("failOpen route=\(route) action=bufferNoClient")
         return false
@@ -775,7 +769,7 @@ open class LekhInputController: IMKInputController {
        let mode = LekhNativeTypingMode(rawValue: rawValue) {
       nativeMode = mode
     }
-    modePromptPending = !UserDefaults.standard.bool(forKey: lekhNativeModeChosenDefaultsKey)
+    modePromptPending = false
   }
 
   private func selectNativeMode(_ mode: LekhNativeTypingMode) {

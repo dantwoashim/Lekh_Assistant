@@ -451,7 +451,7 @@ function validateDevanagariGraphemes(value, location, failures) {
 
 function benchmarkBinaryLookup(buffer, queries) {
   const openStart = performance.now();
-  const reader = new BinaryReader(buffer);
+  const reader = new BinaryReader(buffer, { validate: false });
   const openParseMs = performance.now() - openStart;
   const timings = [];
   const sampleQueries = queries.length > 0 ? queries : ["swasthya"];
@@ -472,10 +472,15 @@ function benchmarkBinaryLookup(buffer, queries) {
 }
 
 class BinaryReader {
-  constructor(buffer) {
-    const validation = validateBinaryLexiconBuffer(buffer);
-    if (validation.failures.length > 0) {
-      throw new Error(`invalid binary lexicon: ${validation.failures.join("; ")}`);
+  constructor(buffer, options = {}) {
+    if (options.validate !== false) {
+      const validation = validateBinaryLexiconBuffer(buffer);
+      if (validation.failures.length > 0) {
+        throw new Error(`invalid binary lexicon: ${validation.failures.join("; ")}`);
+      }
+    }
+    if (!Buffer.isBuffer(buffer) || buffer.length < HEADER_SIZE || !buffer.subarray(0, 8).equals(MAGIC)) {
+      throw new Error("invalid binary lexicon header");
     }
     this.buffer = buffer;
     this.entryCount = buffer.readUInt32LE(16);

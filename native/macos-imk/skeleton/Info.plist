@@ -21,18 +21,12 @@
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
-  <string>5</string>
+  <string>6</string>
   <key>NSPrincipalClass</key>
   <string>LekhInputMethodApplication</string>
   <key>LekhDictionaryPackEd25519PublicKeyBase64</key>
   <string>leXuq4+d5aRli02qEchU+UEo7qRbrzB1kpA21t+5nHY=</string>
   <key>LekhDictionaryPackUpdatesEnabled</key>
-  <true/>
-  <key>SUFeedURL</key>
-  <string>https://lekh-assistant.pages.dev/updates/macos/appcast.xml</string>
-  <key>SUPublicEDKey</key>
-  <string>iKAPpQHHx7GBhsTDmadt3rilfhhPKo2RdqV2Q0/zN6U=</string>
-  <key>SUEnableInstallerLauncherService</key>
   <true/>
   <key>TISInputSourceID</key>
   <string>com.lekh.inputmethod.LekhKeyboard</string>
@@ -53,10 +47,10 @@
   <dict>
     <key>tsInputModeListKey</key>
     <dict>
-      <key>com.lekh.inputmethod.LekhKeyboard.Romanized</key>
+      <key>com.lekh.inputmethod.LekhKeyboard.Main</key>
       <dict>
         <key>TISInputSourceID</key>
-        <string>com.lekh.inputmethod.LekhKeyboard.Romanized</string>
+        <string>com.lekh.inputmethod.LekhKeyboard.Main</string>
         <key>TISIntendedLanguage</key>
         <string>ne</string>
         <key>tsInputModeMenuIconFileKey</key>
@@ -75,7 +69,7 @@
     </dict>
     <key>tsVisibleInputModeOrderedArrayKey</key>
     <array>
-      <string>com.lekh.inputmethod.LekhKeyboard.Romanized</string>
+      <string>com.lekh.inputmethod.LekhKeyboard.Main</string>
     </array>
   </dict>
   <key>LSMinimumSystemVersion</key>

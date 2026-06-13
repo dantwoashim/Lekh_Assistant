@@ -8,9 +8,7 @@ let package = Package(
     .library(name: "LekhInputMethod", targets: ["LekhInputMethod"]),
     .executable(name: "LekhInputMethodApp", targets: ["LekhInputMethodApp"])
   ],
-  dependencies: [
-    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0")
-  ],
+  dependencies: [],
   targets: [
     .target(
       name: "LekhInputMethod",
@@ -50,8 +48,7 @@ let package = Package(
     .executableTarget(
       name: "LekhInputMethodApp",
       dependencies: [
-        "LekhInputMethod",
-        .product(name: "Sparkle", package: "Sparkle")
+        "LekhInputMethod"
       ],
       path: "App",
       sources: ["main.swift"]

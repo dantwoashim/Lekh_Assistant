@@ -38,7 +38,7 @@ const skeletonDir = join(root, "native", "macos-imk", "skeleton");
 const iconSource = join(root, "build", "icon.icns");
 const signingIdentity = process.env.LEKH_MAC_DEVELOPER_ID || "-";
 const appShortVersion = process.env.LEKH_APP_SHORT_VERSION || "0.1.0";
-const appBuild = Number(process.env.LEKH_APP_BUILD || 5);
+const appBuild = Number(process.env.LEKH_APP_BUILD || 6);
 const releaseChannel = signingIdentity === "-" ? "test-adhoc" : "developer-id";
 const minisignSecretKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY ||
   join(root, "data", "private", "lekh-release-manifest-minisign.sec");
@@ -380,6 +380,9 @@ DEST_REPLACED=0
 mkdir -p "$LOG_DIR" "$BACKUP_ROOT" || exit 1
 log() { printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG_FILE"; }
 dialog() {
+  if [[ "\${LEKH_INSTALLER_NO_DIALOG:-0}" == "1" ]]; then
+    return 0
+  fi
   LEKH_DIALOG_MESSAGE="$1" /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1
 display dialog (system attribute "LEKH_DIALOG_MESSAGE") buttons {"OK"} default button "OK" with title "Lekh Keyboard" with icon note
 APPLESCRIPT
@@ -436,6 +439,7 @@ log "install started payload=$PAYLOAD dest=$DEST version=$APP_VERSION build=$APP
 "$RESOURCE_DIR/register-lekh-input-source" "$DEST" --disable >> "$LOG_FILE" 2>&1 || true
 /usr/bin/pkill -x LekhInputMethodApp >> "$LOG_FILE" 2>&1 || true
 "$RESOURCE_DIR/restore-system-keyboard" --snapshot >> "$LOG_FILE" 2>&1 || true
+"$RESOURCE_DIR/purge-lekh-input-sources" >> "$LOG_FILE" 2>&1 || true
 
 if [[ -d "$DEST" ]]; then
   BACKUP_DEST="$BACKUP_ROOT/Lekh Keyboard.app.backup.$(/bin/date -u '+%Y%m%dT%H%M%SZ')"

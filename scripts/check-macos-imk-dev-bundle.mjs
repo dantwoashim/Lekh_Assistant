@@ -45,7 +45,7 @@ if (existsSync(plistPath)) {
     "tsInputMethodCharacterRepertoireKey",
     "ComponentInputModeDict",
     "tsInputModeListKey",
-    "com.lekh.inputmethod.LekhKeyboard.Romanized",
+    "com.lekh.inputmethod.LekhKeyboard.Main",
     "tsVisibleInputModeOrderedArrayKey",
     "Latn",
     "Deva"
@@ -73,14 +73,14 @@ if (existsSync(runtimeBinaryPackPath)) {
 
 if (existsSync(localizedInfoPath)) {
   const localizedInfo = readFileSync(localizedInfoPath, "utf8");
-  if (!localizedInfo.includes('"com.lekh.inputmethod.LekhKeyboard.Romanized" = "Lekh Keyboard";')) {
+  if (!localizedInfo.includes('"com.lekh.inputmethod.LekhKeyboard.Main" = "Lekh Keyboard";')) {
     failures.push("Localized input-mode name is missing for Lekh Keyboard.");
   }
 }
 
 if (existsSync(nepaliLocalizedInfoPath)) {
   const localizedInfo = readFileSync(nepaliLocalizedInfoPath, "utf8");
-  if (!localizedInfo.includes('"com.lekh.inputmethod.LekhKeyboard.Romanized" = "लेख";')) {
+  if (!localizedInfo.includes('"com.lekh.inputmethod.LekhKeyboard.Main" = "लेख";')) {
     failures.push("Nepali localized input-mode name is missing.");
   }
 }
@@ -104,8 +104,11 @@ if (existsSync(executablePath)) {
   }
 
   const linkedLibraries = spawnSync("otool", ["-L", executablePath], { encoding: "utf8" }).stdout;
-  if (linkedLibraries.includes("@rpath/Sparkle.framework") && !existsSync(sparkleFrameworkPath)) {
-    failures.push("IMK executable links Sparkle.framework but Contents/Frameworks/Sparkle.framework is missing.");
+  if (linkedLibraries.includes("@rpath/Sparkle.framework")) {
+    failures.push("IMK executable must not link Sparkle.framework; updater code belongs outside the input-method server.");
+  }
+  if (existsSync(sparkleFrameworkPath)) {
+    failures.push("IMK bundle must not embed Sparkle.framework; updater code belongs outside the input-method server.");
   }
 
   const entitlements = spawnSync("codesign", ["-d", "--entitlements", ":-", appBundle], {

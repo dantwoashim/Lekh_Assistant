@@ -87,26 +87,16 @@ function checkImkPlist(plist) {
   }
   for (const marker of [
     "LekhDictionaryPackEd25519PublicKeyBase64",
-    "<true/>",
-    "SUFeedURL",
-    "SUPublicEDKey",
-    "https://"
+    "<true/>"
   ]) {
     if (!plist.includes(marker)) critical(`IMK Info.plist missing update marker ${marker}.`);
   }
   const packKey = plistValue(plist, "LekhDictionaryPackEd25519PublicKeyBase64");
-  const sparkleKey = plistValue(plist, "SUPublicEDKey");
-  const feedURL = plistValue(plist, "SUFeedURL");
   const bundleBuild = Number(plistValue(plist, "CFBundleVersion") ?? 0);
   if (!packKey) critical("IMK Info.plist has an empty dictionary-pack public key.");
-  if (!sparkleKey) critical("IMK Info.plist has an empty Sparkle public key.");
   if (packKey && pinnedPackKey && packKey !== pinnedPackKey) {
     critical("IMK Info.plist dictionary-pack public key does not match the published key.");
   }
-  if (sparkleKey && pinnedSparkleKey && sparkleKey !== pinnedSparkleKey) {
-    critical("IMK Info.plist Sparkle public key does not match the published key.");
-  }
-  if (feedURL && !feedURL.startsWith("https://")) critical("Sparkle feed URL must use HTTPS.");
   if (Number.isFinite(bundleBuild) && bundleBuild > 0 && bundleBuild < 5) {
     critical(`IMK bundle build is stale: ${bundleBuild}. Expected build 5 or newer.`);
   }
@@ -332,8 +322,6 @@ function checkChecksums() {
 }
 
 function checkPublicUpdateFeed() {
-  const feedURL = imkInfoPlist ? plistValue(imkInfoPlist, "SUFeedURL") : null;
-  if (!feedURL?.includes("/updates/macos/")) return;
   if (!existsSync(publicUpdatesDir)) {
     critical(`Public macOS update feed directory is missing: ${relative(ROOT, publicUpdatesDir)}`);
     return;

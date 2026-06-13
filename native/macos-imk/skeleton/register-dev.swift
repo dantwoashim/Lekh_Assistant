@@ -165,11 +165,15 @@ if shouldSelect {
       continue
     }
     lastSelectStatus = TISSelectInputSource(refreshedSource)
-    if lastSelectStatus == noErr {
+    Thread.sleep(forTimeInterval: 0.15)
+    let selectedFlag = boolProperty(refreshedSource, kTISPropertyInputSourceIsSelected)
+    let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    let currentId = stringProperty(current, kTISPropertyInputSourceID)
+    if lastSelectStatus == noErr && (selectedFlag || currentId == inputSourceId || currentId == parentInputSourceId) {
       selected = true
       break
     }
-    fputs("Select attempt \(attempt + 1) failed with status=\(lastSelectStatus); retrying.\n", stderr)
+    fputs("Select attempt \(attempt + 1) failed with status=\(lastSelectStatus) selected=\(selectedFlag) current=\(currentId); retrying.\n", stderr)
     Thread.sleep(forTimeInterval: 0.5)
   }
   guard selected else {
