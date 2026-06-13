@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-13T11:52:24.668Z",
+  "generatedAt": "2026-06-13T12:16:58.993Z",
   "channel": "test-adhoc",
   "version": "test-adhoc-build5",
   "binaryFormat": "LEKHBLX1",
@@ -16,6 +16,6 @@
     "algorithm": "Ed25519",
     "valueBase64": "G2Lr1lnVkY974smeeDBJisNgyNIk3PTDnG1YIB9uKgvt0vqXgM8cKhMkEQMk0SZ+1lmE+e2HXXRSdeTtoeMBCg==",
     "message": "LEKH_PACK_V2\\nversion\\nsha256\\nbytes\\nformat\\nformatVersion\\nminAppVersion\\nminAppBuild\\nmaxAppBuild\\npath",
-    "signedAt": "2026-06-13T11:52:24.672Z"
+    "signedAt": "2026-06-13T12:16:58.997Z"
   }
 }

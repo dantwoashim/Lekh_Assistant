@@ -63,7 +63,17 @@ Build or refresh the local macOS test installer with:
 npm run package:macos:imk:test-installer
 ```
 
-Because this artifact is ad-hoc signed unless `LEKH_MAC_DEVELOPER_ID` is provided at build time, a downloaded zip can be blocked by Gatekeeper. For test builds only, open **System Settings > Privacy & Security** and choose **Open Anyway** for `Lekh Keyboard Test Installer.app`. Production builds must be Developer ID signed, notarized, and stapled instead of asking users to bypass Gatekeeper.
+Because this artifact is ad-hoc signed unless `LEKH_MAC_DEVELOPER_ID` is provided at build time, a downloaded zip can be blocked by Gatekeeper. For test builds only, open **System Settings > Privacy & Security** and choose **Open Anyway** for `Lekh Keyboard Test Installer.app`.
+
+If macOS shows only **Move to Trash** or **Done** with no install/open option, use the terminal fallback included in the zip:
+
+```bash
+cd ~/Downloads/'Lekh Keyboard Test Installer'
+xattr -dr com.apple.quarantine .
+./Install\ Lekh\ Keyboard\ from\ Terminal.command
+```
+
+That fallback is only for unsigned QA builds. Production builds must be Developer ID signed, notarized, and stapled instead of asking users to bypass Gatekeeper.
 
 After installation, choose `Lekh Keyboard` from the macOS input menu in the menu bar. If it does not appear immediately, log out and back in, then add it from **Keyboard Settings > Text Input > Edit > Nepali**. The packaged uninstaller asks for confirmation, restores the previous input source when macOS allows it, and deletes local learned words, dictionary packs, model files, install backups, caches, and Lekh logs.
 

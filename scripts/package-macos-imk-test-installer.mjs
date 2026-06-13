@@ -569,6 +569,89 @@ for (const appPath of [installerApp, uninstallerApp]) {
 mkdirSync(distFolder, { recursive: true });
 run("copy-installer-to-folder", "ditto", [...metadataSafeDittoFlags, installerApp, join(distFolder, "Lekh Keyboard Test Installer.app")]);
 run("copy-uninstaller-to-folder", "ditto", [...metadataSafeDittoFlags, uninstallerApp, join(distFolder, "Lekh Keyboard Uninstaller.app")]);
+
+const terminalInstallScript = `#!/usr/bin/env bash
+set -uo pipefail
+
+cd "$(dirname "$0")" || exit 1
+INSTALLER_APP="$PWD/Lekh Keyboard Test Installer.app"
+UNINSTALLER_APP="$PWD/Lekh Keyboard Uninstaller.app"
+INSTALLER_BIN="$INSTALLER_APP/Contents/MacOS/install-lekh-keyboard"
+
+echo "Lekh Keyboard terminal installer"
+echo "This unsigned QA build cannot pass Finder/Gatekeeper without Developer ID notarization."
+echo "This script removes the download quarantine from this extracted folder, verifies the packaged app signature, then runs the same installer."
+echo
+
+if [[ ! -x "$INSTALLER_BIN" ]]; then
+  echo "Missing installer executable: $INSTALLER_BIN" >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+fi
+
+/usr/bin/xattr -dr com.apple.quarantine "$INSTALLER_APP" "$UNINSTALLER_APP" "$PWD" 2>/dev/null || true
+
+if ! /usr/bin/codesign --verify --deep --strict "$INSTALLER_APP" >/dev/null 2>&1; then
+  echo "The installer app failed local code-signature verification." >&2
+  echo "Delete this copy and download the release zip again." >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+fi
+
+"$INSTALLER_BIN"
+status=$?
+echo
+if [[ "$status" -eq 0 ]]; then
+  echo "Install finished. Use the macOS input menu to select Lekh Keyboard."
+else
+  echo "Install failed with status $status. See ~/Library/Logs/LekhKeyboard/install.log."
+fi
+read -r -p "Press Return to close this window..."
+exit "$status"
+`;
+const terminalUninstallScript = `#!/usr/bin/env bash
+set -uo pipefail
+
+cd "$(dirname "$0")" || exit 1
+UNINSTALLER_APP="$PWD/Lekh Keyboard Uninstaller.app"
+UNINSTALLER_BIN="$UNINSTALLER_APP/Contents/MacOS/uninstall-lekh-keyboard"
+
+echo "Lekh Keyboard terminal uninstaller"
+echo "This script removes the download quarantine from the uninstaller, verifies it, then runs it."
+echo
+
+if [[ ! -x "$UNINSTALLER_BIN" ]]; then
+  echo "Missing uninstaller executable: $UNINSTALLER_BIN" >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+fi
+
+/usr/bin/xattr -dr com.apple.quarantine "$UNINSTALLER_APP" "$PWD" 2>/dev/null || true
+
+if ! /usr/bin/codesign --verify --deep --strict "$UNINSTALLER_APP" >/dev/null 2>&1; then
+  echo "The uninstaller app failed local code-signature verification." >&2
+  echo "Delete this copy and download the release zip again." >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+fi
+
+"$UNINSTALLER_BIN"
+status=$?
+echo
+if [[ "$status" -eq 0 ]]; then
+  echo "Uninstall finished."
+else
+  echo "Uninstall failed with status $status."
+fi
+read -r -p "Press Return to close this window..."
+exit "$status"
+`;
+const terminalInstallPath = join(distFolder, "Install Lekh Keyboard from Terminal.command");
+const terminalUninstallPath = join(distFolder, "Uninstall Lekh Keyboard from Terminal.command");
+writeFileSync(terminalInstallPath, terminalInstallScript);
+writeFileSync(terminalUninstallPath, terminalUninstallScript);
+chmodSync(terminalInstallPath, 0o755);
+chmodSync(terminalUninstallPath, 0o755);
 writeFileSync(
   join(distFolder, "README.txt"),
   [
@@ -580,12 +663,17 @@ writeFileSync(
     "Install:",
     "1. Open Lekh Keyboard Test Installer.app.",
     "2. If macOS blocks the app because it is an unsigned test build, open System Settings > Privacy & Security and choose Open Anyway for Lekh Keyboard Test Installer.",
-    "3. After it finishes, use the macOS input menu in the menu bar to choose Lekh Keyboard.",
-    "4. If Lekh Keyboard does not appear immediately, log out and back in, then open Keyboard Settings > Text Input > Edit and add it under Nepali.",
-    "5. Installer rollback backups are stored under ~/Library/Application Support/Lekh Keyboard/InstallBackups and rotated to the newest 3 copies.",
+    "3. If macOS only shows Move to Trash or Done and no Open Anyway option appears, open Install Lekh Keyboard from Terminal.command instead.",
+    "4. If the .command file is also blocked, open Terminal and run:",
+    "   cd ~/Downloads/'Lekh Keyboard Test Installer'",
+    "   xattr -dr com.apple.quarantine .",
+    "   ./Install\\ Lekh\\ Keyboard\\ from\\ Terminal.command",
+    "5. After it finishes, use the macOS input menu in the menu bar to choose Lekh Keyboard.",
+    "6. If Lekh Keyboard does not appear immediately, log out and back in, then open Keyboard Settings > Text Input > Edit and add it under Nepali.",
+    "7. Installer rollback backups are stored under ~/Library/Application Support/Lekh Keyboard/InstallBackups and rotated to the newest 3 copies.",
     "",
     "Uninstall:",
-    "Open Lekh Keyboard Uninstaller.app. It asks for confirmation, restores the previous keyboard when possible, deletes packs, models, backups, caches, and logs, and can optionally delete local learned words.",
+    "Open Lekh Keyboard Uninstaller.app. If Finder blocks it, use Uninstall Lekh Keyboard from Terminal.command. It asks for confirmation, restores the previous keyboard when possible, deletes packs, models, backups, caches, and logs, and can optionally delete local learned words.",
     "",
     "Logs:",
     "~/Library/Logs/LekhKeyboard/install.log",
@@ -600,9 +688,10 @@ writeFileSync(
     "नेपाली:",
     "१. Lekh Keyboard Test Installer.app खोल्नुहोस्।",
     "२. macOS ले unsigned test build भनेर block गरेमा System Settings > Privacy & Security मा Open Anyway छान्नुहोस्।",
-    "३. स्थापना भएपछि menu bar को input menu बाट Lekh Keyboard छान्नुहोस्।",
-    "४. तुरुन्त नदेखिए log out गरेर फेरि log in गर्नुहोस्, अनि Keyboard Settings > Text Input > Edit > Nepali बाट थप्नुहोस्।",
-    "५. Uninstaller ले confirmation माग्छ र local learned words, packs, models, backups, caches, logs हटाउँछ।",
+    "३. Move to Trash वा Done मात्र देखिए Install Lekh Keyboard from Terminal.command चलाउनुहोस्।",
+    "४. स्थापना भएपछि menu bar को input menu बाट Lekh Keyboard छान्नुहोस्।",
+    "५. तुरुन्त नदेखिए log out गरेर फेरि log in गर्नुहोस्, अनि Keyboard Settings > Text Input > Edit > Nepali बाट थप्नुहोस्।",
+    "६. Uninstaller ले confirmation माग्छ र local learned words, packs, models, backups, caches, logs हटाउँछ।",
     ""
   ].join("\n")
 );
