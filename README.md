@@ -67,6 +67,18 @@ Because this artifact is ad-hoc signed unless `LEKH_MAC_DEVELOPER_ID` is provide
 
 After installation, choose `Lekh Keyboard` from the macOS input menu in the menu bar. If it does not appear immediately, log out and back in, then add it from **Keyboard Settings > Text Input > Edit > Nepali**. The packaged uninstaller asks for confirmation, restores the previous input source when macOS allows it, and deletes local learned words, dictionary packs, model files, install backups, caches, and Lekh logs.
 
+Current macOS IMK test-build behavior includes:
+
+- four native modes: Romanized-Romanized, Romanized-Traditional, Traditional-Traditional, and Traditional-Romanized
+- first-selection mode chooser plus a first-run `namaste` to `नमस्ते` tutorial
+- underlined inline marked-text preview before commit
+- Space commit, Escape cancel, Backspace composition edit, and Command/Control shortcut pass-through
+- a custom non-activating candidate window with Devanagari font sizing, badges, and correction explainers
+- proofread suggestions for active Traditional/Unicode composition using the bundled correction pairs
+- smart Nepali punctuation for danda commit in Nepali output modes
+- Traditional Option-key helpers for halanta, rakar/yaphala, chandrabindu, anusvara, and danda
+- input-menu preferences for transliteration strictness, halanta behavior, mixed-script preference, local dictionary export/edit/delete, diagnostics, and privacy controls
+
 The recovery command remains:
 
 ```bash
@@ -266,7 +278,9 @@ The current real-document collection count is `0`. Public real-document quality 
 - The neural transliteration model is not production-shipped yet. Public model research is wired into source selection and readiness gates, but production requires a trained small Core ML artifact under `models/macos/`.
 - The larger Hunspell spell asset is lazy-loaded locally; first-use spell hints can lag slightly on slower machines.
 - Suggestions focus on the trailing typed token. Candidate alternatives are full-output ranked paths, but full cursor-aware replacement in the middle of a sentence is future work.
-- Local correction memory improves exact repeated inputs on the same browser only.
+- Native macOS proofread decoration is composition-time candidate UI. Normal host apps do not give an IMK a universal way to draw persistent squiggles under arbitrary text after it is already committed.
+- The custom macOS candidate window is non-activating and host-safe; exact caret anchoring can vary by app because some hosts expose limited caret geometry through IMK.
+- Local correction memory improves repeated inputs through local storage: browser builds use browser-local memory and native macOS builds use a per-user SQLite lexicon.
 - Generated Preeti round-trip fixtures are regression tests, not proof of real-world document coverage.
 - Varnavinyas orthography checking is only a disabled local development probe.
 - Offline support applies after the first successful load.

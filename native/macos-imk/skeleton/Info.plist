@@ -25,9 +25,15 @@
   <key>NSPrincipalClass</key>
   <string>LekhInputMethodApplication</string>
   <key>LekhDictionaryPackEd25519PublicKeyBase64</key>
-  <string></string>
+  <string>leXuq4+d5aRli02qEchU+UEo7qRbrzB1kpA21t+5nHY=</string>
   <key>LekhDictionaryPackUpdatesEnabled</key>
-  <false/>
+  <true/>
+  <key>SUFeedURL</key>
+  <string>https://lekh-assistant.pages.dev/updates/macos/appcast.xml</string>
+  <key>SUPublicEDKey</key>
+  <string>iKAPpQHHx7GBhsTDmadt3rilfhhPKo2RdqV2Q0/zN6U=</string>
+  <key>SUEnableInstallerLauncherService</key>
+  <true/>
   <key>TISInputSourceID</key>
   <string>com.lekh.inputmethod.LekhKeyboard</string>
   <key>TISIntendedLanguage</key>

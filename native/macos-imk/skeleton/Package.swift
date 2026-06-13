@@ -8,6 +8,9 @@ let package = Package(
     .library(name: "LekhInputMethod", targets: ["LekhInputMethod"]),
     .executable(name: "LekhInputMethodApp", targets: ["LekhInputMethodApp"])
   ],
+  dependencies: [
+    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0")
+  ],
   targets: [
     .target(
       name: "LekhInputMethod",
@@ -27,13 +30,17 @@ let package = Package(
         "uninstall-dev.sh"
       ],
       sources: [
+        "LekhCandidatePanel.swift",
         "LekhCandidateController.swift",
         "LekhDictionaryPackVerifier.swift",
         "LekhDictionaryPackWatcher.swift",
         "LekhDiagnostics.swift",
         "LekhInputController.swift",
+        "LekhLocalization.swift",
         "LekhMetricReporter.swift",
+        "LekhNativePreferences.swift",
         "LekhNeuralTransliterator.swift",
+        "LekhPreferencesWindow.swift",
         "LekhXpcClient.swift"
       ],
       linkerSettings: [
@@ -42,7 +49,10 @@ let package = Package(
     ),
     .executableTarget(
       name: "LekhInputMethodApp",
-      dependencies: ["LekhInputMethod"],
+      dependencies: [
+        "LekhInputMethod",
+        .product(name: "Sparkle", package: "Sparkle")
+      ],
       path: "App",
       sources: ["main.swift"]
     )

@@ -11,8 +11,7 @@ public final class LekhLatencyRingBuffer {
   }
 
   public static var diagnosticsEnabled: Bool {
-    let environment = ProcessInfo.processInfo.environment
-    return environment["LEKH_IMK_DIAGNOSTICS"] == "1" || environment["LEKH_IMK_DEBUG_LOG"] == "1"
+    LekhDiagnosticsPolicy.diagnosticsEnabled()
   }
 
   private let capacity: Int
@@ -81,5 +80,54 @@ public final class LekhLatencyRingBuffer {
     guard !sorted.isEmpty else { return 0 }
     let index = min(sorted.count - 1, max(0, Int(Double(sorted.count - 1) * p)))
     return sorted[index]
+  }
+}
+
+public enum LekhDiagnosticsPolicy {
+  private static let ttlSeconds: TimeInterval = 24 * 60 * 60
+  private static let timestampFileName = "diagnostics-enabled-at.txt"
+
+  public static func diagnosticsEnabled(now: Date = Date(), secureInputActive: Bool = false) -> Bool {
+    guard !secureInputActive else { return false }
+    let environment = ProcessInfo.processInfo.environment
+    guard environment["LEKH_IMK_DIAGNOSTICS"] == "1" || environment["LEKH_IMK_DEBUG_LOG"] == "1" else {
+      clearActivationTimestamp()
+      return false
+    }
+
+    if let until = environment["LEKH_IMK_DIAGNOSTICS_UNTIL"],
+       let untilDate = ISO8601DateFormatter().date(from: until) {
+      return now <= untilDate
+    }
+
+    let activationURL = diagnosticsActivationURL()
+    let activationDate: Date
+    if let raw = try? String(contentsOf: activationURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+       let parsed = ISO8601DateFormatter().date(from: raw) {
+      activationDate = parsed
+    } else {
+      activationDate = now
+      try? FileManager.default.createDirectory(at: activationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try? ISO8601DateFormatter().string(from: activationDate).write(to: activationURL, atomically: true, encoding: .utf8)
+    }
+
+    if now.timeIntervalSince(activationDate) > ttlSeconds {
+      clearActivationTimestamp()
+      return false
+    }
+    return true
+  }
+
+  private static func diagnosticsActivationURL() -> URL {
+    FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library", isDirectory: true)
+      .appendingPathComponent("Application Support", isDirectory: true)
+      .appendingPathComponent("Lekh Keyboard", isDirectory: true)
+      .appendingPathComponent("Diagnostics", isDirectory: true)
+      .appendingPathComponent(timestampFileName)
+  }
+
+  private static func clearActivationTimestamp() {
+    try? FileManager.default.removeItem(at: diagnosticsActivationURL())
   }
 }

@@ -1,5 +1,6 @@
 import ngramModel from "../../data/keyboard-packs/v0.1/ngram-lm.json";
 import { isSecureContext } from "./modes";
+import { romanizedCanonicalKey } from "./romanizationTolerance";
 import type { Candidate, InlineCompletion, KeyboardSession, TypingContext } from "./types";
 
 type ScriptKind = "devanagari" | "romanized";
@@ -26,6 +27,24 @@ interface CompletionMatch {
 
 const model = ngramModel as NgramModel;
 const MAX_NEXT_WORDS = 4;
+const CURATED_NEXT_WORDS: Array<{
+  kind: ScriptKind;
+  context: string;
+  next: string;
+  romanized?: string;
+  confidence: number;
+}> = [
+  { kind: "devanagari", context: "नेपाल", next: "सरकार", romanized: "sarkar", confidence: 0.97 },
+  { kind: "romanized", context: "nepal", next: "सरकार", romanized: "sarkar", confidence: 0.97 },
+  { kind: "devanagari", context: "जिल्ला", next: "प्रशासन", romanized: "prashasan", confidence: 0.97 },
+  { kind: "romanized", context: "jilla", next: "प्रशासन", romanized: "prashasan", confidence: 0.97 },
+  { kind: "devanagari", context: "स्वास्थ्य", next: "कार्यालय", romanized: "karyalaya", confidence: 0.96 },
+  { kind: "romanized", context: "swasthya", next: "कार्यालय", romanized: "karyalaya", confidence: 0.96 },
+  { kind: "devanagari", context: "जन्म", next: "दर्ता", romanized: "darta", confidence: 0.96 },
+  { kind: "romanized", context: "janma", next: "दर्ता", romanized: "darta", confidence: 0.96 },
+  { kind: "devanagari", context: "मृत्यु", next: "दर्ता", romanized: "darta", confidence: 0.96 },
+  { kind: "romanized", context: "mrityu", next: "दर्ता", romanized: "darta", confidence: 0.96 }
+];
 
 let index: Map<string, NgramRow[]> | undefined;
 
@@ -100,6 +119,7 @@ function inlineDisplayText(activeText: string, trailingWhitespace: string, sugge
 function ngramCandidatesForText(textWindow: string, context: TypingContext, limit: number): Candidate[] {
   const suffix = contextSuffix(textWindow);
   if (!suffix) return [];
+  const curated = curatedCandidatesForSuffix(suffix, context);
   const matches: CompletionMatch[] = [];
   for (const candidateContext of suffixes(suffix.text, suffix.kind)) {
     const bucket = modelIndex().get(indexKey(suffix.kind, candidateContext)) ?? [];
@@ -109,7 +129,7 @@ function ngramCandidatesForText(textWindow: string, context: TypingContext, limi
     }
     if (matches.length >= limit * 4) break;
   }
-  return matches
+  const modelCandidates = matches
     .sort((left, right) =>
       right.contextLength - left.contextLength ||
       rowConfidence(right.row) - rowConfidence(left.row) ||
@@ -127,6 +147,39 @@ function ngramCandidatesForText(textWindow: string, context: TypingContext, limi
       shortcut: String(index + 1),
       replaceRange: [0, 0]
     }));
+  return dedupeNextWordCandidates([...curated, ...modelCandidates], limit);
+}
+
+function curatedCandidatesForSuffix(suffix: { kind: ScriptKind; text: string }, context: TypingContext): Candidate[] {
+  const suffixValues = suffixes(suffix.text, suffix.kind);
+  return CURATED_NEXT_WORDS
+    .filter((row) => row.kind === suffix.kind && suffixValues.includes(row.context))
+    .map((row, index): Candidate => ({
+      id: `ngram-curated-${index}-${row.kind}-${row.context}-${row.next}`,
+      text: row.next,
+      label: context.showRomanizedLabels ? row.romanized : undefined,
+      type: "completion",
+      confidence: row.confidence,
+      reason: [`local n-gram curated Nepali next-word seed`, `context:${row.context}`],
+      shortcut: String(index + 1),
+      replaceRange: [0, 0]
+    }));
+}
+
+function dedupeNextWordCandidates(candidates: Candidate[], limit: number): Candidate[] {
+  const output: Candidate[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const key = candidate.text.normalize("NFC");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push({
+      ...candidate,
+      shortcut: String(output.length + 1)
+    });
+    if (output.length >= limit) break;
+  }
+  return output;
 }
 
 function contextSuffix(textWindow: string): { kind: ScriptKind; text: string } | undefined {
@@ -206,7 +259,7 @@ function normalizeRomanizedToken(value: string): string {
     paxi: "pachi"
   };
   const normalized = value.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return tokenMap[normalized] ?? normalized;
+  return romanizedCanonicalKey(tokenMap[normalized] ?? normalized);
 }
 
 function normalizeDevanagariToken(value: string): string {

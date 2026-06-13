@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-10T13:45:26.032Z",
+  "generatedAt": "2026-06-13T04:38:37.028Z",
   "command": "npm run benchmark:romanized:smoke",
   "suite": "romanized",
   "mode": "smoke",
-  "durationMs": 3013,
+  "durationMs": 3210,
   "fixtureCount": 776,
   "byType": {
     "generated": {

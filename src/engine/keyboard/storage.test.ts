@@ -6,6 +6,7 @@ import {
   defaultKeyboardSettings
 } from "./storage";
 import { defaultTypingContext } from "./modes";
+import { keyboardMemoryCandidates } from "./memory";
 import type { CorrectionMemoryEntry } from "../memory/types";
 
 describe("keyboard native storage contracts", () => {
@@ -76,6 +77,42 @@ describe("keyboard native storage contracts", () => {
 
     await store.forget("niraj");
     expect(await store.query("niraj", defaultTypingContext("romanized"))).toHaveLength(0);
+  });
+
+  it("scores personal memory with frequency and recency decay", () => {
+    const session = {
+      sessionId: "test-session",
+      mode: "romanized" as const,
+      context: { ...defaultTypingContext("romanized"), leftTextWindow: "mero " },
+      compositionText: "niraj",
+      caret: 5,
+      candidates: [],
+      proofHints: [],
+      lastUpdateTime: Date.now(),
+      lastCommittedText: "",
+      warnings: [],
+      committedHistory: []
+    };
+    const fresh = {
+      ...memoryEntry("fresh", "niraj", "नीरज"),
+      frequency: 2,
+      timestamps: {
+        firstSeen: new Date().toISOString(),
+        lastUsed: new Date().toISOString()
+      }
+    };
+    const stale = {
+      ...memoryEntry("stale", "niraj", "निरज"),
+      frequency: 20,
+      timestamps: {
+        firstSeen: "2020-01-01T00:00:00.000Z",
+        lastUsed: "2020-01-01T00:00:00.000Z"
+      }
+    };
+
+    const candidates = keyboardMemoryCandidates("niraj", [stale, fresh], session);
+    expect(candidates[0]?.text).toBe("नीरज");
+    expect(candidates[0]?.reason.join(" ")).toMatch(/recency/);
   });
 });
 

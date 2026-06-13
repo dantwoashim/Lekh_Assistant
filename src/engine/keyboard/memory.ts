@@ -15,10 +15,12 @@ export function keyboardMemoryCandidates(input: string, entries: CorrectionMemor
       text: entry.chosenOutput,
       label: entry.inputRomanized,
       type: "personal",
-      confidence: Math.min(0.99, 0.985 + Math.min(0.005, entry.frequency * 0.001)),
+      confidence: Math.min(0.99, 0.82 + Math.min(0.16, memoryScore(entry, session) / 2200)),
       reason: [
         "Local correction memory exact input match",
         `frequency ${entry.frequency}`,
+        `recency ${recencyWeight(entry).toFixed(2)}`,
+        `decay ${effectiveDecayWeight(entry).toFixed(2)}`,
         entry.context.leftWindow === session.context.leftTextWindow ? "same left context" : "different context"
       ],
       replaceRange: [0, input.length]
@@ -52,7 +54,8 @@ export function recordKeyboardMemorySelection(
           ...entry,
           rejectedAlternatives: Array.from(new Set([...entry.rejectedAlternatives, ...rejectedAlternatives])).slice(0, 12),
           frequency: entry.frequency + 1,
-          timestamps: { ...entry.timestamps, lastUsed: now }
+          timestamps: { ...entry.timestamps, lastUsed: now },
+          decayWeight: Math.min(1.8, effectiveDecayWeight(entry) + 0.08)
         }
         : entry
     );
@@ -77,7 +80,7 @@ export function recordKeyboardMemorySelection(
       firstSeen: now,
       lastUsed: now
     },
-    decayWeight: 1
+      decayWeight: 1
   };
 
   return [...entries, created].slice(-500);
@@ -124,8 +127,23 @@ export function keyboardBlockedCandidateTexts(input: string, entries: Correction
 }
 
 function memoryScore(entry: CorrectionMemoryEntry, session: KeyboardSession): number {
-  const contextBoost = entry.context.leftWindow === session.context.leftTextWindow ? 100 : 0;
-  const domainBoost = entry.context.domain && session.context.activeDomains.includes(entry.context.domain) ? 60 : 0;
-  const pinBoost = entry.pinned ? 120 : 0;
-  return entry.frequency * 20 + contextBoost + domainBoost + pinBoost;
+  const contextBoost = entry.context.leftWindow === session.context.leftTextWindow ? 160 : 0;
+  const domainBoost = entry.context.domain && session.context.activeDomains.includes(entry.context.domain) ? 90 : 0;
+  const pinBoost = entry.pinned ? 220 : 0;
+  const sourceBoost = entry.source === "import" ? 35 : 0;
+  const confidenceBoost = Math.max(0, Math.min(1, entry.confidenceAtSelection)) * 120;
+  const repeatedBoost = Math.log1p(Math.max(0, entry.frequency)) * 160;
+  return Math.round((repeatedBoost + contextBoost + domainBoost + pinBoost + sourceBoost + confidenceBoost) * recencyWeight(entry) * effectiveDecayWeight(entry));
+}
+
+function effectiveDecayWeight(entry: CorrectionMemoryEntry): number {
+  return Math.max(0.2, Math.min(2, entry.decayWeight ?? 1));
+}
+
+function recencyWeight(entry: CorrectionMemoryEntry): number {
+  const lastUsed = Date.parse(entry.timestamps.lastUsed);
+  if (!Number.isFinite(lastUsed)) return 0.6;
+  const ageDays = Math.max(0, (Date.now() - lastUsed) / (24 * 60 * 60 * 1000));
+  const halfLifeDays = entry.pinned ? 365 : 45;
+  return Math.max(0.25, Math.pow(0.5, ageDays / halfLifeDays));
 }

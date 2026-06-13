@@ -1,15 +1,21 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
 
 const root = process.cwd();
 const startedAt = performance.now();
-const appBundle = join(root, "release", "native", "macos", "Lekh Keyboard.imkdevbundle");
+const stagedAppBundle = process.env.LEKH_MACOS_IMK_BUILD_DIR
+  ? join(process.env.LEKH_MACOS_IMK_BUILD_DIR, "Lekh Keyboard.imkdevbundle")
+  : join(homedir(), "Library", "Caches", "LekhKeyboardBuild", "native", "macos", "Lekh Keyboard.imkdevbundle");
+const releaseAppBundle = join(root, "release", "native", "macos", "Lekh Keyboard.imkdevbundle");
+const appBundle = existsSync(stagedAppBundle) ? stagedAppBundle : releaseAppBundle;
 const plistPath = join(appBundle, "Contents", "Info.plist");
 const pkgInfoPath = join(appBundle, "Contents", "PkgInfo");
 const executablePath = join(appBundle, "Contents", "MacOS", "LekhInputMethodApp");
+const sparkleFrameworkPath = join(appBundle, "Contents", "Frameworks", "Sparkle.framework");
 const runtimeBinaryPackPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
 const localizedInfoPath = join(appBundle, "Contents", "Resources", "en.lproj", "InfoPlist.strings");
 const nepaliLocalizedInfoPath = join(appBundle, "Contents", "Resources", "ne.lproj", "InfoPlist.strings");
@@ -95,6 +101,11 @@ if (existsSync(executablePath)) {
   if (strings.includes("/tmp/lekh")) failures.push("IMK executable contains a /tmp Lekh logging path.");
   if (strings.includes("LekhXpcEngineClient") || strings.includes("EngineXPC")) {
     failures.push("IMK executable still contains the removed per-keystroke XPC engine path.");
+  }
+
+  const linkedLibraries = spawnSync("otool", ["-L", executablePath], { encoding: "utf8" }).stdout;
+  if (linkedLibraries.includes("@rpath/Sparkle.framework") && !existsSync(sparkleFrameworkPath)) {
+    failures.push("IMK executable links Sparkle.framework but Contents/Frameworks/Sparkle.framework is missing.");
   }
 
   const entitlements = spawnSync("codesign", ["-d", "--entitlements", ":-", appBundle], {

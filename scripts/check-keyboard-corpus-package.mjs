@@ -4,7 +4,10 @@ import path from "node:path";
 const ROOT = process.cwd();
 const args = new Set(process.argv.slice(2));
 const production = args.has("--production");
-const requiredGoldRows = production ? 2000 : 1;
+const requiredGoldRows = production ? 3500 : 1;
+const requiredGoldWords = production ? 3000 : 0;
+const requiredGoldPhrases = production ? 500 : 0;
+const requiredHumanRatedHoldoutRows = production ? 500 : 0;
 const CORPUS_DIR = path.join(ROOT, "data", "keyboard-corpus");
 const REPORTS_DIR = path.join(CORPUS_DIR, "reports");
 const SRC_RUNTIME_PACK = path.join(ROOT, "src", "data", "keyboard-packs", "v0.1", "runtime-suggestions.json");
@@ -65,6 +68,10 @@ for (const source of sources) {
 }
 
 const curation = readJson(path.join(REPORTS_DIR, "keyboard-corpus-curation-report.json"));
+const goldPromotions = readJsonl(path.join(CORPUS_DIR, "review", "v0.1", "gold_promotions.jsonl"));
+const humanRatedHoldout = readJsonl(path.join(CORPUS_DIR, "review", "v0.1", "human_rated_holdout.jsonl"));
+const calibrationReport = readJson(path.join(REPORTS_DIR, "confidence-calibration-report.json"));
+const humanGoldCore = summarizeHumanGoldCore(goldPromotions);
 if (curation.leakageAudit?.status !== "passed") {
   violations.push({ file: "data/keyboard-corpus/reports/keyboard-corpus-curation-report.json", reason: "leakage-audit-not-passed" });
 }
@@ -77,6 +84,36 @@ if ((curation.qualityCounts?.gold ?? 0) < requiredGoldRows) {
     reason: production ? "production-gold-tier-too-small" : "no-human-reviewed-gold-tier",
     requiredGoldRows,
     actualGoldRows: curation.qualityCounts?.gold ?? 0
+  });
+}
+if (production && humanGoldCore.words < requiredGoldWords) {
+  violations.push({
+    file: "data/keyboard-corpus/review/v0.1/gold_promotions.jsonl",
+    reason: "production-human-gold-word-tier-too-small",
+    requiredGoldWords,
+    actualGoldWords: humanGoldCore.words
+  });
+}
+if (production && humanGoldCore.phrases < requiredGoldPhrases) {
+  violations.push({
+    file: "data/keyboard-corpus/review/v0.1/gold_promotions.jsonl",
+    reason: "production-human-gold-phrase-tier-too-small",
+    requiredGoldPhrases,
+    actualGoldPhrases: humanGoldCore.phrases
+  });
+}
+if (production && humanRatedHoldout.length < requiredHumanRatedHoldoutRows) {
+  violations.push({
+    file: "data/keyboard-corpus/review/v0.1/human_rated_holdout.jsonl",
+    reason: "production-human-rated-holdout-too-small",
+    requiredHumanRatedHoldoutRows,
+    actualHumanRatedHoldoutRows: humanRatedHoldout.length
+  });
+}
+if (production && calibrationReport.status !== "passed") {
+  violations.push({
+    file: "data/keyboard-corpus/reports/confidence-calibration-report.json",
+    reason: "production-confidence-calibration-not-passed"
   });
 }
 
@@ -94,6 +131,11 @@ for (const key of ["words", "phrases", "proofread", "names"]) {
 if (!Array.isArray(pack.nextContexts) || pack.nextContexts.length === 0) {
   violations.push({ file: "src/data/keyboard-packs/v0.1/runtime-suggestions.json", reason: "empty-nextContexts" });
 }
+const runtimePackViolations = validateRuntimePackFirewall(pack);
+violations.push(...runtimePackViolations.map((violation) => ({
+  file: "src/data/keyboard-packs/v0.1/runtime-suggestions.json",
+  ...violation
+})));
 
 for (const file of requiredFiles) {
   if (!fs.existsSync(file)) continue;
@@ -110,11 +152,17 @@ const report = {
   durationMs: 0,
   production,
   requiredGoldRows,
+  requiredGoldWords,
+  requiredGoldPhrases,
+  requiredHumanRatedHoldoutRows,
   fixtureCount: sources.length,
   sourceCount: sources.length,
   curatedRows: curation.counters ?? {},
   qualityCounts: curation.qualityCounts ?? {},
   humanReviewedGoldRows: curation.qualityCounts?.gold ?? 0,
+  humanGoldCore,
+  humanRatedHoldoutRows: humanRatedHoldout.length,
+  confidenceCalibrationStatus: calibrationReport.status ?? "missing",
   goldPromotions: curation.goldPromotions ?? 0,
   reviewedScaleStatus: (curation.qualityCounts?.gold ?? 0) >= 100000 ? "complete" : "partial",
   reviewedScaleNote: "Large generated/auto-reviewed corpus rows are present, but only gold quality rows are human/project-reviewed evidence for public accuracy claims.",
@@ -125,6 +173,10 @@ const report = {
     proofread: Array.isArray(pack.proofread) ? pack.proofread.length : 0,
     names: Array.isArray(pack.names) ? pack.names.length : 0,
     nextContexts: Array.isArray(pack.nextContexts) ? pack.nextContexts.length : 0,
+  },
+  runtimePackFirewall: {
+    status: runtimePackViolations.length === 0 ? "passed" : "failed",
+    violations: runtimePackViolations.slice(0, 100)
   },
   status: violations.length === 0 ? "passed" : "failed",
   violations,
@@ -145,9 +197,123 @@ function readJsonl(file) {
   return fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
 }
 
+function summarizeHumanGoldCore(rows) {
+  const summary = {
+    words: 0,
+    phrases: 0,
+    names: 0,
+    proofread: 0,
+    other: 0,
+    total: rows.length
+  };
+  for (const row of rows) {
+    const dataset = String(row.dataset ?? "");
+    if (dataset.includes("D1_word_aliases")) summary.words += 1;
+    else if (dataset.includes("D2_phrase_aliases")) summary.phrases += 1;
+    else if (dataset.includes("D6_name_surname_variants")) summary.names += 1;
+    else if (dataset.includes("D5_proofread_error_corrections")) summary.proofread += 1;
+    else summary.other += 1;
+  }
+  return summary;
+}
+
 function hasProcessTraceText(content) {
   const lower = content.toLowerCase();
   if (blockedPhraseTerms.some((phrase) => lower.includes(phrase))) return true;
   const tokens = lower.match(/[a-z0-9]+/g) ?? [];
   return tokens.some((token) => blockedTokenTerms.some((term) => token.includes(term)));
+}
+
+function validateRuntimePackFirewall(runtimePack) {
+  const runtimeViolations = [];
+  for (const key of ["words", "phrases", "names"]) {
+    const rows = Array.isArray(runtimePack[key]) ? runtimePack[key] : [];
+    const seenExact = new Set();
+    const romanizedMap = new Map();
+    rows.forEach((row, index) => {
+      const romanized = normalizeRomanized(row?.romanized ?? "");
+      const unicode = normalizeUnicode(row?.unicode ?? "");
+      const location = `${key}[${index}]`;
+      if (row?.romanized !== String(row?.romanized ?? "").normalize("NFC")) {
+        runtimeViolations.push({ reason: "romanized-not-nfc", location });
+      }
+      if (row?.unicode !== String(row?.unicode ?? "").normalize("NFC")) {
+        runtimeViolations.push({ reason: "unicode-not-nfc", location });
+      }
+      for (const reason of devanagariGraphemeFailures(unicode)) {
+        runtimeViolations.push({ reason, location, unicode });
+      }
+      const exactKey = `${key}\0${romanized}\0${unicode}`;
+      if (seenExact.has(exactKey)) runtimeViolations.push({ reason: "exact-duplicate-candidate", location, romanized, unicode });
+      seenExact.add(exactKey);
+      if (romanized && unicode) {
+        const variants = romanizedMap.get(romanized) ?? new Set();
+        variants.add(unicode);
+        romanizedMap.set(romanized, variants);
+      }
+    });
+    validateExplicitCandidateRanks(key, rows, romanizedMap, runtimeViolations);
+  }
+  return runtimeViolations;
+}
+
+function validateExplicitCandidateRanks(key, rows, romanizedMap, runtimeViolations) {
+  const groups = new Map();
+  rows.forEach((row, index) => {
+    const romanized = normalizeRomanized(row?.romanized ?? "");
+    const groupSize = romanizedMap.get(romanized)?.size ?? 0;
+    if (groupSize <= 1) return;
+    const group = groups.get(romanized) ?? [];
+    group.push({ row, index, groupSize });
+    groups.set(romanized, group);
+  });
+  for (const [romanized, group] of groups) {
+    const expectedRanks = new Set();
+    const expectedSize = group[0]?.groupSize ?? group.length;
+    for (let rank = 1; rank <= expectedSize; rank += 1) expectedRanks.add(rank);
+    const actualRanks = new Set();
+    for (const { row, index } of group) {
+      const location = `${key}[${index}]`;
+      if (!Number.isInteger(row.candidateRank) || !expectedRanks.has(row.candidateRank)) {
+        runtimeViolations.push({ reason: "invalid-candidate-rank", location, romanized, expectedSize });
+      }
+      if (row.candidateGroupSize !== expectedSize) {
+        runtimeViolations.push({ reason: "invalid-candidate-group-size", location, romanized, expectedSize });
+      }
+      if (actualRanks.has(row.candidateRank)) {
+        runtimeViolations.push({ reason: "duplicate-candidate-rank", location, romanized, candidateRank: row.candidateRank });
+      }
+      actualRanks.add(row.candidateRank);
+    }
+    for (const rank of expectedRanks) {
+      if (!actualRanks.has(rank)) runtimeViolations.push({ reason: "missing-candidate-rank", romanized, rank });
+    }
+  }
+}
+
+function devanagariGraphemeFailures(value) {
+  const failures = [];
+  if (/[\u093E]\u0947|\u094B\u0947|\u093F\u0940|\u0947{2,}/.test(value)) {
+    failures.push("malformed-devanagari-matra-sequence");
+  }
+  for (const token of String(value).split(/[\s।॥,;:!?()]+/)) {
+    if (!token) continue;
+    if (/^[\u093A-\u094D\u0951-\u0957\u0962-\u0963]/.test(token)) failures.push("orphan-devanagari-combining-mark");
+    if (/\u094D[\u093E-\u094C\u0962-\u0963]/.test(token)) failures.push("virama-before-dependent-vowel");
+    for (const cluster of token.split(/(?=[\u0915-\u0939\u0958-\u095F\u0978-\u097F])/u)) {
+      if (!cluster) continue;
+      const vowelSigns = cluster.match(/[\u093E-\u094C\u0962-\u0963]/g) ?? [];
+      if (new Set(vowelSigns).size !== vowelSigns.length) failures.push("repeated-devanagari-vowel-sign");
+      if (vowelSigns.length > 1 && !/\u094D/.test(cluster)) failures.push("conflicting-devanagari-vowel-signs");
+    }
+  }
+  return [...new Set(failures)];
+}
+
+function normalizeRomanized(value) {
+  return String(value).toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
+}
+
+function normalizeUnicode(value) {
+  return String(value).trim().normalize("NFC");
 }

@@ -181,7 +181,7 @@ function normalizeRows(rows, rowType, removed) {
       romanized: normalizeRomanized(row.romanized),
       unicode: normalizeDevanagari(row.unicode, removed)
     };
-    if (hasMalformedDevanagariMatraSequence(normalized.unicode)) {
+    if (hasMalformedDevanagariMatraSequence(normalized.unicode) || hasInvalidDevanagariGrapheme(normalized.unicode)) {
       removed.malformedUnicode += 1;
       continue;
     }
@@ -214,7 +214,12 @@ function sanitizeProofread(rows, validUnicode, removed) {
     if (typeof row?.error !== "string" || typeof row?.correction !== "string") continue;
     const error = normalizeDevanagari(row.error, removed);
     const correction = normalizeDevanagari(row.correction, removed);
-    if (hasMalformedDevanagariMatraSequence(error) || hasMalformedDevanagariMatraSequence(correction)) {
+    if (
+      hasMalformedDevanagariMatraSequence(error) ||
+      hasMalformedDevanagariMatraSequence(correction) ||
+      hasInvalidDevanagariGrapheme(error) ||
+      hasInvalidDevanagariGrapheme(correction)
+    ) {
       removed.malformedUnicode += 1;
       continue;
     }
@@ -335,7 +340,7 @@ function shouldDemotePreserveToken(token) {
 }
 
 function withRankedConfidence(rows, type, rankingContext) {
-  return rows
+  const rankedRows = rows
     .map((row, index) => ({
       ...row,
       confidence: rankedConfidence(row, type, index, rows.length, rankingContext)
@@ -346,6 +351,46 @@ function withRankedConfidence(rows, type, rankingContext) {
       normalizeRomanized(a.romanized ?? a.context ?? "").localeCompare(normalizeRomanized(b.romanized ?? b.context ?? ""), "en") ||
       (a.unicode ?? a.correction ?? a.next ?? "").localeCompare(b.unicode ?? b.correction ?? b.next ?? "", "ne")
     );
+  return ["words", "phrases", "names"].includes(type)
+    ? withCandidateRanks(rankedRows, rankingContext)
+    : rankedRows;
+}
+
+function withCandidateRanks(rows, rankingContext) {
+  const groups = new Map();
+  for (const row of rows) {
+    const romanized = normalizeRomanized(row.romanized ?? "");
+    if (!romanized) continue;
+    const group = groups.get(romanized) ?? [];
+    group.push(row);
+    groups.set(romanized, group);
+  }
+
+  const rankByIdentity = new Map();
+  for (const [romanized, group] of groups) {
+    const rankedGroup = [...group].sort((a, b) =>
+      b.confidence - a.confidence ||
+      rowFrequency(b, rankingContext) - rowFrequency(a, rankingContext) ||
+      (a.unicode ?? "").localeCompare(b.unicode ?? "", "ne")
+    );
+    rankedGroup.forEach((row, index) => {
+      rankByIdentity.set(`${romanized}\u0000${row.unicode}`, {
+        candidateRank: index + 1,
+        candidateGroupSize: rankedGroup.length
+      });
+    });
+  }
+
+  return rows.map((row) => {
+    const ranking = rankByIdentity.get(`${normalizeRomanized(row.romanized ?? "")}\u0000${row.unicode}`) ?? {
+      candidateRank: 1,
+      candidateGroupSize: 1
+    };
+    return {
+      ...row,
+      ...ranking
+    };
+  });
 }
 
 function rankedConfidence(row, type, index, count, rankingContext) {
@@ -592,6 +637,21 @@ function normalizeDevanagari(value, removed) {
 
 function hasMalformedDevanagariMatraSequence(value) {
   return /[\u093E]\u0947|\u094B\u0947|\u093F\u0940|\u0947{2,}/.test(value);
+}
+
+function hasInvalidDevanagariGrapheme(value) {
+  for (const token of String(value).split(/[\s।॥,;:!?()]+/)) {
+    if (!token) continue;
+    if (/^[\u093A-\u094D\u0951-\u0957\u0962-\u0963]/.test(token)) return true;
+    if (/\u094D[\u093E-\u094C\u0962-\u0963]/.test(token)) return true;
+    for (const cluster of token.split(/(?=[\u0915-\u0939\u0958-\u095F\u0978-\u097F])/u)) {
+      if (!cluster) continue;
+      const vowelSigns = cluster.match(/[\u093E-\u094C\u0962-\u0963]/g) ?? [];
+      if (new Set(vowelSigns).size !== vowelSigns.length) return true;
+      if (vowelSigns.length > 1 && !/[\u094D]/.test(cluster)) return true;
+    }
+  }
+  return false;
 }
 
 function localeSort(a, b) {

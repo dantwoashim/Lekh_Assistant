@@ -37,7 +37,9 @@ describe("macOS IMK proof target source", () => {
 
     expect(controller).not.toContain("LEKH_IMK_USE_XPC");
     expect(controller).not.toContain("/tmp/lekh");
-    expect(controller).toContain("LEKH_IMK_DIAGNOSTICS");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDiagnostics.swift"), "utf8")).toContain("LEKH_IMK_DIAGNOSTICS");
+    expect(controller).toContain("LekhDiagnosticsPolicy.diagnosticsEnabled(secureInputActive: IsSecureEventInputEnabled())");
+    expect(controller).toContain("menu.dictionaryWarning");
     expect(controller).toContain("LekhStaticProofEngineClient");
     expect(packageScript).toContain("runtime-suggestions.json");
     expect(packageScript).toContain("runtime-suggestions.lkb");
@@ -52,7 +54,7 @@ describe("macOS IMK proof target source", () => {
     expect(source).toContain("RuntimeSuggestionPack");
     expect(source).toContain("LekhBinaryLexicon");
     expect(source).toContain("LEKHBLX1");
-    expect(source).toContain("LekhDictionaryPackVerifier.verifiedInstalledPackURL");
+    expect(source).toContain("LekhDictionaryPackVerifier.installedPackStatus");
     expect(source).toContain("confidence: row.confidence");
     expect(source).toContain("LekhRomanizedComposer");
     expect(source).toContain("casualTailOverrides");
@@ -63,6 +65,8 @@ describe("macOS IMK proof target source", () => {
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("Ed25519");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("minAppVersion");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("compareVersion");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("LEKH_PACK_V2");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("installedPackStatus");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralTransliterator.swift"), "utf8")).toContain("CoreML");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhMetricReporter.swift"), "utf8")).toContain("LekhMetricKitOptIn");
     expect(source).toContain("lekh-keyboard.sqlite3");
@@ -95,7 +99,7 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("modePrompt.activate");
     expect(controller).toContain("menu() -> NSMenu!");
     expect(controller).toContain("selectModeFromInputMenu");
-    expect(controller).toContain("Forget Current Candidate");
+    expect(controller).toContain("menu.forgetCandidate");
     expect(controller).toContain("forgetCurrentCandidateFromInputMenu");
     expect(controller).toContain("engineClient.learnCommit");
     expect(controller).toContain("engineClient.forgetCandidate");
@@ -115,9 +119,15 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("return true");
     expect(controller).toContain("LEKH_IMK_INLINE_COMPOSITION");
     expect(controller).toContain("LekhLatencyRingBuffer");
-    expect(controller).toContain("Diagnostics...");
+    expect(controller).toContain("menu.diagnostics");
     expect(controller).toContain("visiblePreviewText");
+    expect(controller).toContain("LekhCandidatePanel");
+    expect(controller).toContain("showPreferencesFromInputMenu");
+    expect(controller).toContain("traditionalOptionText");
     expect(source).toContain("previewText(rawBuffer");
+    expect(source).toContain("loadProofreadRows");
+    expect(source).toContain("smartPunctuation(for:");
+    expect(source).toContain("LekhMixedScriptPolicy.preserveCandidate");
   });
 
   it("keeps native runtime candidates multi-valued and confidence-ranked", () => {
@@ -154,6 +164,9 @@ describe("macOS IMK proof target source", () => {
     expect(plist).toContain("NSPrincipalClass");
     expect(plist).toContain("LekhInputMethodApplication");
     expect(plist).toContain("LekhDictionaryPackEd25519PublicKeyBase64");
+    expect(plist).toContain("leXuq4+d5aRli02qEchU+UEo7qRbrzB1kpA21t+5nHY=");
+    expect(plist).toContain("SUFeedURL");
+    expect(plist).toContain("SUPublicEDKey");
     expect(plist).toContain("tsInputMethodIconFileKey");
     expect(plist).toContain("tsInputMethodCharacterRepertoireKey");
     expect(plist).toContain("ComponentInputModeDict");
@@ -232,6 +245,9 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).toContain("lipo");
     expect(installerPackager).toContain("LEKH_DIALOG_MESSAGE");
     expect(installerPackager).toContain("confirm_uninstall");
+    expect(installerPackager).toContain("Also remove my personal dictionary");
+    expect(installerPackager).toContain("RELEASE-MANIFEST.json");
+    expect(installerPackager).toContain("minisign");
     expect(installerPackager).toContain("checksumEntries");
     expect(installerPackager).toContain("Uninstaller must not embed the full keyboard payload");
     expect(installerPackager).toContain("InstallBackups");

@@ -2,7 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-APP="$ROOT/release/native/macos/Lekh Keyboard.imkdevbundle"
+STAGED_APP="${LEKH_MACOS_IMK_BUILD_DIR:-$HOME/Library/Caches/LekhKeyboardBuild/native/macos}/Lekh Keyboard.imkdevbundle"
+RELEASE_APP="$ROOT/release/native/macos/Lekh Keyboard.imkdevbundle"
+APP="$STAGED_APP"
+if [[ ! -d "$APP" && -d "$RELEASE_APP" ]]; then
+  APP="$RELEASE_APP"
+fi
 OLD_APP="$ROOT/release/native/macos/Lekh Keyboard Dev.imkdevbundle"
 LEGACY_APP="$ROOT/release/native/macos/Lekh Keyboard.app"
 DEST="$HOME/Library/Input Methods/Lekh Keyboard.app"
@@ -10,7 +15,8 @@ OLD_DEST="$HOME/Library/Input Methods/Lekh Keyboard Dev.app"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 if [[ ! -d "$APP" ]]; then
-  echo "Missing dev input method bundle: $APP" >&2
+  echo "Missing dev input method bundle: $STAGED_APP" >&2
+  echo "Fallback path also missing: $RELEASE_APP" >&2
   echo "Run: npm run package:macos:imk:dev" >&2
   exit 1
 fi

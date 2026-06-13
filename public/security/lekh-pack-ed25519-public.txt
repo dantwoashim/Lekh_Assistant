@@ -1,0 +1,7 @@
+Lekh Dictionary Pack Ed25519 Public Key
+
+Raw Ed25519 public key, Base64:
+leXuq4+d5aRli02qEchU+UEo7qRbrzB1kpA21t+5nHY=
+
+Purpose:
+Verifies signed Lekh dictionary-pack manifests before runtime packs are installed or loaded.

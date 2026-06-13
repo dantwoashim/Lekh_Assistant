@@ -44,6 +44,17 @@ describe("KeyboardEngine session API", () => {
     expect(suggestions.some((candidate) => candidate.text === "मुस्कुराउँदै")).toBe(true);
   });
 
+  it("uses romanization tolerance for common Nepali typing variants", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
+    const update = engine.updateComposition(sessionId, "thaperaa", 8);
+    const candidate = update.candidates.find((item) => item.text === "थपेर");
+
+    expect(candidate).toBeDefined();
+    expect(candidate?.reason.join(" ")).toMatch(/romanization/);
+    expect(update.candidates.some((item) => item.text === "थापेर")).toBe(true);
+  });
+
   it("uses the trained aggregate prediction model for contextual Romanized suggestions", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });

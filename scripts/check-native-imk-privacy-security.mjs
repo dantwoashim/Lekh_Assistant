@@ -11,15 +11,30 @@ const swiftFiles = collectFiles(sourceDir).filter((file) => file.endsWith(".swif
 const violations = [];
 const requiredMarkers = [
   ["LekhInputController.swift", "IsSecureEventInputEnabled"],
+  ["LekhInputController.swift", "LekhDiagnosticsPolicy.diagnosticsEnabled(secureInputActive: IsSecureEventInputEnabled())"],
+  ["LekhInputController.swift", "menu.dictionaryWarning"],
   ["LekhInputController.swift", "shouldPassThrough(modifiers:"],
+  ["LekhInputController.swift", "LekhCandidatePanel"],
+  ["LekhInputController.swift", "showPreferencesFromInputMenu"],
   ["LekhXpcClient.swift", "Data(contentsOf: url, options: [.mappedIfSafe])"],
+  ["LekhXpcClient.swift", "securityWarning()"],
+  ["LekhXpcClient.swift", "loadProofreadRows"],
+  ["LekhXpcClient.swift", "smartPunctuation(for:"],
+  ["LekhCandidatePanel.swift", "NSPanel"],
+  ["LekhPreferencesWindow.swift", "LekhPersonalDictionaryMaintenance"],
+  ["LekhPreferencesWindow.swift", "diagnostics.privacy"],
+  ["LekhNativePreferences.swift", "LekhMixedScriptPolicy"],
   ["LekhDictionaryPackVerifier.swift", "Ed25519"],
+  ["LekhDictionaryPackVerifier.swift", "LEKH_PACK_V2"],
+  ["LekhDictionaryPackVerifier.swift", "installedPackStatus"],
   ["LekhMetricReporter.swift", "LekhMetricKitOptIn"],
-  ["LekhDiagnostics.swift", "text and keystroke values are not recorded"]
+  ["LekhDiagnostics.swift", "text and keystroke values are not recorded"],
+  ["LekhDiagnostics.swift", "ttlSeconds: TimeInterval = 24 * 60 * 60"]
 ];
 
 for (const file of swiftFiles) {
   const source = readFileSync(file, "utf8");
+  const relativeFile = relative(ROOT, file);
   for (const pattern of [
     /\bURLSession\b/,
     /\bNSURLConnection\b/,
@@ -27,6 +42,7 @@ for (const file of swiftFiles) {
     /\bNWConnection\b/,
     /https?:\/\//
   ]) {
+    if (relativeFile.endsWith("Package.swift") && pattern.source === "https?:\\/\\/") continue;
     if (pattern.test(source)) {
       violations.push(`${relative(ROOT, file)}: forbidden network primitive or URL marker ${pattern}`);
     }
@@ -94,6 +110,7 @@ finish(report.status, report, violations.length === 0 ? 0 : 1);
 
 function collectFiles(directory) {
   return readdirSync(directory).flatMap((entry) => {
+    if ([".build", ".swiftpm"].includes(entry)) return [];
     const path = join(directory, entry);
     const stat = statSync(path);
     return stat.isDirectory() ? collectFiles(path) : [path];

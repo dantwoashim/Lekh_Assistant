@@ -3,13 +3,16 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync
 } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
 
@@ -18,7 +21,10 @@ const startedAt = performance.now();
 const skeletonDir = join(root, "native", "macos-imk", "skeleton");
 const reportPath = join(root, "reports", "macos-imk-dev-package-report.json");
 const releaseDir = join(root, "release", "native", "macos");
-const appBundle = join(releaseDir, "Lekh Keyboard.imkdevbundle");
+const buildReleaseDir = process.env.LEKH_MACOS_IMK_BUILD_DIR ||
+  join(homedir(), "Library", "Caches", "LekhKeyboardBuild", "native", "macos");
+const appBundle = join(buildReleaseDir, "Lekh Keyboard.imkdevbundle");
+const exportedAppBundle = join(releaseDir, "Lekh Keyboard.imkdevbundle");
 const legacyAppBundle = join(releaseDir, "Lekh Keyboard.app");
 const legacyDevBundle = join(releaseDir, "Lekh Keyboard Dev.imkdevbundle");
 const executableName = "LekhInputMethodApp";
@@ -26,6 +32,16 @@ const iconSource = join(root, "build", "icon.icns");
 const runtimeJsonOutputPath = join(releaseDir, "runtime-suggestions.sanitized.json");
 const runtimeBinaryOutputPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
 const universalExecutable = join(releaseDir, `${executableName}.universal`);
+const sparkleFrameworkSource = join(
+  skeletonDir,
+  ".build",
+  "artifacts",
+  "sparkle",
+  "Sparkle",
+  "Sparkle.xcframework",
+  "macos-arm64_x86_64",
+  "Sparkle.framework"
+);
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const archs = (process.env.LEKH_MAC_ARCHS ?? "arm64,x86_64")
   .split(",")
@@ -78,6 +94,54 @@ function sleep(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+function walkPaths(path) {
+  const paths = [path];
+  if (!existsSync(path)) return paths;
+  const stat = lstatSync(path);
+  if (!stat.isDirectory()) return paths;
+  for (const entry of readdirSync(path)) {
+    paths.push(...walkPaths(join(path, entry)));
+  }
+  return paths;
+}
+
+function stripCodeSignBlockedXattrs(path) {
+  spawnSync("/usr/sbin/dot_clean", ["-m", path], {
+    cwd: root,
+    env: toolchainEnv,
+    encoding: "utf8",
+    stdio: "ignore"
+  });
+  spawnSync("/usr/bin/xattr", ["-cr", path], {
+    cwd: root,
+    env: toolchainEnv,
+    encoding: "utf8",
+    stdio: "ignore"
+  });
+  for (const currentPath of walkPaths(path).reverse()) {
+    spawnSync("/usr/bin/SetFile", ["-c", "", "-t", "", currentPath], {
+      cwd: root,
+      env: toolchainEnv,
+      encoding: "utf8",
+      stdio: "ignore"
+    });
+    spawnSync("/usr/bin/xattr", ["-c", currentPath], {
+      cwd: root,
+      env: toolchainEnv,
+      encoding: "utf8",
+      stdio: "ignore"
+    });
+    for (const attribute of ["com.apple.FinderInfo", "com.apple.ResourceFork", "com.apple.fileprovider.fpfs#P", "com.apple.provenance"]) {
+      spawnSync("/usr/bin/xattr", ["-d", attribute, currentPath], {
+        cwd: root,
+        env: toolchainEnv,
+        encoding: "utf8",
+        stdio: "ignore"
+      });
+    }
+  }
+}
+
 if (process.platform !== "darwin") {
   finish("blocked-native-environment", {
     reason: "macOS IMK dev bundle must be built on macOS.",
@@ -90,6 +154,7 @@ if (archs.length === 0) {
 }
 
 mkdirSync(releaseDir, { recursive: true });
+mkdirSync(buildReleaseDir, { recursive: true });
 mkdirSync(toolchainEnv.CLANG_MODULE_CACHE_PATH, { recursive: true });
 mkdirSync(toolchainEnv.SWIFT_MODULE_CACHE_PATH, { recursive: true });
 rmSync(universalExecutable, { force: true });
@@ -133,11 +198,13 @@ if (archExecutables.length === 1) {
 run("strip-symbols", "strip", ["-S", universalExecutable]);
 
 rmSync(appBundle, { recursive: true, force: true });
+rmSync(exportedAppBundle, { recursive: true, force: true });
 rmSync(legacyAppBundle, { recursive: true, force: true });
 rmSync(legacyDevBundle, { recursive: true, force: true });
 mkdirSync(join(appBundle, "Contents", "MacOS"), { recursive: true });
 mkdirSync(join(appBundle, "Contents", "Resources", "en.lproj"), { recursive: true });
 mkdirSync(join(appBundle, "Contents", "Resources", "ne.lproj"), { recursive: true });
+mkdirSync(join(appBundle, "Contents", "Frameworks"), { recursive: true });
 
 copyFileSync(join(skeletonDir, "Info.plist"), join(appBundle, "Contents", "Info.plist"));
 if (process.env.LEKH_PACK_ED25519_PUBLIC_KEY_BASE64) {
@@ -155,6 +222,16 @@ if (process.env.LEKH_PACK_ED25519_PUBLIC_KEY_BASE64) {
 copyFileSync(join(skeletonDir, "PkgInfo"), join(appBundle, "Contents", "PkgInfo"));
 copyFileSync(universalExecutable, join(appBundle, "Contents", "MacOS", executableName));
 chmodSync(join(appBundle, "Contents", "MacOS", executableName), 0o755);
+if (existsSync(sparkleFrameworkSource)) {
+  run("copy-sparkle-framework", "ditto", [
+    "--norsrc",
+    "--noextattr",
+    "--noacl",
+    sparkleFrameworkSource,
+    join(appBundle, "Contents", "Frameworks", "Sparkle.framework")
+  ]);
+  stripCodeSignBlockedXattrs(join(appBundle, "Contents", "Frameworks", "Sparkle.framework"));
+}
 
 const frequencyBuild = run(
   "build-frequency-model",
@@ -226,7 +303,12 @@ writeFileSync(
 const signArgs = ["--force", "--options", "runtime", "--sign", signingIdentity];
 if (signingIdentity === "-") signArgs.push("--timestamp=none");
 else signArgs.push("--timestamp");
+const embeddedSparkleFramework = join(appBundle, "Contents", "Frameworks", "Sparkle.framework");
+if (existsSync(embeddedSparkleFramework)) {
+  stripCodeSignBlockedXattrs(embeddedSparkleFramework);
+}
 signArgs.push(appBundle);
+stripCodeSignBlockedXattrs(appBundle);
 run("codesign", "codesign", signArgs);
 run("codesign-verify", "codesign", ["--verify", "--deep", "--strict", appBundle]);
 spawnSync(lsregister, ["-u", "-v", appBundle], { cwd: root, encoding: "utf8", stdio: "ignore" });
@@ -258,6 +340,9 @@ if (entitlements.includes("com.apple.security.get-task-allow")) {
 if (!existsSync(runtimeBinaryOutputPath) || statSync(runtimeBinaryOutputPath).size > 5 * 1024 * 1024) {
   packagingFailures.push("Packaged runtime binary lexicon must exist and stay under 5 MB.");
 }
+if (strings.includes("@rpath/Sparkle.framework") && !existsSync(join(appBundle, "Contents", "Frameworks", "Sparkle.framework"))) {
+  packagingFailures.push("Executable links Sparkle.framework but the framework is not embedded.");
+}
 
 if (packagingFailures.length > 0) {
   finish("failed", {
@@ -273,6 +358,7 @@ if (packagingFailures.length > 0) {
 
 finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-ready", {
   artifact: appBundle,
+  exportedArtifact: null,
   installCommand: "native/macos-imk/skeleton/install-dev.sh",
   uninstallCommand: "native/macos-imk/skeleton/uninstall-dev.sh",
   signed: signingIdentity === "-" ? "ad-hoc-hardened-runtime" : signingIdentity,

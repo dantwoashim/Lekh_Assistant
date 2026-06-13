@@ -12,23 +12,33 @@ import {
   statSync,
   writeFileSync
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const root = process.cwd();
 const startedAt = performance.now();
 const reportPath = join(root, "reports", "macos-imk-test-installer-report.json");
 const releaseDir = join(root, "release", "native", "macos");
-const imkBundle = join(releaseDir, "Lekh Keyboard.imkdevbundle");
-const installerApp = join(releaseDir, "Lekh Keyboard Test Installer.app");
-const uninstallerApp = join(releaseDir, "Lekh Keyboard Uninstaller.app");
-const distFolder = join(releaseDir, "Lekh Keyboard Test Installer");
+const buildReleaseDir = process.env.LEKH_MACOS_INSTALLER_BUILD_DIR ||
+  join(homedir(), "Library", "Caches", "LekhKeyboardBuild", "native", "macos-installer");
+const stagedImkBundle = process.env.LEKH_MACOS_IMK_BUILD_DIR
+  ? join(process.env.LEKH_MACOS_IMK_BUILD_DIR, "Lekh Keyboard.imkdevbundle")
+  : join(homedir(), "Library", "Caches", "LekhKeyboardBuild", "native", "macos", "Lekh Keyboard.imkdevbundle");
+const releaseImkBundle = join(releaseDir, "Lekh Keyboard.imkdevbundle");
+const imkBundle = existsSync(stagedImkBundle) ? stagedImkBundle : releaseImkBundle;
+const installerApp = join(buildReleaseDir, "Lekh Keyboard Test Installer.app");
+const uninstallerApp = join(buildReleaseDir, "Lekh Keyboard Uninstaller.app");
+const distFolder = join(buildReleaseDir, "Lekh Keyboard Test Installer");
 const zipPath = join(releaseDir, "Lekh-Keyboard-Test-Installer.zip");
 const skeletonDir = join(root, "native", "macos-imk", "skeleton");
 const iconSource = join(root, "build", "icon.icns");
 const signingIdentity = process.env.LEKH_MAC_DEVELOPER_ID || "-";
+const minisignSecretKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY ||
+  join(root, "data", "private", "lekh-release-manifest-minisign.sec");
+const minisignPublicKey = join(root, "public", "security", "lekh-release-manifest-minisign.pub");
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const toolchainCacheDir = join(root, ".build-cache", "macos-toolchain");
 const toolchainEnv = {
@@ -215,6 +225,8 @@ function sleep(milliseconds) {
 function unregisterReleaseArtifacts() {
   for (const path of [
     imkBundle,
+    stagedImkBundle,
+    releaseImkBundle,
     installerApp,
     uninstallerApp,
     join(distFolder, "Lekh Keyboard Test Installer.app"),
@@ -295,7 +307,8 @@ if (!existsSync(imkBundle)) {
   finish("failed", {
     step: "missing-imk-bundle",
     reason: "Run npm run package:macos:imk:dev first.",
-    expected: imkBundle
+    expected: stagedImkBundle,
+    fallback: releaseImkBundle
   }, 1);
 }
 
@@ -306,6 +319,10 @@ run("verify-imk-payload", "codesign", ["--verify", "--deep", "--strict", imkBund
 rmSync(zipPath, { force: true });
 rmSync(distFolder, { recursive: true, force: true });
 mkdirSync(releaseDir, { recursive: true });
+mkdirSync(buildReleaseDir, { recursive: true });
+rmSync(join(releaseDir, "Lekh Keyboard Test Installer.app"), { recursive: true, force: true });
+rmSync(join(releaseDir, "Lekh Keyboard Uninstaller.app"), { recursive: true, force: true });
+rmSync(join(releaseDir, "Lekh Keyboard Test Installer"), { recursive: true, force: true });
 
 const installerScript = `#!/usr/bin/env bash
 set -uo pipefail
@@ -437,12 +454,30 @@ display dialog (system attribute "LEKH_DIALOG_MESSAGE") buttons {"OK"} default b
 APPLESCRIPT
 }
 confirm_uninstall() {
-  /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1
-display dialog "Remove Lekh Keyboard from this Mac? This deletes the keyboard, local learned words, dictionary packs, model files, backups, caches, and Lekh logs.\n\nयो Mac बाट लेख किबोर्ड हटाउने? यसले किबोर्ड, local learned words, dictionary packs, model files, backups, caches, र Lekh logs हटाउँछ।" buttons {"Cancel", "Uninstall"} default button "Cancel" cancel button "Cancel" with title "Lekh Keyboard" with icon caution
+  /usr/bin/osascript <<'APPLESCRIPT'
+use framework "AppKit"
+use scripting additions
+
+set alert to current application's NSAlert's alloc()'s init()
+alert's setMessageText:"Remove Lekh Keyboard from this Mac?"
+alert's setInformativeText:"This removes the keyboard, dictionary packs, model files, backups, caches, and Lekh logs. Your personal dictionary is kept unless you check the box below.\n\nयो Mac बाट लेख किबोर्ड हटाउने? यसले keyboard, dictionary packs, model files, backups, caches, र Lekh logs हटाउँछ। तलको checkbox नछानेसम्म personal dictionary राखिन्छ।"
+alert's addButtonWithTitle:"Uninstall"
+alert's addButtonWithTitle:"Cancel"
+alert's setAlertStyle:(current application's NSAlertStyleWarning)
+set checkbox to current application's NSButton's checkboxWithTitle:"Also remove my personal dictionary" target:(missing value) action:(missing value)
+checkbox's setState:0
+alert's setAccessoryView:checkbox
+set response to alert's runModal()
+if response is not 1000 then error number -128
+if (checkbox's state() as integer) is 1 then
+  return "1"
+end if
+return "0"
 APPLESCRIPT
 }
 
-if ! confirm_uninstall; then
+REMOVE_PERSONAL_DICTIONARY="$(confirm_uninstall 2>/dev/null || true)"
+if [[ "$REMOVE_PERSONAL_DICTIONARY" != "0" && "$REMOVE_PERSONAL_DICTIONARY" != "1" ]]; then
   log "uninstall cancelled by user"
   exit 0
 fi
@@ -456,9 +491,13 @@ fi
 /usr/bin/pkill -x LekhInputMethodApp >> "$LOG_FILE" 2>&1 || true
 /bin/rm -rf "$DEST"
 "$RESOURCE_DIR/purge-lekh-input-sources" >> "$LOG_FILE" 2>&1 || true
-/bin/rm -rf "$SUPPORT_DIR" "$CACHE_DIR"
+/bin/rm -rf "$SUPPORT_DIR/Packs" "$SUPPORT_DIR/Models" "$SUPPORT_DIR/InstallBackups" "$SUPPORT_DIR/Diagnostics" "$CACHE_DIR"
+if [[ "$REMOVE_PERSONAL_DICTIONARY" == "1" ]]; then
+  /bin/rm -f "$SUPPORT_DIR/lekh-keyboard.sqlite3" "$SUPPORT_DIR/lekh-keyboard.sqlite3-wal" "$SUPPORT_DIR/lekh-keyboard.sqlite3-shm"
+fi
+/usr/bin/find "$SUPPORT_DIR" -depth -type d -empty -delete >/dev/null 2>&1 || true
 log "uninstall completed"
-dialog "Lekh Keyboard was removed. Local learned words, dictionary packs, model files, backups, caches, and Lekh logs were deleted. Your previous keyboard was restored if macOS allowed the change.\n\nलेख किबोर्ड हटाइयो। local learned words, dictionary packs, model files, backups, caches, र Lekh logs मेटाइयो। macOS ले अनुमति दिएको भए पहिलेको keyboard restore गरिएको छ।"
+dialog "Lekh Keyboard was removed. Dictionary packs, model files, backups, caches, and Lekh logs were deleted. Personal dictionary removed: $REMOVE_PERSONAL_DICTIONARY. Your previous keyboard was restored if macOS allowed the change.\n\nलेख किबोर्ड हटाइयो। dictionary packs, model files, backups, caches, र Lekh logs मेटाइयो। personal dictionary removed: $REMOVE_PERSONAL_DICTIONARY। macOS ले अनुमति दिएको भए पहिलेको keyboard restore गरिएको छ।"
 /bin/rm -rf "$LOG_DIR"
 exit 0
 `;
@@ -517,6 +556,9 @@ writeFileSync(
     "",
     "This test build is local-first and does not send typing data to a server.",
     "Production distribution still requires Developer ID signing and notarization if this zip is built without LEKH_MAC_DEVELOPER_ID.",
+    "Release manifest:",
+    "RELEASE-MANIFEST.json is signed by RELEASE-MANIFEST.json.minisig. Verify with:",
+    "minisign -Vm RELEASE-MANIFEST.json -P $(tail -n 1 public/security/lekh-release-manifest-minisign.pub)",
     "",
     "नेपाली:",
     "१. Lekh Keyboard Test Installer.app खोल्नुहोस्।",
@@ -531,6 +573,49 @@ if (existsSync(join(root, "LICENSE"))) {
   copyFileSync(join(root, "LICENSE"), join(distFolder, "LICENSE.txt"));
 }
 
+const releaseManifestPath = join(distFolder, "RELEASE-MANIFEST.json");
+const manifestSignaturePath = `${releaseManifestPath}.minisig`;
+const releaseManifestFiles = walkPaths(distFolder)
+  .filter((target) => lstatSync(target).isFile())
+  .filter((target) => basename(target) !== "SHA256SUMS.txt")
+  .filter((target) => basename(target) !== "RELEASE-MANIFEST.json")
+  .filter((target) => basename(target) !== "RELEASE-MANIFEST.json.minisig")
+  .sort((a, b) => relative(distFolder, a).localeCompare(relative(distFolder, b), "en"));
+const releaseManifest = {
+  schemaVersion: 1,
+  generatedAt: new Date().toISOString(),
+  product: "Lekh Keyboard",
+  channel: signingIdentity === "-" ? "test-adhoc" : "developer-id",
+  version: "0.1.0",
+  build: 4,
+  hashAlgorithm: "SHA-256",
+  signature: {
+    algorithm: "minisign",
+    publicKey: existsSync(minisignPublicKey) ? relative(root, minisignPublicKey) : null,
+    detachedSignature: "RELEASE-MANIFEST.json.minisig"
+  },
+  files: releaseManifestFiles.map((target) => ({
+    path: relative(distFolder, target),
+    bytes: statSync(target).size,
+    sha256: createHash("sha256").update(readFileSync(target)).digest("hex")
+  }))
+};
+writeFileSync(releaseManifestPath, `${JSON.stringify(releaseManifest, null, 2)}\n`);
+if (!existsSync(minisignSecretKey)) {
+  finish("failed", {
+    step: "sign-release-manifest",
+    reason: "Missing minisign secret key for RELEASE-MANIFEST.json.",
+    expected: minisignSecretKey
+  }, 1);
+}
+run("sign-release-manifest", "minisign", ["-Sm", releaseManifestPath, "-s", minisignSecretKey, "-x", manifestSignaturePath]);
+if (!existsSync(manifestSignaturePath)) {
+  finish("failed", {
+    step: "sign-release-manifest",
+    reason: "minisign did not create RELEASE-MANIFEST.json.minisig"
+  }, 1);
+}
+
 const checksumTargets = walkPaths(distFolder)
   .filter((target) => lstatSync(target).isFile())
   .filter((target) => basename(target) !== "SHA256SUMS.txt")
@@ -540,6 +625,12 @@ const checksumLines = checksumTargets.map((target) => {
   return output.replace(target, relative(distFolder, target));
 });
 writeFileSync(join(distFolder, "SHA256SUMS.txt"), `${checksumLines.join("\n")}\n`);
+const releaseManifestSidecarPath = join(releaseDir, "RELEASE-MANIFEST.json");
+const manifestSignatureSidecarPath = join(releaseDir, "RELEASE-MANIFEST.json.minisig");
+const checksumSidecarPath = join(releaseDir, "SHA256SUMS.txt");
+copyFileSync(releaseManifestPath, releaseManifestSidecarPath);
+copyFileSync(manifestSignaturePath, manifestSignatureSidecarPath);
+copyFileSync(join(distFolder, "SHA256SUMS.txt"), checksumSidecarPath);
 stripCodeSignBlockedXattrs(installerApp);
 stripCodeSignBlockedXattrs(uninstallerApp);
 stripCodeSignBlockedXattrs(distFolder);
@@ -596,6 +687,9 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-r
   zipVerification: "passed",
   zipBytes,
   checksumEntries: checksumLines.length,
+  releaseManifest: releaseManifestSidecarPath,
+  releaseManifestSignature: manifestSignatureSidecarPath,
+  checksumFile: checksumSidecarPath,
   note: signingIdentity === "-"
     ? "Ad-hoc signed test artifact. Developer ID signing and notarization are still required for production distribution."
     : "Developer ID signed artifact. Notarization/stapling gate must run before public distribution."

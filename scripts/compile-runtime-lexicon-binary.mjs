@@ -245,10 +245,12 @@ function validateRuntimePack(pack) {
   const warnings = [];
   const seenRows = new Set();
   const romanizedMap = new Map();
+  const romanizedMapByKind = new Map();
   const confidenceDiversity = {};
 
   for (const kind of ["words", "phrases", "names"]) {
     const rows = Array.isArray(pack[kind]) ? pack[kind] : [];
+    const kindRomanizedMap = new Map();
     confidenceDiversity[kind] = new Set(rows.map((row) => row.confidence)).size;
     if (rows.length >= 10 && confidenceDiversity[kind] < 10) {
       failures.push(`${kind} confidence diversity too low: ${confidenceDiversity[kind]}`);
@@ -269,6 +271,7 @@ function validateRuntimePack(pack) {
       if (!/[\u0900-\u097F]/.test(unicode)) {
         failures.push(`${location}.unicode does not contain Devanagari`);
       }
+      validateDevanagariGraphemes(unicode, `${location}.unicode`, failures);
       if ((romanized === "patiko" && unicode === "यतिको") || (romanized.includes("patiko") && unicode.includes("यतिको"))) {
         failures.push(`${location} contains blocked patiko -> यतिको mapping`);
       }
@@ -278,7 +281,11 @@ function validateRuntimePack(pack) {
       const variants = romanizedMap.get(romanized) ?? new Set();
       variants.add(unicode);
       romanizedMap.set(romanized, variants);
+      const kindVariants = kindRomanizedMap.get(romanized) ?? new Set();
+      kindVariants.add(unicode);
+      kindRomanizedMap.set(romanized, kindVariants);
     });
+    romanizedMapByKind.set(kind, kindRomanizedMap);
   }
 
   validateProofread(pack.proofread ?? [], failures);
@@ -291,6 +298,7 @@ function validateRuntimePack(pack) {
     .sort((a, b) => b.candidates - a.candidates || a.romanized.localeCompare(b.romanized, "en"));
   if (ambiguousRomanized.length > 0) {
     warnings.push(`multi-candidate romanized keys allowed: ${ambiguousRomanized.length}`);
+    validateCandidateRanks(pack, romanizedMapByKind, failures);
   }
 
   return {
@@ -316,6 +324,8 @@ function validateProofread(rows, failures) {
     assertNfc(row.correction, `${location}.correction`, failures);
     const error = row.error.trim().normalize("NFC");
     const correction = row.correction.trim().normalize("NFC");
+    validateDevanagariGraphemes(error, `${location}.error`, failures);
+    validateDevanagariGraphemes(correction, `${location}.correction`, failures);
     if (!error || !correction || error === correction) failures.push(`${location} has empty or identity proofread rule`);
     const key = `${error}\0${correction}`;
     if (pairs.has(key)) failures.push(`${location} duplicates proofread rule`);
@@ -363,6 +373,69 @@ function validateMixedPolicy(policy, failures) {
       if (seen.has(normalized)) failures.push(`${location} duplicates ${normalized}`);
       seen.add(normalized);
     });
+  }
+}
+
+function validateCandidateRanks(pack, romanizedMap, failures) {
+  for (const kind of ["words", "phrases", "names"]) {
+    const rows = Array.isArray(pack[kind]) ? pack[kind] : [];
+    const kindRomanizedMap = romanizedMap.get(kind) ?? new Map();
+    const groups = new Map();
+    rows.forEach((row, index) => {
+      const romanized = normalizeRomanized(row?.romanized ?? "");
+      if ((kindRomanizedMap.get(romanized)?.size ?? 0) <= 1) return;
+      const group = groups.get(romanized) ?? [];
+      group.push({ row, index });
+      groups.set(romanized, group);
+    });
+
+    for (const [romanized, group] of groups) {
+      const expectedSize = kindRomanizedMap.get(romanized)?.size ?? group.length;
+      const ranks = new Set();
+      for (const { row, index } of group) {
+        const location = `${kind}[${index}]`;
+        if (!Number.isInteger(row.candidateRank) || row.candidateRank < 1 || row.candidateRank > expectedSize) {
+          failures.push(`${location} is in multi-candidate group "${romanized}" but has invalid candidateRank`);
+        }
+        if (row.candidateGroupSize !== expectedSize) {
+          failures.push(`${location} is in multi-candidate group "${romanized}" but candidateGroupSize is not ${expectedSize}`);
+        }
+        if (ranks.has(row.candidateRank)) {
+          failures.push(`${location} duplicates candidateRank ${row.candidateRank} in group "${romanized}"`);
+        }
+        ranks.add(row.candidateRank);
+      }
+      for (let rank = 1; rank <= expectedSize; rank += 1) {
+        if (!ranks.has(rank)) failures.push(`${kind}.${romanized} missing candidateRank ${rank}`);
+      }
+    }
+  }
+}
+
+function validateDevanagariGraphemes(value, location, failures) {
+  if (!value) return;
+  const malformedMatraSequence = /[\u093E]\u0947|\u094B\u0947|\u093F\u0940|\u0947{2,}/;
+  if (malformedMatraSequence.test(value)) {
+    failures.push(`${location} contains malformed Devanagari matra sequence`);
+  }
+  for (const token of String(value).split(/[\s।॥,;:!?()]+/)) {
+    if (!token) continue;
+    if (/^[\u093A-\u094D\u0951-\u0957\u0962-\u0963]/.test(token)) {
+      failures.push(`${location} has orphan Devanagari combining mark at token start: ${token}`);
+    }
+    if (/\u094D[\u093E-\u094C\u0962-\u0963]/.test(token)) {
+      failures.push(`${location} has virama followed directly by a dependent vowel sign: ${token}`);
+    }
+    for (const cluster of token.split(/(?=[\u0915-\u0939\u0958-\u095F\u0978-\u097F])/u)) {
+      if (!cluster) continue;
+      const vowelSigns = cluster.match(/[\u093E-\u094C\u0962-\u0963]/g) ?? [];
+      if (new Set(vowelSigns).size !== vowelSigns.length) {
+        failures.push(`${location} repeats a Devanagari vowel sign in cluster: ${cluster}`);
+      }
+      if (vowelSigns.length > 1 && !/[\u094D]/.test(cluster)) {
+        failures.push(`${location} has conflicting Devanagari vowel signs in cluster: ${cluster}`);
+      }
+    }
   }
 }
 

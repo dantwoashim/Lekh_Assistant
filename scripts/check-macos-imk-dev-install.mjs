@@ -8,6 +8,9 @@ import { spawn, spawnSync } from "node:child_process";
 const root = process.cwd();
 const startedAt = performance.now();
 const installedBundle = join(homedir(), "Library", "Input Methods", "Lekh Keyboard.app");
+const stagedPackageArtifact = process.env.LEKH_MACOS_IMK_BUILD_DIR
+  ? join(process.env.LEKH_MACOS_IMK_BUILD_DIR, "Lekh Keyboard.imkdevbundle")
+  : join(homedir(), "Library", "Caches", "LekhKeyboardBuild", "native", "macos", "Lekh Keyboard.imkdevbundle");
 const packageArtifact = join(root, "release", "native", "macos", "Lekh Keyboard.imkdevbundle");
 const oldPackageArtifact = join(root, "release", "native", "macos", "Lekh Keyboard Dev.imkdevbundle");
 const legacyPackageArtifact = join(root, "release", "native", "macos", "Lekh Keyboard.app");
@@ -53,7 +56,7 @@ if (process.platform !== "darwin") {
 mkdirSync(toolchainEnv.CLANG_MODULE_CACHE_PATH, { recursive: true });
 mkdirSync(toolchainEnv.SWIFT_MODULE_CACHE_PATH, { recursive: true });
 
-for (const artifact of [packageArtifact, oldPackageArtifact, legacyPackageArtifact]) {
+for (const artifact of [stagedPackageArtifact, packageArtifact, oldPackageArtifact, legacyPackageArtifact]) {
   spawnSync(lsregister, ["-u", "-v", artifact], { encoding: "utf8", stdio: "ignore" });
 }
 
@@ -188,6 +191,7 @@ const launchServices = spawnSync(lsregister, ["-dump"], {
   maxBuffer: 80 * 1024 * 1024
 });
 if (launchServices.status === 0 && (
+  launchServices.stdout.includes(`path:                       ${stagedPackageArtifact}`) ||
   launchServices.stdout.includes(`path:                       ${packageArtifact}`) ||
   launchServices.stdout.includes(`path:                       ${oldPackageArtifact}`) ||
   launchServices.stdout.includes(`path:                       ${legacyPackageArtifact}`)

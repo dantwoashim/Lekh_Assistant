@@ -33,6 +33,7 @@ const previousPath = args.get("previous");
 const outDir = args.get("out-dir") ?? join(ROOT, "release", "native", "macos", "dictionary-packs", version);
 const production = args.has("production");
 const reportPath = args.get("report") ?? join(ROOT, "reports", "dictionary-pack-update-report.json");
+const localPrivateKeyPath = join(ROOT, "data", "private", "lekh-pack-ed25519-private.pem");
 
 try {
   if (!existsSync(binaryPath)) {
@@ -72,27 +73,32 @@ try {
     const previous = readFileSync(previousPath);
     delta = buildDelta(previous, pack, version, sha256);
     const deltaPath = join(outDir, `runtime-suggestions-${version}.delta.json.gz`);
-    writeFileSync(deltaPath, gzipSync(JSON.stringify(delta)));
+    const compressedDelta = gzipSync(JSON.stringify(delta));
+    writeFileSync(deltaPath, compressedDelta);
     manifest.delta = {
       path: basename(deltaPath),
       sourceSha256: delta.sourceSha256,
       targetSha256: delta.targetSha256,
       rangeCount: delta.ranges.length,
-      compressedBytes: statSync(deltaPath).size
+      compressedBytes: statSync(deltaPath).size,
+      sha256: createHash("sha256").update(compressedDelta).digest("hex")
     };
   }
 
-  const privateKeyPem = process.env.LEKH_PACK_ED25519_PRIVATE_KEY_PEM;
+  const privateKeyPem = process.env.LEKH_PACK_ED25519_PRIVATE_KEY_PEM ||
+    (existsSync(localPrivateKeyPath) ? readFileSync(localPrivateKeyPath, "utf8") : "");
   if (privateKeyPem) {
     const signature = sign(null, signatureMessage(manifest), createPrivateKey(privateKeyPem));
     manifest.signature = {
       algorithm: "Ed25519",
       valueBase64: signature.toString("base64"),
-      message: "LEKH_PACK_V1\\nversion\\nsha256\\nbytes\\nformat"
+      message: "LEKH_PACK_V2\\nversion\\nsha256\\nbytes\\nformat\\nformatVersion\\nminAppVersion\\nminAppBuild\\nmaxAppBuild\\npath",
+      signedAt: new Date().toISOString()
     };
-  } else if (production) {
+  } else {
     fail("missing-pack-signing-key", {
       requiredEnv: "LEKH_PACK_ED25519_PRIVATE_KEY_PEM",
+      localDevKey: relative(ROOT, localPrivateKeyPath),
       reason: "Production dictionary packs must be Ed25519 signed."
     }, 1);
   }
@@ -148,7 +154,19 @@ function buildDelta(previous, target, version, targetSha256) {
 }
 
 function signatureMessage(manifest) {
-  return Buffer.from(`LEKH_PACK_V1\n${manifest.version}\n${manifest.sha256}\n${manifest.bytes}\n${manifest.binaryFormat}`, "utf8");
+  return Buffer.from([
+    "LEKH_PACK_V2",
+    manifest.version,
+    manifest.sha256,
+    String(manifest.bytes),
+    manifest.binaryFormat,
+    String(manifest.binaryFormatVersion ?? 1),
+    manifest.minAppVersion,
+    manifest.minAppBuild === null || manifest.minAppBuild === undefined ? "" : String(manifest.minAppBuild),
+    manifest.maxAppBuild === null || manifest.maxAppBuild === undefined ? "" : String(manifest.maxAppBuild),
+    manifest.path ?? "",
+    manifest.delta?.sha256 ?? ""
+  ].join("\n"), "utf8");
 }
 
 function fail(status, details, exitCode) {

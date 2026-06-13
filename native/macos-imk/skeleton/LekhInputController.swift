@@ -9,10 +9,7 @@ private let lekhNativeModeDefaultsKey = "LekhNativeTypingMode"
 private let lekhNativeModeChosenDefaultsKey = "LekhNativeTypingModeChosen.v2"
 
 func lekhNativeLog(_ message: String) {
-  let environment = ProcessInfo.processInfo.environment
-  let diagnosticsEnabled = environment["LEKH_IMK_DIAGNOSTICS"] == "1" ||
-    environment["LEKH_IMK_DEBUG_LOG"] == "1"
-  guard diagnosticsEnabled else { return }
+  guard LekhDiagnosticsPolicy.diagnosticsEnabled(secureInputActive: IsSecureEventInputEnabled()) else { return }
   lekhLogger.debug("\(message, privacy: .private)")
 }
 
@@ -40,6 +37,7 @@ open class LekhInputController: IMKInputController {
   private let latencyTelemetry = LekhLatencyRingBuffer()
   private let candidateState = LekhCandidateController()
   private var candidatePanel: IMKCandidates?
+  private let customCandidatePanel = LekhCandidatePanel()
   private var sessionId = UUID().uuidString
   private var nativeMode = LekhNativeTypingMode.romanizedTraditional
   private var modeMenuOpen = false
@@ -49,16 +47,18 @@ open class LekhInputController: IMKInputController {
     if value == "0" || value == "false" || value == "no" {
       return false
     }
-    return true
+    return LekhNativePreferences.inlinePreviewEnabled
   }
 
   public init(engineClient: LekhEngineClient = LekhStaticProofEngineClient()) {
+    LekhNativePreferences.registerDefaults()
     self.engineClient = engineClient
     super.init()
     configureModeFromDefaults()
   }
 
   public required override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
+    LekhNativePreferences.registerDefaults()
     self.engineClient = Self.defaultEngineClient()
     super.init(server: server, delegate: delegate, client: inputClient)
     self.candidatePanel = IMKCandidates(server: server, panelType: kIMKSingleRowSteppingCandidatePanel)
@@ -93,6 +93,11 @@ open class LekhInputController: IMKInputController {
   open override func activateServer(_ sender: Any!) {
     setKeyboardLayoutOverride()
     lekhNativeLog("lifecycle.activate")
+    if !LekhNativePreferences.firstRunTutorialSeen {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        LekhPreferencesWindowController.shared.showTutorialIfNeeded()
+      }
+    }
     guard modePromptPending, let client = sender as? IMKTextInput else { return }
     modeMenuOpen = true
     _ = apply(modeMenuDecision(), client: client, route: "modePrompt.activate")
@@ -236,6 +241,10 @@ open class LekhInputController: IMKInputController {
       return false
     }
 
+    if let optionText = traditionalOptionText(key: key, keyCode: keyCode, modifiers: modifiers) {
+      return processKey(optionText, client: sender, route: "traditional.optionLayer")
+    }
+
     if shouldPassThroughWithoutComposition(key: key) {
       lekhNativeLog("event.passThrough route=\(route) reason=noComposition")
       return false
@@ -305,12 +314,7 @@ open class LekhInputController: IMKInputController {
       cancelLocalComposition(client: client)
       return
     }
-    lekhNativeLog("candidate.selected length=\(text.utf16.count)")
-    engineClient.learnCommit(sessionId: sessionId, chosenOutput: text)
-    client.insertText(text, replacementRange: replacementRange(for: client))
-    engineClient.resetSession(sessionId)
-    candidateState.updateCandidates([])
-    hideCandidates()
+    commitCandidateText(text, client: client)
   }
 
   open override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
@@ -335,7 +339,14 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func menu() -> NSMenu! {
-    let menu = NSMenu(title: "Lekh Keyboard")
+    let menu = NSMenu(title: LekhL10n.text("app.name"))
+    if let warning = engineClient.securityWarning() {
+      let warningItem = NSMenuItem(title: LekhL10n.text("menu.dictionaryWarning"), action: #selector(showDictionaryWarningFromInputMenu(_:)), keyEquivalent: "")
+      warningItem.target = self
+      warningItem.representedObject = warning
+      menu.addItem(warningItem)
+      menu.addItem(.separator())
+    }
     for mode in LekhNativeTypingMode.visibleModes {
       let item = NSMenuItem(title: mode.menuLabel, action: #selector(selectModeFromInputMenu(_:)), keyEquivalent: "")
       item.target = self
@@ -345,14 +356,23 @@ open class LekhInputController: IMKInputController {
     }
     if let currentCandidate = candidateState.selectedCandidate() {
       menu.addItem(.separator())
-      let forget = NSMenuItem(title: "Forget Current Candidate", action: #selector(forgetCurrentCandidateFromInputMenu(_:)), keyEquivalent: "")
+      let forget = NSMenuItem(title: LekhL10n.text("menu.forgetCandidate"), action: #selector(forgetCurrentCandidateFromInputMenu(_:)), keyEquivalent: "")
       forget.target = self
       forget.representedObject = currentCandidate
       menu.addItem(forget)
     }
-    if LekhLatencyRingBuffer.diagnosticsEnabled {
+    menu.addItem(.separator())
+    let preferences = NSMenuItem(title: LekhL10n.text("menu.preferences"), action: #selector(showPreferencesFromInputMenu(_:)), keyEquivalent: "")
+    preferences.target = self
+    menu.addItem(preferences)
+
+    let tutorial = NSMenuItem(title: LekhL10n.text("menu.tutorial"), action: #selector(showTutorialFromInputMenu(_:)), keyEquivalent: "")
+    tutorial.target = self
+    menu.addItem(tutorial)
+
+    if LekhDiagnosticsPolicy.diagnosticsEnabled(secureInputActive: IsSecureEventInputEnabled()) {
       menu.addItem(.separator())
-      let diagnostics = NSMenuItem(title: "Diagnostics...", action: #selector(showDiagnosticsFromInputMenu(_:)), keyEquivalent: "")
+      let diagnostics = NSMenuItem(title: LekhL10n.text("menu.diagnostics"), action: #selector(showDiagnosticsFromInputMenu(_:)), keyEquivalent: "")
       diagnostics.target = self
       menu.addItem(diagnostics)
     }
@@ -370,7 +390,7 @@ open class LekhInputController: IMKInputController {
       cancelLocalComposition(client: client)
     } else {
       engineClient.resetSession(sessionId)
-      candidateState.updateCandidates([])
+      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
       hideCandidates()
     }
   }
@@ -378,7 +398,11 @@ open class LekhInputController: IMKInputController {
   @objc private func forgetCurrentCandidateFromInputMenu(_ item: NSMenuItem) {
     guard let candidate = item.representedObject as? String else { return }
     engineClient.forgetCandidate(sessionId: sessionId, chosenOutput: candidate)
-    candidateState.updateCandidates(candidateState.currentState().candidates.filter { $0 != candidate })
+    candidateState.updateCandidates(
+      candidateState.currentState().candidates.filter { $0 != candidate },
+      rawBuffer: engineClient.rawBuffer(sessionId: sessionId),
+      modeLabel: nativeMode.menuLabel
+    )
     hideCandidates()
     lekhNativeLog("candidate.forget length=\(candidate.utf16.count)")
   }
@@ -391,6 +415,29 @@ open class LekhInputController: IMKInputController {
       latencyTelemetry.summary(),
       "privacy=local-only; text and keystroke values are not recorded"
     ].joined(separator: "\n\n")
+    alert.addButton(withTitle: "OK")
+    alert.runModal()
+  }
+
+  @objc private func showPreferencesFromInputMenu(_ item: NSMenuItem) {
+    LekhPreferencesWindowController.shared.show { [weak self] in
+      guard let self else { return "diagnostics=unavailable" }
+      return [
+        self.engineClient.diagnosticsSummary(),
+        self.latencyTelemetry.summary()
+      ].joined(separator: "\n\n")
+    }
+  }
+
+  @objc private func showTutorialFromInputMenu(_ item: NSMenuItem) {
+    LekhPreferencesWindowController.shared.showTutorial()
+  }
+
+  @objc private func showDictionaryWarningFromInputMenu(_ item: NSMenuItem) {
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = "Dictionary Update Rejected"
+    alert.informativeText = (item.representedObject as? String) ?? "The latest dictionary pack could not be verified. Lekh kept the last-good local dictionary."
     alert.addButton(withTitle: "OK")
     alert.runModal()
   }
@@ -421,7 +468,7 @@ open class LekhInputController: IMKInputController {
   private func processFailOpenKey(_ key: String, keyCode: Int, client sender: Any!, route: String) -> Bool {
     if key == "\u{1b}" {
       engineClient.resetSession(sessionId)
-      candidateState.updateCandidates([])
+      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
       hideCandidates()
       lekhNativeLog("failOpen route=\(route) action=escape")
       return false
@@ -462,7 +509,7 @@ open class LekhInputController: IMKInputController {
     }
 
     if replacePreviouslyPassedThroughRawText(raw, with: committed, client: client) {
-      candidateState.updateCandidates([])
+      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
       hideCandidates()
       lekhNativeLog("failOpen route=\(route) action=replace rawLength=\(raw.utf16.count) committedLength=\(committed.utf16.count)")
       return true
@@ -645,7 +692,34 @@ open class LekhInputController: IMKInputController {
   }
 
   private func shouldPassThrough(modifiers: NSEvent.ModifierFlags) -> Bool {
-    modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.option)
+    if nativeMode.usesTraditionalKeyboardLayout,
+       LekhNativePreferences.traditionalOptionLayerEnabled,
+       modifiers.contains(.option),
+       !modifiers.contains(.command),
+       !modifiers.contains(.control) {
+      return false
+    }
+    return modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.option)
+  }
+
+  private func traditionalOptionText(key: String, keyCode: Int, modifiers: NSEvent.ModifierFlags) -> String? {
+    guard nativeMode.usesTraditionalKeyboardLayout,
+          LekhNativePreferences.traditionalOptionLayerEnabled,
+          modifiers.contains(.option),
+          !modifiers.contains(.command),
+          !modifiers.contains(.control) else {
+      return nil
+    }
+    switch keyCode {
+    case 15: return "\u{094D}र" // Option-R: repha/rakar helper
+    case 16: return "\u{094D}य" // Option-Y: yaphala helper
+    case 4: return "\u{094D}"   // Option-H: explicit halanta
+    case 45: return "\u{0901}"  // Option-N: chandrabindu
+    case 46: return "\u{0902}"  // Option-M: anusvara
+    case 47: return "\u{0964}"  // Option-.: danda
+    default:
+      return nil
+    }
   }
 
   private func shouldPassThroughWithoutComposition(key: String) -> Bool {
@@ -674,7 +748,7 @@ open class LekhInputController: IMKInputController {
 
   public func resetSession() {
     sessionId = UUID().uuidString
-    candidateState.updateCandidates([])
+    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
     hideCandidates()
   }
 
@@ -711,7 +785,7 @@ open class LekhInputController: IMKInputController {
     UserDefaults.standard.set(true, forKey: lekhNativeModeChosenDefaultsKey)
     UserDefaults.standard.synchronize()
     engineClient.resetSession(sessionId)
-    candidateState.updateCandidates([])
+    candidateState.updateCandidates([], rawBuffer: "", modeLabel: mode.menuLabel)
     hideCandidates()
     setKeyboardLayoutOverride()
     lekhNativeLog("mode.selected \(mode.rawValue)")
@@ -772,7 +846,7 @@ open class LekhInputController: IMKInputController {
       client.insertText(raw + suffix, replacementRange: replacementRange(for: client))
       engineClient.resetSession(sessionId)
     }
-    candidateState.updateCandidates([])
+    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
     hideCandidates()
     lekhNativeLog("composition.commit route=direct length=\((raw + suffix).utf16.count)")
     return true
@@ -780,7 +854,7 @@ open class LekhInputController: IMKInputController {
 
   private func cancelLocalComposition(client: IMKTextInput?) {
     engineClient.resetSession(sessionId)
-    candidateState.updateCandidates([])
+    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
     hideCandidates()
     client?.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: notFoundRange())
   }
@@ -792,7 +866,7 @@ open class LekhInputController: IMKInputController {
     if decision.shouldPassThrough || !decision.handled { return false }
     guard let client = sender as? IMKTextInput else {
       engineClient.resetSession(sessionId)
-      candidateState.updateCandidates([])
+      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
       hideCandidates()
       lekhNativeLog("apply route=\(route) failOpen=noClient")
       return false
@@ -805,7 +879,7 @@ open class LekhInputController: IMKInputController {
 
     if let committedText = decision.committedText {
       client.insertText(committedText, replacementRange: replacementRange(for: client))
-      candidateState.updateCandidates([])
+      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
       hideCandidates()
       return true
     }
@@ -835,6 +909,8 @@ open class LekhInputController: IMKInputController {
       }
     }
     attributed.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: range)
+    attributed.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+    attributed.addAttribute(.font, value: NSFont(name: "Kohinoor Devanagari", size: NSFont.systemFontSize + 2) ?? NSFont.systemFont(ofSize: NSFont.systemFontSize + 1), range: range)
     return attributed
   }
 
@@ -843,17 +919,46 @@ open class LekhInputController: IMKInputController {
   }
 
   private func updateCandidates(_ candidates: [String]) {
-    candidateState.updateCandidates(candidates)
+    let rawBuffer = engineClient.rawBuffer(sessionId: sessionId)
+    candidateState.updateCandidates(candidates, rawBuffer: rawBuffer, modeLabel: nativeMode.menuLabel)
     if candidates.isEmpty {
       hideCandidates()
       return
     }
+    if LekhNativePreferences.customCandidatePanelEnabled {
+      candidatePanel?.hide()
+      customCandidatePanel.show(
+        items: candidateState.currentState().displayItems,
+        title: modeMenuOpen ? LekhL10n.text("mode.prompt") : nativeMode.menuLabel
+      ) { [weak self] selectedText in
+        guard let self, let client = self.client() else { return }
+        if self.modeMenuOpen, let mode = self.modeFromMenuLabel(selectedText) {
+          self.selectNativeMode(mode)
+          self.modeMenuOpen = false
+          self.cancelLocalComposition(client: client)
+          return
+        }
+        self.commitCandidateText(selectedText, client: client)
+      }
+      return
+    }
+    customCandidatePanel.hide()
     candidatePanel?.update()
     candidatePanel?.show(kIMKLocateCandidatesBelowHint)
   }
 
   private func hideCandidates() {
+    customCandidatePanel.hide()
     candidatePanel?.hide()
+  }
+
+  private func commitCandidateText(_ text: String, client: IMKTextInput) {
+    lekhNativeLog("candidate.selected length=\(text.utf16.count)")
+    engineClient.learnCommit(sessionId: sessionId, chosenOutput: text)
+    client.insertText(text, replacementRange: replacementRange(for: client))
+    engineClient.resetSession(sessionId)
+    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
+    hideCandidates()
   }
 
   private func replacementRange(for client: IMKTextInput) -> NSRange {

@@ -27,14 +27,13 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 
 const manifestPath = args.get("manifest") ? resolve(args.get("manifest")) : null;
-const production = args.has("production");
-const allowUnsignedDev = args.has("allow-unsigned-dev");
 const appVersion = args.get("app-version") ?? "0.1.0";
 const appBuild = Number(args.get("app-build") ?? 4);
 const packDirectory = join(homedir(), "Library", "Application Support", "Lekh Keyboard", "Packs");
 const activePackPath = join(packDirectory, "runtime-suggestions.current.lkb");
 const activeManifestPath = join(packDirectory, "runtime-suggestions.current.json");
 const reportPath = args.get("report") ?? join(ROOT, "reports", "dictionary-pack-install-report.json");
+const localPublicKeyPath = join(ROOT, "data", "private", "lekh-pack-ed25519-public.pem");
 
 try {
   if (!manifestPath || !existsSync(manifestPath)) {
@@ -62,21 +61,26 @@ try {
   if (manifest.bytes !== pack.length) fail("byte-mismatch", { expected: manifest.bytes, actual: pack.length }, 1);
   if (manifest.sha256 !== sha256) fail("sha-mismatch", { expected: manifest.sha256, actual: sha256 }, 1);
 
-  const publicKeyPem = process.env.LEKH_PACK_ED25519_PUBLIC_KEY_PEM;
-  if (manifest.signature?.valueBase64 && publicKeyPem) {
-    const ok = verify(
-      null,
-      signatureMessage(manifest),
-      createPublicKey(publicKeyPem),
-      Buffer.from(manifest.signature.valueBase64, "base64")
-    );
-    if (!ok) fail("signature-invalid", {}, 1);
-  } else if (production || !allowUnsignedDev) {
+  const publicKeyPem = process.env.LEKH_PACK_ED25519_PUBLIC_KEY_PEM ||
+    (existsSync(localPublicKeyPath) ? readFileSync(localPublicKeyPath, "utf8") : "");
+  if (!manifest.signature?.valueBase64) {
     fail("signature-required", {
-      requiredEnv: "LEKH_PACK_ED25519_PUBLIC_KEY_PEM",
-      allowUnsignedDevFlag: "--allow-unsigned-dev"
+      reason: "Dictionary packs are fail-closed; unsigned packs are never installed."
     }, 1);
   }
+  if (!publicKeyPem) {
+    fail("signature-required", {
+      requiredEnv: "LEKH_PACK_ED25519_PUBLIC_KEY_PEM",
+      localDevKey: relative(ROOT, localPublicKeyPath)
+    }, 1);
+  }
+  const ok = verify(
+    null,
+    signatureMessage(manifest),
+    createPublicKey(publicKeyPem),
+    Buffer.from(manifest.signature.valueBase64, "base64")
+  );
+  if (!ok) fail("signature-invalid", {}, 1);
 
   mkdirSync(packDirectory, { recursive: true });
   const tmpPack = `${activePackPath}.installing.${process.pid}`;
@@ -102,7 +106,19 @@ try {
 }
 
 function signatureMessage(manifest) {
-  return Buffer.from(`LEKH_PACK_V1\n${manifest.version}\n${manifest.sha256}\n${manifest.bytes}\n${manifest.binaryFormat}`, "utf8");
+  return Buffer.from([
+    "LEKH_PACK_V2",
+    manifest.version,
+    manifest.sha256,
+    String(manifest.bytes),
+    manifest.binaryFormat,
+    String(manifest.binaryFormatVersion ?? 1),
+    manifest.minAppVersion,
+    manifest.minAppBuild === null || manifest.minAppBuild === undefined ? "" : String(manifest.minAppBuild),
+    manifest.maxAppBuild === null || manifest.maxAppBuild === undefined ? "" : String(manifest.maxAppBuild),
+    manifest.path ?? "",
+    manifest.delta?.sha256 ?? ""
+  ].join("\n"), "utf8");
 }
 
 function isCompatibleManifest(manifest, currentVersion, currentBuild) {

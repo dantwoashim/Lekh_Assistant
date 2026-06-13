@@ -1,0 +1,7 @@
+Lekh Sparkle 2 EdDSA Public Key
+
+Sparkle SUPublicEDKey:
+iKAPpQHHx7GBhsTDmadt3rilfhhPKo2RdqV2Q0/zN6U=
+
+Purpose:
+Verifies Sparkle 2 appcast update signatures for the macOS app update channel.

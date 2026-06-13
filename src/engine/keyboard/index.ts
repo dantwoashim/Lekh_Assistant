@@ -24,10 +24,17 @@ import type {
 } from "./types";
 import type { CorrectionMemoryEntry } from "../memory";
 
+interface RefreshCacheEntry {
+  key: string;
+  update: CandidateUpdate;
+}
+
 export class LocalKeyboardEngine implements KeyboardEngine {
   private readonly sessions = new KeyboardSessionManager();
   private readonly cache = new CandidateCache();
+  private readonly refreshCache = new Map<SessionId, RefreshCacheEntry>();
   private memoryEntries: CorrectionMemoryEntry[] = [];
+  private memoryVersion = 0;
 
   beginSession(context: TypingContext): SessionId {
     return this.sessions.beginSession(context);
@@ -109,10 +116,12 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     const result = commitCandidateResult(session, candidate);
     if (result.memoryRecorded) {
       this.memoryEntries = recordKeyboardMemorySelection(this.memoryEntries, session, candidate);
+      this.memoryVersion += 1;
     }
     result.followupCandidates = nextWordCandidates(result.committedText, session);
     this.sessions.recordCommit(sessionId, result.committedText);
     this.cache.clear(sessionId);
+    this.refreshCache.delete(sessionId);
     return result;
   }
 
@@ -123,6 +132,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     result.followupCandidates = nextWordCandidates(result.committedText, session);
     this.sessions.recordCommit(sessionId, result.committedText);
     this.cache.clear(sessionId);
+    this.refreshCache.delete(sessionId);
     return result;
   }
 
@@ -130,12 +140,14 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     if (!this.sessions.has(sessionId)) return;
     this.sessions.cancelComposition(sessionId);
     this.cache.clear(sessionId);
+    this.refreshCache.delete(sessionId);
   }
 
   endSession(sessionId: SessionId): void {
     if (!this.sessions.has(sessionId)) return;
     this.sessions.endSession(sessionId);
     this.cache.clear(sessionId);
+    this.refreshCache.delete(sessionId);
   }
 
   getSuggestions(context: TypingContext): Candidate[] {
@@ -152,23 +164,29 @@ export class LocalKeyboardEngine implements KeyboardEngine {
 
   learnCorrection(entry: unknown): void {
     this.memoryEntries = importKeyboardMemoryEntry(this.memoryEntries, entry);
+    this.memoryVersion += 1;
+    this.refreshCache.clear();
   }
 
   setContext(sessionId: SessionId, patch: Partial<TypingContext>): void {
     if (!this.sessions.has(sessionId)) return;
     this.sessions.updateContext(sessionId, patch);
     this.cache.clear(sessionId);
+    this.refreshCache.delete(sessionId);
   }
 
   setMode(sessionId: SessionId, mode: KeyboardMode): void {
     if (!this.sessions.has(sessionId)) return;
     this.sessions.setMode(sessionId, mode);
     this.cache.clear(sessionId);
+    this.refreshCache.delete(sessionId);
   }
 
   setLayout(sessionId: SessionId, layoutId: string): void {
     if (!this.sessions.has(sessionId)) return;
     this.sessions.setLayout(sessionId, layoutId);
+    this.cache.clear(sessionId);
+    this.refreshCache.delete(sessionId);
   }
 
   warm(options?: WarmOptions): Promise<WarmResult> {
@@ -178,18 +196,49 @@ export class LocalKeyboardEngine implements KeyboardEngine {
   async shutdown(): Promise<void> {
     this.sessions.shutdown();
     this.cache.clearAll();
+    this.refreshCache.clear();
     this.memoryEntries = [];
+    this.memoryVersion = 0;
   }
 
   private refresh(sessionId: SessionId): CandidateUpdate {
     const session = this.sessions.get(sessionId);
+    const cacheKey = this.refreshCacheKey(session);
+    const cached = this.refreshCache.get(sessionId);
+    if (cached?.key === cacheKey) return cloneCandidateUpdate(cached.update);
+
     const textWindow = `${session.context.leftTextWindow}${session.compositionText}`;
     const proofHints = getKeyboardProofHints(textWindow, session.context);
     this.sessions.updateProofHints(sessionId, proofHints);
     const update = buildCandidateUpdate(this.sessions.get(sessionId), { memoryEntries: this.memoryEntries });
     this.sessions.updateCandidates(sessionId, update.candidates, update.warnings);
     this.cache.set(sessionId, update.candidates);
+    this.refreshCache.set(sessionId, { key: cacheKey, update: cloneCandidateUpdate(update) });
     return update;
+  }
+
+  private refreshCacheKey(session: ReturnType<KeyboardSessionManager["get"]>): string {
+    const context = session.context;
+    return JSON.stringify({
+      memoryVersion: this.memoryVersion,
+      mode: session.mode,
+      layoutId: session.layoutId ?? "",
+      compositionText: session.compositionText,
+      caret: session.caret,
+      leftTextWindow: context.leftTextWindow,
+      rightTextWindow: context.rightTextWindow ?? "",
+      appId: context.appId ?? "",
+      appName: context.appName ?? "",
+      fieldType: context.fieldType ?? "",
+      locale: context.locale ?? "",
+      preserveEnglish: context.preserveEnglish,
+      secureInput: context.secureInput,
+      activeDomains: context.activeDomains,
+      enabledSurfaces: context.enabledSurfaces,
+      showRomanizedLabels: context.showRomanizedLabels ?? false,
+      enableNextWordPrediction: context.enableNextWordPrediction ?? false,
+      warnings: session.warnings
+    });
   }
 }
 
@@ -237,6 +286,26 @@ function withCommit(update: CandidateUpdate, result: CommitResult, committedText
 
 export function createKeyboardEngine(): KeyboardEngine {
   return new LocalKeyboardEngine();
+}
+
+function cloneCandidateUpdate(update: CandidateUpdate): CandidateUpdate {
+  return {
+    ...update,
+    candidates: update.candidates.map((candidate) => ({ ...candidate, reason: candidate.reason.slice() })),
+    primary: update.primary ? { ...update.primary, reason: update.primary.reason.slice() } : undefined,
+    inlineCompletion: update.inlineCompletion
+      ? {
+        ...update.inlineCompletion,
+        candidate: {
+          ...update.inlineCompletion.candidate,
+          reason: update.inlineCompletion.candidate.reason.slice()
+        }
+      }
+      : undefined,
+    proofHints: update.proofHints.map((hint) => ({ ...hint, range: [hint.range[0], hint.range[1]] })),
+    warnings: update.warnings.slice(),
+    consumedRange: update.consumedRange ? [update.consumedRange[0], update.consumedRange[1]] : undefined
+  };
 }
 
 export * from "./types";

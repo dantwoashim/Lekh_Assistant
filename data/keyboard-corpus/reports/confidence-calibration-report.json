@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-06-13T03:49:31.249Z",
+  "command": "node scripts/calibrate-runtime-confidence.mjs",
+  "suite": "runtime-confidence-calibration",
+  "durationMs": 2,
+  "status": "passed-no-holdout-dev",
+  "holdout": "data/keyboard-corpus/review/v0.1/human_rated_holdout.jsonl",
+  "rows": 0,
+  "failures": [],
+  "warnings": [
+    "No human-rated holdout yet; production calibration remains blocked."
+  ]
+}
