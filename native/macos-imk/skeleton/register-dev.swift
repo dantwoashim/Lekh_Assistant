@@ -32,6 +32,11 @@ func firstInputMode(from infoPlist: NSDictionary) -> (modeId: String, inputSourc
 
 let inputMode = firstInputMode(from: infoPlist)
 let inputSourceId = inputMode?.inputSourceId ?? parentInputSourceId
+let hitoolboxDomain = "com.apple.HIToolbox" as CFString
+let inputSourcesDomain = "com.apple.inputsources" as CFString
+let enabledInputSourcesKey = "AppleEnabledInputSources" as CFString
+let selectedInputSourcesKey = "AppleSelectedInputSources" as CFString
+let enabledThirdPartyInputSourcesKey = "AppleEnabledThirdPartyInputSources" as CFString
 
 func stringProperty(_ source: TISInputSource, _ key: CFString) -> String {
   TISGetInputSourceProperty(source, key)
@@ -94,6 +99,82 @@ func postInputSourceChangeNotification() {
   )
 }
 
+func dictionaryContainsLekh(_ value: Any) -> Bool {
+  guard let dictionary = value as? [AnyHashable: Any] else { return false }
+  for (_, item) in dictionary {
+    if let itemString = item as? String,
+       itemString.localizedCaseInsensitiveContains("lekh") || itemString.hasPrefix("com.lekh.inputmethod.") {
+      return true
+    }
+    if let nestedDictionary = item as? [AnyHashable: Any],
+       dictionaryContainsLekh(nestedDictionary) {
+      return true
+    }
+    if let nestedArray = item as? [Any],
+       nestedArray.contains(where: dictionaryContainsLekh) {
+      return true
+    }
+  }
+  return false
+}
+
+func inputSourceKind(_ value: Any) -> String {
+  guard let dictionary = value as? [AnyHashable: Any] else { return "" }
+  return dictionary["InputSourceKind"] as? String ?? ""
+}
+
+func existingPreferenceArray(_ key: CFString, domain: CFString) -> [Any] {
+  CFPreferencesCopyAppValue(key, domain) as? [Any] ?? []
+}
+
+func setPreferenceArray(_ array: [Any], key: CFString, domain: CFString) {
+  CFPreferencesSetAppValue(key, array as CFArray, domain)
+}
+
+func withoutLekhRows(_ array: [Any]) -> [Any] {
+  array.filter { !dictionaryContainsLekh($0) }
+}
+
+func syncMenuBarPreferences(selected: Bool) {
+  let inputModeRow: [String: Any] = [
+    "Bundle ID": parentInputSourceId,
+    "Input Mode": inputSourceId,
+    "InputSourceKind": "Input Mode"
+  ]
+  let parentRow: [String: Any] = [
+    "Bundle ID": parentInputSourceId,
+    "InputSourceKind": "Keyboard Input Method"
+  ]
+
+  var enabledRows = withoutLekhRows(existingPreferenceArray(enabledInputSourcesKey, domain: hitoolboxDomain))
+  enabledRows.append(inputModeRow)
+  setPreferenceArray(enabledRows, key: enabledInputSourcesKey, domain: hitoolboxDomain)
+
+  var thirdPartyRows = withoutLekhRows(existingPreferenceArray(enabledThirdPartyInputSourcesKey, domain: inputSourcesDomain))
+  thirdPartyRows.append(parentRow)
+  setPreferenceArray(thirdPartyRows, key: enabledThirdPartyInputSourcesKey, domain: inputSourcesDomain)
+
+  if selected {
+    let preservedSelectedRows = withoutLekhRows(existingPreferenceArray(selectedInputSourcesKey, domain: hitoolboxDomain))
+      .filter {
+        let kind = inputSourceKind($0)
+        return kind != "Keyboard Layout" && kind != "Input Mode"
+      }
+    setPreferenceArray(preservedSelectedRows + [inputModeRow], key: selectedInputSourcesKey, domain: hitoolboxDomain)
+  }
+
+  CFPreferencesAppSynchronize(hitoolboxDomain)
+  CFPreferencesAppSynchronize(inputSourcesDomain)
+}
+
+func removeMenuBarPreferences() {
+  setPreferenceArray(withoutLekhRows(existingPreferenceArray(enabledInputSourcesKey, domain: hitoolboxDomain)), key: enabledInputSourcesKey, domain: hitoolboxDomain)
+  setPreferenceArray(withoutLekhRows(existingPreferenceArray(selectedInputSourcesKey, domain: hitoolboxDomain)), key: selectedInputSourcesKey, domain: hitoolboxDomain)
+  setPreferenceArray(withoutLekhRows(existingPreferenceArray(enabledThirdPartyInputSourcesKey, domain: inputSourcesDomain)), key: enabledThirdPartyInputSourcesKey, domain: inputSourcesDomain)
+  CFPreferencesAppSynchronize(hitoolboxDomain)
+  CFPreferencesAppSynchronize(inputSourcesDomain)
+}
+
 func disableSource(_ source: TISInputSource) -> OSStatus {
   TISDisableInputSource(source)
 }
@@ -124,6 +205,7 @@ if shouldDisable {
       if lastStatus == noErr { disabledCount += 1 }
     }
   }
+  removeMenuBarPreferences()
   postInputSourceChangeNotification()
   guard lastStatus == noErr || disabledCount == 0 else {
     fputs("Lekh Keyboard input source could not be disabled. id=\(inputSourceId) status=\(lastStatus)\n", stderr)
@@ -150,6 +232,11 @@ if let parent = registered.parent {
 }
 postInputSourceChangeNotification()
 Thread.sleep(forTimeInterval: 0.5)
+syncMenuBarPreferences(selected: shouldSelect)
+postInputSourceChangeNotification()
+Thread.sleep(forTimeInterval: 0.5)
+syncMenuBarPreferences(selected: shouldSelect)
+postInputSourceChangeNotification()
 
 guard isEnabled(inputSourceId) || isEnabled(parentInputSourceId) else {
   fputs("Lekh Keyboard input source is discoverable but still not enabled after TISEnableInputSource. id=\(inputSourceId)\n", stderr)
