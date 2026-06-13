@@ -23,6 +23,7 @@ const releaseDir = args.get("release-dir") ?? join(ROOT, "release", "native", "m
 const zipPath = args.get("zip") ?? join(releaseDir, "Lekh-Keyboard-Test-Installer.zip");
 const appcastPath = args.get("appcast") ?? join(releaseDir, "appcast.xml");
 const dictionaryManifestPath = args.get("dictionary-manifest") ?? join(releaseDir, "dictionary-packs");
+const publicUpdatesDir = args.get("public-updates-dir") ?? join(ROOT, "public", "updates", "macos");
 const imkInfoPlistPath = args.get("imk-info-plist") ?? join(ROOT, "native", "macos-imk", "skeleton", "Info.plist");
 const releaseManifestPath = args.get("release-manifest") ?? join(releaseDir, "RELEASE-MANIFEST.json");
 const releaseManifestSignaturePath = `${releaseManifestPath}.minisig`;
@@ -55,6 +56,7 @@ const appcastDetails = checkAppcast();
 checkDictionaryPacks();
 checkReleaseManifest(appcastDetails);
 checkChecksums();
+checkPublicUpdateFeed();
 
 const report = {
   status: failures.length === 0 ? "passed" : "failed",
@@ -62,6 +64,7 @@ const report = {
   zip: relative(ROOT, zipPath),
   appcast: relative(ROOT, appcastPath),
   dictionaryManifestPath: relative(ROOT, dictionaryManifestPath),
+  publicUpdatesDir: relative(ROOT, publicUpdatesDir),
   releaseManifest: relative(ROOT, releaseManifestPath),
   failures,
   warnings,
@@ -325,6 +328,50 @@ function checkChecksums() {
     }
     const actual = createHash("sha256").update(readFileSync(join(releaseDir, file))).digest("hex");
     if (actual !== expected) critical(`SHA256SUMS.txt hash mismatch for ${file}.`);
+  }
+}
+
+function checkPublicUpdateFeed() {
+  const feedURL = imkInfoPlist ? plistValue(imkInfoPlist, "SUFeedURL") : null;
+  if (!feedURL?.includes("/updates/macos/")) return;
+  if (!existsSync(publicUpdatesDir)) {
+    critical(`Public macOS update feed directory is missing: ${relative(ROOT, publicUpdatesDir)}`);
+    return;
+  }
+  for (const fileName of [
+    "Lekh-Keyboard-Test-Installer.zip",
+    "appcast.xml",
+    "RELEASE-MANIFEST.json",
+    "RELEASE-MANIFEST.json.minisig",
+    "SHA256SUMS.txt"
+  ]) {
+    compareMirrorFile(join(releaseDir, fileName), join(publicUpdatesDir, fileName), `public updates ${fileName}`);
+  }
+  const releasePackFiles = existsSync(dictionaryManifestPath)
+    ? collectFiles(dictionaryManifestPath).filter((file) => file.endsWith(".lkb") || file.endsWith("manifest.json"))
+    : [];
+  for (const releasePackFile of releasePackFiles) {
+    compareMirrorFile(
+      releasePackFile,
+      join(publicUpdatesDir, relative(releaseDir, releasePackFile)),
+      `public updates ${relative(releaseDir, releasePackFile)}`
+    );
+  }
+}
+
+function compareMirrorFile(source, target, label) {
+  if (!existsSync(source)) {
+    critical(`${label} source is missing: ${relative(ROOT, source)}`);
+    return;
+  }
+  if (!existsSync(target)) {
+    critical(`${label} mirror is missing: ${relative(ROOT, target)}`);
+    return;
+  }
+  const sourceHash = createHash("sha256").update(readFileSync(source)).digest("hex");
+  const targetHash = createHash("sha256").update(readFileSync(target)).digest("hex");
+  if (sourceHash !== targetHash) {
+    critical(`${label} mirror hash mismatch: ${relative(ROOT, target)}`);
   }
 }
 

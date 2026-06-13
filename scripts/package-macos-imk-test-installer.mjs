@@ -33,6 +33,7 @@ const installerApp = join(buildReleaseDir, "Lekh Keyboard Test Installer.app");
 const uninstallerApp = join(buildReleaseDir, "Lekh Keyboard Uninstaller.app");
 const distFolder = join(buildReleaseDir, "Lekh Keyboard Test Installer");
 const zipPath = join(releaseDir, "Lekh-Keyboard-Test-Installer.zip");
+const publicUpdatesDir = join(root, "public", "updates", "macos");
 const skeletonDir = join(root, "native", "macos-imk", "skeleton");
 const iconSource = join(root, "build", "icon.icns");
 const signingIdentity = process.env.LEKH_MAC_DEVELOPER_ID || "-";
@@ -764,6 +765,27 @@ run("sign-release-directory-manifest", process.execPath, [
   join(root, "reports", "release-directory-manifest-report.json")
 ]);
 verifyMinisignSignature(releaseManifestSidecarPath, manifestSignatureSidecarPath, "verify-release-directory-minisign");
+
+rmSync(publicUpdatesDir, { recursive: true, force: true });
+mkdirSync(join(publicUpdatesDir, "dictionary-packs", dictionaryPackVersion), { recursive: true });
+for (const fileName of [
+  "Lekh-Keyboard-Test-Installer.zip",
+  "appcast.xml",
+  "RELEASE-MANIFEST.json",
+  "RELEASE-MANIFEST.json.minisig",
+  "SHA256SUMS.txt"
+]) {
+  copyFileSync(join(releaseDir, fileName), join(publicUpdatesDir, fileName));
+}
+copyFileSync(
+  join(dictionaryPackDir, "manifest.json"),
+  join(publicUpdatesDir, "dictionary-packs", dictionaryPackVersion, "manifest.json")
+);
+copyFileSync(
+  join(dictionaryPackDir, `runtime-suggestions-${dictionaryPackVersion}.lkb`),
+  join(publicUpdatesDir, "dictionary-packs", dictionaryPackVersion, `runtime-suggestions-${dictionaryPackVersion}.lkb`)
+);
+
 unregisterReleaseArtifacts();
 sleep(500);
 unregisterReleaseArtifacts();
