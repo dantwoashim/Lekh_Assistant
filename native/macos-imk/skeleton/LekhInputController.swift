@@ -7,6 +7,7 @@ import OSLog
 private let lekhLogger = Logger(subsystem: "com.lekh.inputmethod.keyboard", category: "imk")
 private let lekhNativeModeDefaultsKey = "LekhNativeTypingMode"
 private let lekhNativeModeChosenDefaultsKey = "LekhNativeTypingModeChosen.v2"
+private let lekhNativeModeDidChangeNotification = Notification.Name("LekhNativeTypingModeDidChange")
 
 func lekhNativeLog(_ message: String) {
   guard LekhDiagnosticsPolicy.diagnosticsEnabled(secureInputActive: IsSecureEventInputEnabled()) else { return }
@@ -55,6 +56,7 @@ open class LekhInputController: IMKInputController {
     self.engineClient = engineClient
     super.init()
     configureModeFromDefaults()
+    observeNativeModeChanges()
   }
 
   public required override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
@@ -64,8 +66,13 @@ open class LekhInputController: IMKInputController {
     self.candidatePanel = IMKCandidates(server: server, panelType: kIMKSingleRowSteppingCandidatePanel)
     self.candidatePanel?.setDismissesAutomatically(true)
     configureModeFromDefaults()
+    observeNativeModeChanges()
     lekhNativeLog("controller.init")
     logSelectorAvailability()
+  }
+
+  deinit {
+    NotificationCenter.default.removeObserver(self)
   }
 
   private static func defaultEngineClient() -> LekhEngineClient {
@@ -94,6 +101,14 @@ open class LekhInputController: IMKInputController {
     setKeyboardLayoutOverride()
     lekhNativeLog("lifecycle.activate")
     modeMenuOpen = false
+    if shouldShowFirstModePicker() {
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        LekhModePickerWindowController.shared.show(current: self.nativeMode) { [weak self] mode in
+          self?.selectNativeMode(mode)
+        }
+      }
+    }
   }
 
   open override func deactivateServer(_ sender: Any!) {
@@ -785,6 +800,26 @@ open class LekhInputController: IMKInputController {
     lekhNativeLog("mode.selected \(mode.rawValue)")
   }
 
+  private func observeNativeModeChanges() {
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(nativeModePreferenceDidChange(_:)),
+      name: lekhNativeModeDidChangeNotification,
+      object: nil
+    )
+  }
+
+  @objc private func nativeModePreferenceDidChange(_ notification: Notification) {
+    guard let rawValue = notification.userInfo?["mode"] as? String,
+          let mode = LekhNativeTypingMode(rawValue: rawValue),
+          mode != nativeMode else { return }
+    selectNativeMode(mode)
+  }
+
+  private func shouldShowFirstModePicker() -> Bool {
+    !UserDefaults.standard.bool(forKey: lekhNativeModeChosenDefaultsKey)
+  }
+
   private func markModePromptConsumed() {
     guard modePromptPending else { return }
     modePromptPending = false
@@ -923,7 +958,8 @@ open class LekhInputController: IMKInputController {
       candidatePanel?.hide()
       customCandidatePanel.show(
         items: candidateState.currentState().displayItems,
-        title: modeMenuOpen ? LekhL10n.text("mode.prompt") : nativeMode.menuLabel
+        title: modeMenuOpen ? LekhL10n.text("mode.prompt") : nativeMode.menuLabel,
+        anchorRect: candidateAnchorRect(for: self.client())
       ) { [weak self] selectedText in
         guard let self, let client = self.client() else { return }
         if self.modeMenuOpen, let mode = self.modeFromMenuLabel(selectedText) {
@@ -944,6 +980,16 @@ open class LekhInputController: IMKInputController {
   private func hideCandidates() {
     customCandidatePanel.hide()
     candidatePanel?.hide()
+  }
+
+  private func candidateAnchorRect(for client: IMKTextInput?) -> NSRect? {
+    guard let client else { return nil }
+    let selectedRange = client.selectedRange()
+    let characterIndex = selectedRange.location == NSNotFound ? 0 : max(0, selectedRange.location)
+    var lineHeightRect = NSRect.zero
+    _ = client.attributes(forCharacterIndex: characterIndex, lineHeightRectangle: &lineHeightRect)
+    guard !lineHeightRect.isEmpty, lineHeightRect != .zero else { return nil }
+    return lineHeightRect
   }
 
   private func commitCandidateText(_ text: String, client: IMKTextInput) {

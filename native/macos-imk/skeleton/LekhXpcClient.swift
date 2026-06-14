@@ -19,13 +19,13 @@ public enum LekhNativeTypingMode: String, CaseIterable {
   public var menuLabel: String {
     switch self {
     case .romanizedRomanized:
-      return "Romanized-Romanized"
+      return "Romanized → Romanized"
     case .romanizedTraditional:
-      return "Romanized-Traditional"
+      return "Romanized → Nepali"
     case .traditionalTraditional:
-      return "Traditional-Traditional"
+      return "Traditional → Nepali"
     case .traditionalRomanized:
-      return "Traditional-Romanized"
+      return "Traditional → Romanized"
     }
   }
 }

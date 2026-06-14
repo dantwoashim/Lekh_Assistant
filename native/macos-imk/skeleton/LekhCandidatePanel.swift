@@ -28,7 +28,12 @@ public final class LekhCandidatePanel: NSObject {
     super.init()
   }
 
-  public func show(items: [LekhCandidateDisplayItem], title: String, onSelect: @escaping (String) -> Void) {
+  public func show(
+    items: [LekhCandidateDisplayItem],
+    title: String,
+    anchorRect: NSRect?,
+    onSelect: @escaping (String) -> Void
+  ) {
     guard !items.isEmpty else {
       hide()
       return
@@ -42,10 +47,15 @@ public final class LekhCandidatePanel: NSObject {
     let rowHeight: CGFloat = 42
     let height = min(340, CGFloat(items.count) * rowHeight + 40)
     let width: CGFloat = 420
-    let mouse = NSEvent.mouseLocation
     let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-    let x = min(max(mouse.x + 12, screenFrame.minX + 12), screenFrame.maxX - width - 12)
-    let y = min(max(mouse.y - height - 12, screenFrame.minY + 12), screenFrame.maxY - height - 12)
+    let fallbackPoint = NSEvent.mouseLocation
+    let anchor = anchorRect ?? NSRect(x: fallbackPoint.x, y: fallbackPoint.y, width: 1, height: 20)
+    let x = min(max(anchor.minX, screenFrame.minX + 12), screenFrame.maxX - width - 12)
+    let preferredY = anchor.minY - height - 8
+    let alternateY = anchor.maxY + 8
+    let y = preferredY >= screenFrame.minY + 12
+      ? preferredY
+      : min(max(alternateY, screenFrame.minY + 12), screenFrame.maxY - height - 12)
     panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
     panel.orderFrontRegardless()
   }

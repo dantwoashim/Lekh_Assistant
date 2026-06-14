@@ -10,6 +10,7 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
   private let maintenance = LekhPersonalDictionaryMaintenance()
   private let dictionaryTextView = NSTextView(frame: .zero)
   private let diagnosticsTextView = NSTextView(frame: .zero)
+  private var tutorialWindow: NSWindow?
   private var diagnosticsProvider: (() -> String)?
 
   public func show(diagnosticsProvider: @escaping () -> String) {
@@ -23,11 +24,11 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
   }
 
   public func showTutorial() {
-    let alert = NSAlert()
-    alert.messageText = LekhL10n.text("tutorial.title")
-    alert.informativeText = LekhL10n.text("tutorial.body")
-    alert.addButton(withTitle: "OK")
-    alert.runModal()
+    let window = tutorialWindow ?? makeTutorialWindow()
+    tutorialWindow = window
+    window.center()
+    window.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
     LekhNativePreferences.firstRunTutorialSeen = true
   }
 
@@ -60,6 +61,69 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
       tabs.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
       tabs.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
       tabs.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12)
+    ])
+    window.contentView = root
+    return window
+  }
+
+  private func makeTutorialWindow() -> NSWindow {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 560, height: 360),
+      styleMask: [.titled, .closable],
+      backing: .buffered,
+      defer: false
+    )
+    window.title = "Lekh Keyboard"
+
+    let mark = NSTextField(labelWithString: "ले")
+    mark.alignment = .center
+    mark.font = NSFont(name: "Kohinoor Devanagari-Semibold", size: 30) ?? .systemFont(ofSize: 30, weight: .semibold)
+    mark.textColor = .white
+    mark.wantsLayer = true
+    mark.layer?.backgroundColor = NSColor(calibratedRed: 0.07, green: 0.14, blue: 0.12, alpha: 1).cgColor
+    mark.layer?.cornerRadius = 10
+    mark.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      mark.widthAnchor.constraint(equalToConstant: 58),
+      mark.heightAnchor.constraint(equalToConstant: 58)
+    ])
+
+    let title = NSTextField(labelWithString: LekhL10n.text("tutorial.title"))
+    title.font = .systemFont(ofSize: 24, weight: .semibold)
+    title.textColor = .labelColor
+
+    let body = NSTextField(wrappingLabelWithString: LekhL10n.text("tutorial.body"))
+    body.font = .systemFont(ofSize: 14)
+    body.textColor = .secondaryLabelColor
+
+    let sample = NSTextField(labelWithString: "namaste  →  नमस्ते")
+    sample.alignment = .center
+    sample.font = NSFont(name: "Kohinoor Devanagari", size: 28) ?? .systemFont(ofSize: 26, weight: .medium)
+    sample.wantsLayer = true
+    sample.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+    sample.layer?.cornerRadius = 8
+    sample.translatesAutoresizingMaskIntoConstraints = false
+    sample.heightAnchor.constraint(equalToConstant: 58).isActive = true
+
+    let done = NSButton(title: "Start Typing", target: self, action: #selector(closeTutorial(_:)))
+    done.bezelStyle = .rounded
+
+    let stack = verticalStack()
+    stack.alignment = .centerX
+    stack.edgeInsets = NSEdgeInsets(top: 28, left: 34, bottom: 28, right: 34)
+    stack.addArrangedSubview(mark)
+    stack.addArrangedSubview(title)
+    stack.addArrangedSubview(body)
+    stack.addArrangedSubview(sample)
+    stack.addArrangedSubview(done)
+
+    let root = NSView()
+    root.addSubview(stack)
+    NSLayoutConstraint.activate([
+      stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+      stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+      stack.topAnchor.constraint(equalTo: root.topAnchor),
+      stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor)
     ])
     window.contentView = root
     return window
@@ -295,6 +359,11 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
     LekhNativePreferences.firstRunTutorialSeen = true
   }
 
+  @objc private func closeTutorial(_ sender: Any?) {
+    LekhNativePreferences.firstRunTutorialSeen = true
+    tutorialWindow?.close()
+  }
+
   private func refreshDictionaryText() {
     dictionaryTextView.string = maintenance.exportTSV()
   }
@@ -305,6 +374,90 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
       "",
       LekhL10n.text("diagnostics.privacy")
     ].joined(separator: "\n")
+  }
+}
+
+public final class LekhModePickerWindowController: NSObject {
+  public static let shared = LekhModePickerWindowController()
+
+  private var window: NSWindow?
+  private var onSelect: ((LekhNativeTypingMode) -> Void)?
+
+  public func show(current: LekhNativeTypingMode, onSelect: @escaping (LekhNativeTypingMode) -> Void) {
+    self.onSelect = onSelect
+    let window = makeWindow(current: current)
+    self.window = window
+    window.center()
+    window.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func makeWindow(current: LekhNativeTypingMode) -> NSWindow {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 580, height: 430),
+      styleMask: [.titled, .closable],
+      backing: .buffered,
+      defer: false
+    )
+    window.title = "Choose Lekh Mode"
+
+    let title = NSTextField(labelWithString: "Choose how Lekh should type")
+    title.font = .systemFont(ofSize: 23, weight: .semibold)
+
+    let body = NSTextField(wrappingLabelWithString: "You can change this anytime from the लेख menu bar item or with Control-Option-Space.")
+    body.font = .systemFont(ofSize: 13)
+    body.textColor = .secondaryLabelColor
+
+    let options = NSStackView()
+    options.orientation = .vertical
+    options.alignment = .leading
+    options.spacing = 8
+    options.translatesAutoresizingMaskIntoConstraints = false
+
+    for (index, mode) in LekhNativeTypingMode.visibleModes.enumerated() {
+      let button = NSButton(title: "\(index + 1). \(mode.menuLabel)", target: self, action: #selector(selectMode(_:)))
+      button.bezelStyle = .rounded
+      button.alignment = .left
+      button.tag = index
+      button.state = mode == current ? .on : .off
+      button.translatesAutoresizingMaskIntoConstraints = false
+      button.widthAnchor.constraint(equalToConstant: 500).isActive = true
+      button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+      options.addArrangedSubview(button)
+    }
+
+    let privacy = NSTextField(labelWithString: "Local only. No typing is sent anywhere.")
+    privacy.font = .systemFont(ofSize: 12, weight: .medium)
+    privacy.textColor = .secondaryLabelColor
+
+    let stack = NSStackView()
+    stack.orientation = .vertical
+    stack.alignment = .leading
+    stack.spacing = 16
+    stack.edgeInsets = NSEdgeInsets(top: 28, left: 34, bottom: 28, right: 34)
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    stack.addArrangedSubview(title)
+    stack.addArrangedSubview(body)
+    stack.addArrangedSubview(options)
+    stack.addArrangedSubview(privacy)
+
+    let root = NSView()
+    root.addSubview(stack)
+    NSLayoutConstraint.activate([
+      stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+      stack.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor),
+      stack.topAnchor.constraint(equalTo: root.topAnchor),
+      stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor)
+    ])
+    window.contentView = root
+    return window
+  }
+
+  @objc private func selectMode(_ sender: NSButton) {
+    guard LekhNativeTypingMode.visibleModes.indices.contains(sender.tag) else { return }
+    let mode = LekhNativeTypingMode.visibleModes[sender.tag]
+    onSelect?(mode)
+    window?.close()
   }
 }
 
