@@ -125,8 +125,8 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("LekhCandidatePanel");
     expect(controller).toContain("showPreferencesFromInputMenu");
     expect(controller).toContain("traditionalOptionText");
-    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNativePreferences.swift"), "utf8")).toContain("Keys.inlinePreviewEnabled: false");
-    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNativePreferences.swift"), "utf8")).toContain("Keys.customCandidatePanelEnabled: false");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNativePreferences.swift"), "utf8")).toContain("Keys.inlinePreviewEnabled: true");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNativePreferences.swift"), "utf8")).toContain("Keys.customCandidatePanelEnabled: true");
     expect(source).toContain("previewText(rawBuffer");
     expect(source).toContain("loadProofreadRows");
     expect(source).toContain("smartPunctuation(for:");
