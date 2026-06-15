@@ -135,7 +135,7 @@
     "check:third-party-notices": "node scripts/check-third-party-notices.mjs"
   },
   "dependencies": {
-    "@nepalibhasha/converter": "^0.1.0",
+    "@nepalibhasha/converter": "^0.1.1",
     "dictionary-ne": "^2.0.0",
     "lucide-react": "^0.468.0",
     "nspell": "^2.1.5",
