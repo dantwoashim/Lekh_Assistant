@@ -133,6 +133,33 @@ describe("macOS IMK proof target source", () => {
     expect(source).toContain("LekhMixedScriptPolicy.preserveCandidate");
   });
 
+  it("keeps native inline preview as the default typing experience", () => {
+    const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
+
+    const inlineCompositionBlock = controller.slice(
+      controller.indexOf("private var usesInlineComposition"),
+      controller.indexOf("public init(engineClient")
+    );
+    expect(inlineCompositionBlock).toContain('LEKH_IMK_INLINE_COMPOSITION');
+    expect(inlineCompositionBlock).toContain("return true");
+    expect(inlineCompositionBlock).not.toContain("LekhNativePreferences.inlinePreviewEnabled");
+    expect(controller).toContain("configureModeFromDefaults()\n    setKeyboardLayoutOverride()");
+  });
+
+  it("ranks runtime dictionary candidates before deterministic fallback candidates", () => {
+    const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhXpcClient.swift"), "utf8");
+    const candidatesFor = source.slice(
+      source.indexOf("private func candidatesFor"),
+      source.indexOf("private func runtimeRows")
+    );
+
+    expect(candidatesFor.indexOf("runtimeRows(for: normalized, exactOnly: false")).toBeGreaterThan(-1);
+    expect(candidatesFor.indexOf("let deterministicRuleCandidates = ruleCandidates")).toBeGreaterThan(-1);
+    expect(candidatesFor.indexOf("runtimeRows(for: normalized, exactOnly: false")).toBeLessThan(
+      candidatesFor.indexOf("let deterministicRuleCandidates = ruleCandidates")
+    );
+  });
+
   it("keeps native runtime candidates multi-valued and confidence-ranked", () => {
     const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhXpcClient.swift"), "utf8");
 

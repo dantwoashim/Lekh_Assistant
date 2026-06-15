@@ -727,8 +727,10 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
       output.append(contentsOf: exactRuntime.map { mode == .romanizedRomanized ? $0.romanized : $0.unicode })
     }
 
-    let deterministicRuleCandidates = ruleCandidates(for: normalized, mode: mode)
-    output.append(contentsOf: deterministicRuleCandidates)
+    if normalized.count >= 2 {
+      let matches = runtimeRows(for: normalized, exactOnly: false, limit: 10)
+      output.append(contentsOf: matches.map { mode == .romanizedRomanized ? $0.romanized : $0.unicode })
+    }
 
     if mode == .romanizedTraditional,
        exactRuntime.isEmpty,
@@ -737,10 +739,8 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
       output.append(contentsOf: neuralTransliterator.candidates(for: normalized, limit: 4).map(\.text))
     }
 
-    if normalized.count >= 2 {
-      let matches = runtimeRows(for: normalized, exactOnly: false, limit: 10)
-      output.append(contentsOf: matches.map { mode == .romanizedRomanized ? $0.romanized : $0.unicode })
-    }
+    let deterministicRuleCandidates = ruleCandidates(for: normalized, mode: mode)
+    output.append(contentsOf: deterministicRuleCandidates)
 
     return Self.unique(output, limit: 8)
   }

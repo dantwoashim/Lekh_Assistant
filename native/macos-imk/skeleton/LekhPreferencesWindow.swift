@@ -140,11 +140,10 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
     let stack = verticalStack()
     stack.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
 
-    stack.addArrangedSubview(checkbox(
-      title: LekhL10n.text("preferences.inline"),
-      key: LekhNativePreferences.Keys.inlinePreviewEnabled,
-      defaultValue: true
-    ))
+    let inlineStatus = NSTextField(wrappingLabelWithString: LekhL10n.text("preferences.inlineAlwaysOn"))
+    inlineStatus.font = .systemFont(ofSize: 13, weight: .medium)
+    inlineStatus.textColor = .secondaryLabelColor
+    stack.addArrangedSubview(inlineStatus)
     stack.addArrangedSubview(checkbox(
       title: LekhL10n.text("preferences.candidates"),
       key: LekhNativePreferences.Keys.customCandidatePanelEnabled,

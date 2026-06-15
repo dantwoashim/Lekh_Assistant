@@ -48,7 +48,7 @@ open class LekhInputController: IMKInputController {
     if value == "0" || value == "false" || value == "no" {
       return false
     }
-    return LekhNativePreferences.inlinePreviewEnabled
+    return true
   }
 
   public init(engineClient: LekhEngineClient = LekhStaticProofEngineClient()) {
@@ -98,6 +98,7 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func activateServer(_ sender: Any!) {
+    configureModeFromDefaults()
     setKeyboardLayoutOverride()
     lekhNativeLog("lifecycle.activate")
     modeMenuOpen = false
