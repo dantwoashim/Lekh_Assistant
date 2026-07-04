@@ -3,6 +3,21 @@
   "runtime": "CoreML",
   "localOnly": true,
   "neuralTailOnly": true,
+  "productionEligible": false,
+  "productionBlocker": "Closed-vocabulary Core ML baseline. Production requires lekh-open-vocab-seq2seq-v1 with subword tokenization, beam search, context reranking, and measured on-device latency.",
+  "architecture": "linear-softmax-baseline",
+  "openVocabulary": false,
+  "subwordModel": null,
+  "decoder": "flat-softmax",
+  "beamSearch": {
+    "enabled": false
+  },
+  "languageModelRescorer": {
+    "enabled": false
+  },
+  "contextWindowWords": 0,
+  "confidenceGatedFallback": true,
+  "instantFirstPaintOnly": true,
   "modelFamily": "hashed-char-ngram-centroid-classifier",
   "featureContract": {
     "input": "features",

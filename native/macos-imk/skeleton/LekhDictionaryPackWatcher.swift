@@ -9,6 +9,8 @@ public final class LekhDictionaryPackWatcher {
     .appendingPathComponent("Packs", isDirectory: true)
 
   public static let activePackURL = packsDirectory.appendingPathComponent("runtime-suggestions.current.lkb")
+  public static let lastGoodPackURL = packsDirectory.appendingPathComponent("runtime-suggestions.last-good.lkb")
+  public static let lastGoodManifestURL = packsDirectory.appendingPathComponent("runtime-suggestions.last-good.json")
 
   private let queue = DispatchQueue(label: "com.lekh.inputmethod.dictionary-pack-watcher")
   private let onChange: () -> Void

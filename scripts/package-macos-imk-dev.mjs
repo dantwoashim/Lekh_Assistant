@@ -245,6 +245,7 @@ const binaryCompile = run(
   ]
 );
 const neuralModelSource = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
+const neuralModelManifestSource = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const neuralModelPackaged = existsSync(neuralModelSource);
 if (neuralModelPackaged) {
   run("copy-neural-model", "ditto", [
@@ -254,6 +255,12 @@ if (neuralModelPackaged) {
     neuralModelSource,
     join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.mlmodelc")
   ]);
+  if (existsSync(neuralModelManifestSource)) {
+    copyFileSync(
+      neuralModelManifestSource,
+      join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.manifest.json")
+    );
+  }
 }
 
 if (existsSync(iconSource)) {

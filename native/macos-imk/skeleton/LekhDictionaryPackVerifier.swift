@@ -61,7 +61,7 @@ public enum LekhDictionaryPackVerifier {
     }
     guard FileManager.default.fileExists(atPath: LekhDictionaryPackWatcher.activePackURL.path) ||
             FileManager.default.fileExists(atPath: activeManifestURL.path) else {
-      return .noInstalledPack
+      return verifiedLastGoodPack(warning: nil) ?? .noInstalledPack
     }
     guard FileManager.default.fileExists(atPath: LekhDictionaryPackWatcher.activePackURL.path),
           FileManager.default.fileExists(atPath: activeManifestURL.path) else {
@@ -107,6 +107,7 @@ public enum LekhDictionaryPackVerifier {
           publicKey.isValidSignature(signatureData, for: signatureMessage(manifest)) else {
       return rejected("dictionary update rejected: invalid signature")
     }
+    cacheLastGoodPack(manifestData: manifestData, packData: packData)
     return Result(url: LekhDictionaryPackWatcher.activePackURL, warning: nil, source: "signed-update")
     #else
     return rejected("dictionary update rejected: CryptoKit unavailable")
@@ -114,8 +115,55 @@ public enum LekhDictionaryPackVerifier {
   }
 
   private static func rejected(_ warning: String) -> Result {
-    Result(url: nil, warning: warning, source: "bundle")
+    #if canImport(CryptoKit)
+    if let lastGood = verifiedLastGoodPack(warning: warning) {
+      return lastGood
+    }
+    #endif
+    return Result(url: nil, warning: warning, source: "bundle")
   }
+
+  #if canImport(CryptoKit)
+  private static func verifiedLastGoodPack(warning: String?) -> Result? {
+    guard hasUsableEmbeddedPublicKey(),
+          FileManager.default.fileExists(atPath: LekhDictionaryPackWatcher.lastGoodPackURL.path),
+          FileManager.default.fileExists(atPath: LekhDictionaryPackWatcher.lastGoodManifestURL.path),
+          let publicKeyBase64 = Bundle.main.object(forInfoDictionaryKey: "LekhDictionaryPackEd25519PublicKeyBase64") as? String,
+          let publicKeyBytes = Data(base64Encoded: publicKeyBase64.trimmingCharacters(in: .whitespacesAndNewlines)),
+          let manifestData = try? Data(contentsOf: LekhDictionaryPackWatcher.lastGoodManifestURL),
+          let manifest = try? JSONDecoder().decode(Manifest.self, from: manifestData),
+          let packData = try? Data(contentsOf: LekhDictionaryPackWatcher.lastGoodPackURL, options: [.mappedIfSafe]) else {
+      return nil
+    }
+    guard manifest.binaryFormat == "LEKHBLX1",
+          (manifest.binaryFormatVersion ?? 1) == 1,
+          isCompatible(manifest),
+          manifest.bytes == packData.count,
+          isValidBinaryPack(packData),
+          sha256Hex(packData) == manifest.sha256.lowercased(),
+          let signature = manifest.signature,
+          signature.algorithm == "Ed25519",
+          let signatureData = Data(base64Encoded: signature.valueBase64),
+          let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: publicKeyBytes),
+          publicKey.isValidSignature(signatureData, for: signatureMessage(manifest)) else {
+      return nil
+    }
+    return Result(url: LekhDictionaryPackWatcher.lastGoodPackURL, warning: warning, source: "last-good")
+  }
+
+  private static func cacheLastGoodPack(manifestData: Data, packData: Data) {
+    do {
+      try FileManager.default.createDirectory(
+        at: LekhDictionaryPackWatcher.packsDirectory,
+        withIntermediateDirectories: true
+      )
+      try manifestData.write(to: LekhDictionaryPackWatcher.lastGoodManifestURL, options: [.atomic])
+      try packData.write(to: LekhDictionaryPackWatcher.lastGoodPackURL, options: [.atomic])
+    } catch {
+      // Cache failures should never block typing; the active pack already verified.
+    }
+  }
+  #endif
 
   private static func signatureMessage(_ manifest: Manifest) -> Data {
     let formatVersion = String(manifest.binaryFormatVersion ?? 1)

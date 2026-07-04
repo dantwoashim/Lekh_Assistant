@@ -42,8 +42,23 @@ func isLekhSource(_ source: TISInputSource) -> Bool {
   return localizedName.localizedCaseInsensitiveContains("Lekh")
 }
 
+func preferenceDictionary(_ value: Any) -> [AnyHashable: Any]? {
+  if let dictionary = value as? [AnyHashable: Any] {
+    return dictionary
+  }
+  guard let dictionary = value as? NSDictionary else {
+    return nil
+  }
+  var output: [AnyHashable: Any] = [:]
+  for (key, item) in dictionary {
+    guard let hashableKey = key as? AnyHashable else { continue }
+    output[hashableKey] = item
+  }
+  return output
+}
+
 func dictionaryContainsLekh(_ value: Any) -> Bool {
-  guard let dictionary = value as? [AnyHashable: Any] else { return false }
+  guard let dictionary = preferenceDictionary(value) else { return false }
   for (key, item) in dictionary {
     let keyString = String(describing: key)
     if keyString.localizedCaseInsensitiveContains("lekh") {
@@ -53,8 +68,8 @@ func dictionaryContainsLekh(_ value: Any) -> Bool {
       if isLekhIdentifier(itemString) || itemString.localizedCaseInsensitiveContains("lekh") {
         return true
       }
-    } else if let nestedDictionary = item as? [AnyHashable: Any],
-              dictionaryContainsLekh(nestedDictionary) {
+    } else if preferenceDictionary(item) != nil,
+              dictionaryContainsLekh(item) {
       return true
     } else if let nestedArray = item as? [Any],
               nestedArray.contains(where: dictionaryContainsLekh) {

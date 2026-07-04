@@ -75,6 +75,18 @@ xattr -dr com.apple.quarantine .
 
 That fallback is only for unsigned QA builds. Production builds must be Developer ID signed, notarized, and stapled instead of asking users to bypass Gatekeeper.
 
+The zip also includes `Verify Lekh Release.command`, `SHA256SUMS.txt`, `RELEASE-MANIFEST.json`, `RELEASE-MANIFEST.json.minisig`, and `lekh-release-manifest-minisign.pub`. Testers with `minisign` installed can verify the extracted folder before installing:
+
+```bash
+./Verify\ Lekh\ Release.command
+```
+
+For terminal-first QA distribution without Developer ID, the release folder also generates a Homebrew Cask:
+
+```bash
+brew install --cask ./release/native/macos/lekh-keyboard-test.rb
+```
+
 After installation, choose `Lekh Keyboard` from the macOS input menu in the menu bar. If it does not appear immediately, log out and back in, then add it from **Keyboard Settings > Text Input > Edit > Nepali**. The packaged uninstaller asks for confirmation, restores the previous input source when macOS allows it, and deletes local learned words, dictionary packs, model files, install backups, caches, and Lekh logs.
 
 Current macOS IMK test-build behavior includes:
@@ -87,6 +99,7 @@ Current macOS IMK test-build behavior includes:
 - proofread suggestions for active Traditional/Unicode composition using the bundled correction pairs
 - smart Nepali punctuation for danda commit in Nepali output modes
 - Traditional Option-key helpers for halanta, rakar/yaphala, chandrabindu, anusvara, and danda
+- fallback InScript-style Traditional key mapping when macOS does not provide a Devanagari layout override
 - input-menu preferences for transliteration strictness, halanta behavior, mixed-script preference, local dictionary export/edit/delete, diagnostics, and privacy controls
 
 The recovery command remains:
@@ -115,7 +128,7 @@ Romanized typing is the flagship first-launch experience. It uses:
 - phonology rules from [`docs/PHONOLOGY_CONTRACT.md`](docs/PHONOLOGY_CONTRACT.md)
 - keyboard candidate ranking for phrase, dictionary, rule, variant, context, and local memory paths
 - a quantized local n-gram model for context-aware next-word inline completion
-- a gated neural transliteration path for a future small Core ML tail model; no oversized downloaded model is shipped
+- a gated Core ML tail slot for a future small open-vocabulary transliteration model; the current packaged Core ML artifact is only a closed-vocabulary baseline tail and is blocked by production gates
 - domain-ranked local suggestions for office, government, education, legal, names, and places
 - casual Nepali completions such as `ramro xa`, `kasto cha`, and `dherai ramro`
 - mixed Nepali-English policy candidates that preserve protected tokens and offer loanword preferences
@@ -124,7 +137,7 @@ Romanized typing is the flagship first-launch experience. It uses:
 
 ### Traditional Nepali Typing
 
-Traditional Unicode suggestions and proofread can be validated in the engine. Traditional physical key mapping remains blocked until an LTK-compatible/standard layout source of truth is captured and validated by experienced Traditional typists. The project must not claim Traditional physical keyboard completion before that validation.
+Traditional Unicode suggestions and proofread can be validated in the engine. The macOS IMK build now uses macOS layout override when available and an InScript-style fallback mapping when the override is unavailable. This still needs experienced Traditional typist validation before any public quality claim.
 
 ### Preeti to Unicode
 
@@ -158,7 +171,7 @@ Current keyboard-specific evidence is produced by committed scripts and generate
 | --- | --- |
 | Shared keyboard engine | `npm run test:keyboard` covers Romanized, Traditional Unicode suggestions, memory, protected tokens, secure pass-through, runtime pack candidates, trained context candidates, and inline next-word completion |
 | Quantized inline completion model | `npm run build:ngram-lm` emits `35,000` local n-gram rows with NFC, self-loop, unsafe-token, duplicate, and spelling-quality validation |
-| Neural transliteration readiness | `npm run check:neural-transliteration` selects upstream training/teacher sources and blocks production unless a small Core ML model, manifest, metrics, and local-only policy pass |
+| Core ML transliteration readiness | `npm run check:neural-transliteration` permits the current closed-vocabulary baseline only for dev/test and blocks production unless the open-vocabulary seq2seq/GRU/Transformer model, manifest, beam decoding, context reranking, measured latency, and local-only policy pass |
 | macOS native bundle | `npm run package:macos:imk:test-installer` produces the unsigned IMK test installer zip for manual host-app validation |
 | Privacy guard | `npm run check:privacy` blocks text telemetry payloads |
 | Local-first guard | `npm run check:engine-local` verifies the hot path stays local |

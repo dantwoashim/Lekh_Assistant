@@ -77,7 +77,7 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
 
     let mark = NSTextField(labelWithString: "ले")
     mark.alignment = .center
-    mark.font = NSFont(name: "Kohinoor Devanagari-Semibold", size: 30) ?? .systemFont(ofSize: 30, weight: .semibold)
+    mark.font = LekhFont.devanagari(size: 30, weight: .semibold)
     mark.textColor = .white
     mark.wantsLayer = true
     mark.layer?.backgroundColor = NSColor(calibratedRed: 0.07, green: 0.14, blue: 0.12, alpha: 1).cgColor
@@ -98,7 +98,7 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
 
     let sample = NSTextField(labelWithString: "namaste  →  नमस्ते")
     sample.alignment = .center
-    sample.font = NSFont(name: "Kohinoor Devanagari", size: 28) ?? .systemFont(ofSize: 26, weight: .medium)
+    sample.font = LekhFont.devanagari(size: 28, weight: .medium)
     sample.wantsLayer = true
     sample.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
     sample.layer?.cornerRadius = 8
@@ -245,7 +245,7 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
     body.font = .systemFont(ofSize: 14)
 
     let sample = NSTextField(labelWithString: "namaste  →  नमस्ते")
-    sample.font = NSFont(name: "Kohinoor Devanagari", size: 28) ?? .systemFont(ofSize: 26, weight: .medium)
+    sample.font = LekhFont.devanagari(size: 28, weight: .medium)
 
     let stack = verticalStack()
     stack.edgeInsets = NSEdgeInsets(top: 32, left: 32, bottom: 32, right: 32)
@@ -403,7 +403,7 @@ public final class LekhModePickerWindowController: NSObject {
     let title = NSTextField(labelWithString: "Choose how Lekh should type")
     title.font = .systemFont(ofSize: 23, weight: .semibold)
 
-    let body = NSTextField(wrappingLabelWithString: "You can change this anytime from the लेख menu bar item or with Control-Option-Space.")
+    let body = NSTextField(wrappingLabelWithString: "You can change this anytime from the लेख menu bar item, Control-Option-Space, or Control-Option-M.")
     body.font = .systemFont(ofSize: 13)
     body.textColor = .secondaryLabelColor
 

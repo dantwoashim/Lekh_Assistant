@@ -99,15 +99,30 @@ func postInputSourceChangeNotification() {
   )
 }
 
+func preferenceDictionary(_ value: Any) -> [AnyHashable: Any]? {
+  if let dictionary = value as? [AnyHashable: Any] {
+    return dictionary
+  }
+  guard let dictionary = value as? NSDictionary else {
+    return nil
+  }
+  var output: [AnyHashable: Any] = [:]
+  for (key, item) in dictionary {
+    guard let hashableKey = key as? AnyHashable else { continue }
+    output[hashableKey] = item
+  }
+  return output
+}
+
 func dictionaryContainsLekh(_ value: Any) -> Bool {
-  guard let dictionary = value as? [AnyHashable: Any] else { return false }
+  guard let dictionary = preferenceDictionary(value) else { return false }
   for (_, item) in dictionary {
     if let itemString = item as? String,
        itemString.localizedCaseInsensitiveContains("lekh") || itemString.hasPrefix("com.lekh.inputmethod.") {
       return true
     }
-    if let nestedDictionary = item as? [AnyHashable: Any],
-       dictionaryContainsLekh(nestedDictionary) {
+    if preferenceDictionary(item) != nil,
+       dictionaryContainsLekh(item) {
       return true
     }
     if let nestedArray = item as? [Any],
@@ -119,7 +134,7 @@ func dictionaryContainsLekh(_ value: Any) -> Bool {
 }
 
 func inputSourceKind(_ value: Any) -> String {
-  guard let dictionary = value as? [AnyHashable: Any] else { return "" }
+  guard let dictionary = preferenceDictionary(value) else { return "" }
   return dictionary["InputSourceKind"] as? String ?? ""
 }
 
@@ -135,23 +150,25 @@ func withoutLekhRows(_ array: [Any]) -> [Any] {
   array.filter { !dictionaryContainsLekh($0) }
 }
 
+func withoutLekhParentInputMethodRows(_ array: [Any]) -> [Any] {
+  array.filter { value in
+    guard dictionaryContainsLekh(value) else { return true }
+    return inputSourceKind(value) != "Keyboard Input Method"
+  }
+}
+
 func syncMenuBarPreferences(selected: Bool) {
   let inputModeRow: [String: Any] = [
     "Bundle ID": parentInputSourceId,
     "Input Mode": inputSourceId,
     "InputSourceKind": "Input Mode"
   ]
-  let parentRow: [String: Any] = [
-    "Bundle ID": parentInputSourceId,
-    "InputSourceKind": "Keyboard Input Method"
-  ]
 
   var enabledRows = withoutLekhRows(existingPreferenceArray(enabledInputSourcesKey, domain: hitoolboxDomain))
   enabledRows.append(inputModeRow)
   setPreferenceArray(enabledRows, key: enabledInputSourcesKey, domain: hitoolboxDomain)
 
-  var thirdPartyRows = withoutLekhRows(existingPreferenceArray(enabledThirdPartyInputSourcesKey, domain: inputSourcesDomain))
-  thirdPartyRows.append(parentRow)
+  let thirdPartyRows = withoutLekhParentInputMethodRows(existingPreferenceArray(enabledThirdPartyInputSourcesKey, domain: inputSourcesDomain))
   setPreferenceArray(thirdPartyRows, key: enabledThirdPartyInputSourcesKey, domain: inputSourcesDomain)
 
   if selected {
@@ -226,9 +243,6 @@ let enableStatus = enableSource(source)
 guard enableStatus == noErr else {
   fputs("Lekh Keyboard input source could not be enabled. status=\(enableStatus)\n", stderr)
   exit(3)
-}
-if let parent = registered.parent {
-  _ = enableSource(parent)
 }
 postInputSourceChangeNotification()
 Thread.sleep(forTimeInterval: 0.5)

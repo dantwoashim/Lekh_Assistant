@@ -18,15 +18,24 @@ public final class LekhCandidateController {
     _ candidates: [String],
     rawBuffer: String = "",
     modeLabel: String = "",
-    selectedIndex: Int = 0
+    selectedIndex: Int? = nil
   ) {
     let displayItems = candidates.map { candidate in
       Self.displayItem(for: candidate, rawBuffer: rawBuffer, modeLabel: modeLabel)
     }
+    let retainedIndex: Int
+    if let selectedIndex {
+      retainedIndex = selectedIndex
+    } else if let selected = selectedCandidate(),
+              let index = candidates.firstIndex(of: selected) {
+      retainedIndex = index
+    } else {
+      retainedIndex = state.selectedIndex
+    }
     state = LekhCandidateState(
       candidates: candidates,
       displayItems: displayItems,
-      selectedIndex: min(max(selectedIndex, 0), max(candidates.count - 1, 0))
+      selectedIndex: Self.clamped(retainedIndex, candidateCount: candidates.count)
     )
   }
 
@@ -37,6 +46,29 @@ public final class LekhCandidateController {
   public func selectedCandidate() -> String? {
     guard state.candidates.indices.contains(state.selectedIndex) else { return nil }
     return state.candidates[state.selectedIndex]
+  }
+
+  @discardableResult
+  public func select(index: Int) -> String? {
+    guard state.candidates.indices.contains(index) else { return nil }
+    state = LekhCandidateState(
+      candidates: state.candidates,
+      displayItems: state.displayItems,
+      selectedIndex: index
+    )
+    return state.candidates[index]
+  }
+
+  @discardableResult
+  public func moveSelection(delta: Int) -> String? {
+    guard !state.candidates.isEmpty else { return nil }
+    return select(index: Self.clamped(state.selectedIndex + delta, candidateCount: state.candidates.count))
+  }
+
+  public func candidateForShortcut(_ number: Int) -> String? {
+    let index = number - 1
+    guard state.candidates.indices.contains(index) else { return nil }
+    return state.candidates[index]
   }
 
   private static func displayItem(for candidate: String, rawBuffer: String, modeLabel: String) -> LekhCandidateDisplayItem {
@@ -53,7 +85,8 @@ public final class LekhCandidateController {
       )
     }
 
-    if modeLabel.lowercased().contains("traditional-romanized") || candidateIsRoman {
+    let lowercasedMode = modeLabel.lowercased()
+    if (lowercasedMode.contains("traditional") && lowercasedMode.contains("romanized")) || candidateIsRoman {
       return LekhCandidateDisplayItem(
         text: candidate,
         label: rawBuffer.isEmpty ? nil : rawBuffer,
@@ -70,5 +103,9 @@ public final class LekhCandidateController {
         ? LekhL10n.text("candidate.explain.unicode")
         : LekhL10n.text("candidate.explain.roman")
     )
+  }
+
+  private static func clamped(_ selectedIndex: Int, candidateCount: Int) -> Int {
+    min(max(selectedIndex, 0), max(candidateCount - 1, 0))
   }
 }

@@ -20,6 +20,9 @@ const modelDir = args.get("model") ?? join(ROOT, "models", "macos", "LekhNeuralT
 const manifestPath = args.get("manifest") ?? join(ROOT, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const datasetDir = args.get("dataset-dir") ?? join(ROOT, "data", "generated", "neural-transliteration");
 const reportPath = args.get("report") ?? join(ROOT, "reports", "neural-transliteration-readiness-report.json");
+const modelGraphPath = join(modelDir, "model.espresso.net");
+const baselineArtifact = "lekh-small-coreml-student-v1";
+const productionArtifact = "lekh-open-vocab-seq2seq-v1";
 const failures = [];
 const warnings = [];
 
@@ -34,6 +37,7 @@ if (!existsSync(datasetDir)) {
 
 const modelExists = existsSync(modelDir);
 const manifestExists = existsSync(manifestPath);
+const modelGraph = inspectCompiledGraph(modelGraphPath);
 let manifest = null;
 
 if (!modelExists) {
@@ -53,8 +57,12 @@ if (!manifestExists) {
     failures.push("Model parameterCount must be between 1M and 5M.");
   }
   if (manifest.runtime !== "CoreML") failures.push("Model manifest runtime must be CoreML.");
-  if (manifest.selectedArtifact !== "lekh-small-coreml-student-v1") {
-    failures.push("Model manifest selectedArtifact must be lekh-small-coreml-student-v1.");
+  if (production) {
+    validateProductionManifest(manifest, modelGraph);
+  } else if (manifest.selectedArtifact !== baselineArtifact && manifest.selectedArtifact !== productionArtifact) {
+    warnings.push(`Unknown model artifact ${manifest.selectedArtifact}; production requires ${productionArtifact}.`);
+  } else if (manifest.productionEligible === false || manifest.openVocabulary === false) {
+    warnings.push("Current model is a baseline Core ML tail artifact only; production neural readiness intentionally fails until the open-vocabulary seq2seq model ships.");
   }
   if (manifest.localOnly !== true) failures.push("Model manifest must declare localOnly=true.");
   const trainingSources = new Set((manifest.trainingSources ?? []).map(String));
@@ -67,6 +75,9 @@ if (!manifestExists) {
   if (Number(manifest.metrics?.tailTop1Accuracy) < 0.82) failures.push("tailTop1Accuracy must be >= 0.82.");
   if (Number(manifest.metrics?.chatConventionTop1Accuracy) < 0.90) failures.push("chatConventionTop1Accuracy must be >= 0.90.");
   if (Number(manifest.performance?.p99Ms) > 3) failures.push("Core ML p99 latency must be <= 3ms.");
+  if (production && manifest.performance?.measuredOnDevice !== true) {
+    failures.push("Production Core ML p99 latency must be measured on device.");
+  }
   for (const [input, expected] of Object.entries({
     vato: "बाटो",
     bato: "बाटो",
@@ -97,6 +108,7 @@ const report = {
   modelExists,
   manifestExists,
   modelBytes,
+  modelGraph,
   manifest,
   failures,
   warnings,
@@ -114,6 +126,59 @@ function directoryBytes(path) {
   const stat = statSync(path);
   if (!stat.isDirectory()) return stat.size;
   return readdirSync(path).reduce((total, entry) => total + directoryBytes(join(path, entry)), 0);
+}
+
+function validateProductionManifest(candidateManifest, graph) {
+  if (candidateManifest.selectedArtifact !== productionArtifact) {
+    failures.push(`Production model selectedArtifact must be ${productionArtifact}, not ${candidateManifest.selectedArtifact}.`);
+  }
+  if (candidateManifest.productionEligible !== true) failures.push("Production model manifest must declare productionEligible=true.");
+  if (candidateManifest.openVocabulary !== true) failures.push("Production transliteration model must be open-vocabulary.");
+
+  const architecture = String(candidateManifest.architecture ?? candidateManifest.modelFamily ?? "");
+  if (!/(transformer|seq2seq|encoder-decoder|gru)/i.test(architecture)) {
+    failures.push(`Production architecture must be tiny Transformer/GRU seq2seq; current architecture is ${architecture || "unspecified"}.`);
+  }
+
+  const tokenizer = candidateManifest.subwordModel ?? candidateManifest.tokenizer ?? candidateManifest.tokenization;
+  if (!tokenizer || tokenizer === "none") {
+    failures.push("Production model must declare a BPE/unigram subword or character-sequence tokenizer.");
+  }
+
+  const hasBeamSearch = candidateManifest.decoder === "beam-search" || candidateManifest.beamSearch?.enabled === true;
+  if (!hasBeamSearch) failures.push("Production model must use beam search decoding.");
+
+  if (candidateManifest.languageModelRescorer?.enabled !== true) {
+    failures.push("Production model must enable language-model rescoring.");
+  }
+
+  if (Number(candidateManifest.contextWindowWords) < 2) {
+    failures.push("Production model must use at least a 2-word context window.");
+  }
+
+  if (graph.closedVocabLinearSoftmax === true) {
+    failures.push("Compiled model graph is inner_product + softmax only; this is a closed-vocabulary classifier, not the production transliterator.");
+  }
+}
+
+function inspectCompiledGraph(path) {
+  if (!existsSync(path)) {
+    return { path: relative(ROOT, path), exists: false };
+  }
+  const bytes = readFileSync(path, "latin1");
+  const hasInnerProduct = bytes.includes("inner_product");
+  const hasSoftmax = bytes.includes("softmax");
+  const hasAttention = /attention|self_attention|multihead|decoder|encoder/i.test(bytes);
+  const hasRecurrent = /lstm|gru|recurrent/i.test(bytes);
+  return {
+    path: relative(ROOT, path),
+    exists: true,
+    hasInnerProduct,
+    hasSoftmax,
+    hasAttention,
+    hasRecurrent,
+    closedVocabLinearSoftmax: hasInnerProduct && hasSoftmax && !hasAttention && !hasRecurrent
+  };
 }
 
 function finish(status, details, exitCode) {

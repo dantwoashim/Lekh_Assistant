@@ -116,6 +116,26 @@ function checkZipArtifact() {
   if (result.status !== 0) {
     critical(`Installer ZIP failed central-directory/extractability check: ${result.stderr || result.stdout}`.trim());
   }
+  const entries = spawnSync("unzip", ["-Z", "-1", zipPath], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: "pipe",
+    maxBuffer: 120 * 1024 * 1024
+  });
+  if (entries.status !== 0) {
+    critical(`Installer ZIP entry listing failed: ${entries.stderr || entries.stdout}`.trim());
+    return;
+  }
+  const names = new Set(entries.stdout.split(/\r?\n/).filter(Boolean));
+  for (const required of [
+    "Lekh Keyboard Test Installer/Verify Lekh Release.command",
+    "Lekh Keyboard Test Installer/lekh-release-manifest-minisign.pub",
+    "Lekh Keyboard Test Installer/RELEASE-MANIFEST.json",
+    "Lekh Keyboard Test Installer/RELEASE-MANIFEST.json.minisig",
+    "Lekh Keyboard Test Installer/SHA256SUMS.txt"
+  ]) {
+    if (!names.has(required)) critical(`Installer ZIP is missing verification asset: ${required}`);
+  }
 }
 
 function checkAppcast() {
@@ -331,10 +351,16 @@ function checkPublicUpdateFeed() {
     "appcast.xml",
     "RELEASE-MANIFEST.json",
     "RELEASE-MANIFEST.json.minisig",
-    "SHA256SUMS.txt"
+    "SHA256SUMS.txt",
+    "lekh-keyboard-test.rb"
   ]) {
     compareMirrorFile(join(releaseDir, fileName), join(publicUpdatesDir, fileName), `public updates ${fileName}`);
   }
+  compareMirrorFile(
+    minisignPublicKeyPath,
+    join(publicUpdatesDir, "lekh-release-manifest-minisign.pub"),
+    "public updates lekh-release-manifest-minisign.pub"
+  );
   const releasePackFiles = existsSync(dictionaryManifestPath)
     ? collectFiles(dictionaryManifestPath).filter((file) => file.endsWith(".lkb") || file.endsWith("manifest.json"))
     : [];

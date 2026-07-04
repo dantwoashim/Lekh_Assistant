@@ -121,8 +121,13 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("LEKH_IMK_INLINE_COMPOSITION");
     expect(controller).toContain("LekhLatencyRingBuffer");
     expect(controller).toContain("menu.diagnostics");
-    expect(controller).toContain("visiblePreviewText");
     expect(controller).toContain("LekhCandidatePanel");
+    expect(controller).toContain("handleCandidateCommand");
+    expect(controller).toContain("candidateShortcutIndex");
+    expect(controller).toContain("commitSelectedCandidate");
+    expect(controller).toContain("refreshCandidatePanel");
+    expect(controller).not.toContain("visiblePreviewText");
+    expect(controller).not.toContain("modeMenuDecision");
     expect(controller).toContain("showPreferencesFromInputMenu");
     expect(controller).toContain("traditionalOptionText");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNativePreferences.swift"), "utf8")).toContain("Keys.inlinePreviewEnabled: true");
@@ -131,6 +136,60 @@ describe("macOS IMK proof target source", () => {
     expect(source).toContain("loadProofreadRows");
     expect(source).toContain("smartPunctuation(for:");
     expect(source).toContain("LekhMixedScriptPolicy.preserveCandidate");
+  });
+
+  it("keeps raw Romanized composition while rendering an inline ghost candidate", () => {
+    const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
+    const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhXpcClient.swift"), "utf8");
+    const candidateController = readFileSync(join(root, "native/macos-imk/skeleton/LekhCandidateController.swift"), "utf8");
+    const candidatePanel = readFileSync(join(root, "native/macos-imk/skeleton/LekhCandidatePanel.swift"), "utf8");
+
+    const decisionBlock = source.slice(
+      source.indexOf("private func decision(for rawBuffer"),
+      source.indexOf("private func bestCandidate")
+    );
+    const selectionChangedBlock = controller.slice(
+      controller.indexOf("open override func candidateSelectionChanged"),
+      controller.indexOf("open override func menu()")
+    );
+    const modifierPassThroughBlock = controller.slice(
+      controller.indexOf("if shouldPassThrough(modifiers: modifiers)"),
+      controller.indexOf("if let optionText")
+    );
+    expect(decisionBlock).toContain("let markedText = previewText(rawBuffer: rawBuffer)");
+    expect(source).toContain("private func previewText(rawBuffer: String) -> String {\n    rawBuffer\n  }");
+    expect(source).not.toContain("previewText(rawBuffer: String, candidate");
+    expect(controller).toContain("inlineGhostText(rawText: rawText, candidates: candidates)");
+    expect(controller).toContain("NSColor.placeholderTextColor.withAlphaComponent(0.82)");
+    expect(controller).toContain("cursorLocation: rawText.utf16.count");
+    expect(selectionChangedBlock).toContain("candidateState.select(index: index)");
+    expect(selectionChangedBlock).toContain("refreshCandidatePanel()");
+    expect(selectionChangedBlock).not.toContain("setMarkedText");
+    expect(selectionChangedBlock).not.toContain("visiblePreviewText");
+    expect(modifierPassThroughBlock).not.toContain("commitCurrentComposition");
+    expect(controller).toContain("showModePicker()");
+    expect(controller).not.toContain("apply(modeMenuDecision()");
+    expect(controller).toContain("key == \" \"");
+    expect(controller).toContain("key == \"\\n\"");
+    expect(controller).toContain("key == \"\\t\", !modifiers.contains(.shift)");
+    expect(candidateController).toContain("moveSelection(delta:");
+    expect(candidateController).toContain("candidateForShortcut");
+    expect(candidatePanel).toContain("selectedIndex:");
+    expect(candidatePanel).toContain("private final class LekhCandidateRowView: NSView");
+    expect(candidatePanel).toContain("container.translatesAutoresizingMaskIntoConstraints = false");
+    expect(candidatePanel).toContain("controlAccentColor.withAlphaComponent");
+  });
+
+  it("keeps Space safe and requires explicit candidate acceptance", () => {
+    const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
+    const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhXpcClient.swift"), "utf8");
+
+    expect(controller).toContain("if candidateSelectionExplicit {\n        return commitSelectedCandidate(client: client, suffix: \" \")");
+    expect(controller).toContain("return commitRawComposition(client: client, suffix: \" \")");
+    expect(controller).toContain("if candidateSelectionExplicit, let selected = candidateState.selectedCandidate()");
+    expect(source).toContain("committedText: rawBuffer.isEmpty ? \" \" : \"\\(rawBuffer) \"");
+    expect(source).toContain("isAllowedActiveTokenCandidate(input: normalized, candidate: $0)");
+    expect(source).toContain("if trimmedCandidate.contains(\" \") { return false }");
   });
 
   it("keeps native inline preview as the default typing experience", () => {
@@ -240,6 +299,9 @@ describe("macOS IMK proof target source", () => {
     expect(registerScript).toContain("CFBundleIdentifier");
     expect(registerScript).toContain("TISRegisterInputSource");
     expect(registerScript).toContain("TISEnableInputSource");
+    expect(registerScript).not.toContain("enableSource(parent)");
+    expect(registerScript).toContain("withoutLekhParentInputMethodRows");
+    expect(registerScript).not.toContain('"InputSourceKind": "Keyboard Input Method"');
     expect(registerScript).not.toContain("com.apple.HIToolbox.plist");
     expect(registerScript).not.toContain("com.apple.inputsources.plist");
     expect(installScript).not.toContain("restore-system-keyboard.sh");

@@ -46,6 +46,9 @@ const minisignPublicKey = join(root, "public", "security", "lekh-release-manifes
 const sparklePrivateKey = process.env.LEKH_SPARKLE_EDDSA_PRIVATE_KEY_PATH ||
   join(root, "data", "private", "lekh-sparkle-ed25519-private.pem");
 const appcastPath = join(releaseDir, "appcast.xml");
+const installerPublicURL = process.env.LEKH_MACOS_INSTALLER_URL ||
+  (process.env.LEKH_SPARKLE_APPCAST_URL || "https://lekh-assistant.pages.dev/updates/macos/appcast.xml")
+    .replace(/appcast\.xml(?:\?.*)?$/, "Lekh-Keyboard-Test-Installer.zip");
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const toolchainCacheDir = join(root, ".build-cache", "macos-toolchain");
 const toolchainEnv = {
@@ -270,7 +273,7 @@ function unregisterReleaseArtifacts() {
   }
 }
 
-function writeAppShellBundle({ appPath, displayName, identifier, executableName, script }) {
+function writeAppShellBundle({ appPath, displayName, identifier, executableName, script, uiElement = false }) {
   rmSync(appPath, { recursive: true, force: true });
   mkdirSync(join(appPath, "Contents", "MacOS"), { recursive: true });
   mkdirSync(join(appPath, "Contents", "Resources"), { recursive: true });
@@ -303,7 +306,7 @@ function writeAppShellBundle({ appPath, displayName, identifier, executableName,
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>
-  <true/>
+  <${uiElement ? "true" : "false"}/>
 </dict>
 </plist>
 `
@@ -362,7 +365,7 @@ rmSync(join(releaseDir, "runtime-suggestions.lkb"), { force: true });
 rmSync(join(releaseDir, "runtime-suggestions.sanitized.json"), { force: true });
 
 const installerScript = `#!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 RESOURCE_DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
 DEST="$HOME/Library/Input Methods/Lekh Keyboard.app"
@@ -376,6 +379,7 @@ BACKUP_ROOT="$SUPPORT_DIR/InstallBackups"
 BACKUP_DEST=""
 OLD_DEST=""
 DEST_REPLACED=0
+SWAPPED_DEST=0
 
 mkdir -p "$LOG_DIR" "$BACKUP_ROOT" || exit 1
 log() { printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG_FILE"; }
@@ -388,6 +392,12 @@ display dialog (system attribute "LEKH_DIALOG_MESSAGE") buttons {"OK"} default b
 APPLESCRIPT
 }
 rollback() {
+  if [[ "$SWAPPED_DEST" == "1" && -n "$OLD_DEST" && -d "$OLD_DEST" && -d "$DEST" ]]; then
+    log "rollback atomically swapping previous bundle back into place"
+    "$RESOURCE_DIR/atomic-install-swap" "$OLD_DEST" "$DEST" >/dev/null 2>&1 || true
+    "$RESOURCE_DIR/register-lekh-input-source" "$DEST" >/dev/null 2>&1 || true
+    return
+  fi
   if [[ -n "$OLD_DEST" && -d "$OLD_DEST" ]]; then
     log "rollback moving previous bundle back into place"
     /bin/rm -rf "$DEST"
@@ -419,8 +429,8 @@ rotate_backups() {
   if [[ "\${existing_count:-0}" -le "$keep_count" ]]; then
     return
   fi
-  /usr/bin/find "$BACKUP_ROOT" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print0 2>/dev/null |
-    /usr/bin/xargs -0 /bin/ls -td 2>/dev/null |
+  /usr/bin/find "$BACKUP_ROOT" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print 2>/dev/null |
+    /usr/bin/sort -r |
     /usr/bin/tail -n +"$((keep_count + 1))" |
     while IFS= read -r old_backup; do
       [[ -n "$old_backup" ]] && /bin/rm -rf "$old_backup"
@@ -451,15 +461,20 @@ fi
 /usr/bin/codesign --verify --deep --strict "$TMP_DEST" >> "$LOG_FILE" 2>&1 || fail "copied payload signature failed"
 
 if [[ -d "$DEST" ]]; then
-  OLD_DEST="$HOME/Library/Input Methods/.Lekh Keyboard.app.previous.$$"
-  /bin/rm -rf "$OLD_DEST"
   "$LSREGISTER" -u "$DEST" >> "$LOG_FILE" 2>&1 || true
-  /bin/mv "$DEST" "$OLD_DEST" || fail "could not move old install aside"
+  "$RESOURCE_DIR/atomic-install-swap" "$TMP_DEST" "$DEST" >> "$LOG_FILE" 2>&1 || fail "could not atomically swap install into place"
+  OLD_DEST="$TMP_DEST"
+  TMP_DEST=""
   DEST_REPLACED=1
+  SWAPPED_DEST=1
 fi
 "$RESOURCE_DIR/purge-lekh-input-sources" >> "$LOG_FILE" 2>&1 || true
-/bin/mv "$TMP_DEST" "$DEST" || fail "could not move install into place"
+if [[ "$SWAPPED_DEST" == "0" ]]; then
+  /bin/mv "$TMP_DEST" "$DEST" || fail "could not move install into place"
+  TMP_DEST=""
+fi
 DEST_REPLACED=0
+SWAPPED_DEST=0
 /bin/rm -rf "$OLD_DEST"
 OLD_DEST=""
 
@@ -479,7 +494,7 @@ writeAppShellBundle({
 });
 
 const uninstallerScript = `#!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 RESOURCE_DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
 DEST="$HOME/Library/Input Methods/Lekh Keyboard.app"
@@ -536,6 +551,12 @@ fi
 /bin/rm -rf "$SUPPORT_DIR/Packs" "$SUPPORT_DIR/Models" "$SUPPORT_DIR/InstallBackups" "$SUPPORT_DIR/Diagnostics" "$CACHE_DIR"
 if [[ "$REMOVE_PERSONAL_DICTIONARY" == "1" ]]; then
   /bin/rm -f "$SUPPORT_DIR/lekh-keyboard.sqlite3" "$SUPPORT_DIR/lekh-keyboard.sqlite3-wal" "$SUPPORT_DIR/lekh-keyboard.sqlite3-shm"
+elif [[ -f "$SUPPORT_DIR/lekh-keyboard.sqlite3" ]]; then
+  /usr/bin/sqlite3 "$SUPPORT_DIR/lekh-keyboard.sqlite3" 'PRAGMA wal_checkpoint(TRUNCATE);' >> "$LOG_FILE" 2>&1 || true
+  /bin/rm -f "$SUPPORT_DIR/lekh-keyboard.sqlite3-shm"
+  if [[ -f "$SUPPORT_DIR/lekh-keyboard.sqlite3-wal" && ! -s "$SUPPORT_DIR/lekh-keyboard.sqlite3-wal" ]]; then
+    /bin/rm -f "$SUPPORT_DIR/lekh-keyboard.sqlite3-wal"
+  fi
 fi
 /usr/bin/find "$SUPPORT_DIR" -depth -type d -empty -delete >/dev/null 2>&1 || true
 log "uninstall completed"
@@ -561,7 +582,8 @@ for (const appPath of [installerApp, uninstallerApp]) {
   for (const [sourceFile, binaryName] of [
     ["register-dev.swift", "register-lekh-input-source"],
     ["restore-system-keyboard.swift", "restore-system-keyboard"],
-    ["purge-lekh-input-sources.swift", "purge-lekh-input-sources"]
+    ["purge-lekh-input-sources.swift", "purge-lekh-input-sources"],
+    ["atomic-install-swap.swift", "atomic-install-swap"]
   ]) {
     compileUniversalHelper(sourceFile, join(resourcesDir, binaryName));
   }
@@ -576,7 +598,7 @@ run("copy-installer-to-folder", "ditto", [...metadataSafeDittoFlags, installerAp
 run("copy-uninstaller-to-folder", "ditto", [...metadataSafeDittoFlags, uninstallerApp, join(distFolder, "Lekh Keyboard Uninstaller.app")]);
 
 const terminalInstallScript = `#!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 cd "$(dirname "$0")" || exit 1
 INSTALLER_APP="$PWD/Lekh Keyboard Test Installer.app"
@@ -603,8 +625,10 @@ if ! /usr/bin/codesign --verify --deep --strict "$INSTALLER_APP" >/dev/null 2>&1
   exit 1
 fi
 
+set +e
 "$INSTALLER_BIN"
 status=$?
+set -e
 echo
 if [[ "$status" -eq 0 ]]; then
   echo "Install finished. Use the macOS input menu to select Lekh Keyboard."
@@ -615,7 +639,7 @@ read -r -p "Press Return to close this window..."
 exit "$status"
 `;
 const terminalUninstallScript = `#!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 cd "$(dirname "$0")" || exit 1
 UNINSTALLER_APP="$PWD/Lekh Keyboard Uninstaller.app"
@@ -640,8 +664,10 @@ if ! /usr/bin/codesign --verify --deep --strict "$UNINSTALLER_APP" >/dev/null 2>
   exit 1
 fi
 
+set +e
 "$UNINSTALLER_BIN"
 status=$?
+set -e
 echo
 if [[ "$status" -eq 0 ]]; then
   echo "Uninstall finished."
@@ -688,7 +714,8 @@ writeFileSync(
     "Production distribution still requires Developer ID signing and notarization if this zip is built without LEKH_MAC_DEVELOPER_ID.",
     "Release manifest:",
     "RELEASE-MANIFEST.json is signed by RELEASE-MANIFEST.json.minisig. Verify with:",
-    "minisign -Vm RELEASE-MANIFEST.json -P $(tail -n 1 public/security/lekh-release-manifest-minisign.pub)",
+    "minisign -Vm RELEASE-MANIFEST.json -x RELEASE-MANIFEST.json.minisig -P $(tail -n 1 lekh-release-manifest-minisign.pub)",
+    "Or run Verify Lekh Release.command after installing minisign.",
     "",
     "नेपाली:",
     "१. Lekh Keyboard Test Installer.app खोल्नुहोस्।",
@@ -703,6 +730,35 @@ writeFileSync(
 if (existsSync(join(root, "LICENSE"))) {
   copyFileSync(join(root, "LICENSE"), join(distFolder, "LICENSE.txt"));
 }
+if (existsSync(minisignPublicKey)) {
+  copyFileSync(minisignPublicKey, join(distFolder, "lekh-release-manifest-minisign.pub"));
+}
+const verifyReleaseScript = `#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")" || exit 1
+
+if ! command -v minisign >/dev/null 2>&1; then
+  echo "minisign is required to verify RELEASE-MANIFEST.json." >&2
+  echo "Install it with: brew install minisign" >&2
+  read -r -p "Press Return to close this window..."
+  exit 127
+fi
+
+echo "Verifying SHA256SUMS.txt..."
+/usr/bin/shasum -a 256 -c SHA256SUMS.txt
+
+echo
+echo "Verifying signed release manifest..."
+minisign -Vm RELEASE-MANIFEST.json -x RELEASE-MANIFEST.json.minisig -P "$(tail -n 1 lekh-release-manifest-minisign.pub)"
+
+echo
+echo "Lekh release verification passed."
+read -r -p "Press Return to close this window..."
+`;
+const verifyReleasePath = join(distFolder, "Verify Lekh Release.command");
+writeFileSync(verifyReleasePath, verifyReleaseScript);
+chmodSync(verifyReleasePath, 0o755);
 
 const releaseManifestPath = join(distFolder, "RELEASE-MANIFEST.json");
 const manifestSignaturePath = `${releaseManifestPath}.minisig`;
@@ -722,7 +778,7 @@ const releaseManifest = {
   hashAlgorithm: "SHA-256",
   signature: {
     algorithm: "minisign",
-    publicKey: existsSync(minisignPublicKey) ? relative(root, minisignPublicKey) : null,
+    publicKey: existsSync(join(distFolder, "lekh-release-manifest-minisign.pub")) ? "lekh-release-manifest-minisign.pub" : null,
     detachedSignature: "RELEASE-MANIFEST.json.minisig"
   },
   files: releaseManifestFiles.map((target) => ({
@@ -845,6 +901,34 @@ run("package-appcast", process.execPath, [
   join(root, "reports", "macos-appcast-report.json")
 ]);
 
+const zipSha256ForCask = createHash("sha256").update(readFileSync(zipPath)).digest("hex");
+const caskPath = join(releaseDir, "lekh-keyboard-test.rb");
+writeFileSync(
+  caskPath,
+  [
+    "cask \"lekh-keyboard-test\" do",
+    `  version "${appShortVersion},${appBuild}"`,
+    `  sha256 "${zipSha256ForCask}"`,
+    "",
+    `  url "${installerPublicURL}"`,
+    "  name \"Lekh Keyboard\"",
+    "  desc \"Native macOS Nepali input method\"",
+    "  homepage \"https://lekh-assistant.pages.dev/\"",
+    "",
+    "  installer script: {",
+    "    executable: \"Lekh Keyboard Test Installer/Install Lekh Keyboard from Terminal.command\",",
+    "    sudo: false",
+    "  }",
+    "",
+    "  uninstall script: {",
+    "    executable: \"Lekh Keyboard Test Installer/Uninstall Lekh Keyboard from Terminal.command\",",
+    "    sudo: false",
+    "  }",
+    "end",
+    ""
+  ].join("\n")
+);
+
 run("sign-release-directory-manifest", process.execPath, [
   join(root, "scripts", "sign-release-directory-manifest.mjs"),
   "--dir",
@@ -867,9 +951,13 @@ for (const fileName of [
   "appcast.xml",
   "RELEASE-MANIFEST.json",
   "RELEASE-MANIFEST.json.minisig",
-  "SHA256SUMS.txt"
+  "SHA256SUMS.txt",
+  "lekh-keyboard-test.rb"
 ]) {
   copyFileSync(join(releaseDir, fileName), join(publicUpdatesDir, fileName));
+}
+if (existsSync(minisignPublicKey)) {
+  copyFileSync(minisignPublicKey, join(publicUpdatesDir, "lekh-release-manifest-minisign.pub"));
 }
 copyFileSync(
   join(dictionaryPackDir, "manifest.json"),

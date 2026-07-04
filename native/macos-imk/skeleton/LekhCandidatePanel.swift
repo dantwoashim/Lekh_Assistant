@@ -7,22 +7,33 @@ public struct LekhCandidateDisplayItem: Equatable {
   public let explanation: String
 }
 
-private final class LekhCandidateButton: NSButton {
+private final class LekhCandidateRowView: NSView {
   let candidateText: String
+  var onSelect: ((String) -> Void)?
 
   init(candidateText: String) {
     self.candidateText = candidateText
     super.init(frame: .zero)
+    wantsLayer = true
   }
 
   required init?(coder: NSCoder) {
     nil
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    onSelect?(candidateText)
+  }
+
+  override func resetCursorRects() {
+    addCursorRect(bounds, cursor: .pointingHand)
   }
 }
 
 public final class LekhCandidatePanel: NSObject {
   private var panel: NSPanel?
   private var onSelect: ((String) -> Void)?
+  private let maxVisibleRows = 5
 
   public override init() {
     super.init()
@@ -31,6 +42,7 @@ public final class LekhCandidatePanel: NSObject {
   public func show(
     items: [LekhCandidateDisplayItem],
     title: String,
+    selectedIndex: Int,
     anchorRect: NSRect?,
     onSelect: @escaping (String) -> Void
   ) {
@@ -42,10 +54,11 @@ public final class LekhCandidatePanel: NSObject {
 
     let panel = self.panel ?? makePanel()
     self.panel = panel
-    panel.contentView = contentView(items: items, title: title)
+    let visibleItems = Array(items.prefix(maxVisibleRows))
+    panel.contentView = contentView(items: visibleItems, title: title, selectedIndex: min(selectedIndex, visibleItems.count - 1))
 
-    let rowHeight: CGFloat = 42
-    let height = min(340, CGFloat(items.count) * rowHeight + 40)
+    let rowHeight: CGFloat = 38
+    let height = min(250, CGFloat(visibleItems.count) * rowHeight + 42)
     let width: CGFloat = 420
     let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     let fallbackPoint = NSEvent.mouseLocation
@@ -80,7 +93,7 @@ public final class LekhCandidatePanel: NSObject {
     return panel
   }
 
-  private func contentView(items: [LekhCandidateDisplayItem], title: String) -> NSView {
+  private func contentView(items: [LekhCandidateDisplayItem], title: String, selectedIndex: Int) -> NSView {
     let visual = NSVisualEffectView()
     visual.material = .hudWindow
     visual.blendingMode = .behindWindow
@@ -99,7 +112,7 @@ public final class LekhCandidatePanel: NSObject {
     stack.addArrangedSubview(titleLabel)
 
     for (index, item) in items.enumerated() {
-      stack.addArrangedSubview(row(index: index, item: item))
+      stack.addArrangedSubview(row(index: index, item: item, isSelected: index == selectedIndex))
     }
 
     NSLayoutConstraint.activate([
@@ -111,30 +124,34 @@ public final class LekhCandidatePanel: NSObject {
     return visual
   }
 
-  private func row(index: Int, item: LekhCandidateDisplayItem) -> NSView {
-    let button = LekhCandidateButton(candidateText: item.text)
-    button.target = self
-    button.action = #selector(selectCandidate(_:))
-    button.isBordered = false
-    button.bezelStyle = .regularSquare
-    button.toolTip = item.explanation
-    button.translatesAutoresizingMaskIntoConstraints = false
+  private func row(index: Int, item: LekhCandidateDisplayItem, isSelected: Bool) -> NSView {
+    let row = LekhCandidateRowView(candidateText: item.text)
+    row.onSelect = { [weak self] candidate in
+      self?.onSelect?(candidate)
+    }
+    row.toolTip = item.explanation
+    row.translatesAutoresizingMaskIntoConstraints = false
+    row.layer?.cornerRadius = 7
+    row.layer?.backgroundColor = isSelected
+      ? NSColor.controlAccentColor.withAlphaComponent(0.20).cgColor
+      : NSColor.clear.cgColor
 
     let container = NSStackView()
     container.orientation = .horizontal
     container.alignment = .centerY
     container.spacing = 8
     container.edgeInsets = NSEdgeInsets(top: 4, left: 2, bottom: 4, right: 2)
+    container.translatesAutoresizingMaskIntoConstraints = false
 
     let shortcut = NSTextField(labelWithString: "\(index + 1)")
     shortcut.alignment = .center
-    shortcut.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-    shortcut.textColor = .secondaryLabelColor
+    shortcut.font = .monospacedDigitSystemFont(ofSize: 11, weight: isSelected ? .semibold : .medium)
+    shortcut.textColor = isSelected ? .controlAccentColor : .secondaryLabelColor
     shortcut.widthAnchor.constraint(equalToConstant: 20).isActive = true
     container.addArrangedSubview(shortcut)
 
     let candidate = NSTextField(labelWithString: item.text)
-    candidate.font = NSFont(name: "Kohinoor Devanagari", size: 20) ?? .systemFont(ofSize: 19, weight: .medium)
+    candidate.font = LekhFont.devanagari(size: 20, weight: isSelected ? .semibold : .medium)
     candidate.lineBreakMode = .byTruncatingTail
     candidate.textColor = .labelColor
     candidate.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -151,24 +168,20 @@ public final class LekhCandidatePanel: NSObject {
 
     let badge = NSTextField(labelWithString: item.badge)
     badge.font = .systemFont(ofSize: 10, weight: .semibold)
-    badge.textColor = .tertiaryLabelColor
+    badge.textColor = isSelected ? .secondaryLabelColor : .tertiaryLabelColor
     badge.alignment = .right
     badge.widthAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
     container.addArrangedSubview(badge)
 
-    button.addSubview(container)
+    row.addSubview(container)
     NSLayoutConstraint.activate([
-      container.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
-      container.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
-      container.topAnchor.constraint(equalTo: button.topAnchor),
-      container.bottomAnchor.constraint(equalTo: button.bottomAnchor),
-      button.heightAnchor.constraint(equalToConstant: 36),
-      button.widthAnchor.constraint(greaterThanOrEqualToConstant: 390)
+      container.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 4),
+      container.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -4),
+      container.topAnchor.constraint(equalTo: row.topAnchor),
+      container.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+      row.heightAnchor.constraint(equalToConstant: 34),
+      row.widthAnchor.constraint(greaterThanOrEqualToConstant: 390)
     ])
-    return button
-  }
-
-  @objc private func selectCandidate(_ sender: LekhCandidateButton) {
-    onSelect?(sender.candidateText)
+    return row
   }
 }

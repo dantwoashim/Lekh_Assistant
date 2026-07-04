@@ -19,6 +19,7 @@ const production = args.has("production");
 const reportPath = args.get("report") ?? join(ROOT, "reports", "neural-model-selection-report.json");
 const manifestPath = args.get("manifest") ?? join(ROOT, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const modelDir = args.get("model") ?? join(ROOT, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
+const modelGraphPath = join(modelDir, "model.espresso.net");
 
 const sources = [
   {
@@ -95,13 +96,24 @@ const sources = [
 ];
 
 const shippingPlan = {
-  selectedArtifact: "lekh-small-coreml-student-v1",
+  currentBaselineArtifact: "lekh-small-coreml-student-v1",
+  finalProductionArtifact: "lekh-open-vocab-seq2seq-v1",
   targetRuntime: "CoreML .mlmodelc",
   targetParameterCount: "1M-5M",
   targetCompiledBytes: "<=16MB",
   targetP99Ms: "<=3ms",
   hotPathPolicy: "deterministic FST and dictionary first; neural tail reranker only when fast paths are insufficient",
   privacyPolicy: "local inference only; no network inference; no raw text telemetry",
+  productionRequirements: {
+    openVocabulary: true,
+    acceptedArchitectures: ["tiny-transformer-encoder-decoder", "gru-encoder-decoder", "seq2seq"],
+    tokenization: "BPE, unigram subword, or character-sequence decoder",
+    decoding: "beam-search",
+    languageModelRescorer: true,
+    contextWindowWords: ">=2",
+    measuredOnDevice: true,
+    forbiddenCompiledGraphShape: "single inner_product followed by softmax"
+  },
   requiredCases: {
     vato: "बाटो",
     bato: "बाटो",
@@ -133,6 +145,7 @@ for (const source of sources) {
 
 const manifestExists = existsSync(manifestPath);
 const modelExists = existsSync(modelDir);
+const modelGraph = inspectCompiledGraph(modelGraphPath);
 let manifest = null;
 if (manifestExists) {
   manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -140,8 +153,12 @@ if (manifestExists) {
   for (const required of ["syubraj-roman2nepali-transliteration"]) {
     if (!sourceIds.has(required)) failures.push(`Model manifest must include training source ${required}.`);
   }
-  if (manifest.selectedArtifact !== shippingPlan.selectedArtifact) {
-    failures.push(`Model manifest selectedArtifact must be ${shippingPlan.selectedArtifact}.`);
+  if (production) {
+    validateProductionModel(manifest, modelGraph);
+  } else if (manifest.selectedArtifact !== shippingPlan.currentBaselineArtifact && manifest.selectedArtifact !== shippingPlan.finalProductionArtifact) {
+    warnings.push(`Unknown transliteration artifact ${manifest.selectedArtifact}; production gates will require ${shippingPlan.finalProductionArtifact}.`);
+  } else if (manifest.productionEligible === false || manifest.openVocabulary === false) {
+    warnings.push("Current Core ML artifact is a baseline tail model only; production neural gates intentionally fail until the open-vocabulary seq2seq model ships.");
   }
 } else if (production) {
   failures.push("Production neural build requires models/macos/LekhNeuralTransliterator.manifest.json.");
@@ -162,9 +179,67 @@ finish(failures.length === 0 ? "passed" : "failed", {
   modelExists,
   manifestExists,
   manifest,
+  modelGraph,
   failures,
   warnings
 }, failures.length === 0 ? 0 : 1);
+
+function validateProductionModel(candidateManifest, graph) {
+  if (candidateManifest.selectedArtifact !== shippingPlan.finalProductionArtifact) {
+    failures.push(`Production model selectedArtifact must be ${shippingPlan.finalProductionArtifact}, not ${candidateManifest.selectedArtifact}.`);
+  }
+  if (candidateManifest.productionEligible !== true) failures.push("Production model manifest must declare productionEligible=true.");
+  if (candidateManifest.openVocabulary !== true) failures.push("Production transliteration model must be open-vocabulary, not a fixed 8192-class label softmax.");
+
+  const architecture = String(candidateManifest.architecture ?? candidateManifest.modelFamily ?? "");
+  if (!/(transformer|seq2seq|encoder-decoder|gru)/i.test(architecture)) {
+    failures.push(`Production model architecture must be tiny Transformer/GRU seq2seq; current architecture is ${architecture || "unspecified"}.`);
+  }
+
+  const tokenizer = candidateManifest.subwordModel ?? candidateManifest.tokenizer ?? candidateManifest.tokenization;
+  if (!tokenizer || tokenizer === "none") {
+    failures.push("Production model must declare a BPE/unigram subword or character-sequence tokenizer.");
+  }
+
+  const hasBeamSearch = candidateManifest.decoder === "beam-search" || candidateManifest.beamSearch?.enabled === true;
+  if (!hasBeamSearch) failures.push("Production model must use beam search decoding.");
+
+  if (candidateManifest.languageModelRescorer?.enabled !== true) {
+    failures.push("Production model must enable language-model rescoring for candidate ranking.");
+  }
+
+  if (Number(candidateManifest.contextWindowWords) < 2) {
+    failures.push("Production model must rank with at least the previous 2 words of context.");
+  }
+
+  if (candidateManifest.performance?.measuredOnDevice !== true) {
+    failures.push("Production model latency must be measured on the packaged app, not only estimated.");
+  }
+
+  if (graph.closedVocabLinearSoftmax === true) {
+    failures.push("Compiled Core ML graph is a closed-vocabulary inner_product + softmax classifier; production requires an open-vocabulary decoder graph.");
+  }
+}
+
+function inspectCompiledGraph(path) {
+  if (!existsSync(path)) {
+    return { path: relative(ROOT, path), exists: false };
+  }
+  const bytes = readFileSync(path, "latin1");
+  const hasInnerProduct = bytes.includes("inner_product");
+  const hasSoftmax = bytes.includes("softmax");
+  const hasAttention = /attention|self_attention|multihead|decoder|encoder/i.test(bytes);
+  const hasRecurrent = /lstm|gru|recurrent/i.test(bytes);
+  return {
+    path: relative(ROOT, path),
+    exists: true,
+    hasInnerProduct,
+    hasSoftmax,
+    hasAttention,
+    hasRecurrent,
+    closedVocabLinearSoftmax: hasInnerProduct && hasSoftmax && !hasAttention && !hasRecurrent
+  };
+}
 
 function finish(status, details, exitCode) {
   mkdirSync(dirname(reportPath), { recursive: true });

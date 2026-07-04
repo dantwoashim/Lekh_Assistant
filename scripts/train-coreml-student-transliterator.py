@@ -395,6 +395,20 @@ def main() -> None:
         "runtime": "CoreML",
         "localOnly": True,
         "neuralTailOnly": True,
+        "productionEligible": False,
+        "productionBlocker": (
+            "Closed-vocabulary Core ML baseline. Production requires lekh-open-vocab-seq2seq-v1 "
+            "with subword tokenization, beam search, context reranking, and measured on-device latency."
+        ),
+        "architecture": "linear-softmax-baseline",
+        "openVocabulary": False,
+        "subwordModel": None,
+        "decoder": "flat-softmax",
+        "beamSearch": {"enabled": False},
+        "languageModelRescorer": {"enabled": False},
+        "contextWindowWords": 0,
+        "confidenceGatedFallback": True,
+        "instantFirstPaintOnly": True,
         "modelFamily": "hashed-char-ngram-centroid-classifier",
         "featureContract": {
             "input": "features",

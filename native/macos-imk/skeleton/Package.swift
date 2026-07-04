@@ -6,7 +6,8 @@ let package = Package(
   platforms: [.macOS(.v13)],
   products: [
     .library(name: "LekhInputMethod", targets: ["LekhInputMethod"]),
-    .executable(name: "LekhInputMethodApp", targets: ["LekhInputMethodApp"])
+    .executable(name: "LekhInputMethodApp", targets: ["LekhInputMethodApp"]),
+    .executable(name: "LekhInputMethodBehaviorProbe", targets: ["LekhInputMethodBehaviorProbe"])
   ],
   dependencies: [],
   targets: [
@@ -15,6 +16,7 @@ let package = Package(
       path: ".",
       exclude: [
         "App",
+        "atomic-install-swap.swift",
         "Info.plist",
         "PkgInfo",
         "install-dev.sh",
@@ -25,7 +27,8 @@ let package = Package(
         "register-dev.swift",
         "restore-system-keyboard.sh",
         "restore-system-keyboard.swift",
-        "uninstall-dev.sh"
+        "uninstall-dev.sh",
+        "Tests"
       ],
       sources: [
         "LekhCandidatePanel.swift",
@@ -33,6 +36,7 @@ let package = Package(
         "LekhDictionaryPackVerifier.swift",
         "LekhDictionaryPackWatcher.swift",
         "LekhDiagnostics.swift",
+        "LekhFont.swift",
         "LekhInputController.swift",
         "LekhLocalization.swift",
         "LekhMetricReporter.swift",
@@ -51,6 +55,14 @@ let package = Package(
         "LekhInputMethod"
       ],
       path: "App",
+      sources: ["main.swift"]
+    ),
+    .executableTarget(
+      name: "LekhInputMethodBehaviorProbe",
+      dependencies: [
+        "LekhInputMethod"
+      ],
+      path: "Tests/LekhInputMethodBehaviorProbe",
       sources: ["main.swift"]
     )
   ]
