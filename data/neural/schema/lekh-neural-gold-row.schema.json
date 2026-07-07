@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekh.local/schemas/lekh-neural-gold-row.schema.json",
+  "title": "Lekh neural gold evaluation row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "input",
+    "expectedAction",
+    "expected",
+    "acceptable",
+    "previousContext",
+    "category",
+    "source",
+    "reviewTier",
+    "reviewer",
+    "license",
+    "split",
+    "notes"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^gold_[a-z0-9_]+_[0-9]{6}$"
+    },
+    "input": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "expectedAction": {
+      "enum": ["produce-candidate", "no-neural-candidate"]
+    },
+    "expected": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "acceptable": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "forbiddenOutputs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "previousContext": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "pattern": "^\\S+$"
+      }
+    },
+    "category": {
+      "enum": [
+        "romanized-token",
+        "chat-convention",
+        "name",
+        "ambiguity",
+        "non-nepali-pass-through",
+        "protected-token",
+        "adversarial-safety"
+      ]
+    },
+    "source": {
+      "enum": [
+        "lekh-phase1-contract-seed-v1",
+        "human-reviewed-lekh-gold-v1",
+        "lekh-chat-conventions-v1",
+        "lekh-name-lexicon-v1",
+        "lekh-ambiguity-gold-v1",
+        "lekh-protected-token-gold-v1",
+        "lekh-adversarial-neural-tail-gold-v1"
+      ]
+    },
+    "reviewTier": {
+      "enum": [
+        "contract-seed",
+        "native-speaker-reviewed",
+        "linguist-reviewed",
+        "dual-reviewed",
+        "adjudicated-gold"
+      ]
+    },
+    "reviewer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "license": {
+      "enum": [
+        "project-internal-contract-seed",
+        "project-owned",
+        "open-license-reviewed",
+        "consented-private-derived"
+      ]
+    },
+    "split": {
+      "enum": ["train", "dev", "test"]
+    },
+    "notes": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

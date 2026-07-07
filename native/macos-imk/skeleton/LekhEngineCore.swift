@@ -1,8 +1,6 @@
 import Foundation
 import SQLite3
 
-public let lekhHotPathBudgetMilliseconds = 50
-
 public enum LekhNativeTypingMode: String, CaseIterable {
   case romanizedRomanized = "romanized-romanized"
   case romanizedTraditional = "romanized-traditional"
@@ -19,24 +17,30 @@ public enum LekhNativeTypingMode: String, CaseIterable {
   public var menuLabel: String {
     switch self {
     case .romanizedRomanized:
-      return "Romanized → Romanized"
+      return LekhL10n.text("mode.romanizedRomanized")
     case .romanizedTraditional:
-      return "Romanized → Nepali"
+      return LekhL10n.text("mode.romanizedTraditional")
     case .traditionalTraditional:
-      return "Traditional → Nepali"
+      return LekhL10n.text("mode.traditionalTraditional")
     case .traditionalRomanized:
-      return "Traditional → Romanized"
+      return LekhL10n.text("mode.traditionalRomanized")
     }
   }
 }
 
 public protocol LekhEngineClient {
-  func processKey(_ key: String, sessionId: String, timeoutMilliseconds: Int, mode: LekhNativeTypingMode) -> LekhInputDecision
+  func processKey(_ key: String, sessionId: String, mode: LekhNativeTypingMode) -> LekhInputDecision
   func hasComposition(sessionId: String) -> Bool
   func rawBuffer(sessionId: String) -> String
-  func learnCommit(sessionId: String, chosenOutput: String)
+  func observeCommit(
+    sessionId: String,
+    rawInput: String,
+    chosenOutput: String,
+    allowPersonalization: Bool
+  )
   func forgetCandidate(sessionId: String, chosenOutput: String)
   func resetSession(_ sessionId: String)
+  func endSession(_ sessionId: String)
   func diagnosticsSummary() -> String
   func securityWarning() -> String?
 }
@@ -120,7 +124,7 @@ private final class LekhBinaryLexicon {
   }
 
   func rows(for normalizedInput: String, exactOnly: Bool, limit: Int) -> [NativeCandidateRow] {
-    let normalized = LekhStaticProofEngineClient.normalize(normalizedInput)
+    let normalized = LekhNativeEngineClient.normalize(normalizedInput)
     guard !normalized.isEmpty, limit > 0 else { return [] }
     let exactRows = lookup(key: normalized, exactOnly: true, limit: limit)
     if exactOnly || !exactRows.isEmpty {
@@ -450,12 +454,25 @@ private enum LekhRomanizationTolerance {
   }
 }
 
-public final class LekhStaticProofEngineClient: LekhEngineClient {
+public final class LekhNativeEngineClient: LekhEngineClient {
+  private struct EngineContract: Decodable {
+    struct CandidatePolicy: Decodable {
+      let maximumVisible: Int
+      let singleTokenMayExpandToPhrase: Bool
+      let programmaticSelectionMayCommit: Bool
+    }
+
+    let schemaVersion: Int
+    let modes: [String]
+    let candidatePolicy: CandidatePolicy
+  }
+
   private struct RuntimeSuggestionPack: Decodable {
     let words: [RuntimeSuggestionRow]
     let phrases: [RuntimeSuggestionRow]
     let proofread: [RuntimeProofreadRow]?
     let names: [RuntimeSuggestionRow]
+    let nextContexts: [RuntimeNextContextRow]?
   }
 
   private struct RuntimeSuggestionRow: Decodable {
@@ -473,6 +490,18 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     let quality: String?
   }
 
+  private struct RuntimeNextContextRow: Decodable {
+    let context: String
+    let next: String
+    let confidence: Double?
+    let quality: String?
+  }
+
+  private struct NativeNextContextRow {
+    let next: String
+    let confidence: Double
+  }
+
   private struct NativeProofreadRow {
     let error: String
     let correction: String
@@ -483,27 +512,34 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
 
   private var buffers: [String: String] = [:]
   private var lastCommittedWordsBySession: [String: String] = [:]
+  private var lastCommittedInputsBySession: [String: String] = [:]
   private var binaryLexicon: LekhBinaryLexicon?
   private let lexiconLock = NSLock()
   private var reverseCandidatesCache: [String: [String]]?
+  private var reversePrefixCache: [String: [String]]?
   private var packWatcher: LekhDictionaryPackWatcher?
   private var packSecurityWarning: String?
   private let fallbackRows: [NativeCandidateRow]
   private let proofreadRowsByError: [String: [NativeProofreadRow]]
+  private let proofreadRowsByPrefix: [String: [NativeProofreadRow]]
+  private let nextContextsByPreviousInput: [String: [NativeNextContextRow]]
   private let exactCandidates: [String: [NativeCandidateRow]]
   private let prefixBuckets: [String: [NativeCandidateRow]]
+  private let candidateLimit: Int
+  private let contractWarning: String?
   private let userLexicon = LekhUserLexiconStore()
-  private let tailTransliterator = LekhCoreMLTailTransliterator.loadPreferred()
-  private let tailModelGovernor = LekhTailModelLatencyGovernor()
 
   public init() {
+    let contract = Self.loadEngineContract()
     let loadResult = LekhBinaryLexicon.loadPreferred()
     let binaryLexicon = loadResult.lexicon
-    let rows = binaryLexicon == nil ? Self.loadJsonRows() : []
-    let proofreadRows = Self.loadProofreadRows()
+    let runtimePack = Self.loadRuntimePack()
+    let rows = binaryLexicon == nil ? Self.loadJsonRows(pack: runtimePack) : []
+    let proofreadRows = Self.loadProofreadRows(pack: runtimePack)
     var exact: [String: [NativeCandidateRow]] = [:]
     var buckets: [String: [NativeCandidateRow]] = [:]
     var proofread: [String: [NativeProofreadRow]] = [:]
+    var proofreadPrefixes: [String: [NativeProofreadRow]] = [:]
 
     for row in rows {
       exact[row.romanized, default: []].append(row)
@@ -512,6 +548,9 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     }
     for row in proofreadRows {
       proofread[row.error, default: []].append(row)
+      for prefix in Self.characterPrefixes(row.error) {
+        proofreadPrefixes[prefix, default: []].append(row)
+      }
     }
 
     self.binaryLexicon = binaryLexicon
@@ -523,8 +562,20 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
         return $0.priority < $1.priority
       }
     }
+    self.proofreadRowsByPrefix = proofreadPrefixes.mapValues { rows in
+      rows.sorted {
+        if $0.confidence != $1.confidence { return $0.confidence > $1.confidence }
+        return $0.priority < $1.priority
+      }
+    }
+    self.nextContextsByPreviousInput = Self.buildNextContextIndex(runtimePack?.nextContexts ?? [])
     self.exactCandidates = exact.mapValues { Self.ranked($0, limit: 8) }
     self.prefixBuckets = buckets.mapValues { Self.ranked($0, limit: 64) }
+    self.candidateLimit = contract.maximumVisible
+    self.contractWarning = contract.warning
+    let reverse = Self.buildReverseCandidates(rows: binaryLexicon?.allRows() ?? rows)
+    self.reverseCandidatesCache = reverse
+    self.reversePrefixCache = Self.buildReversePrefixes(reverse)
     if LekhDictionaryPackVerifier.hasUsableEmbeddedPublicKey() {
       let watcher = LekhDictionaryPackWatcher { [weak self] in
         self?.reloadBinaryLexicon()
@@ -544,34 +595,51 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
 
   private func reloadBinaryLexicon() {
     let refreshed = LekhBinaryLexicon.loadPreferred()
+    let reverse = refreshed.lexicon.map { Self.buildReverseCandidates(rows: $0.allRows()) }
+    let prefixes = reverse.map(Self.buildReversePrefixes)
     lexiconLock.lock()
     if let lexicon = refreshed.lexicon {
       binaryLexicon = lexicon
-      reverseCandidatesCache = nil
+      reverseCandidatesCache = reverse
+      reversePrefixCache = prefixes
     }
     packSecurityWarning = refreshed.warning
     lexiconLock.unlock()
   }
 
-  private func reverseCandidatesSnapshot() -> [String: [String]] {
+  private func reverseCandidatesSnapshot() -> (
+    exact: [String: [String]],
+    prefixes: [String: [String]]
+  ) {
     lexiconLock.lock()
-    if let cached = reverseCandidatesCache {
+    if let exact = reverseCandidatesCache,
+       let prefixes = reversePrefixCache {
       lexiconLock.unlock()
-      return cached
+      return (exact, prefixes)
     }
     let lexicon = binaryLexicon
     lexiconLock.unlock()
 
     let built = Self.buildReverseCandidates(rows: lexicon?.allRows() ?? fallbackRows)
+    let prefixes = Self.buildReversePrefixes(built)
     lexiconLock.lock()
     reverseCandidatesCache = built
+    reversePrefixCache = prefixes
     lexiconLock.unlock()
-    return built
+    return (built, prefixes)
   }
 
-  public func processKey(_ key: String, sessionId: String, timeoutMilliseconds: Int, mode: LekhNativeTypingMode) -> LekhInputDecision {
+  public func processKey(_ key: String, sessionId: String, mode: LekhNativeTypingMode) -> LekhInputDecision {
     if key == " " {
       let rawBuffer = buffers[sessionId] ?? ""
+      if !rawBuffer.isEmpty {
+        observeCommit(
+          sessionId: sessionId,
+          rawBuffer: rawBuffer,
+          chosenOutput: rawBuffer,
+          allowPersonalization: false
+        )
+      }
       buffers[sessionId] = ""
       return LekhInputDecision(
         handled: true,
@@ -587,7 +655,12 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
       let rawBuffer = buffers[sessionId] ?? ""
       let committed = bestCandidate(for: rawBuffer, sessionId: sessionId, mode: mode)
       if let committed {
-        learnCommit(sessionId: sessionId, rawBuffer: rawBuffer, chosenOutput: committed)
+        observeCommit(
+          sessionId: sessionId,
+          rawBuffer: rawBuffer,
+          chosenOutput: committed,
+          allowPersonalization: false
+        )
       }
       buffers[sessionId] = ""
       guard let committed else {
@@ -623,14 +696,19 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     }
 
     if key.count == 1, shouldAppendToComposition(key) {
-      buffers[sessionId, default: ""].append(key.lowercased())
+      buffers[sessionId, default: ""].append(key)
       return decision(for: buffers[sessionId] ?? "", sessionId: sessionId, mode: mode)
     }
 
     if key.count == 1, let scalar = key.unicodeScalars.first, CharacterSet.punctuationCharacters.contains(scalar) {
       let committed = bestCandidate(for: buffers[sessionId] ?? "", sessionId: sessionId, mode: mode) ?? buffers[sessionId] ?? ""
       if !committed.isEmpty {
-        learnCommit(sessionId: sessionId, rawBuffer: buffers[sessionId] ?? "", chosenOutput: committed)
+        observeCommit(
+          sessionId: sessionId,
+          rawBuffer: buffers[sessionId] ?? "",
+          chosenOutput: committed,
+          allowPersonalization: false
+        )
       }
       buffers[sessionId] = ""
       let punctuation = smartPunctuation(for: key, mode: mode)
@@ -655,8 +733,18 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     buffers[sessionId] ?? ""
   }
 
-  public func learnCommit(sessionId: String, chosenOutput: String) {
-    learnCommit(sessionId: sessionId, rawBuffer: buffers[sessionId] ?? "", chosenOutput: chosenOutput)
+  public func observeCommit(
+    sessionId: String,
+    rawInput: String,
+    chosenOutput: String,
+    allowPersonalization: Bool
+  ) {
+    observeCommit(
+      sessionId: sessionId,
+      rawBuffer: rawInput,
+      chosenOutput: chosenOutput,
+      allowPersonalization: allowPersonalization
+    )
   }
 
   public func forgetCandidate(sessionId: String, chosenOutput: String) {
@@ -678,7 +766,7 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
       )
     }
     let candidates = candidatesFor(buffer, sessionId: sessionId, mode: mode)
-    let markedText = previewText(rawBuffer: rawBuffer)
+    let markedText = previewText(rawBuffer: rawBuffer, candidates: candidates, mode: mode)
     return LekhInputDecision(
       handled: true,
       markedText: markedText,
@@ -694,8 +782,17 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     return candidatesFor(trimmed, sessionId: sessionId, mode: mode).first ?? (trimmed.isEmpty ? nil : rawBuffer)
   }
 
-  private func previewText(rawBuffer: String) -> String {
-    rawBuffer
+  private func previewText(
+    rawBuffer: String,
+    candidates: [String],
+    mode: LekhNativeTypingMode
+  ) -> String {
+    switch mode {
+    case .romanizedTraditional, .traditionalRomanized:
+      return candidates.first ?? rawBuffer
+    case .romanizedRomanized, .traditionalTraditional:
+      return rawBuffer
+    }
   }
 
   private func candidatesFor(_ buffer: String, sessionId: String, mode: LekhNativeTypingMode) -> [String] {
@@ -712,33 +809,9 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
       output.append(preserved)
     }
     output.append(contentsOf: userLexicon.candidates(for: normalized, romanizedOutput: mode == .romanizedRomanized))
-    let rows: [(input: String, candidates: [String])] = [
-      ("swas", ["स्वास्थ्य", "स्वस्थ", "स्वास"]),
-      ("swasthya", ["स्वास्थ्य"]),
-      ("swasthya karyalaya", ["स्वास्थ्य कार्यालय"]),
-      ("jilla pra", ["जिल्ला प्रशासन", "जिल्ला प्रशासन कार्यालय"]),
-      ("jilla prashasan karyalaya", ["जिल्ला प्रशासन कार्यालय"]),
-      ("nagarikta pr", ["नागरिकता प्रमाणपत्र", "नागरिकता प्रमाण पत्र"]),
-      ("ramro x", ["राम्रो छ"]),
-      ("ramro xa", ["राम्रो छ"]),
-      ("mero", ["मेरो"]),
-      ("mero swas", ["मेरो स्वास्थ्य"]),
-      ("mero swasthya", ["मेरो स्वास्थ्य"]),
-      ("mero swasthya ramro x", ["मेरो स्वास्थ्य राम्रो छ"]),
-      ("mero swasthya ramro xa", ["मेरो स्वास्थ्य राम्रो छ"])
-    ]
-
-    if let exact = rows.first(where: { $0.input == normalized }) {
-      output.append(contentsOf: mode == .romanizedRomanized ? romanizedLabels(for: exact.candidates, fallback: exact.input) : exact.candidates)
-    }
-
     let exactRuntime = runtimeRows(for: normalized, exactOnly: true, limit: 8)
     if !exactRuntime.isEmpty {
       output.append(contentsOf: exactRuntime.map { mode == .romanizedRomanized ? $0.romanized : $0.unicode })
-    }
-
-    if let prefix = rows.first(where: { $0.input.hasPrefix(normalized) }) {
-      output.append(contentsOf: mode == .romanizedRomanized ? romanizedLabels(for: prefix.candidates, fallback: prefix.input) : prefix.candidates)
     }
 
     if normalized.count >= 3 {
@@ -746,22 +819,14 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
       output.append(contentsOf: matches.map { mode == .romanizedRomanized ? $0.romanized : $0.unicode })
     }
 
+    output.append(contentsOf: contextualTokenCandidates(
+      for: normalized,
+      sessionId: sessionId,
+      mode: mode
+    ))
+
     let deterministicRuleCandidates = ruleCandidates(for: normalized, mode: mode)
     output.append(contentsOf: deterministicRuleCandidates)
-
-    if mode == .romanizedTraditional,
-       exactRuntime.isEmpty,
-       output.count < 4,
-       let tailTransliterator,
-       tailModelGovernor.shouldAttemptTailModel() {
-      let startedAt = DispatchTime.now().uptimeNanoseconds
-      let tailCandidates = tailTransliterator.candidates(for: normalized, limit: 4)
-        .filter { $0.confidence >= 0.55 }
-        .map(\.text)
-      let elapsedMicros = Int((DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000)
-      tailModelGovernor.record(durationMicros: elapsedMicros)
-      output.append(contentsOf: tailCandidates)
-    }
 
     let uniqueCandidates = Self.unique(
       output.filter { Self.isAllowedActiveTokenCandidate(input: normalized, candidate: $0) },
@@ -770,7 +835,7 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     return userLexicon.rankCandidates(
       uniqueCandidates,
       previousOutput: lastCommittedWordsBySession[sessionId],
-      limit: 8
+      limit: candidateLimit
     )
   }
 
@@ -784,8 +849,14 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
   }
 
   private func runtimeRows(for normalized: String, exactOnly: Bool, limit: Int) -> [NativeCandidateRow] {
+    let minimumConfidence = exactOnly
+      ? 0
+      : 0.35 + (LekhNativePreferences.transliterationStrictness * 0.50)
     if let binaryLexicon = currentBinaryLexicon() {
-      return binaryLexicon.rows(for: normalized, exactOnly: exactOnly, limit: limit)
+      return binaryLexicon.rows(for: normalized, exactOnly: exactOnly, limit: limit * 2)
+        .filter { $0.confidence >= minimumConfidence }
+        .prefix(limit)
+        .map { $0 }
     }
     if exactOnly {
       return exactCandidates[normalized] ?? []
@@ -793,8 +864,38 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     let bucketRows = prefixBuckets[Self.bucketKey(normalized)] ?? []
     return bucketRows
       .filter { $0.romanized.hasPrefix(normalized) }
+      .filter { $0.confidence >= minimumConfidence }
       .prefix(limit)
       .map { $0 }
+  }
+
+  private func contextualTokenCandidates(
+    for normalized: String,
+    sessionId: String,
+    mode: LekhNativeTypingMode
+  ) -> [String] {
+    guard LekhNativePreferences.nextWordPredictionEnabled,
+          !normalized.contains(" "),
+          let previous = lastCommittedInputsBySession[sessionId],
+          let rows = nextContextsByPreviousInput[previous] else {
+      return []
+    }
+    let matching = rows
+      .filter { $0.next.hasPrefix(normalized) }
+      .sorted {
+        if $0.confidence != $1.confidence { return $0.confidence > $1.confidence }
+        return $0.next < $1.next
+      }
+      .prefix(4)
+    var output: [String] = []
+    for row in matching {
+      if mode == .romanizedRomanized {
+        output.append(row.next)
+      } else {
+        output.append(contentsOf: runtimeRows(for: row.next, exactOnly: true, limit: 2).map(\.unicode))
+      }
+    }
+    return Self.unique(output, limit: 4)
   }
 
   private func ruleCandidates(for normalized: String, mode: LekhNativeTypingMode) -> [String] {
@@ -812,23 +913,30 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     let normalized = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return [] }
     var output: [String] = []
-    let reverseCandidates = reverseCandidatesSnapshot()
+    let reverseIndex = reverseCandidatesSnapshot()
+    let reverseCandidates = reverseIndex.exact
+    if romanizedOutput {
+      let deterministic = LekhDevanagariRomanizer.romanize(normalized)
+      if !deterministic.isEmpty {
+        output.append(deterministic)
+      }
+    } else {
+      output.append(normalized)
+    }
     if LekhNativePreferences.proofreadAsYouTypeEnabled {
       output.append(contentsOf: proofreadCandidates(for: normalized, romanizedOutput: romanizedOutput, reverseCandidates: reverseCandidates))
     }
-    for (unicode, romanizedValues) in reverseCandidates {
-      let unicodeMatches = unicode == normalized || unicode.hasPrefix(normalized)
-      let typoMatches = reverseCandidates[normalized] != nil
-      if unicodeMatches || typoMatches {
-        output.append(contentsOf: romanizedOutput ? romanizedValues : [unicode])
-      }
+    let reverseBucket = reverseIndex.prefixes[Self.reverseBucketKey(normalized)] ?? []
+    for unicode in reverseBucket where unicode.hasPrefix(normalized) {
+      let romanizedValues = reverseCandidates[unicode] ?? []
+      output.append(contentsOf: romanizedOutput ? romanizedValues : [unicode])
     }
     if let direct = reverseCandidates[normalized] {
       output.insert(contentsOf: romanizedOutput ? direct : direct.compactMap { romanized in
         reverseCandidates.first(where: { $0.value.contains(romanized) })?.key
       }, at: 0)
     }
-    return Self.unique(output, limit: 8)
+    return Self.unique(output, limit: candidateLimit)
   }
 
   private func proofreadCandidates(
@@ -837,9 +945,7 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     reverseCandidates: [String: [String]]
   ) -> [String] {
     let direct = proofreadRowsByError[normalized] ?? []
-    let prefix = proofreadRowsByError
-      .filter { error, _ in error.hasPrefix(normalized) }
-      .flatMap(\.value)
+    let prefix = proofreadRowsByPrefix[normalized] ?? []
     let rows = (direct + prefix)
       .sorted {
         if $0.confidence != $1.confidence { return $0.confidence > $1.confidence }
@@ -850,11 +956,11 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
         return reverseCandidates[row.correction] ?? [row.correction]
       }
       return [row.correction]
-    }, limit: 8)
+    }, limit: candidateLimit)
   }
 
   private func romanizedLabels(for unicodeCandidates: [String], fallback: String) -> [String] {
-    let reverseCandidates = reverseCandidatesSnapshot()
+    let reverseCandidates = reverseCandidatesSnapshot().exact
     let labels = unicodeCandidates.flatMap { reverseCandidates[$0] ?? [] }
     return labels.isEmpty ? [fallback] : labels
   }
@@ -880,15 +986,22 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
 
   public func resetSession(_ sessionId: String) {
     buffers[sessionId] = ""
+  }
+
+  public func endSession(_ sessionId: String) {
+    buffers[sessionId] = nil
     lastCommittedWordsBySession[sessionId] = nil
+    lastCommittedInputsBySession[sessionId] = nil
   }
 
   public func diagnosticsSummary() -> String {
     let packSource = currentBinaryLexicon() == nil ? "json-fallback" : "mmap-binary"
-    let neural = tailTransliterator == nil ? "unavailable" : "coreml-tail-baseline"
     let fallbackCount = fallbackRows.count
-    let warning = securityWarning() == nil ? "none" : "dictionary-update-rejected"
-    return "engine=local pack=\(packSource) neural=\(neural) fallbackRows=\(fallbackCount) userLexicon=sqlite warning=\(warning)"
+    let warnings = [
+      securityWarning() == nil ? nil : "dictionary-update-rejected",
+      contractWarning
+    ].compactMap { $0 }
+    return "engine=local contract=v1 pack=\(packSource) neural=disabled-until-async-production-model fallbackRows=\(fallbackCount) userLexicon=sqlite warning=\(warnings.isEmpty ? "none" : warnings.joined(separator: ","))"
   }
 
   public func securityWarning() -> String? {
@@ -897,17 +1010,27 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     return packSecurityWarning
   }
 
-  private func learnCommit(sessionId: String, rawBuffer: String, chosenOutput: String) {
+  private func observeCommit(
+    sessionId: String,
+    rawBuffer: String,
+    chosenOutput: String,
+    allowPersonalization: Bool
+  ) {
     let normalized = Self.normalize(rawBuffer)
     let committedWord = Self.lastWord(from: chosenOutput)
-    if !normalized.isEmpty,
+    if allowPersonalization,
+       !normalized.isEmpty,
        chosenOutput.trimmingCharacters(in: .whitespacesAndNewlines) != normalized {
       userLexicon.record(normalizedInput: normalized, chosenOutput: chosenOutput)
     }
-    if let previous = lastCommittedWordsBySession[sessionId],
+    if allowPersonalization,
+       let previous = lastCommittedWordsBySession[sessionId],
        let committedWord,
        previous != committedWord {
       userLexicon.recordBigram(previousOutput: previous, currentOutput: committedWord)
+    }
+    if let lastInput = normalized.split(separator: " ").last {
+      lastCommittedInputsBySession[sessionId] = String(lastInput)
     }
     if let committedWord {
       lastCommittedWordsBySession[sessionId] = committedWord
@@ -933,28 +1056,37 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
   }
 
   private static func buildReverseCandidates(rows: [NativeCandidateRow]) -> [String: [String]] {
-    var reverse: [String: [String]] = [
-      "स्वा": ["स्वास्थ्य", "स्वागत", "स्वाद"],
-      "स्वास्थ्य": ["swasthya"],
-      "मे": ["mero", "merai", "maile"],
-      "मेरो": ["mero"],
-      "म": ["ma", "mero", "maile"],
-      "कार्या": ["कार्यालय", "कार्यक्रम"],
-      "कार्यालय": ["karyalaya"],
-      "जिल्ला प्रशा": ["जिल्ला प्रशासन", "जिल्ला प्रशासन कार्यालय"],
-      "जिल्ला प्रशासन": ["jilla prashasan"],
-      "प्रशासन": ["prashasan"],
-      "प्रमाणपत्र": ["pramanpatra"],
-      "सवस्थ्य": ["स्वास्थ्य"],
-      "प्रनलि": ["प्रणाली"],
-      "राजनितिज्ञ": ["राजनीतिज्ञ"],
-      "विद्यालय को": ["विद्यालयको"],
-      "मन्त्रालय ले": ["मन्त्रालयले"]
-    ]
+    var reverse: [String: [String]] = [:]
     for row in rows {
       reverse[row.unicode, default: []].append(row.romanized)
     }
     return reverse.mapValues { unique($0, limit: 8) }
+  }
+
+  private static func buildReversePrefixes(
+    _ reverse: [String: [String]]
+  ) -> [String: [String]] {
+    var prefixes: [String: [String]] = [:]
+    for unicode in reverse.keys.sorted() {
+      let bucket = reverseBucketKey(unicode)
+      prefixes[bucket, default: []].append(unicode)
+    }
+    return prefixes
+  }
+
+  private static func characterPrefixes(_ value: String) -> [String] {
+    guard !value.isEmpty else { return [] }
+    var output: [String] = []
+    var prefix = ""
+    for character in value {
+      prefix.append(character)
+      output.append(prefix)
+    }
+    return output
+  }
+
+  private static func reverseBucketKey(_ value: String) -> String {
+    String(value.prefix(max(1, min(2, value.count))))
   }
 
   private static func lastWord(from text: String) -> String? {
@@ -966,17 +1098,9 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
       .last(where: { !$0.isEmpty })
   }
 
-  private static func loadJsonRows() -> [NativeCandidateRow] {
-    guard let url = Bundle.main.url(forResource: "runtime-suggestions", withExtension: "json"),
-          let data = try? Data(contentsOf: url),
-          let pack = try? JSONDecoder().decode(RuntimeSuggestionPack.self, from: data) else {
-      return []
-    }
-
+  private static func loadJsonRows(pack: RuntimeSuggestionPack?) -> [NativeCandidateRow] {
+    guard let pack else { return [] }
     var rows: [NativeCandidateRow] = []
-    rows.append(contentsOf: pack.phrases.enumerated().map { index, row in
-      NativeCandidateRow(romanized: normalize(row.romanized), unicode: row.unicode, confidence: row.confidence ?? 0.72, priority: index)
-    })
     rows.append(contentsOf: pack.words.enumerated().map { index, row in
       NativeCandidateRow(romanized: normalize(row.romanized), unicode: row.unicode, confidence: row.confidence ?? 0.70, priority: 10_000 + index)
     })
@@ -986,12 +1110,8 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     return ranked(rows, limit: rows.count)
   }
 
-  private static func loadProofreadRows() -> [NativeProofreadRow] {
-    guard let url = Bundle.main.url(forResource: "runtime-suggestions", withExtension: "json"),
-          let data = try? Data(contentsOf: url),
-          let pack = try? JSONDecoder().decode(RuntimeSuggestionPack.self, from: data) else {
-      return []
-    }
+  private static func loadProofreadRows(pack: RuntimeSuggestionPack?) -> [NativeProofreadRow] {
+    guard let pack else { return [] }
     return (pack.proofread ?? []).enumerated().compactMap { index, row in
       let error = row.error.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping
       let correction = row.correction.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping
@@ -1006,8 +1126,76 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
     }
   }
 
+  private static func loadRuntimePack() -> RuntimeSuggestionPack? {
+    guard let url = runtimePackURL(),
+          let data = try? Data(contentsOf: url) else {
+      return nil
+    }
+    return try? JSONDecoder().decode(RuntimeSuggestionPack.self, from: data)
+  }
+
+  private static func buildNextContextIndex(
+    _ rows: [RuntimeNextContextRow]
+  ) -> [String: [NativeNextContextRow]] {
+    var index: [String: [NativeNextContextRow]] = [:]
+    for row in rows {
+      let context = normalize(row.context)
+      let next = normalize(row.next)
+      let confidence = row.confidence ?? 0
+      guard confidence >= 0.80,
+            next.range(of: #"^[a-z][a-z'-]*$"#, options: .regularExpression) != nil,
+            let previous = context.split(separator: " ").last.map(String.init),
+            previous.range(of: #"^[a-z][a-z'-]*$"#, options: .regularExpression) != nil else {
+        continue
+      }
+      index[previous, default: []].append(
+        NativeNextContextRow(next: next, confidence: confidence)
+      )
+    }
+    return index.mapValues { values in
+      var best: [String: NativeNextContextRow] = [:]
+      for row in values where row.confidence > (best[row.next]?.confidence ?? -1) {
+        best[row.next] = row
+      }
+      return best.values.sorted {
+        if $0.confidence != $1.confidence { return $0.confidence > $1.confidence }
+        return $0.next < $1.next
+      }
+    }
+  }
+
   fileprivate static func normalize(_ value: String) -> String {
     value.lowercased().replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+  }
+
+  private static func runtimePackURL() -> URL? {
+    if let bundled = Bundle.main.url(forResource: "runtime-suggestions", withExtension: "json") {
+      return bundled
+    }
+#if DEBUG
+    if let testPath = ProcessInfo.processInfo.environment["LEKH_TEST_RUNTIME_SUGGESTIONS_PATH"],
+       FileManager.default.isReadableFile(atPath: testPath) {
+      return URL(fileURLWithPath: testPath)
+    }
+#endif
+    return nil
+  }
+
+  private static func loadEngineContract() -> (maximumVisible: Int, warning: String?) {
+    guard let url = Bundle.main.url(forResource: "lekh-engine-contract.v1", withExtension: "json"),
+          let data = try? Data(contentsOf: url),
+          let contract = try? JSONDecoder().decode(EngineContract.self, from: data) else {
+      return (8, "engine-contract-fallback")
+    }
+    let expectedModes = Set(LekhNativeTypingMode.visibleModes.map(\.rawValue))
+    guard contract.schemaVersion == 1,
+          Set(contract.modes) == expectedModes,
+          (1...8).contains(contract.candidatePolicy.maximumVisible),
+          !contract.candidatePolicy.singleTokenMayExpandToPhrase,
+          !contract.candidatePolicy.programmaticSelectionMayCommit else {
+      return (8, "engine-contract-rejected")
+    }
+    return (contract.candidatePolicy.maximumVisible, nil)
   }
 
   private static func bucketKey(_ value: String) -> String {
@@ -1027,20 +1215,94 @@ public final class LekhStaticProofEngineClient: LekhEngineClient {
   }
 
   private static func ranked(_ rows: [NativeCandidateRow], limit: Int) -> [NativeCandidateRow] {
-    rows
+    let sorted = rows
       .sorted {
         if $0.confidence != $1.confidence { return $0.confidence > $1.confidence }
         if $0.priority != $1.priority { return $0.priority < $1.priority }
         if $0.romanized != $1.romanized { return $0.romanized < $1.romanized }
         return $0.unicode < $1.unicode
       }
-      .prefix(limit)
-      .reduce(into: []) { output, row in
-        if output.contains(where: { $0.romanized == row.romanized && $0.unicode == row.unicode }) {
-          return
-        }
-        output.append(row)
+    var seen = Set<String>()
+    var output: [NativeCandidateRow] = []
+    output.reserveCapacity(min(limit, sorted.count))
+    for row in sorted {
+      let identity = "\(row.romanized)\u{0}\(row.unicode)"
+      guard seen.insert(identity).inserted else { continue }
+      output.append(row)
+      if output.count >= limit {
+        break
       }
+    }
+    return output
+  }
+}
+
+private enum LekhDevanagariRomanizer {
+  private static let consonants: [UnicodeScalar: String] = [
+    "क": "k", "ख": "kh", "ग": "g", "घ": "gh", "ङ": "ng",
+    "च": "ch", "छ": "chh", "ज": "j", "झ": "jh", "ञ": "ny",
+    "ट": "t", "ठ": "th", "ड": "d", "ढ": "dh", "ण": "n",
+    "त": "t", "थ": "th", "द": "d", "ध": "dh", "न": "n",
+    "प": "p", "फ": "ph", "ब": "b", "भ": "bh", "म": "m",
+    "य": "y", "र": "r", "ल": "l", "व": "w", "श": "sh",
+    "ष": "sh", "स": "s", "ह": "h"
+  ]
+
+  private static let independentVowels: [UnicodeScalar: String] = [
+    "अ": "a", "आ": "aa", "इ": "i", "ई": "ii", "उ": "u", "ऊ": "uu",
+    "ऋ": "ri", "ए": "e", "ऐ": "ai", "ओ": "o", "औ": "au"
+  ]
+
+  private static let vowelSigns: [UnicodeScalar: String] = [
+    "ा": "aa", "ि": "i", "ी": "ii", "ु": "u", "ू": "uu", "ृ": "ri",
+    "े": "e", "ै": "ai", "ो": "o", "ौ": "au"
+  ]
+
+  private static let digits: [UnicodeScalar: String] = [
+    "०": "0", "१": "1", "२": "2", "३": "3", "४": "4",
+    "५": "5", "६": "6", "७": "7", "८": "8", "९": "9"
+  ]
+
+  static func romanize(_ text: String) -> String {
+    var output = ""
+    var pendingInherentVowel = false
+    for scalar in text.precomposedStringWithCanonicalMapping.unicodeScalars {
+      if let consonant = consonants[scalar] {
+        output.append(consonant)
+        output.append("a")
+        pendingInherentVowel = true
+      } else if let vowel = independentVowels[scalar] {
+        output.append(vowel)
+        pendingInherentVowel = false
+      } else if let vowelSign = vowelSigns[scalar] {
+        if pendingInherentVowel, output.last == "a" {
+          output.removeLast()
+        }
+        output.append(vowelSign)
+        pendingInherentVowel = false
+      } else if scalar.value == 0x094D {
+        if pendingInherentVowel, output.last == "a" {
+          output.removeLast()
+        }
+        pendingInherentVowel = false
+      } else if scalar.value == 0x0902 {
+        output.append("m")
+        pendingInherentVowel = false
+      } else if scalar.value == 0x0901 {
+        output.append("n")
+        pendingInherentVowel = false
+      } else if scalar.value == 0x0903 {
+        output.append("h")
+        pendingInherentVowel = false
+      } else if let digit = digits[scalar] {
+        output.append(digit)
+        pendingInherentVowel = false
+      } else {
+        output.unicodeScalars.append(scalar)
+        pendingInherentVowel = false
+      }
+    }
+    return output
   }
 }
 
@@ -1054,7 +1316,12 @@ private final class LekhUserLexiconStore {
 
   private var database: OpaquePointer?
   private var entriesByInput: [String: [Entry]] = [:]
+  private var bigramCounts: [String: [String: Int]] = [:]
   private let databasePath: String
+  private let writeQueue = DispatchQueue(
+    label: "com.lekh.inputmethod.personalization-writer",
+    qos: .utility
+  )
 
   init(fileManager: FileManager = .default) {
     let supportDirectory = fileManager.homeDirectoryForCurrentUser
@@ -1066,6 +1333,7 @@ private final class LekhUserLexiconStore {
     open()
     migrate()
     load()
+    loadBigrams()
   }
 
   deinit {
@@ -1096,18 +1364,29 @@ private final class LekhUserLexiconStore {
     guard !input.isEmpty, !output.isEmpty else { return }
     guard database != nil else { return }
     let now = ISO8601DateFormatter().string(from: Date())
-    execute(
-      """
-      INSERT INTO user_lexicon (normalized_input, chosen_output, frequency, last_used, blocked)
-      VALUES (?, ?, 1, ?, 0)
-      ON CONFLICT(normalized_input, chosen_output) DO UPDATE SET
-        frequency = frequency + 1,
-        last_used = excluded.last_used,
-        blocked = 0
-      """,
-      [input, output, now]
-    )
-    load(input: input)
+    var rows = entriesByInput[input] ?? []
+    let previousFrequency = rows.first(where: { $0.chosenOutput == output })?.frequency ?? 0
+    rows.removeAll { $0.chosenOutput == output }
+    rows.append(Entry(
+      normalizedInput: input,
+      chosenOutput: output,
+      frequency: previousFrequency + 1,
+      lastUsed: now
+    ))
+    entriesByInput[input] = rows
+    writeQueue.async { [self] in
+      execute(
+        """
+        INSERT INTO user_lexicon (normalized_input, chosen_output, frequency, last_used, blocked)
+        VALUES (?, ?, 1, ?, 0)
+        ON CONFLICT(normalized_input, chosen_output) DO UPDATE SET
+          frequency = frequency + 1,
+          last_used = excluded.last_used,
+          blocked = 0
+        """,
+        [input, output, now]
+      )
+    }
   }
 
   func recordBigram(previousOutput: String, currentOutput: String) {
@@ -1116,16 +1395,19 @@ private final class LekhUserLexiconStore {
     guard !previous.isEmpty, !current.isEmpty else { return }
     guard database != nil else { return }
     let now = ISO8601DateFormatter().string(from: Date())
-    execute(
-      """
-      INSERT INTO user_bigrams (previous_output, current_output, frequency, last_used)
-      VALUES (?, ?, 1, ?)
-      ON CONFLICT(previous_output, current_output) DO UPDATE SET
-        frequency = frequency + 1,
-        last_used = excluded.last_used
-      """,
-      [previous, current, now]
-    )
+    bigramCounts[previous, default: [:]][current, default: 0] += 1
+    writeQueue.async { [self] in
+      execute(
+        """
+        INSERT INTO user_bigrams (previous_output, current_output, frequency, last_used)
+        VALUES (?, ?, 1, ?)
+        ON CONFLICT(previous_output, current_output) DO UPDATE SET
+          frequency = frequency + 1,
+          last_used = excluded.last_used
+        """,
+        [previous, current, now]
+      )
+    }
   }
 
   func rankCandidates(_ candidates: [String], previousOutput: String?, limit: Int) -> [String] {
@@ -1133,7 +1415,7 @@ private final class LekhUserLexiconStore {
     guard let previous = previousOutput.map(Self.normalizeOutput), !previous.isEmpty else {
       return Array(candidates.prefix(limit))
     }
-    let boosts = bigramBoosts(previousOutput: previous, candidates: candidates)
+    let boosts = bigramCounts[previous] ?? [:]
     return candidates.enumerated()
       .sorted { left, right in
         let leftBoost = boosts[Self.normalizeOutput(left.element)] ?? 0
@@ -1149,15 +1431,18 @@ private final class LekhUserLexiconStore {
     let input = Self.normalize(normalizedInput)
     let output = chosenOutput.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !input.isEmpty, !output.isEmpty else { return }
-    execute(
-      """
-      UPDATE user_lexicon
-      SET blocked = 1, last_used = ?
-      WHERE normalized_input = ? AND chosen_output = ?
-      """,
-      [ISO8601DateFormatter().string(from: Date()), input, output]
-    )
-    load(input: input)
+    entriesByInput[input]?.removeAll { $0.chosenOutput == output }
+    let now = ISO8601DateFormatter().string(from: Date())
+    writeQueue.async { [self] in
+      execute(
+        """
+        UPDATE user_lexicon
+        SET blocked = 1, last_used = ?
+        WHERE normalized_input = ? AND chosen_output = ?
+        """,
+        [now, input, output]
+      )
+    }
   }
 
   private func open() {
@@ -1224,23 +1509,24 @@ private final class LekhUserLexiconStore {
     }
   }
 
-  private func load(input: String) {
-    entriesByInput[input] = []
+  private func loadBigrams() {
+    bigramCounts = [:]
     guard let statement = prepare(
       """
-      SELECT normalized_input, chosen_output, frequency, last_used
-      FROM user_lexicon
-      WHERE normalized_input = ? AND blocked = 0
+      SELECT previous_output, current_output, frequency
+      FROM user_bigrams
       ORDER BY frequency DESC, last_used DESC
-      LIMIT 8
+      LIMIT 5000
       """,
-      [input]
+      []
     ) else { return }
     defer { sqlite3_finalize(statement) }
     while sqlite3_step(statement) == SQLITE_ROW {
-      if let entry = entry(from: statement) {
-        entriesByInput[input, default: []].append(entry)
-      }
+      guard let previousPointer = sqlite3_column_text(statement, 0),
+            let currentPointer = sqlite3_column_text(statement, 1) else { continue }
+      let previous = String(cString: previousPointer)
+      let current = String(cString: currentPointer)
+      bigramCounts[previous, default: [:]][current] = Int(sqlite3_column_int(statement, 2))
     }
   }
 
@@ -1262,30 +1548,6 @@ private final class LekhUserLexiconStore {
     guard let statement = prepare(sql, values) else { return }
     defer { sqlite3_finalize(statement) }
     _ = sqlite3_step(statement)
-  }
-
-  private func bigramBoosts(previousOutput: String, candidates: [String]) -> [String: Int] {
-    guard !previousOutput.isEmpty, !candidates.isEmpty else { return [:] }
-    let normalizedCandidates = Set(candidates.map(Self.normalizeOutput))
-    guard let statement = prepare(
-      """
-      SELECT current_output, frequency
-      FROM user_bigrams
-      WHERE previous_output = ?
-      ORDER BY frequency DESC, last_used DESC
-      LIMIT 32
-      """,
-      [previousOutput]
-    ) else { return [:] }
-    defer { sqlite3_finalize(statement) }
-    var boosts: [String: Int] = [:]
-    while sqlite3_step(statement) == SQLITE_ROW {
-      guard let outputPointer = sqlite3_column_text(statement, 0) else { continue }
-      let output = String(cString: outputPointer)
-      guard normalizedCandidates.contains(output) else { continue }
-      boosts[output] = Int(sqlite3_column_int(statement, 1))
-    }
-    return boosts
   }
 
   private func checkpointWal(passive: Bool) {
@@ -1318,39 +1580,6 @@ private final class LekhUserLexiconStore {
     value.trimmingCharacters(in: .whitespacesAndNewlines)
       .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
       .precomposedStringWithCanonicalMapping
-  }
-}
-
-private final class LekhTailModelLatencyGovernor {
-  private let lock = NSLock()
-  private let maxSamples = 64
-  private let p99BudgetMicros = 3_000
-  private let cooldownNanos: UInt64 = 60 * 1_000_000_000
-  private var samples: [Int] = []
-  private var disabledUntilNanos: UInt64 = 0
-
-  func shouldAttemptTailModel() -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    return DispatchTime.now().uptimeNanoseconds >= disabledUntilNanos
-  }
-
-  func record(durationMicros: Int) {
-    lock.lock()
-    defer { lock.unlock() }
-
-    samples.append(max(0, durationMicros))
-    if samples.count > maxSamples {
-      samples.removeFirst(samples.count - maxSamples)
-    }
-
-    guard samples.count >= 8 else { return }
-    let sorted = samples.sorted()
-    let p99Index = min(sorted.count - 1, Int(ceil(Double(sorted.count) * 0.99)) - 1)
-    if sorted[max(0, p99Index)] > p99BudgetMicros {
-      disabledUntilNanos = DispatchTime.now().uptimeNanoseconds + cooldownNanos
-      samples.removeAll(keepingCapacity: true)
-    }
   }
 }
 
@@ -1510,7 +1739,7 @@ private enum LekhRomanizedComposer {
         .prefix(12)
         .map { $0 }
     }
-    return LekhStaticProofEngineClient.unique(beams.map { $0.0.joined(separator: " ") }, limit: 8)
+    return LekhNativeEngineClient.unique(beams.map { $0.0.joined(separator: " ") }, limit: 8)
   }
 
   private static func composeTokenCandidates(_ token: String) -> [String] {
@@ -1546,7 +1775,7 @@ private enum LekhRomanizedComposer {
       candidates.append(composeToken(lower.replacingOccurrences(of: "ch", with: "chh")))
     }
 
-    return LekhStaticProofEngineClient.unique(candidates, limit: 8)
+    return LekhNativeEngineClient.unique(candidates, limit: 8)
   }
 
   private static func prefersXAsChh(_ token: String) -> Bool {

@@ -43,12 +43,21 @@ if (process.platform !== "darwin") {
   );
 }
 
-if (signed && !process.env.LEKH_MAC_DEVELOPER_ID) {
+const requiredSigningEnvironment = [
+  "LEKH_MAC_DEVELOPER_ID",
+  "APPLE_ID",
+  "APPLE_APP_SPECIFIC_PASSWORD",
+  "APPLE_TEAM_ID"
+];
+const missingSigningEnvironment = requiredSigningEnvironment.filter((key) => !process.env[key]);
+
+if (signed && missingSigningEnvironment.length > 0) {
   finish(
     "blocked-external",
     {
       reason: "Signed macOS release requires a Developer ID Application identity and notarization credentials.",
-      requiredEnvironment: ["LEKH_MAC_DEVELOPER_ID", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"],
+      requiredEnvironment: requiredSigningEnvironment,
+      missingEnvironment: missingSigningEnvironment,
       unsignedDevCommand: "npm run package:macos:unsigned"
     },
     2
@@ -102,7 +111,39 @@ if (appBundle !== stableAppBundle) {
   }
 }
 
-finish(unsigned ? "passed-unsigned-dev" : "passed-signed", { artifact: stableAppBundle, sourceArtifact: appBundle, signed: !unsigned }, 0);
+let notarizedArtifact = null;
+if (signed) {
+  runRequired("codesign-verify", "codesign", ["--verify", "--deep", "--strict", "--verbose=2", stableAppBundle]);
+  const dmg = findArtifact(join(root, "release"), ".dmg");
+  if (!dmg) {
+    finish("failed", { step: "notarization", reason: "Signed release did not produce a DMG for notarization." }, 1);
+  }
+  runRequired("notarytool", "xcrun", [
+    "notarytool",
+    "submit",
+    dmg,
+    "--apple-id",
+    process.env.APPLE_ID,
+    "--password",
+    process.env.APPLE_APP_SPECIFIC_PASSWORD,
+    "--team-id",
+    process.env.APPLE_TEAM_ID,
+    "--wait"
+  ]);
+  runRequired("staple-app", "xcrun", ["stapler", "staple", stableAppBundle]);
+  runRequired("staple-dmg", "xcrun", ["stapler", "staple", dmg]);
+  runRequired("gatekeeper-assess", "spctl", ["--assess", "--type", "execute", "--verbose=2", stableAppBundle]);
+  runRequired("validate-app-staple", "xcrun", ["stapler", "validate", stableAppBundle]);
+  runRequired("validate-staple", "xcrun", ["stapler", "validate", dmg]);
+  notarizedArtifact = dmg;
+}
+
+finish(unsigned ? "passed-unsigned-dev" : "passed-signed-notarized", {
+  artifact: stableAppBundle,
+  sourceArtifact: appBundle,
+  signed: !unsigned,
+  notarizedArtifact
+}, 0);
 
 function findAppBundle(dir) {
   if (!existsSync(dir)) return undefined;
@@ -122,4 +163,30 @@ function findAppBundle(dir) {
     }
   }
   return undefined;
+}
+
+function findArtifact(dir, extension) {
+  if (!existsSync(dir)) return undefined;
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      const nested = findArtifact(full, extension);
+      if (nested) return nested;
+    } else if (entry.toLowerCase().endsWith(extension)) {
+      return full;
+    }
+  }
+  return undefined;
+}
+
+function runRequired(step, command, args) {
+  const result = spawnSync(command, args, { cwd: root, encoding: "utf8", stdio: "pipe", timeout: 900_000 });
+  if (result.status !== 0) {
+    finish(result.signal ? "timeout" : "failed", {
+      step,
+      signal: result.signal ?? null,
+      stdout: result.stdout,
+      stderr: result.stderr
+    }, result.status ?? 1);
+  }
 }

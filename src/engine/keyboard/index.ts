@@ -84,6 +84,15 @@ export class LocalKeyboardEngine implements KeyboardEngine {
         : commitResult.committedText;
       return withCommit(this.refresh(sessionId), commitResult, committedText);
     }
+    if (mutation.command === "commit-raw") {
+      const commitResult = this.commitRaw(sessionId);
+      const suffix = key.key === " " ? " " : key.key === "Enter" ? "\n" : "";
+      return withCommit(
+        this.refresh(sessionId),
+        commitResult,
+        commitResult.committedText ? `${commitResult.committedText}${suffix}` : suffix
+      );
+    }
     this.sessions.updateComposition(sessionId, mutation.text, mutation.caret);
     const update = this.refresh(sessionId);
     if (mutation.warning) {

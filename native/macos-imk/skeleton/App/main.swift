@@ -51,11 +51,11 @@ private final class LekhStatusMenuController: NSObject, NSMenuDelegate {
     if let button = statusItem.button {
       button.title = "ले"
       button.font = NSFont(name: "Kohinoor Devanagari-Semibold", size: 15) ?? .systemFont(ofSize: 15, weight: .semibold)
-      button.toolTip = "Lekh Keyboard"
-      button.setAccessibilityLabel("Lekh Keyboard")
+      button.toolTip = LekhL10n.text("app.name")
+      button.setAccessibilityLabel(LekhL10n.text("app.name"))
     }
 
-    let menu = NSMenu(title: "Lekh Keyboard")
+    let menu = NSMenu(title: LekhL10n.text("app.name"))
     menu.delegate = self
     statusItem.menu = menu
   }
@@ -63,16 +63,16 @@ private final class LekhStatusMenuController: NSObject, NSMenuDelegate {
   func menuNeedsUpdate(_ menu: NSMenu) {
     menu.removeAllItems()
 
-    let title = NSMenuItem(title: "Lekh Keyboard", action: nil, keyEquivalent: "")
+    let title = NSMenuItem(title: LekhL10n.text("app.name"), action: nil, keyEquivalent: "")
     title.isEnabled = false
     menu.addItem(title)
 
-    let status = NSMenuItem(title: "Ready • Local only", action: nil, keyEquivalent: "")
+    let status = NSMenuItem(title: LekhL10n.text("status.readyLocal"), action: nil, keyEquivalent: "")
     status.isEnabled = false
     menu.addItem(status)
     menu.addItem(.separator())
 
-    let selectedRaw = UserDefaults.standard.string(forKey: "LekhNativeTypingMode") ?? LekhNativeTypingMode.romanizedTraditional.rawValue
+    let selectedRaw = UserDefaults.standard.string(forKey: LekhNativePreferences.Keys.nativeTypingMode) ?? LekhNativeTypingMode.romanizedTraditional.rawValue
     let selected = LekhNativeTypingMode(rawValue: selectedRaw) ?? .romanizedTraditional
     for mode in LekhNativeTypingMode.visibleModes {
       let item = NSMenuItem(title: mode.menuLabel, action: #selector(selectMode(_:)), keyEquivalent: "")
@@ -83,20 +83,20 @@ private final class LekhStatusMenuController: NSObject, NSMenuDelegate {
     }
 
     menu.addItem(.separator())
-    let preferences = NSMenuItem(title: "Lekh Settings...", action: #selector(showPreferences(_:)), keyEquivalent: ",")
+    let preferences = NSMenuItem(title: LekhL10n.text("menu.preferences"), action: #selector(showPreferences(_:)), keyEquivalent: ",")
     preferences.target = self
     menu.addItem(preferences)
 
-    let tutorial = NSMenuItem(title: "Typing Tutorial...", action: #selector(showTutorial(_:)), keyEquivalent: "")
+    let tutorial = NSMenuItem(title: LekhL10n.text("menu.tutorial"), action: #selector(showTutorial(_:)), keyEquivalent: "")
     tutorial.target = self
     menu.addItem(tutorial)
 
     menu.addItem(.separator())
-    let restoreABC = NSMenuItem(title: "Switch to ABC", action: #selector(switchToABC(_:)), keyEquivalent: "")
+    let restoreABC = NSMenuItem(title: LekhL10n.text("menu.switchABC"), action: #selector(switchToABC(_:)), keyEquivalent: "")
     restoreABC.target = self
     menu.addItem(restoreABC)
 
-    let keyboardSettings = NSMenuItem(title: "Open macOS Keyboard Settings", action: #selector(openKeyboardSettings(_:)), keyEquivalent: "")
+    let keyboardSettings = NSMenuItem(title: LekhL10n.text("menu.openKeyboardSettings"), action: #selector(openKeyboardSettings(_:)), keyEquivalent: "")
     keyboardSettings.target = self
     menu.addItem(keyboardSettings)
   }
@@ -104,11 +104,11 @@ private final class LekhStatusMenuController: NSObject, NSMenuDelegate {
   @objc private func selectMode(_ item: NSMenuItem) {
     guard let rawValue = item.representedObject as? String,
           let mode = LekhNativeTypingMode(rawValue: rawValue) else { return }
-    UserDefaults.standard.set(mode.rawValue, forKey: "LekhNativeTypingMode")
-    UserDefaults.standard.set(true, forKey: "LekhNativeTypingModeChosen.v2")
+    UserDefaults.standard.set(mode.rawValue, forKey: LekhNativePreferences.Keys.nativeTypingMode)
+    UserDefaults.standard.set(true, forKey: LekhNativePreferences.Keys.nativeTypingModeChosen)
     UserDefaults.standard.synchronize()
     NotificationCenter.default.post(
-      name: Notification.Name("LekhNativeTypingModeDidChange"),
+      name: LekhNativePreferences.modeDidChangeNotification,
       object: nil,
       userInfo: ["mode": mode.rawValue]
     )

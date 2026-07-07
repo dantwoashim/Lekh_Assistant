@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "phase": "phase2-source-cleaning",
+  "output": {
+    "datasetDir": "data/generated/neural-open-vocab",
+    "manifestPath": "data/generated/neural-open-vocab/manifest.json",
+    "reportPath": "reports/neural-open-vocab-dataset-report.json"
+  },
+  "productionRequiredSources": [
+    "syubraj-roman2nepali-transliteration",
+    "human-reviewed-lekh-gold-v1",
+    "lekh-chat-conventions-v1",
+    "lekh-name-lexicon-v1"
+  ],
+  "sources": [
+    {
+      "id": "lekh-phase1-contract-seed-v1",
+      "tier": "contract-seed",
+      "license": "project-internal-contract-seed",
+      "status": "available",
+      "rawDataCommitted": true,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/neural/gold/*.jsonl",
+      "notes": "Seed rows prove the data contract and required safety cases; they are not production accuracy evidence."
+    },
+    {
+      "id": "human-reviewed-lekh-gold-v1",
+      "tier": "gold",
+      "license": "project-owned",
+      "status": "not-imported",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": true,
+      "defaultPath": "data/private/neural/human-reviewed-lekh-gold-v1.jsonl",
+      "notes": "Production gold rows require native-speaker or adjudicated review and must be imported from private/raw review manifests."
+    },
+    {
+      "id": "lekh-chat-conventions-v1",
+      "tier": "gold",
+      "license": "project-owned",
+      "status": "not-imported",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": true,
+      "defaultPath": "data/private/neural/lekh-chat-conventions-v1.jsonl",
+      "notes": "Production chat convention rows for xa/chha/cha, vowel length, casual spelling, and noisy romanization."
+    },
+    {
+      "id": "lekh-name-lexicon-v1",
+      "tier": "gold",
+      "license": "project-owned",
+      "status": "not-imported",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": true,
+      "defaultPath": "data/private/neural/lekh-name-lexicon-v1.jsonl",
+      "notes": "Production name rows with accepted variants and explicit review."
+    },
+    {
+      "id": "syubraj-roman2nepali-transliteration",
+      "tier": "licensed-public",
+      "license": "MIT-labeled Hugging Face dataset; verify exact local snapshot before production.",
+      "status": "not-imported",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": true,
+      "defaultPath": "data/private/neural/syubraj-roman2nepali-transliteration/*.tsv",
+      "notes": "Primary large Romanized-to-Nepali training source. Raw data must stay ignored; only cleaned reports/manifests may be committed."
+    },
+    {
+      "id": "saugatkafley-nepali-roman-transliteration",
+      "tier": "licensed-public",
+      "license": "MIT-labeled Hugging Face source dataset; verify exact local snapshot before use.",
+      "status": "not-imported",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/private/neural/saugatkafley-nepali-roman-transliteration/*.tsv",
+      "notes": "Cross-check and dedup source for the syubraj mirror."
+    },
+    {
+      "id": "runtime-words",
+      "tier": "runtime-derived",
+      "license": "project-owned/manual curation plus documented dictionary-derived rows",
+      "status": "available",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/generated/neural-transliteration/*.tsv",
+      "notes": "Existing local generated token pairs from runtime word rows; cleaned again before open-vocabulary training."
+    },
+    {
+      "id": "runtime-names",
+      "tier": "runtime-derived",
+      "license": "project-owned/manual curation",
+      "status": "available",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/generated/neural-transliteration/*.tsv",
+      "notes": "Existing local generated name pairs; not a substitute for reviewed production name gold."
+    },
+    {
+      "id": "dictionary-ne-ranked",
+      "tier": "dictionary-derived",
+      "license": "LGPL-2.1 dictionary data with notices and replacement path",
+      "status": "available",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/generated/neural-transliteration/*.tsv",
+      "notes": "Dictionary-derived token pairs are useful silver data; production quality claims require gold evaluation, not dictionary volume alone."
+    },
+    {
+      "id": "manual-chat-tail",
+      "tier": "contract-seed",
+      "license": "project-internal-contract-seed",
+      "status": "available",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/generated/neural-transliteration/*.tsv",
+      "notes": "Legacy manual seed cases from the old dataset builder."
+    },
+    {
+      "id": "manual-x-ksha",
+      "tier": "contract-seed",
+      "license": "project-internal-contract-seed",
+      "status": "available",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/generated/neural-transliteration/*.tsv",
+      "notes": "Legacy x/ksha seed cases."
+    },
+    {
+      "id": "manual-name",
+      "tier": "contract-seed",
+      "license": "project-internal-contract-seed",
+      "status": "available",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/generated/neural-transliteration/*.tsv",
+      "notes": "Legacy name seed cases."
+    },
+    {
+      "id": "manual-ambiguity",
+      "tier": "contract-seed",
+      "license": "project-internal-contract-seed",
+      "status": "available",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/generated/neural-transliteration/*.tsv",
+      "notes": "Legacy ambiguity seed cases."
+    },
+    {
+      "id": "runtime-phrases",
+      "tier": "runtime-derived",
+      "license": "project-owned/manual curation",
+      "status": "available",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": false,
+      "productionRequired": false,
+      "defaultPath": "data/generated/neural-transliteration/*.tsv",
+      "notes": "Phrase rows are deliberately excluded from the token-level neural model to prevent single-token phrase expansion."
+    },
+    {
+      "id": "ai4bharat-indicxlit",
+      "tier": "teacher-only",
+      "license": "MIT model source; local checkpoint only",
+      "status": "teacher-only",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": false,
+      "productionRequired": false,
+      "defaultPath": "data/generated/neural-teacher-models/ai4bharat-indicxlit/v1.0/",
+      "notes": "Teacher/regression oracle only. Never package the teacher checkpoint."
+    }
+  ]
+}

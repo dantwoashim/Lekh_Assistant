@@ -30,7 +30,9 @@ public final class LekhCandidateController {
               let index = candidates.firstIndex(of: selected) {
       retainedIndex = index
     } else {
-      retainedIndex = state.selectedIndex
+      // A new candidate list must never inherit a positional selection from a
+      // different list. Retain only by stable candidate text; otherwise reset.
+      retainedIndex = 0
     }
     state = LekhCandidateState(
       candidates: candidates,

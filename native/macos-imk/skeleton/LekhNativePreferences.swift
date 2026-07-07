@@ -7,12 +7,18 @@ public enum LekhNativePreferences {
     public static let proofreadAsYouTypeEnabled = "LekhProofreadAsYouTypeEnabled"
     public static let smartPunctuationEnabled = "LekhSmartPunctuationEnabled"
     public static let traditionalOptionLayerEnabled = "LekhTraditionalOptionLayerEnabled"
+    public static let personalizationEnabled = "LekhPersonalizationEnabled"
     public static let nextWordPredictionEnabled = "LekhNextWordPredictionEnabled"
+    public static let excludedApplicationBundleIdentifiers = "LekhExcludedApplicationBundleIdentifiers"
     public static let transliterationStrictness = "LekhTransliterationStrictness"
     public static let mixedScriptPreference = "LekhMixedScriptPreference"
     public static let halantaBehavior = "LekhHalantaBehavior"
     public static let firstRunTutorialSeen = "LekhFirstRunTutorialSeen.v1"
+    public static let nativeTypingMode = "LekhNativeTypingMode"
+    public static let nativeTypingModeChosen = "LekhNativeTypingModeChosen.v2"
   }
+
+  public static let modeDidChangeNotification = Notification.Name("LekhNativeTypingModeDidChange")
 
   public static func registerDefaults() {
     UserDefaults.standard.register(defaults: [
@@ -21,7 +27,9 @@ public enum LekhNativePreferences {
       Keys.proofreadAsYouTypeEnabled: true,
       Keys.smartPunctuationEnabled: true,
       Keys.traditionalOptionLayerEnabled: true,
+      Keys.personalizationEnabled: true,
       Keys.nextWordPredictionEnabled: true,
+      Keys.excludedApplicationBundleIdentifiers: [],
       Keys.transliterationStrictness: 0.55,
       Keys.mixedScriptPreference: 0.50,
       Keys.halantaBehavior: "smart",
@@ -47,6 +55,26 @@ public enum LekhNativePreferences {
 
   public static var traditionalOptionLayerEnabled: Bool {
     value(defaultKey: Keys.traditionalOptionLayerEnabled, defaultValue: true)
+  }
+
+  public static var personalizationEnabled: Bool {
+    value(defaultKey: Keys.personalizationEnabled, defaultValue: true)
+  }
+
+  public static var nextWordPredictionEnabled: Bool {
+    value(defaultKey: Keys.nextWordPredictionEnabled, defaultValue: true)
+  }
+
+  public static var excludedApplicationBundleIdentifiers: Set<String> {
+    Set(
+      UserDefaults.standard.stringArray(forKey: Keys.excludedApplicationBundleIdentifiers) ?? []
+    )
+  }
+
+  public static func mayPersonalize(bundleIdentifier: String?) -> Bool {
+    guard personalizationEnabled else { return false }
+    guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return true }
+    return !excludedApplicationBundleIdentifiers.contains(bundleIdentifier)
   }
 
   public static var transliterationStrictness: Double {

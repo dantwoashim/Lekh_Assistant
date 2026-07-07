@@ -17,6 +17,24 @@ function key(value: string): KeyboardKeyEvent {
 }
 
 describe("KeyboardEngine session API", () => {
+  it("keeps all four product modes distinct at the engine boundary", () => {
+    const engine = createKeyboardEngine();
+    const cases = [
+      ["romanized-romanized", "swas", "romanized-to-romanized"],
+      ["romanized-traditional", "swas", "romanized-to-unicode"],
+      ["traditional-traditional", "स्वा", "traditional-to-unicode"],
+      ["traditional-romanized", "स्वा", "traditional-to-romanized-helper"]
+    ] as const;
+
+    for (const [mode, input, surface] of cases) {
+      const sessionId = engine.beginSession(defaultTypingContext(mode));
+      const update = engine.updateComposition(sessionId, input, input.length);
+      expect(update.mode).toBe(mode);
+      expect(update.surface).toBe(surface);
+      engine.endSession(sessionId);
+    }
+  });
+
   it("updates Romanized composition and returns candidates", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
@@ -183,7 +201,7 @@ describe("KeyboardEngine session API", () => {
     expect(engine.processKeyStroke(sessionId, key("Tab")).shouldShowCandidateUI).toBe(true);
     const spaceCommit = engine.processKeyStroke(sessionId, key(" "));
     expect(spaceCommit.action).toBe("commit");
-    expect(spaceCommit.committedText).toMatch(/^स्वास्थ्य /);
+    expect(spaceCommit.committedText).toBe("swasthy ");
     expect(spaceCommit.compositionText).toBe("");
     const emptyBackspace = engine.processKeyStroke(sessionId, key("Backspace"));
     expect(emptyBackspace.action).toBe("passThrough");
@@ -192,7 +210,7 @@ describe("KeyboardEngine session API", () => {
     engine.updateComposition(sessionId, "swasthya", 8);
     const committed = engine.processKeyStroke(sessionId, key("Enter"));
     expect(committed.action).toBe("commit");
-    expect(committed.committedText).toBe("स्वास्थ्य");
+    expect(committed.committedText).toBe("swasthya\n");
     expect(committed.compositionText).toBe("");
   });
 
@@ -289,7 +307,6 @@ describe("KeyboardEngine session API", () => {
     const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
     const cases = [
       ["k", "के", "k"],
-      ["mero k", "मेरो के छ अवस्था", "mero ke cha awastha"],
       ["jilla p", "जिल्ला प्रशासन", "jilla prashasan"],
       ["nagarikta p", "नागरिकता प्रमाणपत्र", "nagarikta pramanpatra"],
       ["swasthya k", "स्वास्थ्य कार्यालय", "swasthya karyalaya"]
@@ -301,10 +318,9 @@ describe("KeyboardEngine session API", () => {
       expect(update.candidates.length).toBeGreaterThan(0);
       expect(update.candidates.map((candidate) => candidate.text)).toContain(unicodeCandidate);
       expect(update.candidates.map((candidate) => candidate.label)).toContain(romanizedCandidate);
-      if (input === "mero k") {
-        expect(update.candidates.find((candidate) => candidate.text === unicodeCandidate)?.type).toBe("phrase");
-      }
     }
+    const singleToken = engine.updateComposition(sessionId, "mero", 4);
+    expect(singleToken.candidates.every((candidate) => !candidate.text.trim().includes(" "))).toBe(true);
   });
 
   it("covers casual Romanized Nepali words, slang spellings, and social phrases", () => {
@@ -470,7 +486,7 @@ describe("KeyboardEngine session API", () => {
     expect(engine.updateComposition(sessionId, "ru 1200", 7).primary?.text).toBe("रु १,२००");
     expect(engine.updateComposition(sessionId, ":namaste:", 9).primary?.text).toBe("🙏");
     expect(engine.updateComposition(sessionId, "@@addr", 6).primary?.text).toBe("काठमाडौं, नेपाल");
-    expect(engine.updateComposition(sessionId, "aja", 3).candidates.some((candidate) => candidate.text.startsWith("आज ("))).toBe(true);
+    expect(engine.updateComposition(sessionId, "aja", 3).candidates.every((candidate) => !candidate.text.includes(" "))).toBe(true);
   });
 
   it("corrects Romanized typo and phrase forms before Unicode generation", () => {

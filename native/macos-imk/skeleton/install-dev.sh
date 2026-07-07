@@ -12,7 +12,12 @@ OLD_APP="$ROOT/release/native/macos/Lekh Keyboard Dev.imkdevbundle"
 LEGACY_APP="$ROOT/release/native/macos/Lekh Keyboard.app"
 DEST="$HOME/Library/Input Methods/Lekh Keyboard.app"
 OLD_DEST="$HOME/Library/Input Methods/Lekh Keyboard Dev.app"
+TMP_DEST="$HOME/Library/Input Methods/.Lekh Keyboard.app.installing.$$"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+cleanup() {
+  rm -rf "$TMP_DEST"
+}
+trap cleanup EXIT
 
 if [[ ! -d "$APP" ]]; then
   echo "Missing dev input method bundle: $STAGED_APP" >&2
@@ -21,18 +26,20 @@ if [[ ! -d "$APP" ]]; then
   exit 1
 fi
 
-/usr/bin/swift "$(dirname "$0")/register-dev.swift" "$OLD_DEST" --disable >/dev/null 2>&1 || true
-/usr/bin/swift "$(dirname "$0")/register-dev.swift" "$DEST" --disable >/dev/null 2>&1 || true
 /usr/bin/pkill -x LekhInputMethodApp >/dev/null 2>&1 || true
 mkdir -p "$HOME/Library/Input Methods"
 if [[ -d "$OLD_DEST" ]]; then
   "$LSREGISTER" -u "$OLD_DEST" >/dev/null 2>&1 || true
 fi
+rm -rf "$TMP_DEST" "$OLD_DEST"
+/usr/bin/ditto --norsrc --noextattr --noacl "$APP" "$TMP_DEST"
 if [[ -d "$DEST" ]]; then
-  "$LSREGISTER" -u "$DEST" >/dev/null 2>&1 || true
+  /usr/bin/swift "$(dirname "$0")/atomic-install-swap.swift" "$TMP_DEST" "$DEST"
+  "$LSREGISTER" -u "$TMP_DEST" >/dev/null 2>&1 || true
+  rm -rf "$TMP_DEST"
+else
+  mv "$TMP_DEST" "$DEST"
 fi
-rm -rf "$DEST" "$OLD_DEST"
-/usr/bin/ditto --norsrc --noextattr --noacl "$APP" "$DEST"
 "$LSREGISTER" -u "$LEGACY_APP" >/dev/null 2>&1 || true
 "$LSREGISTER" -u "$APP" >/dev/null 2>&1 || true
 /bin/rm -rf "$LEGACY_APP" "$OLD_APP"

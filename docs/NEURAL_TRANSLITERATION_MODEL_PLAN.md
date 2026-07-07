@@ -4,11 +4,11 @@
 
 Do not ship a downloaded general model as the keyboard's neural transliterator.
 
-The production artifact must be a small Nepali-specific Core ML student model:
+The production artifact must follow the frozen Phase 0 open-vocabulary contract in `docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md`. It must be a small Nepali-specific Core ML sequence model:
 
 - artifact: `models/macos/LekhNeuralTransliterator.mlmodelc`
 - manifest: `models/macos/LekhNeuralTransliterator.manifest.json`
-- selected artifact id: `lekh-small-coreml-student-v1`
+- selected artifact id: `lekh-open-vocab-seq2seq-v1`
 - runtime: Core ML only
 - parameter budget: 1M-5M
 - compiled size budget: 16 MB maximum
@@ -16,7 +16,7 @@ The production artifact must be a small Nepali-specific Core ML student model:
 - placement: tail reranker only, after deterministic FST, dictionary, binary lexicon, and user lexicon
 - privacy: local-only inference; no network inference; no raw text telemetry
 
-The current repo has the native Core ML loading hook, a compiled baseline student model, and a production readiness gate. The baseline student is useful for local tail candidates, but it is still not the final transformer-quality model; public launch still requires real on-device latency measurement and human-gold evaluation.
+The current repo has a rejected closed-vocabulary baseline under `models/rejected/closed-vocabulary-baseline/` and production readiness gates. That baseline is useful only as research evidence. Public launch requires an open-vocabulary seq2seq model, real on-device latency measurement, and human-gold evaluation.
 
 ## Student Model Build
 
@@ -27,10 +27,10 @@ npm run neural:student:setup
 npm run neural:student:build
 ```
 
-Outputs:
+Outputs for the rejected research baseline:
 
-- `models/macos/LekhNeuralTransliterator.mlmodelc`
-- `models/macos/LekhNeuralTransliterator.manifest.json`
+- `models/rejected/closed-vocabulary-baseline/LekhNeuralTransliterator.mlmodelc`
+- `models/rejected/closed-vocabulary-baseline/LekhNeuralTransliterator.rejected.manifest.json`
 - `data/generated/coreml-student/LekhNeuralTransliterator.mlmodel`
 - `reports/coreml-student-transliterator-report.json`
 
@@ -43,7 +43,7 @@ Current student architecture:
 - parameter count: 3,153,920
 - role: neural tail candidate source after deterministic FST, dictionary, binary lexicon, and user lexicon
 
-This baseline is intentionally compact and local. It is not the final 1-5M parameter transformer; that remains a separate distillation/training milestone using the downloaded teacher model and a human-rated held-out set.
+This baseline is intentionally compact and local. It is not the final 1-5M parameter production model; that remains a separate open-vocabulary distillation/training milestone using the downloaded teacher model and a human-rated held-out set.
 
 ## Teacher Model Download
 
@@ -74,6 +74,9 @@ The downloader records byte count, SHA256, and source metadata. These files are 
 Run the source gate:
 
 ```bash
+npm run check:neural-contract
+npm run check:neural-gold
+npm run check:neural-open-vocab-data
 npm run check:neural-model-selection
 ```
 
@@ -82,8 +85,18 @@ Run the full neural readiness gate:
 ```bash
 npm run neural:student:build
 npm run neural:dataset
+npm run neural:open-vocab:dataset
 npm run check:neural-transliteration
 ```
+
+Before any production claim, the gold row-count gate must also pass:
+
+```bash
+npm run check:neural-gold:production
+npm run check:neural-open-vocab-data:production
+```
+
+These are expected to fail until real reviewed rows and required licensed/public local imports replace the Phase 1 contract seeds and local silver-only dataset.
 
 For production:
 
@@ -94,24 +107,78 @@ node scripts/check-neural-transliteration-readiness.mjs --production
 
 ## Required Manifest
 
-`models/macos/LekhNeuralTransliterator.manifest.json` must include at least:
+`models/macos/LekhNeuralTransliterator.manifest.json` must validate against `data/neural/schema/lekh-neural-manifest.schema.json` and include at least:
 
 ```json
 {
-  "selectedArtifact": "lekh-small-coreml-student-v1",
+  "schemaVersion": 1,
+  "selectedArtifact": "lekh-open-vocab-seq2seq-v1",
   "runtime": "CoreML",
   "localOnly": true,
   "neuralTailOnly": true,
+  "productionEligible": true,
+  "architecture": "gru-encoder-decoder-seq2seq",
+  "openVocabulary": true,
+  "tokenization": "unicode-grapheme-character",
+  "decoder": "beam-search",
+  "beamSearch": {
+    "enabled": true,
+    "beamWidth": 4,
+    "maxOutputGraphemes": 32
+  },
+  "languageModelRescorer": {
+    "enabled": true,
+    "source": "runtime-next-context-pack",
+    "weight": 0.12
+  },
+  "contextWindowWords": 2,
   "parameterCount": 2500000,
+  "modelBytes": 12000000,
   "trainingSources": [
-    "syubraj-roman2nepali-transliteration"
+    "syubraj-roman2nepali-transliteration",
+    "human-reviewed-lekh-gold-v1",
+    "lekh-chat-conventions-v1",
+    "lekh-name-lexicon-v1"
+  ],
+  "datasetReports": [
+    "reports/neural-open-vocab-dataset-report.json"
+  ],
+  "evaluationReports": [
+    "reports/neural-open-vocab-evaluation.json"
+  ],
+  "benchmarkReports": [
+    "reports/neural-coreml-device-benchmark.json"
   ],
   "metrics": {
-    "tailTop1Accuracy": 0.82,
-    "chatConventionTop1Accuracy": 0.9
+    "tailTop1Accuracy": 0.88,
+    "tailTop3Accuracy": 0.96,
+    "chatConventionTop1Accuracy": 0.92,
+    "chatConventionTop3Accuracy": 0.98,
+    "namesTop3Accuracy": 0.9,
+    "protectedFalseConversionRate": 0,
+    "singleTokenPhraseExpansionRate": 0,
+    "secureFieldInferenceCount": 0
   },
   "performance": {
-    "p99Ms": 3
+    "p50Ms": 0.8,
+    "p95Ms": 1.7,
+    "p99Ms": 2.6,
+    "targetP99Ms": 3,
+    "measuredOnDevice": true,
+    "devices": [
+      {
+        "name": "Apple Silicon benchmark Mac",
+        "macOS": "26",
+        "architecture": "arm64",
+        "p99Ms": 2.2
+      },
+      {
+        "name": "Intel benchmark Mac",
+        "macOS": "15",
+        "architecture": "x86_64",
+        "p99Ms": 2.9
+      }
+    ]
   },
   "requiredCases": {
     "vato": "बाटो",
@@ -121,7 +188,17 @@ node scripts/check-neural-transliteration-readiness.mjs --production
     "cha": "छ",
     "xa": "छ",
     "xaina": "छैन"
-  }
+  },
+  "sha256": {
+    "compiledModel": "0000000000000000000000000000000000000000000000000000000000000000",
+    "sourceCheckpoint": "0000000000000000000000000000000000000000000000000000000000000000",
+    "trainingDatasetManifest": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "limitations": [
+    "Neural candidates are tail suggestions only.",
+    "Neural candidates are never auto-committed.",
+    "No inference runs in secure fields."
+  ]
 }
 ```
 

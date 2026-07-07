@@ -1,4 +1,5 @@
 import { suggestWords } from "../../core/dictionary/suggestWords";
+import engineContract from "../../../data/engine/lekh-engine-contract.v1.json";
 import { convertRomanized } from "../romanized";
 import { nowMs } from "../util/time";
 import { contextualPredictionCandidates } from "./contextPredictor";
@@ -11,7 +12,7 @@ import { classifyMixedLatinToken, convertSmartRomanizedToken, smartTransformCand
 import type { CorrectionMemoryEntry } from "../memory";
 import type { Candidate, CandidateUpdate, KeyboardSession, TypingContext } from "./types";
 
-const MAX_CANDIDATES = 8;
+const MAX_CANDIDATES = engineContract.candidatePolicy.maximumVisible;
 
 const TYPE_PRIORITY: Record<Candidate["type"], number> = {
   protected: 100,
@@ -76,7 +77,11 @@ export function buildCandidateUpdate(session: KeyboardSession, options: Candidat
     };
   }
 
-  if (session.mode === "traditional") {
+  if (
+    session.mode === "traditional" ||
+    session.mode === "traditional-traditional" ||
+    session.mode === "traditional-romanized"
+  ) {
     return traditionalUpdate(session, start);
   }
 
@@ -99,7 +104,10 @@ export function buildCandidateUpdate(session: KeyboardSession, options: Candidat
     };
   }
 
-  const candidates = romanizedCandidates(session.compositionText, session.context, options.memoryEntries ?? [], session);
+  const baseCandidates = romanizedCandidates(session.compositionText, session.context, options.memoryEntries ?? [], session);
+  const candidates = session.mode === "romanized-romanized"
+    ? romanizedTargetCandidates(baseCandidates, session.compositionText)
+    : baseCandidates;
   const primary = candidates[0];
   const displayText = primary?.text ?? session.compositionText;
   const inlineCompletion = inlineCompletionForSession(session, primary);
@@ -185,6 +193,10 @@ export function romanizedCandidates(
   ];
   const memoryCandidates = session ? keyboardMemoryCandidates(trimmed, memoryEntries, session) : [];
   const blockedTexts = session ? keyboardBlockedCandidateTexts(trimmed, memoryEntries) : new Set<string>();
+  const activeTokenSafe = (candidate: Candidate) =>
+    trimmed.includes(" ") ||
+    /^[@:]{2}/.test(trimmed) ||
+    !candidate.text.trim().includes(" ");
   const reservedHelperSlots = Math.min(4, helperCandidates.length);
   const primaryCandidates = finalizeCandidates([
     ...memoryCandidates,
@@ -199,12 +211,18 @@ export function romanizedCandidates(
     ...engineCandidates,
     ...(fallbackCandidate ? [fallbackCandidate] : []),
     romanizedHelper
-  ].filter((candidate) => !blockedTexts.has(candidate.text))).slice(0, Math.max(4, MAX_CANDIDATES - reservedHelperSlots));
-  return finalizeCandidates([...primaryCandidates, ...helperCandidates.filter((candidate) => !blockedTexts.has(candidate.text))]).slice(0, MAX_CANDIDATES);
+  ].filter((candidate) => !blockedTexts.has(candidate.text) && activeTokenSafe(candidate))).slice(0, Math.max(4, MAX_CANDIDATES - reservedHelperSlots));
+  return finalizeCandidates([
+    ...primaryCandidates,
+    ...helperCandidates.filter((candidate) => !blockedTexts.has(candidate.text) && activeTokenSafe(candidate))
+  ]).slice(0, MAX_CANDIDATES);
 }
 
 function traditionalUpdate(session: KeyboardSession, start: number): CandidateUpdate {
-  const unicodeCandidates = traditionalUnicodeCandidates(session.compositionText, session.context);
+  const baseCandidates = traditionalUnicodeCandidates(session.compositionText, session.context);
+  const unicodeCandidates = session.mode === "traditional-romanized"
+    ? traditionalRomanizedTargetCandidates(baseCandidates)
+    : baseCandidates;
   const warnings = dedupeWarnings([
     ...session.warnings,
     ...(hasLatinInput(session.compositionText)
@@ -216,7 +234,7 @@ function traditionalUpdate(session: KeyboardSession, start: number): CandidateUp
   return {
     sessionId: session.sessionId,
     mode: session.mode,
-    surface: "traditional-to-unicode",
+    surface: surfaceForMode(session.mode),
     action: hasLatinInput(session.compositionText) ? "passThrough" : "compose",
     compositionText: session.compositionText,
     displayText: primary?.text ?? session.compositionText,
@@ -231,6 +249,37 @@ function traditionalUpdate(session: KeyboardSession, start: number): CandidateUp
     latencyMs: nowMs() - start,
     schemaVersion: 1
   };
+}
+
+function romanizedTargetCandidates(candidates: Candidate[], raw: string): Candidate[] {
+  return finalizeCandidates(candidates.flatMap((candidate): Candidate[] => {
+    const text = candidate.type === "romanized-helper"
+      ? candidate.text
+      : candidate.label && /[a-z]/i.test(candidate.label)
+        ? candidate.label
+        : "";
+    if (!text || text.trim() === raw.trim()) return [];
+    return [{
+      ...candidate,
+      id: `romanized-target-${candidate.id}`,
+      text,
+      label: undefined,
+      type: "romanized-helper"
+    }];
+  }));
+}
+
+function traditionalRomanizedTargetCandidates(candidates: Candidate[]): Candidate[] {
+  return finalizeCandidates(candidates.flatMap((candidate): Candidate[] => {
+    if (!candidate.label || !/[a-z]/i.test(candidate.label)) return [];
+    return [{
+      ...candidate,
+      id: `traditional-romanized-target-${candidate.id}`,
+      text: candidate.label,
+      label: undefined,
+      type: "romanized-helper"
+    }];
+  }));
 }
 
 export function finalizeCandidates(candidates: Candidate[], max = MAX_CANDIDATES): Candidate[] {
@@ -439,7 +488,11 @@ function traditionalUnicodeCandidates(input: string, context?: TypingContext): C
     shortcut: String(index + 1),
     replaceRange: [0, input.length]
   }));
-  return finalizeCandidates([...explicit, ...activeWordCompletions, ...suggestions]).slice(0, MAX_CANDIDATES);
+  const activeTokenSafe = (candidate: Candidate) =>
+    input.trim().includes(" ") || !candidate.text.trim().includes(" ");
+  return finalizeCandidates(
+    [...explicit, ...activeWordCompletions, ...suggestions].filter(activeTokenSafe)
+  ).slice(0, MAX_CANDIDATES);
 }
 
 function hasLatinInput(input: string): boolean {

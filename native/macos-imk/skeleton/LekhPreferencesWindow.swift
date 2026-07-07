@@ -73,7 +73,7 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
       backing: .buffered,
       defer: false
     )
-    window.title = "Lekh Keyboard"
+    window.title = LekhL10n.text("app.name")
 
     let mark = NSTextField(labelWithString: "ले")
     mark.alignment = .center
@@ -105,7 +105,7 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
     sample.translatesAutoresizingMaskIntoConstraints = false
     sample.heightAnchor.constraint(equalToConstant: 58).isActive = true
 
-    let done = NSButton(title: "Start Typing", target: self, action: #selector(closeTutorial(_:)))
+    let done = NSButton(title: LekhL10n.text("tutorial.start"), target: self, action: #selector(closeTutorial(_:)))
     done.bezelStyle = .rounded
 
     let stack = verticalStack()
@@ -162,6 +162,16 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
     stack.addArrangedSubview(checkbox(
       title: LekhL10n.text("preferences.optionLayer"),
       key: LekhNativePreferences.Keys.traditionalOptionLayerEnabled,
+      defaultValue: true
+    ))
+    stack.addArrangedSubview(checkbox(
+      title: LekhL10n.text("preferences.personalization"),
+      key: LekhNativePreferences.Keys.personalizationEnabled,
+      defaultValue: true
+    ))
+    stack.addArrangedSubview(checkbox(
+      title: LekhL10n.text("preferences.nextWord"),
+      key: LekhNativePreferences.Keys.nextWordPredictionEnabled,
       defaultValue: true
     ))
 
@@ -252,7 +262,7 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
     stack.addArrangedSubview(title)
     stack.addArrangedSubview(body)
     stack.addArrangedSubview(sample)
-    stack.addArrangedSubview(button("OK", action: #selector(markTutorialSeen(_:))))
+    stack.addArrangedSubview(button(LekhL10n.text("common.ok"), action: #selector(markTutorialSeen(_:))))
     return stack
   }
 
@@ -341,9 +351,9 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
     let alert = NSAlert()
     alert.alertStyle = .warning
     alert.messageText = LekhL10n.text("preferences.delete")
-    alert.informativeText = "This deletes the local personal dictionary stored only on this Mac."
+    alert.informativeText = LekhL10n.text("preferences.delete.body")
     alert.addButton(withTitle: LekhL10n.text("preferences.delete"))
-    alert.addButton(withTitle: "Cancel")
+    alert.addButton(withTitle: LekhL10n.text("common.cancel"))
     if alert.runModal() == .alertFirstButtonReturn {
       maintenance.deleteAll()
       refreshDictionaryText()
@@ -369,7 +379,7 @@ public final class LekhPreferencesWindowController: NSObject, NSTextViewDelegate
 
   private func refreshDiagnostics() {
     diagnosticsTextView.string = [
-      diagnosticsProvider?() ?? "diagnostics=unavailable",
+      diagnosticsProvider?() ?? LekhL10n.text("diagnostics.unavailable"),
       "",
       LekhL10n.text("diagnostics.privacy")
     ].joined(separator: "\n")
@@ -398,12 +408,12 @@ public final class LekhModePickerWindowController: NSObject {
       backing: .buffered,
       defer: false
     )
-    window.title = "Choose Lekh Mode"
+    window.title = LekhL10n.text("mode.prompt")
 
-    let title = NSTextField(labelWithString: "Choose how Lekh should type")
+    let title = NSTextField(labelWithString: LekhL10n.text("mode.prompt"))
     title.font = .systemFont(ofSize: 23, weight: .semibold)
 
-    let body = NSTextField(wrappingLabelWithString: "You can change this anytime from the लेख menu bar item, Control-Option-Space, or Control-Option-M.")
+    let body = NSTextField(wrappingLabelWithString: LekhL10n.text("mode.picker.body"))
     body.font = .systemFont(ofSize: 13)
     body.textColor = .secondaryLabelColor
 
@@ -425,7 +435,7 @@ public final class LekhModePickerWindowController: NSObject {
       options.addArrangedSubview(button)
     }
 
-    let privacy = NSTextField(labelWithString: "Local only. No typing is sent anywhere.")
+    let privacy = NSTextField(labelWithString: LekhL10n.text("mode.picker.privacy"))
     privacy.font = .systemFont(ofSize: 12, weight: .medium)
     privacy.textColor = .secondaryLabelColor
 

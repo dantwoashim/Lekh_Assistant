@@ -5,9 +5,9 @@ import InputMethodKit
 import OSLog
 
 private let lekhLogger = Logger(subsystem: "com.lekh.inputmethod.keyboard", category: "imk")
-private let lekhNativeModeDefaultsKey = "LekhNativeTypingMode"
-private let lekhNativeModeChosenDefaultsKey = "LekhNativeTypingModeChosen.v2"
-private let lekhNativeModeDidChangeNotification = Notification.Name("LekhNativeTypingModeDidChange")
+private let lekhNativeModeDefaultsKey = LekhNativePreferences.Keys.nativeTypingMode
+private let lekhNativeModeChosenDefaultsKey = LekhNativePreferences.Keys.nativeTypingModeChosen
+private let lekhNativeModeDidChangeNotification = LekhNativePreferences.modeDidChangeNotification
 private let lekhArrowUpKey = "\u{F700}"
 private let lekhArrowDownKey = "\u{F701}"
 
@@ -47,6 +47,8 @@ open class LekhInputController: IMKInputController {
   private var candidateSelectionExplicit = false
   private var candidatePanel: IMKCandidates?
   private let customCandidatePanel = LekhCandidatePanel()
+  private let inlinePreviewPanel = LekhInlinePreviewPanel()
+  private let layoutTranslator = LekhKeyboardLayoutTranslator.shared
   private var sessionId = UUID().uuidString
   private var nativeMode = LekhNativeTypingMode.romanizedTraditional
   private var modeMenuOpen = false
@@ -59,7 +61,7 @@ open class LekhInputController: IMKInputController {
     return true
   }
 
-  public init(engineClient: LekhEngineClient = LekhStaticProofEngineClient()) {
+  public init(engineClient: LekhEngineClient = LekhNativeEngineClient()) {
     LekhNativePreferences.registerDefaults()
     self.engineClient = engineClient
     super.init()
@@ -84,7 +86,7 @@ open class LekhInputController: IMKInputController {
   }
 
   private static func defaultEngineClient() -> LekhEngineClient {
-    return LekhStaticProofEngineClient()
+    return LekhNativeEngineClient()
   }
 
   private func logSelectorAvailability() {
@@ -123,6 +125,11 @@ open class LekhInputController: IMKInputController {
   open override func deactivateServer(_ sender: Any!) {
     lekhNativeLog("lifecycle.deactivate")
     hideCandidates()
+    defer { engineClient.endSession(sessionId) }
+    if IsSecureEventInputEnabled() {
+      cancelLocalComposition(client: sender as? IMKTextInput)
+      return
+    }
     if modeMenuOpen {
       modeMenuOpen = false
       cancelLocalComposition(client: sender as? IMKTextInput)
@@ -142,10 +149,14 @@ open class LekhInputController: IMKInputController {
   open override func inputControllerWillClose() {
     lekhNativeLog("lifecycle.close")
     hideCandidates()
-    engineClient.resetSession(sessionId)
+    engineClient.endSession(sessionId)
   }
 
   open override func commitComposition(_ sender: Any!) {
+    if IsSecureEventInputEnabled() {
+      cancelLocalComposition(client: sender as? IMKTextInput)
+      return
+    }
     if modeMenuOpen {
       modeMenuOpen = false
       cancelLocalComposition(client: sender as? IMKTextInput)
@@ -292,7 +303,8 @@ open class LekhInputController: IMKInputController {
       if !usesInlineComposition {
         return processFailOpenKey("\u{1b}", keyCode: 53, client: sender, route: "command.cancel")
       }
-      return apply(cancelDecision(), client: sender, route: "command.cancel")
+      guard let client = sender as? IMKTextInput else { return false }
+      return commitRawComposition(client: client, suffix: "")
     }
     if selector == #selector(NSResponder.deleteBackward(_:)) {
       guard engineClient.hasComposition(sessionId: sessionId) else { return false }
@@ -306,32 +318,35 @@ open class LekhInputController: IMKInputController {
       if !usesInlineComposition {
         return processFailOpenKey("\n", keyCode: 36, client: sender, route: "command.enter")
       }
-      if let client = sender as? IMKTextInput,
-         commitSelectedCandidate(client: client, suffix: "") {
-        return true
-      }
-      return processKey("\n", client: sender, route: "command.enter")
+      guard let client = sender as? IMKTextInput else { return false }
+      return commitCurrentComposition(client: client, suffix: "\n")
     }
     if selector == #selector(NSResponder.insertTab(_:)) {
       guard engineClient.hasComposition(sessionId: sessionId) else { return false }
       if !usesInlineComposition {
         return processFailOpenKey("\t", keyCode: 48, client: sender, route: "command.tab")
       }
-      if let client = sender as? IMKTextInput,
-         commitSelectedCandidate(client: client, suffix: " ") {
-        return true
+      guard let client = sender as? IMKTextInput else { return false }
+      if candidateSelectionExplicit {
+        return commitSelectedCandidate(client: client, suffix: "")
       }
-      return processKey("\t", client: sender, route: "command.tab")
+      _ = commitRawComposition(client: client, suffix: "")
+      return false
     }
     return false
   }
 
   open override func candidates(_ sender: Any!) -> [Any]! {
-    candidateState.currentState().candidates
+    guard !IsSecureEventInputEnabled() else { return [] }
+    return candidateState.currentState().candidates
   }
 
   open override func candidateSelected(_ candidateString: NSAttributedString!) {
     guard let text = candidateString?.string, !text.isEmpty, let client = self.client() else {
+      return
+    }
+    guard !IsSecureEventInputEnabled() else {
+      cancelLocalComposition(client: client)
       return
     }
     if modeMenuOpen, let mode = modeFromMenuLabel(text) {
@@ -345,12 +360,18 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
+    guard !IsSecureEventInputEnabled() else {
+      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
+      hideCandidates()
+      return
+    }
     guard let text = candidateString?.string, !text.isEmpty else {
       return
     }
     if let index = candidateState.currentState().candidates.firstIndex(of: text) {
       candidateState.select(index: index)
-      candidateSelectionExplicit = true
+      // IMK may emit this callback while updating/showing its panel. Only a
+      // physical Arrow key or an explicit click/selection may authorize commit.
       refreshCandidatePanel()
     }
   }
@@ -371,7 +392,7 @@ open class LekhInputController: IMKInputController {
       item.state = mode == nativeMode ? .on : .off
       menu.addItem(item)
     }
-    if let currentCandidate = candidateState.selectedCandidate() {
+    if !IsSecureEventInputEnabled(), let currentCandidate = candidateState.selectedCandidate() {
       menu.addItem(.separator())
       let forget = NSMenuItem(title: LekhL10n.text("menu.forgetCandidate"), action: #selector(forgetCurrentCandidateFromInputMenu(_:)), keyEquivalent: "")
       forget.target = self
@@ -413,6 +434,10 @@ open class LekhInputController: IMKInputController {
   }
 
   @objc private func forgetCurrentCandidateFromInputMenu(_ item: NSMenuItem) {
+    guard !IsSecureEventInputEnabled() else {
+      cancelLocalComposition(client: self.client())
+      return
+    }
     guard let candidate = item.representedObject as? String else { return }
     engineClient.forgetCandidate(sessionId: sessionId, chosenOutput: candidate)
     candidateState.updateCandidates(
@@ -426,13 +451,13 @@ open class LekhInputController: IMKInputController {
 
   @objc private func showDiagnosticsFromInputMenu(_ item: NSMenuItem) {
     let alert = NSAlert()
-    alert.messageText = "Lekh Keyboard Diagnostics"
+    alert.messageText = LekhL10n.text("diagnostics.title")
     alert.informativeText = [
       engineClient.diagnosticsSummary(),
       latencyTelemetry.summary(),
       "privacy=local-only; text and keystroke values are not recorded"
     ].joined(separator: "\n\n")
-    alert.addButton(withTitle: "OK")
+    alert.addButton(withTitle: LekhL10n.text("common.ok"))
     alert.runModal()
   }
 
@@ -453,9 +478,9 @@ open class LekhInputController: IMKInputController {
   @objc private func showDictionaryWarningFromInputMenu(_ item: NSMenuItem) {
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.messageText = "Dictionary Update Rejected"
-    alert.informativeText = (item.representedObject as? String) ?? "The latest dictionary pack could not be verified. Lekh kept the last-good local dictionary."
-    alert.addButton(withTitle: "OK")
+    alert.messageText = LekhL10n.text("dictionary.rejected.title")
+    alert.informativeText = (item.representedObject as? String) ?? LekhL10n.text("dictionary.rejected.body")
+    alert.addButton(withTitle: LekhL10n.text("common.ok"))
     alert.runModal()
   }
 
@@ -464,7 +489,6 @@ open class LekhInputController: IMKInputController {
     let decision = engineClient.processKey(
       key,
       sessionId: sessionId,
-      timeoutMilliseconds: lekhHotPathBudgetMilliseconds,
       mode: nativeMode
     )
     let duration = DispatchTime.now().uptimeNanoseconds - startedAt
@@ -531,17 +555,23 @@ open class LekhInputController: IMKInputController {
     }
 
     if key == "\n" {
-      guard !candidateState.currentState().candidates.isEmpty else {
-        return commitRawComposition(client: client, suffix: "")
+      if candidateSelectionExplicit {
+        return commitSelectedCandidate(client: client, suffix: "\n")
       }
-      return commitSelectedCandidate(client: client, suffix: "")
+      return commitRawComposition(client: client, suffix: "\n")
     }
 
     if key == "\t", !modifiers.contains(.shift) {
-      guard !candidateState.currentState().candidates.isEmpty else {
-        return commitRawComposition(client: client, suffix: " ")
+      if candidateSelectionExplicit {
+        return commitSelectedCandidate(client: client, suffix: "")
       }
-      return commitSelectedCandidate(client: client, suffix: " ")
+      // Preserve the composition as raw text and let the host receive Tab.
+      _ = commitRawComposition(client: client, suffix: "")
+      return false
+    }
+
+    if key == "\u{1b}" {
+      return commitRawComposition(client: client, suffix: "")
     }
 
     return false
@@ -575,8 +605,18 @@ open class LekhInputController: IMKInputController {
   }
 
   private func commitRawComposition(client: IMKTextInput, suffix: String) -> Bool {
+    guard !IsSecureEventInputEnabled() else {
+      cancelLocalComposition(client: client)
+      return false
+    }
     let raw = engineClient.rawBuffer(sessionId: sessionId)
     guard !raw.isEmpty else { return false }
+    engineClient.observeCommit(
+      sessionId: sessionId,
+      rawInput: raw,
+      chosenOutput: raw,
+      allowPersonalization: false
+    )
     client.insertText(raw + suffix, replacementRange: replacementRange(for: client))
     engineClient.resetSession(sessionId)
     candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
@@ -682,12 +722,15 @@ open class LekhInputController: IMKInputController {
          raw.range(of: #"\p{Devanagari}"#, options: .regularExpression) != nil || raw == "\n" {
         return raw
       }
-      if let fallback = traditionalFallbackText(keyCode: keyCode, modifiers: modifiers) {
-        return fallback
+      if let translated = layoutTranslator.translateTraditionalKey(keyCode: keyCode, modifiers: modifiers),
+         translated.range(of: #"\p{Devanagari}"#, options: .regularExpression) != nil {
+        return translated
       }
-      if !raw.isEmpty {
-        return raw
-      }
+      if !raw.isEmpty { return raw }
+    }
+
+    if let raw = string, !raw.isEmpty {
+      return raw == "\r" ? "\n" : raw
     }
 
     switch keyCode {
@@ -858,84 +901,6 @@ open class LekhInputController: IMKInputController {
     }
   }
 
-  private func traditionalFallbackText(keyCode: Int, modifiers: NSEvent.ModifierFlags) -> String? {
-    let shifted = modifiers.contains(.shift)
-    if shifted {
-      switch keyCode {
-      case 12: return "औ" // Q
-      case 13: return "ऐ" // W
-      case 14: return "आ" // E
-      case 15: return "ई" // R
-      case 17: return "ऊ" // T
-      case 16: return "भ" // Y
-      case 32: return "ङ" // U
-      case 34: return "घ" // I
-      case 31: return "ध" // O
-      case 35: return "झ" // P
-      case 33: return "ढ" // [
-      case 30: return "ञ" // ]
-      case 0: return "ओ" // A
-      case 1: return "ए" // S
-      case 2: return "अ" // D
-      case 3: return "इ" // F
-      case 5: return "उ" // G
-      case 4: return "फ" // H
-      case 38: return "ऱ" // J
-      case 40: return "ख" // K
-      case 37: return "थ" // L
-      case 41: return "छ" // ;
-      case 39: return "ठ" // '
-      case 6: return "ऑ" // Z
-      case 7: return "ँ" // X
-      case 8: return "ण" // C
-      case 9: return "न" // V
-      case 11: return "ऴ" // B
-      case 45: return "ळ" // N
-      case 46: return "श" // M
-      case 43: return "ष" // ,
-      case 47: return "य" // .
-      default: return nil
-      }
-    }
-
-    switch keyCode {
-    case 12: return "ौ" // q
-    case 13: return "ै" // w
-    case 14: return "ा" // e
-    case 15: return "ी" // r
-    case 17: return "ू" // t
-    case 16: return "ब" // y
-    case 32: return "ह" // u
-    case 34: return "ग" // i
-    case 31: return "द" // o
-    case 35: return "ज" // p
-    case 33: return "ड" // [
-    case 30: return "़" // ]
-    case 0: return "ो" // a
-    case 1: return "े" // s
-    case 2: return "\u{094D}" // d
-    case 3: return "ि" // f
-    case 5: return "ु" // g
-    case 4: return "प" // h
-    case 38: return "र" // j
-    case 40: return "क" // k
-    case 37: return "त" // l
-    case 41: return "च" // ;
-    case 39: return "ट" // '
-    case 6: return "ॉ" // z
-    case 7: return "ं" // x
-    case 8: return "म" // c
-    case 9: return "न" // v
-    case 11: return "व" // b
-    case 45: return "ल" // n
-    case 46: return "स" // m
-    case 43: return "," // ,
-    case 47: return "." // .
-    case 44: return "य" // /
-    default: return nil
-    }
-  }
-
   private func shouldPassThroughWithoutComposition(key: String) -> Bool {
     guard !engineClient.hasComposition(sessionId: sessionId) else { return false }
     if key == " " || key == "\n" || key == "\t" || key == "\u{7f}" || key == "\u{1b}" { return true }
@@ -961,6 +926,7 @@ open class LekhInputController: IMKInputController {
   }
 
   public func resetSession() {
+    engineClient.endSession(sessionId)
     sessionId = UUID().uuidString
     candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
     hideCandidates()
@@ -998,7 +964,7 @@ open class LekhInputController: IMKInputController {
     UserDefaults.standard.set(mode.rawValue, forKey: lekhNativeModeDefaultsKey)
     UserDefaults.standard.set(true, forKey: lekhNativeModeChosenDefaultsKey)
     UserDefaults.standard.synchronize()
-    engineClient.resetSession(sessionId)
+    engineClient.endSession(sessionId)
     candidateState.updateCandidates([], rawBuffer: "", modeLabel: mode.menuLabel)
     hideCandidates()
     setKeyboardLayoutOverride()
@@ -1076,7 +1042,7 @@ open class LekhInputController: IMKInputController {
   }
 
   private func cancelLocalComposition(client: IMKTextInput?) {
-    engineClient.resetSession(sessionId)
+    engineClient.endSession(sessionId)
     candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
     candidateSelectionExplicit = false
     hideCandidates()
@@ -1110,12 +1076,17 @@ open class LekhInputController: IMKInputController {
     }
 
     if let markedText = decision.markedText {
-      let display = markedTextObject(markedText, candidates: decision.candidates)
+      let display = markedTextObject(markedText)
       client.setMarkedText(
         display.text,
         selectionRange: NSRange(location: display.cursorLocation, length: 0),
         replacementRange: replacementRange(for: client)
       )
+      if let ghost = inlineGhostText(rawText: markedText, candidates: decision.candidates) {
+        inlinePreviewPanel.show(suffix: ghost, anchorRect: candidateAnchorRect(for: client))
+      } else {
+        inlinePreviewPanel.hide()
+      }
       updateCandidates(decision.candidates)
       return true
     }
@@ -1123,11 +1094,9 @@ open class LekhInputController: IMKInputController {
     return false
   }
 
-  private func markedTextObject(_ rawText: String, candidates: [String]) -> LekhMarkedCompositionDisplay {
-    let ghostText = inlineGhostText(rawText: rawText, candidates: candidates)
-    let displayText = ghostText.map { "\(rawText)  \($0)" } ?? rawText
+  private func markedTextObject(_ rawText: String) -> LekhMarkedCompositionDisplay {
     let rawRange = NSRange(location: 0, length: rawText.utf16.count)
-    let attributed = NSMutableAttributedString(string: displayText)
+    let attributed = NSMutableAttributedString(string: rawText)
     let rawHasDevanagari = rawText.range(of: #"\p{Devanagari}"#, options: .regularExpression) != nil
     let attributes = mark(forStyle: Int(kTSMHiliteSelectedConvertedText), at: rawRange) ?? [:]
     for (key, value) in attributes {
@@ -1147,23 +1116,6 @@ open class LekhInputController: IMKInputController {
     }
     attributed.addAttribute(.font, value: rawFont, range: rawRange)
 
-    if let ghostText {
-      let spacerRange = NSRange(location: rawText.utf16.count, length: 2)
-      let ghostRange = NSRange(location: rawText.utf16.count + 2, length: ghostText.utf16.count)
-      let ghostHasDevanagari = ghostText.range(of: #"\p{Devanagari}"#, options: .regularExpression) != nil
-
-      attributed.addAttribute(.foregroundColor, value: NSColor.clear, range: spacerRange)
-      attributed.addAttribute(.font, value: NSFont.systemFont(ofSize: NSFont.systemFontSize), range: spacerRange)
-      attributed.addAttribute(.foregroundColor, value: NSColor.placeholderTextColor.withAlphaComponent(0.82), range: ghostRange)
-      attributed.addAttribute(
-        .font,
-        value: ghostHasDevanagari
-          ? LekhFont.devanagari(size: NSFont.systemFontSize + 2)
-          : NSFont.systemFont(ofSize: NSFont.systemFontSize),
-        range: ghostRange
-      )
-      attributed.addAttribute(.obliqueness, value: 0.08, range: ghostRange)
-    }
     return LekhMarkedCompositionDisplay(text: attributed, cursorLocation: rawText.utf16.count)
   }
 
@@ -1173,11 +1125,14 @@ open class LekhInputController: IMKInputController {
     guard !raw.isEmpty else { return nil }
     guard let candidate = candidates.first(where: { candidate in
       let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-      return !trimmed.isEmpty && trimmed != raw
+      guard !trimmed.isEmpty, trimmed != raw, trimmed.hasPrefix(raw) else { return false }
+      let rawHasDevanagari = raw.range(of: #"\p{Devanagari}"#, options: .regularExpression) != nil
+      let candidateHasDevanagari = trimmed.range(of: #"\p{Devanagari}"#, options: .regularExpression) != nil
+      return rawHasDevanagari == candidateHasDevanagari
     }) else {
       return nil
     }
-    return candidate
+    return String(candidate.dropFirst(raw.count))
   }
 
   private func updateCandidates(_ candidates: [String]) {
@@ -1214,14 +1169,21 @@ open class LekhInputController: IMKInputController {
   }
 
   private func hideCandidates() {
+    inlinePreviewPanel.hide()
     customCandidatePanel.hide()
     candidatePanel?.hide()
   }
 
   private func candidateAnchorRect(for client: IMKTextInput?) -> NSRect? {
     guard let client else { return nil }
+    let markedRange = client.markedRange()
     let selectedRange = client.selectedRange()
-    let characterIndex = selectedRange.location == NSNotFound ? 0 : max(0, selectedRange.location)
+    let characterIndex: Int
+    if markedRange.location != NSNotFound {
+      characterIndex = max(0, markedRange.location + markedRange.length)
+    } else {
+      characterIndex = selectedRange.location == NSNotFound ? 0 : max(0, selectedRange.location)
+    }
     var lineHeightRect = NSRect.zero
     _ = client.attributes(forCharacterIndex: characterIndex, lineHeightRectangle: &lineHeightRect)
     guard !lineHeightRect.isEmpty, lineHeightRect != .zero else { return nil }
@@ -1230,14 +1192,29 @@ open class LekhInputController: IMKInputController {
 
   @discardableResult
   private func commitCandidateText(_ text: String, client: IMKTextInput, suffix: String) -> Bool {
+    guard !IsSecureEventInputEnabled() else {
+      cancelLocalComposition(client: client)
+      return false
+    }
     lekhNativeLog("candidate.selected length=\(text.utf16.count)")
-    engineClient.learnCommit(sessionId: sessionId, chosenOutput: text)
+    let raw = engineClient.rawBuffer(sessionId: sessionId)
+    engineClient.observeCommit(
+      sessionId: sessionId,
+      rawInput: raw,
+      chosenOutput: text,
+      allowPersonalization: shouldPersonalize(client: client)
+    )
     client.insertText(text + suffix, replacementRange: replacementRange(for: client))
     engineClient.resetSession(sessionId)
     candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
     candidateSelectionExplicit = false
     hideCandidates()
     return true
+  }
+
+  private func shouldPersonalize(client: IMKTextInput) -> Bool {
+    guard !IsSecureEventInputEnabled() else { return false }
+    return LekhNativePreferences.mayPersonalize(bundleIdentifier: client.bundleIdentifier())
   }
 
   private func replacementRange(for client: IMKTextInput) -> NSRange {

@@ -31,6 +31,7 @@ const checksumPath = join(releaseDir, "SHA256SUMS.txt");
 const minisignPublicKeyPath = join(ROOT, "public", "security", "lekh-release-manifest-minisign.pub");
 const sparklePublicKeyPath = join(ROOT, "public", "security", "lekh-sparkle-ed25519-public.txt");
 const packPublicKeyPath = join(ROOT, "public", "security", "lekh-pack-ed25519-public.txt");
+const companionMainPath = join(ROOT, "electron", "main.cjs");
 const failures = [];
 const warnings = [];
 const HEADER_SIZE = 64;
@@ -40,8 +41,6 @@ const MAX_PREFIX_LENGTH = 12;
 
 requireEnv("LEKH_MAC_DEVELOPER_ID", "Developer ID signing identity is required for production app updates.");
 requireEnv("LEKH_NOTARIZATION_PROFILE", "Notarization profile is required before production distribution.");
-requireEnv("LEKH_SPARKLE_EDDSA_PUBLIC_KEY", "Sparkle EdDSA public key must be embedded for signed appcast updates.");
-requireEnv("LEKH_SPARKLE_APPCAST_URL", "Sparkle appcast URL must be configured for production updates.");
 requireEnv("LEKH_PACK_ED25519_PUBLIC_KEY_BASE64", "Dictionary pack Ed25519 public key must be embedded in Info.plist.");
 requireEnv("LEKH_PACK_ED25519_PRIVATE_KEY_PEM", "Dictionary pack private signing key must be present only in release CI.");
 requireEnv("LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY", "Release manifest minisign secret key must be present only in release CI.");
@@ -51,6 +50,7 @@ const pinnedSparkleKey = readRawPublicKey("LEKH_SPARKLE_EDDSA_PUBLIC_KEY", spark
 const pinnedPackKey = readRawPublicKey("LEKH_PACK_ED25519_PUBLIC_KEY_BASE64", packPublicKeyPath);
 
 checkImkPlist(imkInfoPlist);
+checkCompanionUpdater();
 checkZipArtifact();
 const appcastDetails = checkAppcast();
 checkDictionaryPacks();
@@ -69,7 +69,7 @@ const report = {
   failures,
   warnings,
   policy: {
-    appUpdates: "Sparkle EdDSA signed appcast; production additionally requires Developer ID signing and notarization",
+    appUpdates: "Companion-pinned HTTPS appcast with SHA-256 and Ed25519 archive verification; production additionally requires Developer ID signing and notarization",
     dictionaryUpdates: "independent Ed25519 signed LEKHBLX1 full and delta pack manifests",
     releaseManifest: "SHA256 manifest over release directory files signed with minisign",
     noDuplicateRuntimePacks: true,
@@ -99,6 +99,43 @@ function checkImkPlist(plist) {
   }
   if (Number.isFinite(bundleBuild) && bundleBuild > 0 && bundleBuild < 5) {
     critical(`IMK bundle build is stale: ${bundleBuild}. Expected build 5 or newer.`);
+  }
+}
+
+function checkCompanionUpdater() {
+  const source = readTextIfExists(companionMainPath);
+  if (!source) {
+    critical(`Companion updater source is missing: ${relative(ROOT, companionMainPath)}`);
+    return;
+  }
+  const feedUrl = source.match(/const updateFeedUrl = "([^"]+)";/)?.[1];
+  const host = source.match(/const updateHost = "([^"]+)";/)?.[1];
+  const publicKey = source.match(/const updatePublicKeyBase64 = "([^"]+)";/)?.[1];
+  if (!feedUrl) critical("Companion updater has no pinned appcast URL.");
+  if (!host) critical("Companion updater has no pinned HTTPS host.");
+  if (!publicKey) critical("Companion updater has no pinned Ed25519 public key.");
+  if (feedUrl) {
+    try {
+      const parsed = new URL(feedUrl);
+      if (parsed.protocol !== "https:") critical("Companion updater appcast URL must use HTTPS.");
+      if (host && parsed.hostname !== host) critical("Companion updater appcast host does not match its pinned host.");
+    } catch {
+      critical("Companion updater appcast URL is invalid.");
+    }
+  }
+  if (publicKey && pinnedSparkleKey && publicKey !== pinnedSparkleKey) {
+    critical("Companion updater Ed25519 public key does not match the published key.");
+  }
+  for (const marker of [
+    'ipcMain.handle("lekh:updates:check"',
+    'ipcMain.handle("lekh:updates:download"',
+    "isDeveloperIdSigned()",
+    "validateUpdateUrl(response.url)",
+    'createHash("sha256")',
+    "const valid = verifySignature(",
+    "maximumBytes"
+  ]) {
+    if (!source.includes(marker)) critical(`Companion updater is missing security marker ${marker}.`);
   }
 }
 

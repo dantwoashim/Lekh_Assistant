@@ -35,8 +35,8 @@ except Exception as error:  # pragma: no cover - exercised by local tool setup.
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET_DIR = ROOT / "data/generated/neural-transliteration"
-DEFAULT_MODEL_DIR = ROOT / "models/macos/LekhNeuralTransliterator.mlmodelc"
-DEFAULT_MANIFEST_PATH = ROOT / "models/macos/LekhNeuralTransliterator.manifest.json"
+DEFAULT_MODEL_DIR = ROOT / "models/rejected/closed-vocabulary-baseline/LekhNeuralTransliterator.mlmodelc"
+DEFAULT_MANIFEST_PATH = ROOT / "models/rejected/closed-vocabulary-baseline/LekhNeuralTransliterator.rejected.manifest.json"
 DEFAULT_SOURCE_MODEL_PATH = ROOT / "data/generated/coreml-student/LekhNeuralTransliterator.mlmodel"
 DEFAULT_REPORT_PATH = ROOT / "reports/coreml-student-transliterator-report.json"
 

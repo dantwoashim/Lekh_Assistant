@@ -28,6 +28,7 @@ for (let index = 2; index < process.argv.length; index += 1) {
 const inputPath = args.get("input") ?? DEFAULT_INPUT;
 const outputPath = args.get("output") ?? DEFAULT_OUTPUT;
 const reportPath = args.get("report") ?? DEFAULT_REPORT;
+const includePhrases = args.get("include-phrases") !== "0";
 const startedAt = performance.now();
 
 function main() {
@@ -39,7 +40,7 @@ try {
     finish("failed", { input: relative(ROOT, inputPath), validation }, 1);
   }
 
-  const compiled = compileLexicon(pack);
+  const compiled = compileLexicon(pack, { includePhrases });
   const binaryValidation = validateBinaryLexiconBuffer(compiled.buffer);
   if (binaryValidation.failures.length > 0) {
     finish("failed", {
@@ -78,7 +79,8 @@ try {
       maxPrefixRefs: MAX_PREFIX_REFS,
       coldStartTargetMs: 5,
       perLookupP99TargetMs: 1,
-      steadyStateRssTargetMb: 25
+      steadyStateRssTargetMb: 25,
+      includePhrases
     },
     validation,
     binaryValidation,
@@ -94,9 +96,9 @@ try {
 }
 }
 
-function compileLexicon(pack) {
+function compileLexicon(pack, options = { includePhrases: true }) {
   const sourceRows = [
-    ...rowsForKind(pack.phrases ?? [], "phrase", 1, 0),
+    ...(options.includePhrases ? rowsForKind(pack.phrases ?? [], "phrase", 1, 0) : []),
     ...rowsForKind(pack.words ?? [], "word", 2, 10_000),
     ...rowsForKind(pack.names ?? [], "name", 3, 30_000)
   ];

@@ -1,49 +1,11 @@
-# macOS Neural Model Slot
+# macOS Production Neural Slot
 
-This directory contains the compiled baseline Core ML transliteration tail model.
+No neural model is currently connected to or packaged by the macOS input method.
 
-Required production files:
+The existing closed-vocabulary linear-softmax experiment is rejected research evidence. Its manifest is stored under:
 
-- `LekhNeuralTransliterator.mlmodelc`
-- `LekhNeuralTransliterator.manifest.json`
+`models/rejected/closed-vocabulary-baseline/`
 
-The package scripts copy `LekhNeuralTransliterator.mlmodelc` into the IMK bundle only when it exists. Production neural readiness is blocked unless:
+The compiled baseline directory remains only for reproducibility and is not a shipping input. Production packaging hard-disables neural copying.
 
-```bash
-npm run check:neural-transliteration
-node scripts/check-neural-model-selection.mjs --production
-node scripts/check-neural-transliteration-readiness.mjs --production
-```
-
-all pass.
-
-Do not place large Hugging Face checkpoints here. The shipping artifact must be a small local Core ML student model, not a research/teacher model.
-
-Rebuild the current student:
-
-```bash
-npm run neural:student:setup
-npm run neural:student:build
-```
-
-The current compiled baseline is a 384-feature hashed character n-gram classifier with 8,192 Devanagari output labels. It is **not** an open-vocabulary neural transliterator and must never be presented as the production SOTA model. It is allowed only as a local, confidence-gated tail candidate source after the deterministic FST, dictionary, binary lexicon, and user lexicon.
-
-Production requires a different artifact:
-
-- `selectedArtifact`: `lekh-open-vocab-seq2seq-v1`
-- architecture: tiny GRU encoder-decoder or tiny Transformer encoder-decoder
-- tokenization: BPE/unigram subword or character sequence decoder
-- decoding: beam search
-- ranking: previous 1-2 word context plus language-model rescoring
-- behavior: confidence-gated fallback to deterministic candidates
-- validation: measured packaged-app p99 latency on Apple Silicon and Intel
-
-The production gates intentionally fail if the compiled model graph is only `inner_product + softmax`, if the manifest declares `openVocabulary=false`, or if latency was not measured on device.
-
-To download the current offline teacher model for distillation and regression testing, run:
-
-```bash
-npm run neural:teacher:download
-```
-
-That command stores AI4Bharat IndicXlit under ignored `data/generated/` paths and records a manifest. It does not make the app production-neural-ready.
+A future production model must be open-vocabulary, use sequence decoding with beam search, include provenance and held-out evaluation, and run asynchronously outside the deterministic per-keystroke path. Both production neural gates must pass before an invocation path may be added.

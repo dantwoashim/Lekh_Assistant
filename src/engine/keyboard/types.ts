@@ -3,6 +3,10 @@ export type SessionId = string;
 export type KeyboardMode =
   | "romanized"
   | "traditional"
+  | "romanized-romanized"
+  | "romanized-traditional"
+  | "traditional-traditional"
+  | "traditional-romanized"
   | "unicode-proofread"
   | "dictionary-lookup"
   | "diagnostic";

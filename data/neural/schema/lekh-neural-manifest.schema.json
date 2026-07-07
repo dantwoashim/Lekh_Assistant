@@ -1,0 +1,361 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekh.local/schemas/lekh-neural-manifest.schema.json",
+  "title": "Lekh production neural transliterator manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "selectedArtifact",
+    "runtime",
+    "localOnly",
+    "neuralTailOnly",
+    "productionEligible",
+    "architecture",
+    "openVocabulary",
+    "tokenization",
+    "decoder",
+    "beamSearch",
+    "languageModelRescorer",
+    "contextWindowWords",
+    "parameterCount",
+    "modelBytes",
+    "trainingSources",
+    "datasetReports",
+    "evaluationReports",
+    "benchmarkReports",
+    "metrics",
+    "performance",
+    "requiredCases",
+    "sha256",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "selectedArtifact": {
+      "const": "lekh-open-vocab-seq2seq-v1"
+    },
+    "runtime": {
+      "const": "CoreML"
+    },
+    "localOnly": {
+      "const": true
+    },
+    "neuralTailOnly": {
+      "const": true
+    },
+    "productionEligible": {
+      "const": true
+    },
+    "architecture": {
+      "type": "string",
+      "pattern": "([Gg][Rr][Uu]|[Tt]ransformer|seq2seq|encoder-decoder)"
+    },
+    "openVocabulary": {
+      "const": true
+    },
+    "tokenization": {
+      "type": "string",
+      "enum": [
+        "unicode-grapheme-character",
+        "character-sequence",
+        "bpe-subword",
+        "unigram-subword"
+      ]
+    },
+    "decoder": {
+      "const": "beam-search"
+    },
+    "beamSearch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "beamWidth", "maxOutputGraphemes"],
+      "properties": {
+        "enabled": {
+          "const": true
+        },
+        "beamWidth": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 8
+        },
+        "maxOutputGraphemes": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 48
+        }
+      }
+    },
+    "languageModelRescorer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "source", "weight"],
+      "properties": {
+        "enabled": {
+          "const": true
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "contextWindowWords": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 4
+    },
+    "parameterCount": {
+      "type": "integer",
+      "minimum": 1000000,
+      "maximum": 5000000
+    },
+    "modelBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16777216
+    },
+    "trainingSources": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "allOf": [
+        {
+          "contains": {
+            "const": "syubraj-roman2nepali-transliteration"
+          }
+        },
+        {
+          "contains": {
+            "const": "human-reviewed-lekh-gold-v1"
+          }
+        },
+        {
+          "contains": {
+            "const": "lekh-chat-conventions-v1"
+          }
+        },
+        {
+          "contains": {
+            "const": "lekh-name-lexicon-v1"
+          }
+        }
+      ]
+    },
+    "datasetReports": {
+      "$ref": "#/$defs/reportList"
+    },
+    "evaluationReports": {
+      "$ref": "#/$defs/reportList"
+    },
+    "benchmarkReports": {
+      "$ref": "#/$defs/reportList"
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tailTop1Accuracy",
+        "tailTop3Accuracy",
+        "chatConventionTop1Accuracy",
+        "chatConventionTop3Accuracy",
+        "namesTop3Accuracy",
+        "protectedFalseConversionRate",
+        "singleTokenPhraseExpansionRate",
+        "secureFieldInferenceCount"
+      ],
+      "properties": {
+        "tailTop1Accuracy": {
+          "type": "number",
+          "minimum": 0.88,
+          "maximum": 1
+        },
+        "tailTop3Accuracy": {
+          "type": "number",
+          "minimum": 0.96,
+          "maximum": 1
+        },
+        "chatConventionTop1Accuracy": {
+          "type": "number",
+          "minimum": 0.92,
+          "maximum": 1
+        },
+        "chatConventionTop3Accuracy": {
+          "type": "number",
+          "minimum": 0.98,
+          "maximum": 1
+        },
+        "namesTop3Accuracy": {
+          "type": "number",
+          "minimum": 0.9,
+          "maximum": 1
+        },
+        "protectedFalseConversionRate": {
+          "const": 0
+        },
+        "singleTokenPhraseExpansionRate": {
+          "const": 0
+        },
+        "secureFieldInferenceCount": {
+          "const": 0
+        }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50Ms", "p95Ms", "p99Ms", "targetP99Ms", "measuredOnDevice", "devices"],
+      "properties": {
+        "p50Ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "p95Ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "p99Ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "targetP99Ms": {
+          "const": 3
+        },
+        "measuredOnDevice": {
+          "const": true
+        },
+        "devices": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "macOS", "architecture", "p99Ms"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "macOS": {
+                "type": "string",
+                "minLength": 1
+              },
+              "architecture": {
+                "enum": ["arm64", "x86_64"]
+              },
+              "p99Ms": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 3
+              }
+            }
+          },
+          "allOf": [
+            {
+              "contains": {
+                "type": "object",
+                "required": ["architecture"],
+                "properties": {
+                  "architecture": {
+                    "const": "arm64"
+                  }
+                }
+              }
+            },
+            {
+              "contains": {
+                "type": "object",
+                "required": ["architecture"],
+                "properties": {
+                  "architecture": {
+                    "const": "x86_64"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "requiredCases": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vato", "bato", "baato", "chha", "cha", "xa", "xaina"],
+      "properties": {
+        "vato": {
+          "const": "बाटो"
+        },
+        "bato": {
+          "const": "बाटो"
+        },
+        "baato": {
+          "const": "बाटो"
+        },
+        "chha": {
+          "const": "छ"
+        },
+        "cha": {
+          "const": "छ"
+        },
+        "xa": {
+          "const": "छ"
+        },
+        "xaina": {
+          "const": "छैन"
+        }
+      }
+    },
+    "sha256": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compiledModel", "sourceCheckpoint", "trainingDatasetManifest"],
+      "properties": {
+        "compiledModel": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sourceCheckpoint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "trainingDatasetManifest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "reportList": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^reports/.+\\.json$"
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

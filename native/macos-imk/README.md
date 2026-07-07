@@ -6,9 +6,11 @@ The `skeleton` package now contains a buildable IMK-oriented proof target:
 
 - `LekhInputController.swift`
 - `LekhCandidateController.swift`
-- `LekhXpcClient.swift`
+- `LekhCandidatePanel.swift`
+- `LekhInlinePreviewPanel.swift`
+- `LekhEngineCore.swift`
 
-It is not a production macOS input method yet. Production requires an installed IMK bundle, real XPC service, macOS host-app testing, Developer ID signing, notarization, installer validation, and pilot feedback.
+It is not a production macOS input method yet. The deterministic key path is intentionally in-process and has no synchronous XPC, daemon, file-decoding, or network dependency. Production still requires the complete macOS host-app matrix, Developer ID signing, notarization, installer validation, and pilot feedback.
 
 See:
 

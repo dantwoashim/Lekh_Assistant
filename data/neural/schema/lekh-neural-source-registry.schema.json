@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekh.local/schemas/lekh-neural-source-registry.schema.json",
+  "title": "Lekh neural source registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "phase", "output", "productionRequiredSources", "sources"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "phase": {
+      "const": "phase2-source-cleaning"
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datasetDir", "manifestPath", "reportPath"],
+      "properties": {
+        "datasetDir": {
+          "const": "data/generated/neural-open-vocab"
+        },
+        "manifestPath": {
+          "const": "data/generated/neural-open-vocab/manifest.json"
+        },
+        "reportPath": {
+          "const": "reports/neural-open-vocab-dataset-report.json"
+        }
+      }
+    },
+    "productionRequiredSources": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "const": "syubraj-roman2nepali-transliteration"
+          }
+        },
+        {
+          "contains": {
+            "const": "human-reviewed-lekh-gold-v1"
+          }
+        },
+        {
+          "contains": {
+            "const": "lekh-chat-conventions-v1"
+          }
+        },
+        {
+          "contains": {
+            "const": "lekh-name-lexicon-v1"
+          }
+        }
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "tier",
+          "license",
+          "status",
+          "rawDataCommitted",
+          "allowedForOpenVocabTokenTraining",
+          "productionRequired",
+          "defaultPath",
+          "notes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tier": {
+            "enum": ["gold", "contract-seed", "licensed-public", "runtime-derived", "dictionary-derived", "teacher-only", "blocked", "local-research-only"]
+          },
+          "license": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": ["available", "optional-local", "not-imported", "teacher-only", "blocked"]
+          },
+          "rawDataCommitted": {
+            "type": "boolean"
+          },
+          "allowedForOpenVocabTokenTraining": {
+            "type": "boolean"
+          },
+          "productionRequired": {
+            "type": "boolean"
+          },
+          "defaultPath": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

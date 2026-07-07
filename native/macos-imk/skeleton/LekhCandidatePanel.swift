@@ -33,7 +33,7 @@ private final class LekhCandidateRowView: NSView {
 public final class LekhCandidatePanel: NSObject {
   private var panel: NSPanel?
   private var onSelect: ((String) -> Void)?
-  private let maxVisibleRows = 5
+  private let maxVisibleRows = 8
 
   public override init() {
     super.init()
@@ -58,7 +58,7 @@ public final class LekhCandidatePanel: NSObject {
     panel.contentView = contentView(items: visibleItems, title: title, selectedIndex: min(selectedIndex, visibleItems.count - 1))
 
     let rowHeight: CGFloat = 38
-    let height = min(250, CGFloat(visibleItems.count) * rowHeight + 42)
+    let height = min(360, CGFloat(visibleItems.count) * rowHeight + 42)
     let width: CGFloat = 420
     let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     let fallbackPoint = NSEvent.mouseLocation
@@ -130,6 +130,11 @@ public final class LekhCandidatePanel: NSObject {
       self?.onSelect?(candidate)
     }
     row.toolTip = item.explanation
+    row.setAccessibilityElement(true)
+    row.setAccessibilityRole(.button)
+    row.setAccessibilityLabel(LekhL10n.text("candidate.accessibility", index + 1, item.text, item.badge))
+    row.setAccessibilityHelp(item.explanation)
+    row.setAccessibilityValue(isSelected ? "selected" : "not selected")
     row.translatesAutoresizingMaskIntoConstraints = false
     row.layer?.cornerRadius = 7
     row.layer?.backgroundColor = isSelected
@@ -151,7 +156,10 @@ public final class LekhCandidatePanel: NSObject {
     container.addArrangedSubview(shortcut)
 
     let candidate = NSTextField(labelWithString: item.text)
-    candidate.font = LekhFont.devanagari(size: 20, weight: isSelected ? .semibold : .medium)
+    let hasDevanagari = item.text.range(of: #"\p{Devanagari}"#, options: .regularExpression) != nil
+    candidate.font = hasDevanagari
+      ? LekhFont.devanagari(size: 20, weight: isSelected ? .semibold : .medium)
+      : NSFont.systemFont(ofSize: 16, weight: isSelected ? .semibold : .medium)
     candidate.lineBreakMode = .byTruncatingTail
     candidate.textColor = .labelColor
     candidate.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)

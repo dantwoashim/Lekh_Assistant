@@ -64,7 +64,7 @@ export function applyKeyToComposition(input: string, caret: number, key: Keyboar
   }
 
   if (safeKey === "Enter") {
-    return { text: input, caret, command: "commit-primary" };
+    return { text: input, caret, command: "commit-raw" };
   }
 
   if (safeKey === "Tab") {
@@ -80,7 +80,7 @@ export function applyKeyToComposition(input: string, caret: number, key: Keyboar
         warning: "Space passed through because there is no active composition."
       };
     }
-    return { text: input, caret, command: "commit-primary" };
+    return { text: input, caret, command: "commit-raw" };
   }
 
   if (safeKey.length === 1) {

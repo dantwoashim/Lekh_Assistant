@@ -57,6 +57,10 @@ module.exports = {
     include: "build/installer/windows/installer.nsh"
   },
   mac: {
-    icon: "build/icon.icns"
+    icon: "build/icon.icns",
+    hardenedRuntime: true,
+    gatekeeperAssess: false,
+    entitlements: "build/entitlements.mac.plist",
+    entitlementsInherit: "build/entitlements.mac.inherit.plist"
   }
 };

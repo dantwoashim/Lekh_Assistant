@@ -37,8 +37,10 @@ const publicUpdatesDir = join(root, "public", "updates", "macos");
 const skeletonDir = join(root, "native", "macos-imk", "skeleton");
 const iconSource = join(root, "build", "icon.icns");
 const signingIdentity = process.env.LEKH_MAC_DEVELOPER_ID || "-";
-const appShortVersion = process.env.LEKH_APP_SHORT_VERSION || "0.1.0";
-const appBuild = Number(process.env.LEKH_APP_BUILD || 6);
+const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+const appShortVersion = process.env.LEKH_APP_SHORT_VERSION || packageVersion.match(/^\d+\.\d+\.\d+/)?.[0];
+const gitBuild = spawnSync("git", ["rev-list", "--count", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+const appBuild = Number(process.env.LEKH_APP_BUILD || gitBuild);
 const releaseChannel = signingIdentity === "-" ? "test-adhoc" : "developer-id";
 const minisignSecretKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY ||
   join(root, "data", "private", "lekh-release-manifest-minisign.sec");
@@ -84,7 +86,8 @@ function run(step, command, args, options = {}) {
     env: toolchainEnv,
     encoding: "utf8",
     stdio: "pipe",
-    maxBuffer: options.maxBuffer ?? 80 * 1024 * 1024
+    maxBuffer: options.maxBuffer ?? 80 * 1024 * 1024,
+    timeout: options.timeout
   });
   if (result.status !== 0) {
     finish("failed", { step, command, args, stdout: result.stdout, stderr: result.stderr }, result.status ?? 1);
@@ -336,8 +339,67 @@ function compileUniversalHelper(sourceFile, outputPath) {
   for (const archOutput of archOutputs) rmSync(archOutput, { force: true });
 }
 
+function notarizeAndStaple(appPaths) {
+  const required = ["APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"];
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    finish("blocked-external", {
+      step: "notarization-credentials",
+      reason: "Developer ID output requires notarization credentials.",
+      missing
+    }, 2);
+  }
+  const staging = mkdtempSync(join(tmpdir(), "lekh-notary-"));
+  const folder = join(staging, "Lekh Keyboard");
+  const archive = join(staging, "Lekh-Keyboard-Notary.zip");
+  mkdirSync(folder, { recursive: true });
+  for (const appPath of appPaths) {
+    run("notary-copy", "ditto", ["--norsrc", "--noextattr", "--noacl", appPath, join(folder, basename(appPath))]);
+  }
+  run("notary-zip", "ditto", ["-c", "-k", "--keepParent", "--norsrc", "--noextattr", "--noacl", folder, archive]);
+  run("notary-submit", "xcrun", [
+    "notarytool",
+    "submit",
+    archive,
+    "--apple-id",
+    process.env.APPLE_ID,
+    "--password",
+    process.env.APPLE_APP_SPECIFIC_PASSWORD,
+    "--team-id",
+    process.env.APPLE_TEAM_ID,
+    "--wait"
+  ], { timeout: 900_000 });
+  for (const appPath of appPaths) {
+    run(`staple-${basename(appPath)}`, "xcrun", ["stapler", "staple", appPath]);
+    run(`validate-staple-${basename(appPath)}`, "xcrun", ["stapler", "validate", appPath]);
+    run(`gatekeeper-${basename(appPath)}`, "spctl", ["--assess", "--type", "execute", "--verbose=2", appPath]);
+  }
+  rmSync(staging, { recursive: true, force: true });
+}
+
 if (process.platform !== "darwin") {
   finish("blocked-native-environment", { reason: "macOS installer app must be packaged on macOS." }, 2);
+}
+
+if (!appShortVersion || !/^\d+\.\d+\.\d+$/.test(appShortVersion) || !Number.isInteger(appBuild) || appBuild < 1) {
+  finish("failed", {
+    step: "version",
+    reason: "LEKH_APP_SHORT_VERSION must be x.y.z and LEKH_APP_BUILD must be a positive integer.",
+    appShortVersion,
+    appBuild
+  }, 1);
+}
+
+if (signingIdentity !== "-") {
+  const required = ["APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"];
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    finish("blocked-external", {
+      step: "notarization-credentials",
+      reason: "Developer ID packaging cannot proceed without notarization credentials.",
+      missing
+    }, 2);
+  }
 }
 
 if (!existsSync(imkBundle)) {
@@ -591,6 +653,10 @@ for (const appPath of [installerApp, uninstallerApp]) {
   sleep(500);
   stripCodeSignBlockedXattrs(appPath);
   verifySignedPath(appPath, `verify-${basename(appPath)}`);
+}
+
+if (signingIdentity !== "-") {
+  notarizeAndStaple([installerApp, uninstallerApp]);
 }
 
 mkdirSync(distFolder, { recursive: true });
@@ -979,7 +1045,7 @@ const helperArchs = run(
 ).stdout.trim();
 const zipBytes = statSync(zipPath).size;
 
-finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-ready", {
+finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-notarized", {
   artifact: installerApp,
   uninstaller: uninstallerApp,
   folder: distFolder,
@@ -996,5 +1062,5 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-r
   checksumFile: checksumSidecarPath,
   note: signingIdentity === "-"
     ? "Ad-hoc signed test artifact. Developer ID signing and notarization are still required for production distribution."
-    : "Developer ID signed artifact. Notarization/stapling gate must run before public distribution."
+    : "Developer ID signed, notarized, stapled, and Gatekeeper-assessed artifact."
 }, 0);

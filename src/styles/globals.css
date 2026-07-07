@@ -355,3 +355,357 @@ button {
     transition-duration: 1ms !important;
   }
 }
+
+.companion-shell {
+  min-height: 100vh;
+  padding: clamp(28px, 5vw, 64px);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(180, 76, 42, 0.09), transparent 31rem),
+    #f7f5f1;
+}
+
+.companion-shell h1,
+.companion-shell h2,
+.companion-shell p {
+  margin: 0;
+}
+
+.companion-header {
+  width: min(1060px, 100%);
+  margin: 0 auto 28px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.companion-header h1 {
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  letter-spacing: -0.04em;
+}
+
+.companion-header-body > p:last-child {
+  max-width: 680px;
+  margin-top: 7px;
+  color: #626863;
+  line-height: 1.55;
+}
+
+.locale-selector {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #626863;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.locale-selector select {
+  border: 1px solid rgba(35, 42, 38, 0.15);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #232a26;
+  font: inherit;
+  padding: 7px 28px 7px 10px;
+}
+
+.companion-mark {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: #fff;
+  background: #a74227;
+  font-family: "Kohinoor Devanagari", "Noto Sans Devanagari", sans-serif;
+  font-size: 1.65rem;
+  font-weight: 700;
+  box-shadow: 0 9px 28px rgba(113, 45, 27, 0.2);
+}
+
+.eyebrow {
+  color: #a74227;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.companion-status,
+.companion-card {
+  border: 1px solid rgba(35, 42, 38, 0.1);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 18px 48px rgba(35, 42, 38, 0.06);
+}
+
+.companion-status {
+  width: min(1060px, 100%);
+  margin: 0 auto 18px;
+  padding: 22px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.companion-status > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.companion-status h2,
+.companion-card h2 {
+  font-size: 1rem;
+  letter-spacing: -0.015em;
+}
+
+.companion-status p,
+.card-title p {
+  margin-top: 4px;
+  color: #6b716d;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.status-dot {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+  border-radius: 50%;
+  background: #b6bab7;
+  box-shadow: 0 0 0 5px rgba(182, 186, 183, 0.18);
+}
+
+.status-dot--ok {
+  background: #2d8a5f;
+  box-shadow: 0 0 0 5px rgba(45, 138, 95, 0.14);
+}
+
+.companion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.companion-actions button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid #a74227;
+  border-radius: 9px;
+  color: #fff;
+  background: #a74227;
+  font-size: 0.8rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.companion-actions button.secondary {
+  border-color: #d9dcd9;
+  color: #343a36;
+  background: #fff;
+}
+
+.companion-actions button:focus-visible,
+.preference-row input:focus-visible {
+  outline: 3px solid rgba(57, 113, 205, 0.3);
+  outline-offset: 2px;
+}
+
+.companion-columns {
+  width: min(1060px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.85fr);
+  gap: 18px;
+}
+
+.companion-card {
+  padding: 24px;
+  border-radius: 18px;
+}
+
+.card-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e8e9e7;
+}
+
+.card-title > svg {
+  color: #a74227;
+}
+
+.preference-list {
+  display: grid;
+}
+
+.mode-selector {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #edeeec;
+}
+
+.mode-selector span {
+  display: grid;
+  gap: 3px;
+}
+
+.mode-selector small {
+  color: #727873;
+}
+
+.mode-selector select {
+  max-width: 230px;
+  min-height: 34px;
+  border: 1px solid #d9dcd9;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 8px;
+}
+
+.preference-row {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid #edeeec;
+}
+
+.preference-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.preference-row strong {
+  font-size: 0.9rem;
+}
+
+.preference-row small {
+  color: #727873;
+  line-height: 1.4;
+}
+
+.preference-row input {
+  width: 36px;
+  height: 20px;
+  accent-color: #a74227;
+}
+
+.excluded-apps {
+  display: grid;
+  gap: 8px;
+  padding: 15px 0 4px;
+}
+
+.excluded-apps span {
+  display: grid;
+  gap: 3px;
+}
+
+.excluded-apps small {
+  color: #727873;
+}
+
+.excluded-apps input {
+  min-height: 36px;
+  border: 1px solid #d9dcd9;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #fff;
+}
+
+.save-notice {
+  min-height: 1.25em;
+  padding-top: 12px;
+  color: #626863;
+  font-size: 0.8rem;
+}
+
+.privacy-card ul {
+  margin: 20px 0;
+  padding-left: 20px;
+  color: #4f5651;
+  font-size: 0.86rem;
+  line-height: 1.65;
+}
+
+.mode-note {
+  display: grid;
+  gap: 6px;
+  padding: 15px;
+  border-radius: 12px;
+  color: #61301f;
+  background: #f8eae4;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.update-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 15px;
+  border: 1px solid #e2e4e1;
+  border-radius: 12px;
+  color: #4f5651;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.update-panel button {
+  min-height: 34px;
+  border: 1px solid #d4d8d4;
+  border-radius: 8px;
+  color: #343a36;
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 820px) {
+  .companion-status {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .companion-actions {
+    justify-content: flex-start;
+  }
+
+  .companion-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .companion-shell {
+    padding: 22px 14px;
+  }
+
+  .companion-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .locale-selector {
+    margin-left: 70px;
+  }
+
+  .companion-mark {
+    width: 52px;
+    height: 52px;
+    flex-basis: 52px;
+  }
+}

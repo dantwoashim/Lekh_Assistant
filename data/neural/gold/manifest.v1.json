@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "suiteVersion": "v1",
+  "status": "phase1-foundation-seeded",
+  "note": "These seed rows prove schema, leakage checks, required-case coverage, and safety semantics. They are not a substitute for the production human-reviewed row counts.",
+  "reviewTierPolicy": {
+    "contract-seed": "Project-internal seed rows used to prove the evaluation contract and required safety cases. They are not production accuracy evidence.",
+    "native-speaker-reviewed": "A Nepali native speaker has reviewed expected and acceptable outputs.",
+    "linguist-reviewed": "A Nepali computational-linguistics reviewer has reviewed category, ambiguity, and normalization policy.",
+    "dual-reviewed": "Native speaker and linguist review are both complete.",
+    "adjudicated-gold": "Conflicting reviews have been adjudicated and frozen for release metrics."
+  },
+  "suites": [
+    {
+      "id": "romanized-token",
+      "path": "data/neural/gold/romanized-nepali-token-gold.v1.jsonl",
+      "category": "romanized-token",
+      "foundationMinimumRows": 7,
+      "productionMinimumRows": 50000
+    },
+    {
+      "id": "chat-convention",
+      "path": "data/neural/gold/chat-convention-gold.v1.jsonl",
+      "category": "chat-convention",
+      "foundationMinimumRows": 5,
+      "productionMinimumRows": 10000
+    },
+    {
+      "id": "names",
+      "path": "data/neural/gold/names-gold.v1.jsonl",
+      "category": "name",
+      "foundationMinimumRows": 5,
+      "productionMinimumRows": 10000
+    },
+    {
+      "id": "ambiguity",
+      "path": "data/neural/gold/ambiguity-gold.v1.jsonl",
+      "category": "ambiguity",
+      "foundationMinimumRows": 5,
+      "productionMinimumRows": 5000
+    },
+    {
+      "id": "non-nepali-pass-through",
+      "path": "data/neural/gold/non-nepali-pass-through-gold.v1.jsonl",
+      "category": "non-nepali-pass-through",
+      "foundationMinimumRows": 5,
+      "productionMinimumRows": 5000
+    },
+    {
+      "id": "protected-token",
+      "path": "data/neural/gold/protected-token-gold.v1.jsonl",
+      "category": "protected-token",
+      "foundationMinimumRows": 5,
+      "productionMinimumRows": 5000
+    },
+    {
+      "id": "adversarial-safety",
+      "path": "data/neural/gold/adversarial-neural-tail-gold.v1.jsonl",
+      "category": "adversarial-safety",
+      "foundationMinimumRows": 5,
+      "productionMinimumRows": 2000
+    }
+  ],
+  "requiredCases": {
+    "vato": "बाटो",
+    "bato": "बाटो",
+    "baato": "बाटो",
+    "chha": "छ",
+    "cha": "छ",
+    "xa": "छ",
+    "xaina": "छैन"
+  }
+}

@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "LekhInputMethod",
+  defaultLocalization: "en",
   platforms: [.macOS(.v13)],
   products: [
     .library(name: "LekhInputMethod", targets: ["LekhInputMethod"]),
@@ -19,6 +20,7 @@ let package = Package(
         "atomic-install-swap.swift",
         "Info.plist",
         "PkgInfo",
+        "Resources",
         "install-dev.sh",
         "lekh_imk_contract.md",
         "macosImkSource.test.ts",
@@ -32,18 +34,19 @@ let package = Package(
       ],
       sources: [
         "LekhCandidatePanel.swift",
+        "LekhInlinePreviewPanel.swift",
         "LekhCandidateController.swift",
         "LekhDictionaryPackVerifier.swift",
         "LekhDictionaryPackWatcher.swift",
         "LekhDiagnostics.swift",
         "LekhFont.swift",
         "LekhInputController.swift",
+        "LekhKeyboardLayoutTranslator.swift",
         "LekhLocalization.swift",
         "LekhMetricReporter.swift",
         "LekhNativePreferences.swift",
-        "LekhNeuralTransliterator.swift",
         "LekhPreferencesWindow.swift",
-        "LekhXpcClient.swift"
+        "LekhEngineCore.swift"
       ],
       linkerSettings: [
         .linkedLibrary("sqlite3")

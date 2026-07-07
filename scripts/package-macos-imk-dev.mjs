@@ -31,6 +31,8 @@ const executableName = "LekhInputMethodApp";
 const iconSource = join(root, "build", "icon.icns");
 const runtimeJsonOutputPath = join(releaseDir, "runtime-suggestions.sanitized.json");
 const runtimeBinaryOutputPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
+const runtimeJsonBundlePath = join(appBundle, "Contents", "Resources", "runtime-suggestions.json");
+const engineContractBundlePath = join(appBundle, "Contents", "Resources", "lekh-engine-contract.v1.json");
 const universalExecutable = join(releaseDir, `${executableName}.universal`);
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const archs = (process.env.LEKH_MAC_ARCHS ?? "arm64,x86_64")
@@ -38,6 +40,10 @@ const archs = (process.env.LEKH_MAC_ARCHS ?? "arm64,x86_64")
   .map((arch) => arch.trim())
   .filter(Boolean);
 const signingIdentity = process.env.LEKH_MAC_DEVELOPER_ID || "-";
+const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+const shortVersion = process.env.LEKH_VERSION || packageVersion.match(/^\d+\.\d+\.\d+/)?.[0];
+const gitCount = spawnSync("git", ["rev-list", "--count", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+const buildNumber = process.env.LEKH_BUILD_NUMBER || gitCount;
 const toolchainCacheDir = join(root, ".build-cache", "macos-toolchain");
 const toolchainEnv = {
   ...process.env,
@@ -156,6 +162,22 @@ const swiftPrefixMapArgs = [
   `${root}=.`
 ];
 
+const behaviorProbe = run(
+  "native-behavior-performance-probe",
+  "swift",
+  ["run", "--configuration", "release", "LekhInputMethodBehaviorProbe"],
+  { cwd: skeletonDir }
+);
+const p99Match = behaviorProbe.stdout.match(/native-deterministic-p99-ns=(\d+)/);
+if (!p99Match || Number(p99Match[1]) >= 5_000_000) {
+  finish("failed", {
+    step: "native-behavior-performance-probe",
+    reason: "Full deterministic processKey p99 must be below 5 ms.",
+    stdout: behaviorProbe.stdout
+  }, 1);
+}
+const deterministicP99Nanoseconds = Number(p99Match[1]);
+
 const archExecutables = [];
 for (const arch of archs) {
   run(
@@ -197,6 +219,24 @@ mkdirSync(join(appBundle, "Contents", "Resources", "ne.lproj"), { recursive: tru
 mkdirSync(join(appBundle, "Contents", "Frameworks"), { recursive: true });
 
 copyFileSync(join(skeletonDir, "Info.plist"), join(appBundle, "Contents", "Info.plist"));
+if (!shortVersion || !/^\d+\.\d+\.\d+$/.test(shortVersion) || !/^[1-9]\d*$/.test(buildNumber)) {
+  finish("failed", {
+    step: "version",
+    reason: "LEKH_VERSION must be semantic x.y.z and LEKH_BUILD_NUMBER must be a positive integer.",
+    shortVersion,
+    buildNumber
+  }, 1);
+}
+run("set-short-version", "/usr/libexec/PlistBuddy", [
+  "-c",
+  `Set :CFBundleShortVersionString ${shortVersion}`,
+  join(appBundle, "Contents", "Info.plist")
+]);
+run("set-build-number", "/usr/libexec/PlistBuddy", [
+  "-c",
+  `Set :CFBundleVersion ${buildNumber}`,
+  join(appBundle, "Contents", "Info.plist")
+]);
 if (process.env.LEKH_PACK_ED25519_PUBLIC_KEY_BASE64) {
   run("set-pack-public-key", "/usr/libexec/PlistBuddy", [
     "-c",
@@ -241,27 +281,19 @@ const binaryCompile = run(
     "--output",
     runtimeBinaryOutputPath,
     "--report",
-    join(root, "reports", "runtime-lexicon-binary-report.json")
+    join(root, "reports", "runtime-lexicon-binary-report.json"),
+    "--include-phrases",
+    "0"
   ]
 );
-const neuralModelSource = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
-const neuralModelManifestSource = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
-const neuralModelPackaged = existsSync(neuralModelSource);
-if (neuralModelPackaged) {
-  run("copy-neural-model", "ditto", [
-    "--norsrc",
-    "--noextattr",
-    "--noacl",
-    neuralModelSource,
-    join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.mlmodelc")
-  ]);
-  if (existsSync(neuralModelManifestSource)) {
-    copyFileSync(
-      neuralModelManifestSource,
-      join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.manifest.json")
-    );
-  }
-}
+copyFileSync(runtimeJsonOutputPath, runtimeJsonBundlePath);
+copyFileSync(
+  join(root, "data", "engine", "lekh-engine-contract.v1.json"),
+  engineContractBundlePath
+);
+// Neural fallback is deliberately absent until a production-eligible,
+// open-vocabulary model and asynchronous invocation path both pass release gates.
+const neuralModelPackaged = false;
 
 if (existsSync(iconSource)) {
   copyFileSync(iconSource, join(appBundle, "Contents", "Resources", "Lekh.icns"));
@@ -277,6 +309,12 @@ writeFileSync(
     ""
   ].join("\n")
 );
+for (const language of ["en", "ne"]) {
+  copyFileSync(
+    join(skeletonDir, "Resources", `${language}.lproj`, "Localizable.strings"),
+    join(appBundle, "Contents", "Resources", `${language}.lproj`, "Localizable.strings")
+  );
+}
 writeFileSync(
   join(appBundle, "Contents", "Resources", "ne.lproj", "InfoPlist.strings"),
   [
@@ -323,6 +361,12 @@ if (entitlements.includes("com.apple.security.get-task-allow")) {
 if (!existsSync(runtimeBinaryOutputPath) || statSync(runtimeBinaryOutputPath).size > 5 * 1024 * 1024) {
   packagingFailures.push("Packaged runtime binary lexicon must exist and stay under 5 MB.");
 }
+if (!existsSync(runtimeJsonBundlePath) || statSync(runtimeJsonBundlePath).size === 0) {
+  packagingFailures.push("Packaged sanitized JSON is required for proofread rows.");
+}
+if (!existsSync(engineContractBundlePath) || statSync(engineContractBundlePath).size === 0) {
+  packagingFailures.push("Packaged canonical engine contract is required.");
+}
 if (strings.includes("@rpath/Sparkle.framework")) packagingFailures.push("IMK executable must not link Sparkle.framework.");
 
 if (packagingFailures.length > 0) {
@@ -346,10 +390,15 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-r
   archs: lipoInfo,
   fileInfo,
   sanitizedRuntimeJsonBytes: statSync(runtimeJsonOutputPath).size,
+  packagedRuntimeJsonBytes: statSync(runtimeJsonBundlePath).size,
+  engineContractBytes: statSync(engineContractBundlePath).size,
+  deterministicP99Nanoseconds,
   runtimeBinaryBytes: statSync(runtimeBinaryOutputPath).size,
   frequencyReport: "reports/nepali-frequency-model-report.json",
   sanitizerReport: "reports/runtime-suggestions-sanitizer-report.json",
   binaryLexiconReport: "reports/runtime-lexicon-binary-report.json",
   neuralModelPackaged,
+  shortVersion,
+  buildNumber,
   productionSigningRequired: signingIdentity === "-"
 }, 0);

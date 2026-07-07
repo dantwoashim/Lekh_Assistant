@@ -46,11 +46,11 @@ if (existsSync(placeholder) && readFileSync(placeholder, "utf8").includes("place
   finish(
     "blocked-native-implementation",
     {
-      reason: "macOS IMK source is still a placeholder. Implement IMKInputController, marked text, candidate UI, XPC client, install/enable/uninstall before claiming macOS native readiness.",
+      reason: "macOS IMK source is still a placeholder. Implement IMKInputController, marked text, candidate UI, an in-process fail-open engine, and install/enable/uninstall before claiming macOS native readiness.",
       requiredFiles: [
         "native/macos-imk/skeleton/LekhInputController.swift",
         "native/macos-imk/skeleton/LekhCandidateController.swift",
-        "native/macos-imk/skeleton/LekhXpcClient.swift"
+        "native/macos-imk/skeleton/LekhEngineCore.swift"
       ]
     },
     2

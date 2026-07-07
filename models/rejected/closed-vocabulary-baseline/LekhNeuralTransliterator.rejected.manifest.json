@@ -1,5 +1,5 @@
 {
-  "selectedArtifact": "lekh-small-coreml-student-v1",
+  "selectedArtifact": "lekh-small-coreml-student-v1-rejected",
   "runtime": "CoreML",
   "localOnly": true,
   "neuralTailOnly": true,

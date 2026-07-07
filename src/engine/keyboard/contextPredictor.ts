@@ -343,7 +343,7 @@ function scoreContextRow(
 
   const hintMatches = row.contextHints.filter((hint) => contextWindow.includes(hint));
   const domainMatches = row.domains.filter((domain) => activeDomains.has(domain));
-  if (!row.allowWithoutContext && hintMatches.length === 0 && domainMatches.length === 0) return undefined;
+  if (hintMatches.length === 0 && domainMatches.length === 0) return undefined;
 
   const coverage = Math.min(1, active.length / Math.max(row.romanized.length, 1));
   const contextBoost = Math.min(0.035, hintMatches.length * 0.012) + Math.min(0.025, domainMatches.length * 0.008);

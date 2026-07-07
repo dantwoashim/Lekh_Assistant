@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekh.local/schemas/lekh-neural-open-vocab-row.schema.json",
+  "title": "Lekh cleaned open-vocabulary neural dataset row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "split",
+    "action",
+    "input",
+    "target",
+    "acceptable",
+    "category",
+    "sourceIds",
+    "sourceTier",
+    "reviewTier",
+    "license",
+    "weight",
+    "rowHash"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^neural_open_vocab_[a-f0-9]{16}$"
+    },
+    "split": {
+      "enum": ["train", "dev", "test"]
+    },
+    "action": {
+      "enum": ["produce-candidate", "no-neural-candidate"]
+    },
+    "input": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "target": {
+      "type": ["string", "null"]
+    },
+    "acceptable": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "sourceTier": {
+      "enum": ["gold", "contract-seed", "licensed-public", "runtime-derived", "dictionary-derived", "safety-negative"]
+    },
+    "reviewTier": {
+      "type": "string",
+      "minLength": 1
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "weight": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "rowHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

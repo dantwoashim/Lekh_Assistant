@@ -93,7 +93,9 @@ try {
 
     const type = run("osascript", [
       "-e", 'tell application "TextEdit" to activate',
-      "-e", 'tell application "System Events" to keystroke "swasthya "'
+      "-e", 'tell application "System Events" to keystroke "swasthya"',
+      "-e", 'tell application "System Events" to key code 18',
+      "-e", 'tell application "System Events" to key code 49'
     ]);
     if (type.status !== 0) fail({ step: "type-text", stdout: type.stdout, stderr: type.stderr, attempt });
 
@@ -112,7 +114,7 @@ try {
 
   const report = writeReport("passed", {
     actual,
-    note: "Host-app smoke proves the unsigned dev IMK server receives real TextEdit key events and commits a Romanized-to-Unicode candidate. This does not yet prove Word/Chrome/WhatsApp coverage."
+    note: "Host-app smoke proves the dev IMK receives TextEdit key events, explicitly accepts candidate 1, and then inserts Space. It is not signed release or cross-app evidence."
   });
   console.log(JSON.stringify({ status: "passed", report: "reports/macos-imk-host-textedit-smoke.json", actual }, null, 2));
 } finally {

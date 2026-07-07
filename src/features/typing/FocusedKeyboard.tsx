@@ -20,29 +20,29 @@ interface Suggestion {
 
 type TextRange = [number, number];
 
-const MODES: Array<{ id: TypingMode; label: string; engineMode: Extract<KeyboardMode, "romanized" | "traditional">; placeholder: string }> = [
+const MODES: Array<{ id: TypingMode; label: string; engineMode: TypingMode; placeholder: string }> = [
   {
     id: "romanized-romanized",
     label: "Romanized-Romanized",
-    engineMode: "romanized",
+    engineMode: "romanized-romanized",
     placeholder: "swas"
   },
   {
     id: "romanized-traditional",
     label: "Romanized-Traditional",
-    engineMode: "romanized",
+    engineMode: "romanized-traditional",
     placeholder: "swasthya karyalaya"
   },
   {
     id: "traditional-traditional",
     label: "Traditional-Traditional",
-    engineMode: "traditional",
+    engineMode: "traditional-traditional",
     placeholder: "स्वा"
   },
   {
     id: "traditional-romanized",
     label: "Traditional-Romanized",
-    engineMode: "traditional",
+    engineMode: "traditional-romanized",
     placeholder: "स्वास्थ्य"
   }
 ];
@@ -74,7 +74,7 @@ const ROMANIZED_SOFT_BOUNDARY_WORDS = new Set([
 export function FocusedKeyboard() {
   const engine = useMemo(() => createKeyboardEngine(), []);
   const [mode, setMode] = useState<TypingMode>("romanized-traditional");
-  const [sessionId, setSessionId] = useState<SessionId>(() => engine.beginSession(contextFor("romanized")));
+  const [sessionId, setSessionId] = useState<SessionId>(() => engine.beginSession(contextFor("romanized-traditional")));
   const [input, setInput] = useState("");
   const [update, setUpdate] = useState<CandidateUpdate>(() => engine.updateComposition(sessionId, "", 0));
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -319,7 +319,7 @@ export function FocusedKeyboard() {
   );
 }
 
-function contextFor(mode: Extract<KeyboardMode, "romanized" | "traditional">) {
+function contextFor(mode: TypingMode) {
   return {
     ...defaultTypingContext(mode),
     activeDomains: ACTIVE_DOMAINS,
@@ -372,10 +372,12 @@ function suggestionsForMode(update: CandidateUpdate, mode: TypingMode): Suggesti
 
   if (mode === "traditional-romanized") {
     return dedupeSuggestions(
-      update.candidates
-        .map((candidate) => candidate.label)
-        .filter((label): label is string => Boolean(label && label !== "preserve" && /[a-z]/i.test(label)))
-        .map((label, index) => ({ id: `traditional-romanized-${index}-${label}`, text: label }))
+      update.candidates.flatMap((candidate, index) => {
+        const text = candidate.type === "romanized-helper" ? candidate.text : candidate.label;
+        return text && text !== "preserve" && /[a-z]/i.test(text)
+          ? [{ id: `traditional-romanized-${index}-${text}`, text }]
+          : [];
+      })
     );
   }
 

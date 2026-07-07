@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "modes": [
+    "romanized-romanized",
+    "romanized-traditional",
+    "traditional-traditional",
+    "traditional-romanized"
+  ],
+  "candidatePolicy": {
+    "maximumVisible": 8,
+    "singleTokenMayExpandToPhrase": false,
+    "programmaticSelectionMayCommit": false
+  },
+  "commitPolicy": {
+    "Space": "raw-with-space-unless-explicit-selection",
+    "Enter": "raw-with-newline-unless-explicit-selection",
+    "Tab": "pass-through-unless-explicit-selection",
+    "Escape": "preserve-raw"
+  },
+  "hotPathPolicy": {
+    "networkAllowed": false,
+    "synchronousXpcAllowed": false,
+    "synchronousDatabaseAllowed": false,
+    "deterministicP99Milliseconds": 5
+  },
+  "neuralPolicy": {
+    "requiresOpenVocabulary": true,
+    "requiresProductionEligibility": true,
+    "requiresAsynchronousInvocation": true
+  }
+}

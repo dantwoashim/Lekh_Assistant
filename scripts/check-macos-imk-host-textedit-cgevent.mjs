@@ -97,7 +97,7 @@ try {
 import CoreGraphics
 import Foundation
 let source = CGEventSource(stateID: .hidSystemState)
-let keyCodes: [CGKeyCode] = [1, 13, 0, 1, 17, 4, 16, 0, 49]
+let keyCodes: [CGKeyCode] = [1, 13, 0, 1, 17, 4, 16, 0, 18, 49]
 for code in keyCodes {
   let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true)
   let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
