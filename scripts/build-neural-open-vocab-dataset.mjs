@@ -10,6 +10,8 @@ const production = process.argv.includes("--production");
 const registryPath = join(root, "data", "neural", "sources.v1.json");
 const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v1.json");
 const legacyDatasetDir = join(root, "data", "generated", "neural-transliteration");
+const privateSyubrajPath = join(root, "data", "private", "neural", "syubraj-roman2nepali-transliteration", "syubraj-roman2nepali-transliteration.tsv");
+const privateSyubrajRowLimit = Number(process.env.LEKH_NEURAL_SYUBRAJ_ROW_LIMIT ?? "1200000");
 const outDir = join(root, "data", "generated", "neural-open-vocab");
 const reportPath = join(root, "reports", production ? "neural-open-vocab-dataset-production-report.json" : "neural-open-vocab-dataset-report.json");
 
@@ -27,6 +29,7 @@ const sources = new Map((registry?.sources ?? []).map((source) => [source.id, so
 validateRegistry(registry);
 loadGoldRows(goldManifest);
 loadLegacyTsvRows();
+loadPrivateSyubrajRows();
 
 const rows = [...rowsByKey.values()].sort((a, b) => a.id.localeCompare(b.id));
 const splitRows = {
@@ -146,6 +149,69 @@ function loadLegacyTsvRows() {
         weight: source.tier === "dictionary-derived" ? 1.4 : 1.8
       }, `${relative(root, path)}:${lineIndex + 2}`);
     }
+  }
+}
+
+function loadPrivateSyubrajRows() {
+  if (!existsSync(privateSyubrajPath)) {
+    if (production) {
+      failures.push("Production open-vocabulary dataset requires data/private/neural/syubraj-roman2nepali-transliteration/syubraj-roman2nepali-transliteration.tsv. Run npm run neural:source:syubraj.");
+    } else {
+      warnings.push("Private syubraj import is missing; run npm run neural:source:syubraj to add the 2.4M-row public source locally.");
+    }
+    return;
+  }
+  const sourceId = "syubraj-roman2nepali-transliteration";
+  const source = sources.get(sourceId);
+  if (!source) {
+    failures.push(`Source registry missing ${sourceId}.`);
+    return;
+  }
+  if (!source.allowedForOpenVocabTokenTraining) {
+    failures.push(`${sourceId} must be allowed for open-vocabulary token training.`);
+    return;
+  }
+  const lines = readLines(privateSyubrajPath);
+  const header = lines.shift()?.split("\t") ?? [];
+  const romanizedIndex = header.indexOf("romanized");
+  const devanagariIndex = header.indexOf("devanagari");
+  const sourceIndex = header.indexOf("source");
+  if (romanizedIndex < 0 || devanagariIndex < 0 || sourceIndex < 0) {
+    failures.push(`${relative(root, privateSyubrajPath)} must have romanized/devanagari/source columns.`);
+    return;
+  }
+  if (!Number.isInteger(privateSyubrajRowLimit) || privateSyubrajRowLimit < 1_000_000) {
+    failures.push("LEKH_NEURAL_SYUBRAJ_ROW_LIMIT must be an integer >= 1,000,000 when the private syubraj source is present.");
+    return;
+  }
+  let imported = 0;
+  for (const [lineIndex, line] of lines.entries()) {
+    if (imported >= privateSyubrajRowLimit) break;
+    const columns = line.split("\t");
+    const rowSourceId = columns[sourceIndex];
+    if (rowSourceId !== sourceId) {
+      reject(`unexpected-private-source:${rowSourceId || "<empty>"}`, 1);
+      continue;
+    }
+    const input = columns[romanizedIndex];
+    const target = columns[devanagariIndex];
+    addCleanRow({
+      action: "produce-candidate",
+      input,
+      target,
+      acceptable: [target],
+      split: stableSplitForInput(input),
+      category: "romanized-token",
+      sourceIds: [sourceId],
+      sourceTier: "licensed-public",
+      reviewTier: "silver-public-transliteration",
+      license: source.license,
+      weight: 1.2
+    }, `${relative(root, privateSyubrajPath)}:${lineIndex + 2}`);
+    imported += 1;
+  }
+  if (lines.length > imported) {
+    warnings.push(`Private syubraj source has ${lines.length} rows; open-vocab builder used the first ${imported} rows for bounded-memory production gating. Set LEKH_NEURAL_SYUBRAJ_ROW_LIMIT to raise this.`);
   }
 }
 
@@ -380,6 +446,7 @@ function cleaningPolicy() {
     rejectLatinOutputs: true,
     rejectPhraseSources: true,
     splitPolicy: "stable hash by normalized input, with gold split pinned first",
+    privateSyubrajRowLimit,
     noNetworkFetch: true,
     rawUpstreamDataCommitted: false
   };
@@ -400,6 +467,10 @@ function finish(status, exitCode) {
     datasetDir: "data/generated/neural-open-vocab",
     manifest: existsSync(manifestPath) ? "data/generated/neural-open-vocab/manifest.json" : null,
     sourceRegistry: "data/neural/sources.v1.json",
+    privateSources: {
+      syubraj: existsSync(privateSyubrajPath) ? relative(root, privateSyubrajPath) : null,
+      syubrajRowLimit: privateSyubrajRowLimit
+    },
     rowSchema: "data/neural/schema/lekh-neural-open-vocab-row.schema.json",
     counts: Object.fromEntries(Object.entries(splitRows).map(([split, value]) => [split, value.length])),
     totalRows: rows.length,

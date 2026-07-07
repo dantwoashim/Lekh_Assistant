@@ -74,6 +74,7 @@ The downloader records byte count, SHA256, and source metadata. These files are 
 Run the source gate:
 
 ```bash
+npm run neural:source:syubraj
 npm run check:neural-contract
 npm run check:neural-gold
 npm run check:neural-open-vocab-data
@@ -86,6 +87,7 @@ Run the full neural readiness gate:
 npm run neural:student:build
 npm run neural:dataset
 npm run neural:open-vocab:dataset
+npm run check:neural-phase0-10
 npm run check:neural-transliteration
 ```
 
@@ -98,9 +100,26 @@ npm run check:neural-open-vocab-data:production
 
 These are expected to fail until real reviewed rows and required licensed/public local imports replace the Phase 1 contract seeds and local silver-only dataset.
 
+Phase 3-9 are now executable repo gates:
+
+```bash
+npm run neural:phase3:distillation
+npm run neural:phase4:training-contract
+npm run neural:phase5:evaluate
+npm run neural:phase5:benchmark
+npm run neural:phase6:native-integration
+npm run neural:phase7:review-intake
+npm run neural:phase8:training-run
+npm run neural:phase9:promotion
+npm run neural:phase10:sota
+```
+
+In dev, Phase 3-10 prove the distillation/training/evaluation/benchmark/native/review/promotion/SOTA guard machinery is complete. They do not claim a production neural model exists. Production remains blocked until the required reviewed data imports, real model predictions, two-device Core ML measurements, trained checkpoint, and verified production manifest are present.
+
 For production:
 
 ```bash
+npm run check:neural-phase0-10:production
 node scripts/check-neural-model-selection.mjs --production
 node scripts/check-neural-transliteration-readiness.mjs --production
 ```

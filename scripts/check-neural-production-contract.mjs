@@ -10,7 +10,19 @@ const reportPath = join(root, "reports", "neural-production-contract-report.json
 const requiredFiles = [
   "docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md",
   "data/neural/schema/lekh-neural-manifest.schema.json",
-  "data/neural/eval/README.md"
+  "data/neural/eval/README.md",
+  "data/neural/training/open-vocab-seq2seq-v1.config.json",
+  "scripts/check-neural-distillation-plan.mjs",
+  "scripts/check-neural-training-contract.mjs",
+  "scripts/evaluate-neural-open-vocab-model.mjs",
+  "scripts/benchmark-neural-coreml-device.mjs",
+  "scripts/check-neural-native-integration.mjs",
+  "data/neural/review/README.md",
+  "data/neural/review/private-source-manifest.example.json",
+  "scripts/check-neural-review-intake.mjs",
+  "scripts/prepare-neural-training-run.mjs",
+  "scripts/check-neural-production-promotion.mjs",
+  "scripts/check-neural-sota-worldclass.mjs"
 ];
 
 const failures = [];
@@ -32,6 +44,18 @@ requireText(specText, "no inference in secure fields", "spec must forbid secure-
 requireText(specText, "autoCommitEligible", "spec must define candidate acceptance safety");
 requireText(specText, "generation IDs", "spec must require stale async-result rejection");
 requireText(specText, "npm run check:neural-contract", "spec must define its proof command");
+requireText(specText, "npm run check:neural-phase3-6", "spec must define the aggregate Phase 3-6 proof command");
+requireText(specText, "npm run check:neural-phase3-9", "spec must define the aggregate Phase 3-9 proof command");
+requireText(specText, "npm run check:neural-phase0-10", "spec must define the aggregate Phase 0-10 proof command");
+requireText(specText, "node scripts/check-neural-distillation-plan.mjs --production", "spec must define the Phase 3 production proof command");
+requireText(specText, "node scripts/check-neural-training-contract.mjs --production", "spec must define the Phase 4 production proof command");
+requireText(specText, "node scripts/evaluate-neural-open-vocab-model.mjs --production", "spec must define the Phase 5 evaluation production proof command");
+requireText(specText, "node scripts/benchmark-neural-coreml-device.mjs --production", "spec must define the Phase 5 benchmark production proof command");
+requireText(specText, "node scripts/check-neural-native-integration.mjs --production", "spec must define the Phase 6 production proof command");
+requireText(specText, "node scripts/check-neural-review-intake.mjs --production", "spec must define the Phase 7 production proof command");
+requireText(specText, "node scripts/prepare-neural-training-run.mjs --production", "spec must define the Phase 8 production proof command");
+requireText(specText, "node scripts/check-neural-production-promotion.mjs --production", "spec must define the Phase 9 production proof command");
+requireText(specText, "node scripts/check-neural-sota-worldclass.mjs --production", "spec must define the Phase 10 production proof command");
 
 for (const suite of [
   "romanized-nepali-token-gold.v1.jsonl",

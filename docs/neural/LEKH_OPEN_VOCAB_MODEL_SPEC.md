@@ -313,6 +313,7 @@ reports/neural-open-vocab-dataset-report.json
 The proof command is:
 
 ```bash
+npm run neural:source:syubraj
 npm run check:neural-open-vocab-data
 ```
 
@@ -335,3 +336,307 @@ npm run check:neural-open-vocab-data:production
 ```
 
 The production command must fail until required large licensed/public and human-reviewed sources are imported locally and the dataset reaches the production row-count gates.
+
+## 15. Phase 3 distillation plan proof
+
+Phase 3 is complete when the repo can prove the offline teacher and distillation boundary without downloading or packaging a fake production model:
+
+```txt
+data/neural/training/open-vocab-seq2seq-v1.config.json
+scripts/check-neural-distillation-plan.mjs
+reports/neural-distillation-plan-report.json
+```
+
+The proof command is:
+
+```bash
+npm run neural:phase3:distillation
+```
+
+The Phase 3 gate must:
+
+- read the Phase 2 generated dataset manifest;
+- verify `ai4bharat-indicxlit` is teacher-only and not a training row source;
+- verify the production-required source ids are represented in the source registry;
+- allow the teacher checkpoint to be absent in dev while warning clearly;
+- fail production until the teacher manifest exists and required production sources are imported.
+
+Production proof is intentionally separate:
+
+```bash
+node scripts/check-neural-distillation-plan.mjs --production
+```
+
+## 16. Phase 4 training and Core ML export contract proof
+
+Phase 4 is complete when the production student architecture, export paths, and manifest/digest checks are executable:
+
+```txt
+data/neural/training/open-vocab-seq2seq-v1.config.json
+scripts/check-neural-training-contract.mjs
+reports/neural-training-contract-report.json
+```
+
+The proof command is:
+
+```bash
+npm run neural:phase4:training-contract
+```
+
+The Phase 4 gate must:
+
+- require `lekh-open-vocab-seq2seq-v1`;
+- require Core ML, local-only, neural-tail-only output;
+- require open-vocabulary GRU/Transformer seq2seq configuration;
+- require beam search, no whitespace output, no Latin output, and no auto-commit eligibility;
+- require a 1M-5M parameter budget and a <= 16 MB compiled model budget;
+- flag the existing closed-vocabulary model directory as disconnected until a matching production manifest and digest exist.
+
+Production proof is intentionally separate:
+
+```bash
+node scripts/check-neural-training-contract.mjs --production
+```
+
+## 17. Phase 5 evaluation and device benchmark proof
+
+Phase 5 is complete when evaluation and latency evidence can be generated from real model outputs:
+
+```txt
+scripts/evaluate-neural-open-vocab-model.mjs
+scripts/benchmark-neural-coreml-device.mjs
+reports/neural-open-vocab-evaluation.json
+reports/neural-coreml-device-benchmark.json
+```
+
+The proof commands are:
+
+```bash
+npm run neural:phase5:evaluate
+npm run neural:phase5:benchmark
+```
+
+Without a model, the dev commands pass only as harness proof and mark the reports as non-production evidence. Production requires:
+
+```bash
+node scripts/evaluate-neural-open-vocab-model.mjs --production --predictions <model-predictions.jsonl>
+node scripts/benchmark-neural-coreml-device.mjs --production --measurements <device-measurements.json>
+```
+
+The prediction JSONL rows must contain:
+
+```json
+{"id":"gold-row-id","candidates":["देवनागरी","..."]}
+```
+
+The device measurement JSON must contain packaged-app measurements for both Apple Silicon and Intel:
+
+```json
+{
+  "devices": [
+    {
+      "name": "Apple Silicon benchmark Mac",
+      "macOS": "26",
+      "architecture": "arm64",
+      "packagedApp": true,
+      "p50Ms": 0.8,
+      "p95Ms": 1.7,
+      "p99Ms": 2.6,
+      "secureFieldInferenceCount": 0
+    }
+  ]
+}
+```
+
+## 18. Phase 6 native integration and release guard proof
+
+Phase 6 is complete when native packaging and IMK source checks prove the model cannot be accidentally shipped or invoked before production evidence exists:
+
+```txt
+scripts/check-neural-native-integration.mjs
+reports/neural-native-integration-report.json
+```
+
+The proof command is:
+
+```bash
+npm run neural:phase6:native-integration
+```
+
+The Phase 6 dev gate must prove:
+
+- the old native `LekhNeuralTransliterator.swift` remains deleted;
+- the IMK diagnostics still say `neural=disabled-until-async-production-model`;
+- secure input checks and fail-open raw typing remain present;
+- dev packaging does not copy `LekhNeuralTransliterator.mlmodelc`;
+- candidate acceptance remains explicit.
+
+Production proof is intentionally separate:
+
+```bash
+node scripts/check-neural-native-integration.mjs --production
+```
+
+Production must fail until the disabled diagnostic is replaced by a verified async Core ML tail service backed by a production manifest, compiled model, evaluation report, and two-device benchmark.
+
+## 19. Aggregate Phase 3-6 proof
+
+The repo-level Phase 3-6 gate is:
+
+```bash
+npm run check:neural-phase3-6
+```
+
+The full neural dev readiness gate now includes Phase 0-6:
+
+```bash
+npm run check:neural-transliteration
+```
+
+The production Phase 3-6 command is expected to fail until real training data, model predictions, device measurements, and a verified Core ML artifact exist:
+
+```bash
+npm run check:neural-phase3-6:production
+```
+
+## 20. Phase 7 human review intake proof
+
+Phase 7 is complete when the repo defines the private reviewed-data intake contract:
+
+```txt
+data/neural/review/README.md
+data/neural/review/private-source-manifest.example.json
+scripts/check-neural-review-intake.mjs
+reports/neural-review-intake-report.json
+```
+
+The proof command is:
+
+```bash
+npm run neural:phase7:review-intake
+```
+
+Production proof is intentionally separate:
+
+```bash
+node scripts/check-neural-review-intake.mjs --production
+```
+
+Production must fail until private reviewed JSONL files exist for `human-reviewed-lekh-gold-v1`, `lekh-chat-conventions-v1`, and `lekh-name-lexicon-v1`, with sufficient row counts, categories, review tiers, and project-owned licensing.
+
+## 21. Phase 8 training-run readiness proof
+
+Phase 8 is complete when the repo can prove that the generated open-vocabulary dataset and production architecture config are ready for a real training job:
+
+```txt
+scripts/prepare-neural-training-run.mjs
+reports/neural-training-run-readiness-report.json
+```
+
+The proof command is:
+
+```bash
+npm run neural:phase8:training-run
+```
+
+Production proof is intentionally separate:
+
+```bash
+node scripts/prepare-neural-training-run.mjs --production
+```
+
+Production must fail until `data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/training-report.json` and `checkpoint.pt` exist and match the current generated dataset manifest.
+
+## 22. Phase 9 promotion guard proof
+
+Phase 9 is complete when the repo has a single promotion guard that refuses to promote the model unless every earlier report and artifact is present:
+
+```txt
+scripts/check-neural-production-promotion.mjs
+reports/neural-production-promotion-report.json
+```
+
+The proof command is:
+
+```bash
+npm run neural:phase9:promotion
+```
+
+Production proof is intentionally separate:
+
+```bash
+node scripts/check-neural-production-promotion.mjs --production
+```
+
+Production promotion requires:
+
+- at least 1,000,000 cleaned rows;
+- Phase 7 reviewed-source production pass;
+- Phase 8 completed training run;
+- production evaluation pass;
+- production Core ML device benchmark pass;
+- production native integration pass;
+- `models/macos/LekhNeuralTransliterator.mlmodelc`;
+- `models/macos/LekhNeuralTransliterator.manifest.json`;
+- model selection and readiness reports.
+
+## 23. Aggregate Phase 3-9 proof
+
+The repo-level Phase 3-9 gate is:
+
+```bash
+npm run check:neural-phase3-9
+```
+
+The full neural dev readiness gate includes Phase 0-9:
+
+```bash
+npm run check:neural-transliteration
+```
+
+The production Phase 3-9 command is expected to fail until reviewed data, trained checkpoint, model predictions, device measurements, and verified Core ML promotion artifacts exist:
+
+```bash
+npm run check:neural-phase3-9:production
+```
+
+## 24. Phase 10 SOTA/world-class verification proof
+
+Phase 10 is complete when the repo has a final audit gate that checks Phase 0-9 reports, Level-5 truthfulness, model artifact existence, production manifest validity, generated dataset scale, native fail-open safety, and promotion-readiness evidence:
+
+```txt
+scripts/check-neural-sota-worldclass.mjs
+reports/neural-sota-worldclass-report.json
+```
+
+The proof command is:
+
+```bash
+npm run neural:phase10:sota
+```
+
+The aggregate Phase 0-10 dev command is:
+
+```bash
+npm run check:neural-phase0-10
+```
+
+Production proof is intentionally separate:
+
+```bash
+node scripts/check-neural-sota-worldclass.mjs --production
+```
+
+Production Phase 10 must fail unless the actual `lekh-open-vocab-seq2seq-v1` Core ML artifact, manifest, reviewed data, evaluation report, benchmark report, native integration report, and promotion report all exist and pass production criteria. If any of those are missing, the final verdict must be `production-neural-model-not-verified-no-artifact-or-production-evidence`.
+
+The full neural readiness command is:
+
+```bash
+npm run check:neural-transliteration
+```
+
+The full production command is expected to fail until real model evidence exists:
+
+```bash
+npm run check:neural-phase0-10:production
+```

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "phase": "phase7-human-review-intake",
+  "rawDataCommitted": false,
+  "sources": [
+    {
+      "id": "human-reviewed-lekh-gold-v1",
+      "path": "data/private/neural/review-sources/human-reviewed-lekh-gold-v1.jsonl",
+      "minimumRows": 50000,
+      "allowedCategories": ["romanized-token", "ambiguity", "adversarial-safety"],
+      "requiredReviewTiers": ["dual-reviewed", "adjudicated-gold"],
+      "license": "project-owned"
+    },
+    {
+      "id": "lekh-chat-conventions-v1",
+      "path": "data/private/neural/review-sources/lekh-chat-conventions-v1.jsonl",
+      "minimumRows": 10000,
+      "allowedCategories": ["chat-convention"],
+      "requiredReviewTiers": ["native-speaker-reviewed", "dual-reviewed", "adjudicated-gold"],
+      "license": "project-owned"
+    },
+    {
+      "id": "lekh-name-lexicon-v1",
+      "path": "data/private/neural/review-sources/lekh-name-lexicon-v1.jsonl",
+      "minimumRows": 10000,
+      "allowedCategories": ["name"],
+      "requiredReviewTiers": ["native-speaker-reviewed", "dual-reviewed", "adjudicated-gold"],
+      "license": "project-owned"
+    }
+  ],
+  "rowContract": "data/neural/schema/lekh-neural-gold-row.schema.json",
+  "notes": "Copy this file to data/private/neural/review-sources/manifest.json and keep private raw review rows out of git."
+}

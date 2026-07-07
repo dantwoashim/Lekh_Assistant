@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "phase": "phase4-training-export-contract",
+  "modelId": "lekh-open-vocab-seq2seq-v1",
+  "artifact": {
+    "compiledModel": "models/macos/LekhNeuralTransliterator.mlmodelc",
+    "manifest": "models/macos/LekhNeuralTransliterator.manifest.json",
+    "runtime": "CoreML",
+    "localOnly": true,
+    "neuralTailOnly": true
+  },
+  "architecture": {
+    "family": "gru-encoder-decoder-seq2seq",
+    "openVocabulary": true,
+    "tokenization": "unicode-grapheme-character",
+    "encoderLayers": 2,
+    "decoderLayers": 2,
+    "embeddingDim": 96,
+    "hiddenDim": 192,
+    "attention": "additive",
+    "dropout": 0.12,
+    "estimatedParameterCount": 2480000,
+    "minimumParameterCount": 1000000,
+    "maximumParameterCount": 5000000,
+    "maximumCompiledBytes": 16777216
+  },
+  "decoder": {
+    "type": "beam-search",
+    "beamWidth": 4,
+    "maxOutputGraphemes": 32,
+    "maximumCandidates": 8,
+    "rejectWhitespaceOutput": true,
+    "rejectLatinOutput": true,
+    "autoCommitEligible": false
+  },
+  "context": {
+    "previousWords": 2,
+    "languageModelRescorer": {
+      "enabled": true,
+      "source": "runtime-next-context-pack",
+      "weight": 0.12
+    }
+  },
+  "training": {
+    "datasetManifest": "data/generated/neural-open-vocab/manifest.json",
+    "requiredSources": [
+      "syubraj-roman2nepali-transliteration",
+      "human-reviewed-lekh-gold-v1",
+      "lekh-chat-conventions-v1",
+      "lekh-name-lexicon-v1"
+    ],
+    "teacherSources": [
+      "ai4bharat-indicxlit"
+    ],
+    "teacherPolicy": "offline-distillation-only-never-packaged",
+    "normalization": "NFC",
+    "splitPolicy": "stable-hash-by-normalized-input",
+    "loss": "label-smoothed-sequence-cross-entropy",
+    "optimizer": "adamw",
+    "earlyStoppingMetric": "dev-tail-top3-acceptable-accuracy",
+    "safetyNegatives": [
+      "protected-token-gold",
+      "non-nepali-pass-through-gold",
+      "adversarial-neural-tail-gold"
+    ]
+  },
+  "export": {
+    "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/checkpoint.pt",
+    "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlpackage",
+    "compiledModel": "models/macos/LekhNeuralTransliterator.mlmodelc",
+    "manifest": "models/macos/LekhNeuralTransliterator.manifest.json",
+    "reports": {
+      "dataset": "reports/neural-open-vocab-dataset-report.json",
+      "evaluation": "reports/neural-open-vocab-evaluation.json",
+      "benchmark": "reports/neural-coreml-device-benchmark.json",
+      "phase3": "reports/neural-distillation-plan-report.json",
+      "phase4": "reports/neural-training-contract-report.json",
+      "phase5": "reports/neural-open-vocab-evaluation.json",
+      "phase6": "reports/neural-native-integration-report.json"
+    }
+  },
+  "productionGates": {
+    "tailTop1Accuracy": 0.88,
+    "tailTop3Accuracy": 0.96,
+    "chatConventionTop1Accuracy": 0.92,
+    "chatConventionTop3Accuracy": 0.98,
+    "namesTop3Accuracy": 0.9,
+    "protectedFalseConversionRate": 0,
+    "singleTokenPhraseExpansionRate": 0,
+    "secureFieldInferenceCount": 0,
+    "p99Ms": 3,
+    "requiredDeviceArchitectures": [
+      "arm64",
+      "x86_64"
+    ]
+  }
+}
