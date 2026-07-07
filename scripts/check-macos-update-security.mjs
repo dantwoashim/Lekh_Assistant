@@ -18,7 +18,11 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 
 const production = args.has("production");
-const reportPath = args.get("report") ?? join(ROOT, "reports", "macos-update-security-report.json");
+const reportPath = args.get("report") ?? join(
+  ROOT,
+  "reports",
+  production ? "macos-update-security-production-report.json" : "macos-update-security-report.json"
+);
 const releaseDir = args.get("release-dir") ?? join(ROOT, "release", "native", "macos");
 const zipPath = args.get("zip") ?? join(releaseDir, "Lekh-Keyboard-Test-Installer.zip");
 const appcastPath = args.get("appcast") ?? join(releaseDir, "appcast.xml");
@@ -59,7 +63,7 @@ checkChecksums();
 checkPublicUpdateFeed();
 
 const report = {
-  status: failures.length === 0 ? "passed" : "failed",
+  status: failures.length === 0 ? production ? "passed-production" : "passed" : production ? "failed-production" : "failed",
   production,
   zip: relative(ROOT, zipPath),
   appcast: relative(ROOT, appcastPath),

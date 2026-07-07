@@ -29,11 +29,13 @@ const legacyAppBundle = join(releaseDir, "Lekh Keyboard.app");
 const legacyDevBundle = join(releaseDir, "Lekh Keyboard Dev.imkdevbundle");
 const executableName = "LekhInputMethodApp";
 const iconSource = join(root, "build", "icon.icns");
-const runtimeJsonOutputPath = join(releaseDir, "runtime-suggestions.sanitized.json");
+const legacyReleaseRuntimeJson = join(releaseDir, "runtime-suggestions.sanitized.json");
+const legacyReleaseUniversalExecutable = join(releaseDir, `${executableName}.universal`);
+const runtimeJsonOutputPath = join(buildReleaseDir, "runtime-suggestions.sanitized.json");
 const runtimeBinaryOutputPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
 const runtimeJsonBundlePath = join(appBundle, "Contents", "Resources", "runtime-suggestions.json");
 const engineContractBundlePath = join(appBundle, "Contents", "Resources", "lekh-engine-contract.v1.json");
-const universalExecutable = join(releaseDir, `${executableName}.universal`);
+const universalExecutable = join(buildReleaseDir, `${executableName}.universal`);
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const archs = (process.env.LEKH_MAC_ARCHS ?? "arm64,x86_64")
   .split(",")
@@ -154,6 +156,9 @@ mkdirSync(buildReleaseDir, { recursive: true });
 mkdirSync(toolchainEnv.CLANG_MODULE_CACHE_PATH, { recursive: true });
 mkdirSync(toolchainEnv.SWIFT_MODULE_CACHE_PATH, { recursive: true });
 rmSync(universalExecutable, { force: true });
+rmSync(runtimeJsonOutputPath, { force: true });
+rmSync(legacyReleaseUniversalExecutable, { force: true });
+rmSync(legacyReleaseRuntimeJson, { force: true });
 
 const swiftPrefixMapArgs = [
   "-Xswiftc",

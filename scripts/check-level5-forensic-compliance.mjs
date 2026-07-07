@@ -19,7 +19,7 @@ const files = {
   neuralSota: "reports/neural-sota-worldclass-report.json",
   neuralDataset: "reports/neural-open-vocab-dataset-report.json",
   qaMatrix: "reports/macos-imk-qa-matrix-report.json",
-  updateSecurity: "reports/macos-update-security-report.json"
+  updateSecurity: production ? "reports/macos-update-security-production-report.json" : "reports/macos-update-security-report.json"
 };
 
 const source = Object.fromEntries(Object.entries(files).map(([key, path]) => [key, readText(path, key === "qaMatrix" || key === "updateSecurity")]));
