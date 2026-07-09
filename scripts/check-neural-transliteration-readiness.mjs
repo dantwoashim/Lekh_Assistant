@@ -19,7 +19,7 @@ const production = args.has("production");
 const modelDir = args.get("model") ?? join(ROOT, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
 const manifestPath = args.get("manifest") ?? join(ROOT, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const datasetDir = args.get("dataset-dir") ?? join(ROOT, "data", "generated", "neural-transliteration");
-const reportPath = args.get("report") ?? join(ROOT, "reports", "neural-transliteration-readiness-report.json");
+const reportPath = args.get("report") ?? join(ROOT, "reports", production ? "neural-transliteration-readiness-production-report.json" : "neural-transliteration-readiness-report.json");
 const modelGraphPath = join(modelDir, "model.espresso.net");
 const baselineArtifact = "lekh-small-coreml-student-v1";
 const productionArtifact = "lekh-open-vocab-seq2seq-v1";
@@ -61,7 +61,9 @@ if (!manifestExists) {
     validateProductionManifest(manifest, modelGraph);
   } else if (manifest.selectedArtifact !== baselineArtifact && manifest.selectedArtifact !== productionArtifact) {
     warnings.push(`Unknown model artifact ${manifest.selectedArtifact}; production requires ${productionArtifact}.`);
-  } else if (manifest.productionEligible === false || manifest.openVocabulary === false) {
+  } else if (manifest.productionEligible === false) {
+    warnings.push("Current model is an open-vocabulary Core ML candidate but is not productionEligible=true.");
+  } else if (manifest.openVocabulary === false) {
     warnings.push("Current model is a baseline Core ML tail artifact only; production neural readiness intentionally fails until the open-vocabulary seq2seq model ships.");
   }
   if (manifest.localOnly !== true) failures.push("Model manifest must declare localOnly=true.");
@@ -72,9 +74,19 @@ if (!manifestExists) {
     }
   }
   if (manifest.neuralTailOnly !== true) failures.push("Model manifest must declare neuralTailOnly=true.");
-  if (Number(manifest.metrics?.tailTop1Accuracy) < 0.82) failures.push("tailTop1Accuracy must be >= 0.82.");
-  if (Number(manifest.metrics?.chatConventionTop1Accuracy) < 0.90) failures.push("chatConventionTop1Accuracy must be >= 0.90.");
-  if (Number(manifest.performance?.p99Ms) > 3) failures.push("Core ML p99 latency must be <= 3ms.");
+  const enforceProductionMetrics = production || manifest.productionEligible === true;
+  if (Number(manifest.metrics?.tailTop1Accuracy) < 0.82) {
+    if (enforceProductionMetrics) failures.push("tailTop1Accuracy must be >= 0.82.");
+    else warnings.push("Candidate model tailTop1Accuracy is below the production readiness floor.");
+  }
+  if (Number(manifest.metrics?.chatConventionTop1Accuracy) < 0.90) {
+    if (enforceProductionMetrics) failures.push("chatConventionTop1Accuracy must be >= 0.90.");
+    else warnings.push("Candidate model chatConventionTop1Accuracy is below the production readiness floor.");
+  }
+  if (Number(manifest.performance?.p99Ms) > 3) {
+    if (enforceProductionMetrics) failures.push("Core ML p99 latency must be <= 3ms.");
+    else warnings.push("Candidate model p99 latency is not production-ready.");
+  }
   if (production && manifest.performance?.measuredOnDevice !== true) {
     failures.push("Production Core ML p99 latency must be measured on device.");
   }

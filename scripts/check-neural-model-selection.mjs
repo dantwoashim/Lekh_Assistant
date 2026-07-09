@@ -16,7 +16,7 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 
 const production = args.has("production");
-const reportPath = args.get("report") ?? join(ROOT, "reports", "neural-model-selection-report.json");
+const reportPath = args.get("report") ?? join(ROOT, "reports", production ? "neural-model-selection-production-report.json" : "neural-model-selection-report.json");
 const manifestPath = args.get("manifest") ?? join(ROOT, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const modelDir = args.get("model") ?? join(ROOT, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
 const modelGraphPath = join(modelDir, "model.espresso.net");
@@ -157,7 +157,9 @@ if (manifestExists) {
     validateProductionModel(manifest, modelGraph);
   } else if (manifest.selectedArtifact !== shippingPlan.currentBaselineArtifact && manifest.selectedArtifact !== shippingPlan.finalProductionArtifact) {
     warnings.push(`Unknown transliteration artifact ${manifest.selectedArtifact}; production gates will require ${shippingPlan.finalProductionArtifact}.`);
-  } else if (manifest.productionEligible === false || manifest.openVocabulary === false) {
+  } else if (manifest.productionEligible === false) {
+    warnings.push("Current Core ML artifact is an open-vocabulary candidate but is not productionEligible=true; production neural gates intentionally remain blocked.");
+  } else if (manifest.openVocabulary === false) {
     warnings.push("Current Core ML artifact is a baseline tail model only; production neural gates intentionally fail until the open-vocabulary seq2seq model ships.");
   }
 } else if (production) {

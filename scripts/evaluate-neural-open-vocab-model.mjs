@@ -8,7 +8,7 @@ const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
 const production = args.has("production");
 const predictionsPath = args.get("predictions");
-const reportPath = args.get("report") ?? join(root, "reports", "neural-open-vocab-evaluation.json");
+const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-open-vocab-evaluation-production.json" : "neural-open-vocab-evaluation.json");
 const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v1.json");
 const datasetManifestPath = join(root, "data", "generated", "neural-open-vocab", "manifest.json");
 const failures = [];
@@ -143,7 +143,7 @@ function evaluate(rows, predictions) {
     if (bucketRows.length === 0 || predictions.size === 0) return 0;
     let hits = 0;
     for (const row of bucketRows) {
-      const acceptable = new Set(row.acceptableOutputs ?? []);
+      const acceptable = new Set(row.acceptableOutputs ?? row.acceptable ?? row.expected ?? []);
       const candidates = (predictions.get(row.id)?.candidates ?? []).slice(0, n).map(String);
       if (candidates.some((candidate) => acceptable.has(candidate))) hits += 1;
     }

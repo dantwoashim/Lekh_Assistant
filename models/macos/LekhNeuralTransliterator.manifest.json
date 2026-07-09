@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "selectedArtifact": "lekh-open-vocab-seq2seq-v1",
+  "runtime": "CoreML",
+  "localOnly": true,
+  "neuralTailOnly": true,
+  "productionEligible": false,
+  "architecture": "gru-encoder-decoder-seq2seq",
+  "openVocabulary": true,
+  "tokenization": "unicode-grapheme-character",
+  "decoder": "beam-search",
+  "beamSearch": {
+    "enabled": true,
+    "beamWidth": 4,
+    "maxOutputGraphemes": 32
+  },
+  "languageModelRescorer": {
+    "enabled": true,
+    "source": "runtime-next-context-pack",
+    "weight": 0.12
+  },
+  "contextWindowWords": 2,
+  "parameterCount": 1673243,
+  "modelBytes": 3460142,
+  "trainingSources": [
+    "syubraj-roman2nepali-transliteration",
+    "human-reviewed-lekh-gold-v1",
+    "lekh-chat-conventions-v1",
+    "lekh-name-lexicon-v1"
+  ],
+  "datasetReports": [
+    "reports/neural-open-vocab-dataset-report.json"
+  ],
+  "evaluationReports": [
+    "reports/neural-open-vocab-evaluation.json"
+  ],
+  "benchmarkReports": [
+    "reports/neural-coreml-device-benchmark.json"
+  ],
+  "metrics": {
+    "tailTop1Accuracy": 0.40875,
+    "tailTop3Accuracy": 0.645,
+    "chatConventionTop1Accuracy": 1.0,
+    "chatConventionTop3Accuracy": 1.0,
+    "namesTop3Accuracy": 0,
+    "protectedFalseConversionRate": 0,
+    "singleTokenPhraseExpansionRate": 0,
+    "secureFieldInferenceCount": 0
+  },
+  "performance": {
+    "p50Ms": 1.150396,
+    "p95Ms": 1.217354,
+    "p99Ms": 1.24661,
+    "targetP99Ms": 3,
+    "measuredOnDevice": true,
+    "devices": [
+      {
+        "name": "192.168.1.44",
+        "macOS": "26.2",
+        "architecture": "arm64",
+        "packagedApp": false,
+        "secureFieldInferenceCount": 0,
+        "p50Ms": 1.150396,
+        "p95Ms": 1.217354,
+        "p99Ms": 1.24661,
+        "artifact": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlpackage"
+      }
+    ]
+  },
+  "requiredCases": {
+    "vato": "बाटो",
+    "bato": "बाटो",
+    "baato": "बाटो",
+    "chha": "छ",
+    "cha": "छ",
+    "xa": "छ",
+    "xaina": "छैन"
+  },
+  "sha256": {
+    "compiledModel": "2ffee1c9f5df5a98fde728fd40050c4e299a0c354423598cbc88edb0f94ba1ab",
+    "sourceCheckpoint": "103f4a1669f0251f4f080254c6cce6d1cf45ab6730b47bfeeb818104a82afffe",
+    "trainingDatasetManifest": "19c367a26aa1dcaff2f75a6e7a48d25de8d8e7041f005ba9917b7e246aa0f792"
+  },
+  "limitations": [
+    "Not production-eligible until private human-reviewed Phase 7 sources meet required row counts.",
+    "Not production-eligible until evaluation is run from exported Core ML predictions on production gold.",
+    "Not production-eligible until packaged-app Core ML latency is measured on both arm64 and x86_64 Macs.",
+    "Not production-eligible until the native async Core ML tail service replaces disabled neural diagnostics."
+  ]
+}

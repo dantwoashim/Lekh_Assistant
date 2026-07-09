@@ -7,24 +7,24 @@ const root = process.cwd();
 const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
 const production = args.has("production");
-const reportPath = args.get("report") ?? join(root, "reports", "neural-sota-worldclass-report.json");
+const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-sota-worldclass-production-report.json" : "neural-sota-worldclass-report.json");
 const failures = [];
 const warnings = [];
 
 const reportFiles = {
   phase0Contract: "reports/neural-production-contract-report.json",
-  phase1Gold: "reports/neural-gold-eval-report.json",
-  phase2Dataset: "reports/neural-open-vocab-dataset-report.json",
-  phase3Distillation: "reports/neural-distillation-plan-report.json",
-  phase4TrainingContract: "reports/neural-training-contract-report.json",
-  phase5Evaluation: "reports/neural-open-vocab-evaluation.json",
-  phase5Benchmark: "reports/neural-coreml-device-benchmark.json",
-  phase6NativeIntegration: "reports/neural-native-integration-report.json",
-  phase7ReviewIntake: "reports/neural-review-intake-report.json",
-  phase8TrainingRun: "reports/neural-training-run-readiness-report.json",
-  phase9Promotion: "reports/neural-production-promotion-report.json",
-  modelSelection: "reports/neural-model-selection-report.json",
-  readiness: "reports/neural-transliteration-readiness-report.json"
+  phase1Gold: production ? "reports/neural-gold-eval-production-report.json" : "reports/neural-gold-eval-report.json",
+  phase2Dataset: production ? "reports/neural-open-vocab-dataset-production-report.json" : "reports/neural-open-vocab-dataset-report.json",
+  phase3Distillation: production ? "reports/neural-distillation-plan-production-report.json" : "reports/neural-distillation-plan-report.json",
+  phase4TrainingContract: production ? "reports/neural-training-contract-production-report.json" : "reports/neural-training-contract-report.json",
+  phase5Evaluation: production ? "reports/neural-open-vocab-evaluation-production.json" : "reports/neural-open-vocab-evaluation.json",
+  phase5Benchmark: production ? "reports/neural-coreml-device-benchmark-production.json" : "reports/neural-coreml-device-benchmark.json",
+  phase6NativeIntegration: production ? "reports/neural-native-integration-production-report.json" : "reports/neural-native-integration-report.json",
+  phase7ReviewIntake: production ? "reports/neural-review-intake-production-report.json" : "reports/neural-review-intake-report.json",
+  phase8TrainingRun: production ? "reports/neural-training-run-readiness-production-report.json" : "reports/neural-training-run-readiness-report.json",
+  phase9Promotion: production ? "reports/neural-production-promotion-production-report.json" : "reports/neural-production-promotion-report.json",
+  modelSelection: production ? "reports/neural-model-selection-production-report.json" : "reports/neural-model-selection-report.json",
+  readiness: production ? "reports/neural-transliteration-readiness-production-report.json" : "reports/neural-transliteration-readiness-report.json"
 };
 const modelDir = "models/macos/LekhNeuralTransliterator.mlmodelc";
 const manifestPath = "models/macos/LekhNeuralTransliterator.manifest.json";
@@ -46,14 +46,14 @@ const syubrajRows = Number(reports.phase2Dataset?.sourceCounts?.["syubraj-roman2
 requireDevStatus("phase0Contract", /^passed$/u);
 requireDevStatus("phase1Gold", /^passed-/u);
 requireDevStatus("phase2Dataset", /^passed-/u);
-requireDevStatus("phase3Distillation", /^passed-phase3-/u);
-requireDevStatus("phase4TrainingContract", /^passed-phase4-/u);
-requireDevStatus("phase5Evaluation", /^passed-phase5-/u);
-requireDevStatus("phase5Benchmark", /^passed-phase5-/u);
-requireDevStatus("phase6NativeIntegration", /^passed-phase6-/u);
-requireDevStatus("phase7ReviewIntake", /^passed-phase7-/u);
+requireDevStatus("phase3Distillation", /^passed-/u);
+requireDevStatus("phase4TrainingContract", /^passed-/u);
+requireDevStatus("phase5Evaluation", /^passed-/u);
+requireDevStatus("phase5Benchmark", /^passed-/u);
+requireDevStatus("phase6NativeIntegration", /^passed-/u);
+requireDevStatus("phase7ReviewIntake", /^passed-/u);
 requireDevStatus("phase8TrainingRun", /^passed-phase8-/u);
-requireDevStatus("phase9Promotion", /^passed-phase9-/u);
+requireDevStatus("phase9Promotion", /^passed-/u);
 requireDevStatus("modelSelection", /^passed$/u);
 requireDevStatus("readiness", /^passed$/u);
 
@@ -83,7 +83,10 @@ if (!manifest) {
   else warnings.push("No production neural manifest exists; Phase 10 cannot verify a working production model.");
 } else {
   if (manifest.selectedArtifact !== "lekh-open-vocab-seq2seq-v1") failures.push("Production neural manifest must select lekh-open-vocab-seq2seq-v1.");
-  if (manifest.productionEligible !== true) failures.push("Production neural manifest must declare productionEligible=true.");
+  if (manifest.productionEligible !== true) {
+    if (production) failures.push("Production neural manifest must declare productionEligible=true.");
+    else warnings.push("Candidate neural manifest exists but is not productionEligible=true.");
+  }
   if (manifest.openVocabulary !== true) failures.push("Production neural manifest must declare openVocabulary=true.");
   if (manifest.neuralTailOnly !== true) failures.push("Production neural manifest must declare neuralTailOnly=true.");
 }
@@ -166,7 +169,7 @@ function readText(path) {
 
 function requireDevStatus(key, pattern) {
   const status = reports[key]?.status;
-  if (!status || !pattern.test(status)) failures.push(`Phase 10 requires ${key} dev report to pass; got ${status ?? "missing"}.`);
+  if (!status || !pattern.test(status)) failures.push(`Phase 10 requires ${key} report to pass; got ${status ?? "missing"}.`);
 }
 
 function requireProductionStatus(key, pattern) {

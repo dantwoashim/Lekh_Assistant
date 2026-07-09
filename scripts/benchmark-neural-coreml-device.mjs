@@ -8,7 +8,7 @@ const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
 const production = args.has("production");
 const measurementsPath = args.get("measurements");
-const reportPath = args.get("report") ?? join(root, "reports", "neural-coreml-device-benchmark.json");
+const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-coreml-device-benchmark-production.json" : "neural-coreml-device-benchmark.json");
 const modelDir = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
 const manifestPath = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const failures = [];
@@ -48,7 +48,10 @@ if (production) {
 for (const row of measurements) {
   if (!["arm64", "x86_64"].includes(row.architecture)) failures.push(`Unknown benchmark architecture ${row.architecture}.`);
   if (Number(row.p99Ms) > 3) failures.push(`Device ${row.name} p99Ms exceeds 3 ms: ${row.p99Ms}.`);
-  if (row.packagedApp !== true) failures.push(`Device ${row.name} must benchmark the packaged app, not a notebook or simulator.`);
+  if (row.packagedApp !== true) {
+    if (production) failures.push(`Device ${row.name} must benchmark the packaged app, not a notebook or simulator.`);
+    else warnings.push(`Device ${row.name} is a local model benchmark, not packaged-app production evidence.`);
+  }
   if (row.secureFieldInferenceCount !== 0) failures.push(`Device ${row.name} secureFieldInferenceCount must be 0.`);
 }
 

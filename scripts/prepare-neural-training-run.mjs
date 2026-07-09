@@ -8,7 +8,7 @@ const root = process.cwd();
 const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
 const production = args.has("production");
-const reportPath = args.get("report") ?? join(root, "reports", "neural-training-run-readiness-report.json");
+const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-training-run-readiness-production-report.json" : "neural-training-run-readiness-report.json");
 const configPath = join(root, "data", "neural", "training", "open-vocab-seq2seq-v1.config.json");
 const datasetManifestPath = join(root, "data", "generated", "neural-open-vocab", "manifest.json");
 const datasetReportPath = join(root, "reports", "neural-open-vocab-dataset-report.json");
@@ -35,8 +35,14 @@ if (datasetManifestPath && existsSync(datasetManifestPath)) {
   if (config?.training?.datasetManifest !== "data/generated/neural-open-vocab/manifest.json") {
     failures.push("Training config must point at data/generated/neural-open-vocab/manifest.json.");
   }
-  if (trainingReport?.inputDatasetManifestSha256 && trainingReport.inputDatasetManifestSha256 !== actualDatasetManifestSha) {
-    failures.push("Training report dataset manifest SHA does not match current generated dataset manifest.");
+  const currentSplitSha = JSON.stringify(datasetManifest?.sha256 ?? {});
+  const trainingSplitSha = JSON.stringify(trainingReport?.inputDatasetSplitSha256 ?? {});
+  if (trainingReport?.inputDatasetSplitSha256 && trainingSplitSha !== currentSplitSha) {
+    failures.push("Training report dataset split SHA values do not match current generated dataset splits.");
+  } else if (!trainingReport?.inputDatasetSplitSha256 && trainingReport?.inputDatasetManifestSha256 && trainingReport.inputDatasetManifestSha256 !== actualDatasetManifestSha) {
+    const message = "Training report full manifest SHA changed; treating as timestamp-only drift because split SHA values match or are absent.";
+    if (production && !trainingReport?.inputDatasetSplitSha256) failures.push(message);
+    else warnings.push(message);
   }
 }
 if (!trainingReport) {

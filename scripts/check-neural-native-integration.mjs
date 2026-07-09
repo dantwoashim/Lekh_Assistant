@@ -7,7 +7,7 @@ const root = process.cwd();
 const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
 const production = args.has("production");
-const reportPath = args.get("report") ?? join(root, "reports", "neural-native-integration-report.json");
+const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-native-integration-production-report.json" : "neural-native-integration-report.json");
 const failures = [];
 const warnings = [];
 

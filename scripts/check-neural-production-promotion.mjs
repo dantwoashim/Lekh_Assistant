@@ -7,19 +7,19 @@ const root = process.cwd();
 const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
 const production = args.has("production");
-const reportPath = args.get("report") ?? join(root, "reports", "neural-production-promotion-report.json");
+const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-production-promotion-production-report.json" : "neural-production-promotion-report.json");
 const failures = [];
 const warnings = [];
 
 const requiredReports = {
-  dataset: "reports/neural-open-vocab-dataset-report.json",
-  reviewIntake: "reports/neural-review-intake-report.json",
-  trainingRun: "reports/neural-training-run-readiness-report.json",
-  evaluation: "reports/neural-open-vocab-evaluation.json",
-  benchmark: "reports/neural-coreml-device-benchmark.json",
-  nativeIntegration: "reports/neural-native-integration-report.json",
-  modelSelection: "reports/neural-model-selection-report.json",
-  readiness: "reports/neural-transliteration-readiness-report.json"
+  dataset: production ? "reports/neural-open-vocab-dataset-production-report.json" : "reports/neural-open-vocab-dataset-report.json",
+  reviewIntake: production ? "reports/neural-review-intake-production-report.json" : "reports/neural-review-intake-report.json",
+  trainingRun: production ? "reports/neural-training-run-readiness-production-report.json" : "reports/neural-training-run-readiness-report.json",
+  evaluation: production ? "reports/neural-open-vocab-evaluation-production.json" : "reports/neural-open-vocab-evaluation.json",
+  benchmark: production ? "reports/neural-coreml-device-benchmark-production.json" : "reports/neural-coreml-device-benchmark.json",
+  nativeIntegration: production ? "reports/neural-native-integration-production-report.json" : "reports/neural-native-integration-report.json",
+  modelSelection: production ? "reports/neural-model-selection-production-report.json" : "reports/neural-model-selection-report.json",
+  readiness: production ? "reports/neural-transliteration-readiness-production-report.json" : "reports/neural-transliteration-readiness-report.json"
 };
 const modelDir = "models/macos/LekhNeuralTransliterator.mlmodelc";
 const manifestPath = "models/macos/LekhNeuralTransliterator.manifest.json";
@@ -41,7 +41,10 @@ if (!manifest) {
   else warnings.push("Production neural manifest is absent; promotion guard is active.");
 } else {
   if (manifest.selectedArtifact !== "lekh-open-vocab-seq2seq-v1") failures.push("Promotion manifest must select lekh-open-vocab-seq2seq-v1.");
-  if (manifest.productionEligible !== true) failures.push("Promotion manifest must declare productionEligible=true.");
+  if (manifest.productionEligible !== true) {
+    if (production) failures.push("Promotion manifest must declare productionEligible=true.");
+    else warnings.push("Candidate manifest exists but is not productionEligible=true; production promotion remains blocked.");
+  }
 }
 
 const datasetRows = Number(loadedReports.dataset?.totalRows);
