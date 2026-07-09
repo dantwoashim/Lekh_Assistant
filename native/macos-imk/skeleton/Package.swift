@@ -45,10 +45,12 @@ let package = Package(
         "LekhLocalization.swift",
         "LekhMetricReporter.swift",
         "LekhNativePreferences.swift",
+        "LekhNeuralCandidateService.swift",
         "LekhPreferencesWindow.swift",
         "LekhEngineCore.swift"
       ],
       linkerSettings: [
+        .linkedFramework("CoreML"),
         .linkedLibrary("sqlite3")
       ]
     ),

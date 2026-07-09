@@ -24,6 +24,7 @@ const source = {
   report: readText("docs/LEKH_LEVEL5_FORENSIC_TRANSFORMATION_REPORT.md"),
   engine: readText("native/macos-imk/skeleton/LekhEngineCore.swift"),
   controller: readText("native/macos-imk/skeleton/LekhInputController.swift"),
+  neuralService: readText("native/macos-imk/skeleton/LekhNeuralCandidateService.swift"),
   candidatePanel: readText("native/macos-imk/skeleton/LekhCandidatePanel.swift"),
   candidateController: readText("native/macos-imk/skeleton/LekhCandidateController.swift"),
   packageScript: readText("scripts/package-macos-imk-dev.mjs"),
@@ -43,7 +44,7 @@ const items = [
   pass("architecture.hotPathEngine", "IMK hot path uses LekhEngineCore, not fake XPC or TypeScript daemon.", !exists("native/macos-imk/skeleton/LekhXpcClient.swift") && includes(source.controller, "LekhNativeEngineClient")),
   pass("architecture.contractDigest", "Canonical engine contract is bundled and checked.", exists("data/engine/lekh-engine-contract.v1.json") && includes(source.packageScript, "lekh-engine-contract.v1.json")),
   blocked("architecture.differentialConformance", "Differential Swift/TypeScript conformance is not yet exhaustive across shared event JSONL.", "Need generated Swift/TypeScript byte-identical event corpus and CI gate."),
-  pass("architecture.noHotPathXpcNetworkModel", "No hot-path XPC/network/synchronous model inference is present.", !exists("native/macos-imk/skeleton/LekhNeuralTransliterator.swift") && includes(source.engine, "neural=disabled-until-async-production-model")),
+  pass("architecture.noHotPathXpcNetworkModel", "No hot-path XPC/network/synchronous model inference is present.", !exists("native/macos-imk/skeleton/LekhNeuralTransliterator.swift") && includes(source.engine, "neural=async-coreml-tail-gated") && includes(source.neuralService, "DispatchQueue(label: \"com.lekh.inputmethod.neural-candidate-tail\"")),
 
   pass("typing.romanizedNepali", "Romanized to Nepali deterministic token path is present and gated.", includes(source.engine, "LekhRomanizedComposer") && includes(source.engine, "ruleCandidates(for:")),
   pass("typing.romanizedRomanized", "Romanized to Romanized mode is distinct and does not emit Devanagari by default.", contract?.modes?.includes("romanized-romanized") && includes(source.engine, "case .romanizedRomanized")),
@@ -57,7 +58,7 @@ const items = [
   pass("typing.candidateA11y", "Candidate UI has accessibility role/label/help/selected state and keyboard navigation.", includes(source.candidatePanel, "setAccessibilityRole(.button)") && includes(source.candidatePanel, "setAccessibilityLabel") && includes(source.controller, "handleCandidateCommand")),
 
   pass("engine.largeDataset", "Open-vocabulary dataset has >=1,000,000 generated rows.", datasetRows >= 1_000_000),
-  pass("engine.modelDisabledTruthful", "Model is truly open-vocabulary with proven invocation, or disabled and not marketed.", productionNeuralVerified || includes(source.engine, "neural=disabled-until-async-production-model")),
+  pass("engine.modelDisabledTruthful", "Model is truly open-vocabulary with proven invocation, or gated and not marketed as production.", productionNeuralVerified || (includes(source.engine, "neural=async-coreml-tail-gated") && includes(source.packageScript, "LEKH_PACKAGE_NEURAL_MODEL"))),
   blocked("engine.productionModel", "Production neural model/data provenance and immutable hashes are incomplete.", "Need trained open-vocabulary Core ML model, manifest, hashes, predictions, and two-device benchmark."),
   blocked("engine.blindEvaluation", "Blind evaluation is not production-complete.", "Need production gold counts and leakage-audited blind evaluation."),
 
@@ -67,7 +68,9 @@ const items = [
   blocked("privacy.gitHistorySecrets", "No-secrets Git history scan is not recorded in this workspace report.", "Need git history/archive secret scan evidence."),
 
   blocked("qa.fullHostMatrix", "Required host matrix is incomplete.", `Current status: ${reports.qaMatrix?.status ?? "missing"}.`),
-  pass("qa.universalTargets", "Intel and Apple Silicon dev targets pass as universal package evidence.", nativeUniversal),
+  nativeUniversal
+    ? pass("qa.universalTargets", "Intel and Apple Silicon dev targets pass as universal package evidence.", true)
+    : blocked("qa.universalTargets", "Intel and Apple Silicon dev targets pass as universal package evidence.", `Current local package archs: ${reports.nativePackage?.archs ?? "missing"}; run package with LEKH_MAC_ARCHS=arm64,x86_64 for universal evidence.`),
   blocked("qa.lifecycleRecovery", "Input-source switching/focus/sleep/wake/relaunch/crash recovery are not fully host-proven.", "Need retained host-matrix/manual evidence."),
   blocked("qa.soakPilot", "72-hour soak and multi-day pilot are not complete.", "Need 72-hour soak plus private pilot evidence."),
 

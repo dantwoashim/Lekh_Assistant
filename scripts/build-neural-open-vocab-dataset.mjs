@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 
@@ -12,6 +12,8 @@ const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v1.json"
 const legacyDatasetDir = join(root, "data", "generated", "neural-transliteration");
 const privateSyubrajPath = join(root, "data", "private", "neural", "syubraj-roman2nepali-transliteration", "syubraj-roman2nepali-transliteration.tsv");
 const privateSyubrajRowLimit = Number(process.env.LEKH_NEURAL_SYUBRAJ_ROW_LIMIT ?? "1200000");
+const privateAksharantarPath = join(root, "data", "private", "neural", "ai4bharat-aksharantar-nepali", "aksharantar-nepali.tsv");
+const privateAksharantarRowLimit = Number(process.env.LEKH_NEURAL_AKSHARANTAR_ROW_LIMIT ?? "1200000");
 const outDir = join(root, "data", "generated", "neural-open-vocab");
 const reportPath = join(root, "reports", production ? "neural-open-vocab-dataset-production-report.json" : "neural-open-vocab-dataset-report.json");
 
@@ -30,6 +32,7 @@ validateRegistry(registry);
 loadGoldRows(goldManifest);
 loadLegacyTsvRows();
 loadPrivateSyubrajRows();
+loadPrivateAksharantarRows();
 
 const rows = [...rowsByKey.values()].sort((a, b) => a.id.localeCompare(b.id));
 const splitRows = {
@@ -215,6 +218,69 @@ function loadPrivateSyubrajRows() {
   }
 }
 
+function loadPrivateAksharantarRows() {
+  if (!existsSync(privateAksharantarPath)) {
+    warnings.push("Private Aksharantar Nepali import is missing; run npm run neural:source:aksharantar:nepali for a large curated public Nepali split.");
+    return;
+  }
+  const sourceId = "ai4bharat-aksharantar-nepali";
+  const source = sources.get(sourceId);
+  if (!source) {
+    failures.push(`Source registry missing ${sourceId}.`);
+    return;
+  }
+  if (!source.allowedForOpenVocabTokenTraining) {
+    failures.push(`${sourceId} must be allowed for open-vocabulary token training.`);
+    return;
+  }
+  const lines = readLines(privateAksharantarPath);
+  const header = lines.shift()?.split("\t") ?? [];
+  const romanizedIndex = header.indexOf("romanized");
+  const devanagariIndex = header.indexOf("devanagari");
+  const sourceIndex = header.indexOf("source");
+  const upstreamSplitIndex = header.indexOf("upstreamSplit");
+  const upstreamSourceIndex = header.indexOf("upstreamSource");
+  if (romanizedIndex < 0 || devanagariIndex < 0 || sourceIndex < 0 || upstreamSplitIndex < 0 || upstreamSourceIndex < 0) {
+    failures.push(`${relative(root, privateAksharantarPath)} must have romanized/devanagari/source/upstreamSplit/upstreamSource columns.`);
+    return;
+  }
+  if (!Number.isInteger(privateAksharantarRowLimit) || privateAksharantarRowLimit < 100_000) {
+    failures.push("LEKH_NEURAL_AKSHARANTAR_ROW_LIMIT must be an integer >= 100,000 when the private Aksharantar source is present.");
+    return;
+  }
+  let imported = 0;
+  for (const [lineIndex, line] of lines.entries()) {
+    if (imported >= privateAksharantarRowLimit) break;
+    const columns = line.split("\t");
+    const rowSourceId = columns[sourceIndex];
+    if (rowSourceId !== sourceId) {
+      reject(`unexpected-private-source:${rowSourceId || "<empty>"}`, 1);
+      continue;
+    }
+    const input = columns[romanizedIndex];
+    const target = columns[devanagariIndex];
+    const upstreamSplit = columns[upstreamSplitIndex];
+    const upstreamSource = columns[upstreamSourceIndex];
+    addCleanRow({
+      action: "produce-candidate",
+      input,
+      target,
+      acceptable: [target],
+      split: splitFromAksharantar(upstreamSplit, input),
+      category: "romanized-token",
+      sourceIds: [sourceId],
+      sourceTier: "licensed-public",
+      reviewTier: reviewTierForAksharantar(upstreamSource),
+      license: source.license,
+      weight: weightForAksharantar(upstreamSource)
+    }, `${relative(root, privateAksharantarPath)}:${lineIndex + 2}`);
+    imported += 1;
+  }
+  if (lines.length > imported) {
+    warnings.push(`Private Aksharantar Nepali source has ${lines.length} rows; open-vocab builder used the first ${imported} rows. Set LEKH_NEURAL_AKSHARANTAR_ROW_LIMIT to raise this.`);
+  }
+}
+
 function addCleanRow(candidate, location) {
   const input = normalizeInput(candidate.input);
   const target = candidate.target === null ? null : normalizeOutput(candidate.target);
@@ -229,15 +295,22 @@ function addCleanRow(candidate, location) {
   }
 
   const sourceIds = Array.from(new Set(candidate.sourceIds.map(String))).sort();
-  for (const sourceId of sourceIds) {
-    sourceCounts[sourceId] = (sourceCounts[sourceId] ?? 0) + 1;
-  }
   const split = splitForRow(input, candidate.split);
   const acceptable = candidate.action === "produce-candidate"
     ? Array.from(new Set((candidate.acceptable ?? [target]).map(normalizeOutput).filter(Boolean))).filter((value) => !/\s/.test(value) && !/[A-Za-z]/.test(value))
     : [];
   const rowKey = `${candidate.action}\u0000${input}\u0000${target ?? "<NO_NEURAL_CANDIDATE>"}`;
-  if (rowsByKey.has(rowKey)) return reject("duplicate-clean-row", 1);
+  if (rowsByKey.has(rowKey)) {
+    const existing = rowsByKey.get(rowKey);
+    existing.sourceIds = Array.from(new Set([...existing.sourceIds, ...sourceIds])).sort();
+    existing.acceptable = Array.from(new Set([...existing.acceptable, ...acceptable])).sort();
+    existing.weight = Math.min(12, Math.max(existing.weight, candidate.weight) + 0.15);
+    if (existing.reviewTier !== candidate.reviewTier) {
+      existing.reviewTier = mergedReviewTier(existing.reviewTier, candidate.reviewTier);
+    }
+    reject("duplicate-clean-row-merged", 1);
+    return;
+  }
 
   const rowHash = sha256([
     candidate.action,
@@ -264,6 +337,15 @@ function addCleanRow(candidate, location) {
     weight: candidate.weight,
     rowHash
   });
+}
+
+function mergedReviewTier(left, right) {
+  const tiers = new Set([left, right].filter(Boolean));
+  if (tiers.has("native-speaker-reviewed") || tiers.has("adjudicated-review")) return "adjudicated-review";
+  if (tiers.has("gold")) return "gold";
+  if (tiers.has("curated-public-aksharantar") && tiers.has("silver-public-transliteration")) return "curated-public-corroborated";
+  if (tiers.has("curated-public-aksharantar")) return "curated-public-aksharantar";
+  return [...tiers].sort().join("+") || "unknown";
 }
 
 function splitForRow(input, requestedSplit) {
@@ -337,7 +419,7 @@ function writeOutputs(rows, splitRows) {
   if (failures.length > 0 && production) return;
   mkdirSync(outDir, { recursive: true });
   for (const split of ["train", "dev", "test"]) {
-    writeFileSync(join(outDir, `${split}.jsonl`), splitRows[split].map((row) => JSON.stringify(row)).join("\n") + "\n");
+    writeJsonl(join(outDir, `${split}.jsonl`), splitRows[split]);
   }
   const manifest = {
     schemaVersion: 1,
@@ -360,6 +442,17 @@ function writeOutputs(rows, splitRows) {
     cleaningPolicy: cleaningPolicy()
   };
   writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+function writeJsonl(path, rows) {
+  const fd = openSync(path, "w");
+  try {
+    for (const row of rows) {
+      writeSync(fd, `${JSON.stringify(row)}\n`, undefined, "utf8");
+    }
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function validateRegistry(registry) {
@@ -400,6 +493,24 @@ function categoryForSource(sourceId) {
   return "romanized-token";
 }
 
+function splitFromAksharantar(upstreamSplit, input) {
+  if (upstreamSplit === "validation") return "dev";
+  if (upstreamSplit === "test") return "test";
+  return stableSplitForInput(input);
+}
+
+function reviewTierForAksharantar(upstreamSource) {
+  if (String(upstreamSource).startsWith("AK-")) return "curated-public-aksharantar";
+  return "silver-public-transliteration";
+}
+
+function weightForAksharantar(upstreamSource) {
+  if (upstreamSource === "AK-Freq") return 1.35;
+  if (upstreamSource === "AK-Uni") return 1.25;
+  if (String(upstreamSource).startsWith("AK-")) return 1.2;
+  return 1;
+}
+
 function readJson(path, label) {
   if (!existsSync(path)) {
     failures.push(`Missing ${label}: ${relative(root, path)}`);
@@ -437,6 +548,16 @@ function fileSha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+function actualSourceCounts(rows) {
+  const counts = {};
+  for (const row of rows) {
+    for (const sourceId of row.sourceIds) {
+      counts[sourceId] = (counts[sourceId] ?? 0) + 1;
+    }
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)));
+}
+
 function cleaningPolicy() {
   return {
     normalizeInput: "trim lowercase NFC collapse-whitespace",
@@ -447,6 +568,7 @@ function cleaningPolicy() {
     rejectPhraseSources: true,
     splitPolicy: "stable hash by normalized input, with gold split pinned first",
     privateSyubrajRowLimit,
+    privateAksharantarRowLimit,
     noNetworkFetch: true,
     rawUpstreamDataCommitted: false
   };
@@ -469,12 +591,14 @@ function finish(status, exitCode) {
     sourceRegistry: "data/neural/sources.v1.json",
     privateSources: {
       syubraj: existsSync(privateSyubrajPath) ? relative(root, privateSyubrajPath) : null,
-      syubrajRowLimit: privateSyubrajRowLimit
+      syubrajRowLimit: privateSyubrajRowLimit,
+      aksharantarNepali: existsSync(privateAksharantarPath) ? relative(root, privateAksharantarPath) : null,
+      aksharantarNepaliRowLimit: privateAksharantarRowLimit
     },
     rowSchema: "data/neural/schema/lekh-neural-open-vocab-row.schema.json",
     counts: Object.fromEntries(Object.entries(splitRows).map(([split, value]) => [split, value.length])),
     totalRows: rows.length,
-    sourceCounts,
+    sourceCounts: actualSourceCounts(rows),
     rejected,
     cleaningPolicy: cleaningPolicy(),
     failures,

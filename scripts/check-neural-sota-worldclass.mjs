@@ -42,6 +42,7 @@ const modelExists = existsSync(join(root, modelDir));
 const manifest = existsSync(join(root, manifestPath)) ? readJsonReport(manifestPath, production) : null;
 const datasetRows = Number(reports.phase2Dataset?.totalRows);
 const syubrajRows = Number(reports.phase2Dataset?.sourceCounts?.["syubraj-roman2nepali-transliteration"] ?? 0);
+const aksharantarRows = Number(reports.phase2Dataset?.sourceCounts?.["ai4bharat-aksharantar-nepali"] ?? 0);
 
 requireDevStatus("phase0Contract", /^passed$/u);
 requireDevStatus("phase1Gold", /^passed-/u);
@@ -63,16 +64,19 @@ if (!Number.isFinite(datasetRows) || datasetRows < 1_000_000) {
 if (!Number.isFinite(syubrajRows) || syubrajRows < 1_000_000) {
   failures.push(`Phase 10 requires >=1,000,000 syubraj source rows in the generated dataset; found ${syubrajRows || 0}.`);
 }
+if (!Number.isFinite(aksharantarRows) || aksharantarRows < 1_000_000) {
+  failures.push(`Phase 10 requires >=1,000,000 Aksharantar Nepali source rows in the generated dataset; found ${aksharantarRows || 0}.`);
+}
 if (!existsSync(join(root, rejectedManifest))) failures.push("Rejected closed-vocabulary manifest must remain quarantined under models/rejected.");
 if (existsSync(join(root, oldNeuralSwift))) failures.push("Old synchronous/closed-vocab LekhNeuralTransliterator.swift must remain deleted.");
 const engine = readText(engineSource);
 const packager = readText(packageScript);
 const reportText = readText(level5Report);
-if (!engine.includes("neural=disabled-until-async-production-model")) {
-  failures.push("Native engine must keep neural disabled until production async model evidence exists.");
+if (!engine.includes("neural=async-coreml-tail-gated")) {
+  failures.push("Native engine must report the async Core ML neural tail as production-gated.");
 }
-if (!packager.includes("const neuralModelPackaged = false")) {
-  failures.push("Dev packager must hard-disable neural model packaging.");
+if (!packager.includes("LEKH_PACKAGE_NEURAL_MODEL") || !packager.includes("neuralPackagingRequested")) {
+  failures.push("Dev packager must keep neural model packaging behind an explicit opt-in gate.");
 }
 if (!reportText.includes("Until every checkbox has evidence, Lekh is not Level 5")) {
   failures.push("Level 5 report must retain evidence-before-production language.");
@@ -121,6 +125,7 @@ finish(status, failures.length === 0 ? 0 : 1, {
   manifestExists: Boolean(manifest),
   datasetRows,
   syubrajRows,
+  aksharantarRows,
   reportFiles,
   reportStatuses: Object.fromEntries(Object.entries(reports).map(([key, report]) => [key, report?.status ?? null])),
   verdict: production && failures.length === 0

@@ -69,6 +69,17 @@
       "notes": "Primary large Romanized-to-Nepali training source. Import locally with npm run neural:source:syubraj. Raw data must stay ignored; only cleaned reports/manifests may be committed."
     },
     {
+      "id": "ai4bharat-aksharantar-nepali",
+      "tier": "licensed-public",
+      "license": "Aksharantar dataset-card mixed public licensing; manually collected rows CC-BY and mined/reused rows CC0 where declared upstream.",
+      "status": "not-imported",
+      "rawDataCommitted": false,
+      "allowedForOpenVocabTokenTraining": true,
+      "productionRequired": false,
+      "defaultPath": "data/private/neural/ai4bharat-aksharantar-nepali/*.tsv",
+      "notes": "Large curated Nepali transliteration source from AI4Bharat Aksharantar. Import locally with npm run neural:source:aksharantar:nepali. Useful for higher-coverage open-vocab training and benchmark split comparison; not a replacement for private human-reviewed Lekh gold."
+    },
+    {
       "id": "saugatkafley-nepali-roman-transliteration",
       "tier": "licensed-public",
       "license": "MIT-labeled Hugging Face source dataset; verify exact local snapshot before use.",

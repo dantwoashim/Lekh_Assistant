@@ -14,6 +14,7 @@ const files = {
   forensicReport: "docs/LEKH_LEVEL5_FORENSIC_TRANSFORMATION_REPORT.md",
   engineCore: "native/macos-imk/skeleton/LekhEngineCore.swift",
   inputController: "native/macos-imk/skeleton/LekhInputController.swift",
+  neuralService: "native/macos-imk/skeleton/LekhNeuralCandidateService.swift",
   packageScript: "scripts/package-macos-imk-dev.mjs",
   contract: "data/engine/lekh-engine-contract.v1.json",
   neuralSota: "reports/neural-sota-worldclass-report.json",
@@ -35,11 +36,16 @@ requireContains(source.engineCore, "romanized-romanized", "Native engine must in
 requireContains(source.engineCore, "romanized-traditional", "Native engine must include Romanized -> Nepali mode.");
 requireContains(source.engineCore, "traditional-traditional", "Native engine must include Traditional -> Nepali mode.");
 requireContains(source.engineCore, "traditional-romanized", "Native engine must include Traditional -> Romanized mode.");
-requireContains(source.engineCore, "neural=disabled-until-async-production-model", "Native diagnostics must truthfully keep neural disabled without production artifact.");
+requireContains(source.engineCore, "neural=async-coreml-tail-gated", "Native diagnostics must truthfully report the async Core ML neural tail as production-gated.");
 requireContains(source.inputController, "IsSecureEventInputEnabled()", "Native controller must check secure input.");
+requireContains(source.inputController, "requestAsyncNeuralCandidates", "Native controller must integrate async neural candidate refresh off the deterministic hot path.");
 requireContains(source.inputController, "processFailOpenKey", "Native controller must keep fail-open raw typing.");
 requireContains(source.inputController, "candidateSelectionExplicit", "Candidate acceptance must be explicit.");
-requireContains(source.packageScript, "const neuralModelPackaged = false", "Dev packaging must not package the old Core ML artifact.");
+requireContains(source.neuralService, "DispatchQueue(label: \"com.lekh.inputmethod.neural-candidate-tail\"", "Native neural service must run Core ML inference asynchronously.");
+requireContains(source.neuralService, "guard !secureInputActive else", "Native neural service must never infer in secure fields.");
+requireContains(source.neuralService, "failOpenRawTypingOnError", "Native neural service must fail open on inference errors.");
+requireContains(source.packageScript, "LEKH_PACKAGE_NEURAL_MODEL", "Dev packaging must keep Core ML neural resources behind an explicit opt-in flag.");
+requireContains(source.packageScript, "neuralPackagingRequested", "Dev packaging must not silently package the Core ML artifact.");
 if (existsSync(join(root, "native", "macos-imk", "skeleton", "LekhXpcClient.swift"))) {
   failures.push("LekhXpcClient.swift must remain removed from the native hot path.");
 }

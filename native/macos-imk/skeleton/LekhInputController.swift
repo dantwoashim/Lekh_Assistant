@@ -44,6 +44,7 @@ open class LekhInputController: IMKInputController {
   private let engineClient: LekhEngineClient
   private let latencyTelemetry = LekhLatencyRingBuffer()
   private let candidateState = LekhCandidateController()
+  private let neuralCandidateService = LekhNeuralCandidateService.shared
   private var candidateSelectionExplicit = false
   private var candidatePanel: IMKCandidates?
   private let customCandidatePanel = LekhCandidatePanel()
@@ -1140,6 +1141,37 @@ open class LekhInputController: IMKInputController {
     candidateSelectionExplicit = false
     candidateState.updateCandidates(candidates, rawBuffer: rawBuffer, modeLabel: nativeMode.menuLabel)
     refreshCandidatePanel()
+    requestAsyncNeuralCandidates(rawBuffer: rawBuffer, deterministicCandidates: candidates)
+  }
+
+  private func requestAsyncNeuralCandidates(rawBuffer: String, deterministicCandidates: [String]) {
+    guard nativeMode == .romanizedTraditional,
+          !IsSecureEventInputEnabled(),
+          !rawBuffer.isEmpty,
+          rawBuffer.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else { return }
+    let sessionSnapshot = sessionId
+    neuralCandidateService.candidates(for: rawBuffer, secureInputActive: IsSecureEventInputEnabled()) { [weak self] neuralCandidates in
+      guard let self,
+            !IsSecureEventInputEnabled(),
+            self.sessionId == sessionSnapshot,
+            self.engineClient.rawBuffer(sessionId: sessionSnapshot) == rawBuffer,
+            !neuralCandidates.isEmpty else { return }
+      let merged = Self.uniqueCandidates(deterministicCandidates + neuralCandidates, limit: 8)
+      self.candidateState.updateCandidates(merged, rawBuffer: rawBuffer, modeLabel: self.nativeMode.menuLabel)
+      self.refreshCandidatePanel()
+    }
+  }
+
+  private static func uniqueCandidates(_ candidates: [String], limit: Int) -> [String] {
+    var seen = Set<String>()
+    var output: [String] = []
+    for candidate in candidates {
+      guard !seen.contains(candidate) else { continue }
+      seen.insert(candidate)
+      output.append(candidate)
+      if output.count >= limit { break }
+    }
+    return output
   }
 
   private func refreshCandidatePanel() {

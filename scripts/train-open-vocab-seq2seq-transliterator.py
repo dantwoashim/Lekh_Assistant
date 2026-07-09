@@ -49,6 +49,7 @@ MEASUREMENTS_PATH = OUT_DIR / "coreml-device-measurements.json"
 MLPACKAGE_PATH = OUT_DIR / "LekhNeuralTransliterator.mlpackage"
 COMPILED_MODEL_DIR = ROOT / "models/macos/LekhNeuralTransliterator.mlmodelc"
 MANIFEST_PATH = ROOT / "models/macos/LekhNeuralTransliterator.manifest.json"
+VOCAB_METADATA_PATH = ROOT / "models/macos/LekhNeuralTransliterator.vocab.json"
 DATASET_MANIFEST_PATH = ROOT / "data/generated/neural-open-vocab/manifest.json"
 GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v1.json"
 CONFIG_PATH = ROOT / "data/neural/training/open-vocab-seq2seq-v1.config.json"
@@ -148,12 +149,14 @@ def directory_bytes(path: Path) -> int:
     return sum(file.stat().st_size for file in path.rglob("*") if file.is_file())
 
 
-def load_rows(dataset_manifest_path: Path, max_train_rows: int, max_dev_rows: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+def load_rows(dataset_manifest_path: Path, max_train_rows: int, max_dev_rows: int, seed: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     manifest = read_json(dataset_manifest_path)
     train_path = ROOT / manifest["splitFiles"]["train"]
     dev_path = ROOT / manifest["splitFiles"]["dev"]
-    train = load_split(train_path, max_train_rows, "train")
-    dev = load_split(dev_path, max_dev_rows, "dev")
+    train_all = load_split(train_path, "train")
+    dev_all = load_split(dev_path, "dev")
+    train = deterministic_source_sample(train_all, max_train_rows, seed, "train")
+    dev = deterministic_source_sample(dev_all, max_dev_rows, seed + 1, "dev")
     for input_text, output_text in REQUIRED_CASES.items():
         seed = {
             "id": f"required_{input_text}",
@@ -168,7 +171,7 @@ def load_rows(dataset_manifest_path: Path, max_train_rows: int, max_dev_rows: in
     return train, dev, manifest
 
 
-def load_split(path: Path, limit: int, split: str) -> list[dict[str, Any]]:
+def load_split(path: Path, split: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -182,8 +185,14 @@ def load_split(path: Path, limit: int, split: str) -> list[dict[str, Any]]:
             source_weight = 1.0
             if "lekh-phase1-contract-seed-v1" in source_ids:
                 source_weight = 8.0
+            elif "human-reviewed-lekh-gold-v1" in source_ids or "lekh-chat-conventions-v1" in source_ids or "lekh-name-lexicon-v1" in source_ids:
+                source_weight = 10.0
             elif "manual-chat-tail" in source_ids or "manual-name" in source_ids:
                 source_weight = 5.0
+            elif "ai4bharat-aksharantar-nepali" in source_ids:
+                source_weight = 1.25
+            elif "syubraj-roman2nepali-transliteration" in source_ids:
+                source_weight = 1.15
             elif "dictionary-ne-ranked" in source_ids:
                 source_weight = 1.4
             if target and not any(ch.isspace() for ch in target) and not any("A" <= ch <= "z" for ch in target):
@@ -195,9 +204,91 @@ def load_split(path: Path, limit: int, split: str) -> list[dict[str, Any]]:
                     "sourceIds": source_ids,
                     "weight": float(row.get("weight", source_weight)) * source_weight,
                 })
-            if len(rows) >= limit:
-                break
     return rows
+
+
+def deterministic_source_sample(rows: list[dict[str, Any]], limit: int, seed: int, split: str) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    if len(rows) <= limit:
+        return rows
+
+    pinned: list[dict[str, Any]] = []
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        source = primary_source(row)
+        if is_pinned_source(source):
+            pinned.append(row)
+            continue
+        grouped.setdefault(source, []).append(row)
+
+    selected: list[dict[str, Any]] = stable_row_order(pinned, seed, split)[:limit]
+    remaining = limit - len(selected)
+    if remaining <= 0:
+        return selected
+
+    weighted_sources = []
+    for source, source_rows in grouped.items():
+        weighted_sources.append((source, math.sqrt(len(source_rows)) * source_sampling_multiplier(source)))
+    total_weight = sum(weight for _, weight in weighted_sources) or 1.0
+
+    selected_ids = {row["id"] for row in selected}
+    for source, source_weight in weighted_sources:
+        quota = min(len(grouped[source]), max(1, int(remaining * source_weight / total_weight)))
+        for row in stable_row_order(grouped[source], seed, f"{split}:{source}")[:quota]:
+            if len(selected) >= limit:
+                return selected
+            if row["id"] in selected_ids:
+                continue
+            selected.append(row)
+            selected_ids.add(row["id"])
+
+    leftovers = [row for source_rows in grouped.values() for row in source_rows if row["id"] not in selected_ids]
+    for row in stable_row_order(leftovers, seed, f"{split}:fill"):
+        if len(selected) >= limit:
+            break
+        selected.append(row)
+    return selected
+
+
+def stable_row_order(rows: list[dict[str, Any]], seed: int, namespace: str) -> list[dict[str, Any]]:
+    return sorted(rows, key=lambda row: hashlib.sha256(f"{seed}:{namespace}:{row['id']}".encode("utf-8")).hexdigest())
+
+
+def primary_source(row: dict[str, Any]) -> str:
+    source_ids = row.get("sourceIds") or ["unknown"]
+    return str(source_ids[0])
+
+
+def is_pinned_source(source: str) -> bool:
+    return source in {
+        "lekh-phase1-contract-seed-v1",
+        "human-reviewed-lekh-gold-v1",
+        "lekh-chat-conventions-v1",
+        "lekh-name-lexicon-v1",
+    }
+
+
+def source_sampling_multiplier(source: str) -> float:
+    if source == "ai4bharat-aksharantar-nepali":
+        return 1.35
+    if source == "syubraj-roman2nepali-transliteration":
+        return 1.25
+    if source == "dictionary-ne-ranked":
+        return 0.8
+    if source.startswith("manual-"):
+        return 2.0
+    if source.startswith("runtime-"):
+        return 0.9
+    return 1.0
+
+
+def source_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        for source_id in row.get("sourceIds") or ["unknown"]:
+            counts[str(source_id)] += 1
+    return dict(sorted(counts.items()))
 
 
 def build_vocab(rows: list[dict[str, Any]], side: str) -> dict[str, int]:
@@ -276,7 +367,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    train_rows, dev_rows, dataset_manifest = load_rows(args.dataset_manifest, args.max_train_rows, args.max_dev_rows)
+    train_rows, dev_rows, dataset_manifest = load_rows(args.dataset_manifest, args.max_train_rows, args.max_dev_rows, args.seed)
     input_vocab = build_vocab(train_rows + dev_rows, "input")
     output_vocab = build_vocab(train_rows + dev_rows, "output")
     model = Seq2Seq(len(input_vocab), len(output_vocab), args.embedding_dim, args.hidden_dim, args.layers, args.dropout)
@@ -317,6 +408,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
 
     evaluation = evaluate_model(model, dev_rows, input_vocab, output_vocab, args, device)
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    write_vocab_metadata(input_vocab, output_vocab, args, dataset_manifest)
     checkpoint = {
         "modelId": MODEL_ID,
         "stateDict": model.cpu().state_dict(),
@@ -328,6 +420,8 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "parameterCount": sum(parameter.numel() for parameter in model.parameters()),
         "trainingRows": len(train_rows),
         "devRows": len(dev_rows),
+        "trainingSourceCounts": source_summary(train_rows),
+        "devSourceCounts": source_summary(dev_rows),
         "losses": losses,
         "evaluation": evaluation,
     }
@@ -347,6 +441,21 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "parameterCount": checkpoint["parameterCount"],
         "trainingRows": len(train_rows),
         "devRows": len(dev_rows),
+        "trainingSourceCounts": checkpoint["trainingSourceCounts"],
+        "devSourceCounts": checkpoint["devSourceCounts"],
+        "samplingPolicy": {
+            "type": "deterministic-source-aware-weighted-sampling",
+            "seed": args.seed,
+            "maxTrainRows": args.max_train_rows,
+            "maxDevRows": args.max_dev_rows,
+            "pinnedSources": [
+                "lekh-phase1-contract-seed-v1",
+                "human-reviewed-lekh-gold-v1",
+                "lekh-chat-conventions-v1",
+                "lekh-name-lexicon-v1",
+            ],
+        },
+        "vocabMetadata": rel(VOCAB_METADATA_PATH),
         "losses": losses,
         "evaluation": evaluation,
         "datasetRows": dataset_manifest.get("totalRows"),
@@ -376,6 +485,9 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
     model.eval()
     report = read_json(TRAINING_REPORT_PATH) if TRAINING_REPORT_PATH.exists() else {}
     report.setdefault("inputDatasetSplitSha256", checkpoint.get("datasetSplitSha256", {}))
+    if not VOCAB_METADATA_PATH.exists():
+        dataset_manifest = read_json(args.dataset_manifest) if args.dataset_manifest.exists() else {}
+        write_vocab_metadata(checkpoint["inputVocab"], checkpoint["outputVocab"], args, dataset_manifest)
     return {"model": model, "checkpoint": checkpoint, "report": report}
 
 
@@ -603,6 +715,60 @@ def benchmark_coreml(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def write_vocab_metadata(input_vocab: dict[str, int], output_vocab: dict[str, int], args: argparse.Namespace, dataset_manifest: dict[str, Any]) -> None:
+    input_by_id = tokens_by_id(input_vocab)
+    output_by_id = tokens_by_id(output_vocab)
+    payload = {
+        "schemaVersion": 1,
+        "modelId": MODEL_ID,
+        "generatedAt": iso_now(),
+        "tokenization": "unicode-grapheme-character",
+        "input": {
+            "maxLength": args.max_input_len,
+            "tokensById": input_by_id,
+            "idsByToken": input_vocab,
+            "padId": input_vocab[PAD],
+            "sosId": input_vocab[SOS],
+            "eosId": input_vocab[EOS],
+            "unkId": input_vocab[UNK],
+        },
+        "output": {
+            "maxLength": args.max_output_len,
+            "tokensById": output_by_id,
+            "idsByToken": output_vocab,
+            "padId": output_vocab[PAD],
+            "sosId": output_vocab[SOS],
+            "eosId": output_vocab[EOS],
+            "unkId": output_vocab[UNK],
+        },
+        "decoder": {
+            "type": "beam-search",
+            "beamWidth": 4,
+            "rejectWhitespaceCandidates": True,
+            "rejectLatinCandidates": True,
+        },
+        "dataset": {
+            "manifest": rel(args.dataset_manifest),
+            "manifestSha256": sha256_file(args.dataset_manifest) if args.dataset_manifest.exists() else "",
+            "splitSha256": dataset_manifest.get("sha256", {}),
+        },
+        "nativeRuntimePolicy": {
+            "asyncOnly": True,
+            "neverInvokeInSecureFields": True,
+            "failOpenRawTypingOnError": True,
+            "neuralTailOnly": True,
+        },
+    }
+    write_json(VOCAB_METADATA_PATH, payload)
+
+
+def tokens_by_id(vocab: dict[str, int]) -> list[str]:
+    tokens = [""] * len(vocab)
+    for token, index in vocab.items():
+        tokens[index] = token
+    return tokens
+
+
 def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], training_report: dict[str, Any], coreml: dict[str, Any], benchmark: dict[str, Any]) -> dict[str, Any]:
     model_bytes = directory_bytes(args.compiled_model) if args.compiled_model.exists() else 0
     compiled_sha = directory_sha256(args.compiled_model) if args.compiled_model.exists() else ""
@@ -625,6 +791,7 @@ def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], trainin
         "modelBytes": model_bytes,
         "trainingSources": [
             "syubraj-roman2nepali-transliteration",
+            "ai4bharat-aksharantar-nepali",
             "human-reviewed-lekh-gold-v1",
             "lekh-chat-conventions-v1",
             "lekh-name-lexicon-v1",
@@ -655,6 +822,7 @@ def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], trainin
             "compiledModel": compiled_sha or "0" * 64,
             "sourceCheckpoint": sha256_file(CHECKPOINT_PATH),
             "trainingDatasetManifest": checkpoint["datasetManifestSha256"],
+            "vocabMetadata": sha256_file(VOCAB_METADATA_PATH) if VOCAB_METADATA_PATH.exists() else "0" * 64,
         },
         "limitations": production_blockers(),
     }

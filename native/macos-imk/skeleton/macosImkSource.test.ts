@@ -70,7 +70,13 @@ describe("macOS IMK proof target source", () => {
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("LEKH_PACK_V2");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhDictionaryPackVerifier.swift"), "utf8")).toContain("installedPackStatus");
     expect(existsSync(join(root, "native/macos-imk/skeleton/LekhNeuralTransliterator.swift"))).toBe(false);
-    expect(packageScript).toContain("const neuralModelPackaged = false");
+    expect(existsSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"))).toBe(true);
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("MLModel(contentsOf:");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("guard !secureInputActive else");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8")).toContain("requestAsyncNeuralCandidates");
+    expect(source).toContain("neural=async-coreml-tail-gated");
+    expect(packageScript).toContain("LEKH_PACKAGE_NEURAL_MODEL");
+    expect(packageScript).toContain("neuralPackagingRequested");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhMetricReporter.swift"), "utf8")).toContain("LekhMetricKitOptIn");
     expect(source).toContain("lekh-keyboard.sqlite3");
     expect(source).toContain("CREATE TABLE IF NOT EXISTS user_lexicon");
@@ -85,8 +91,7 @@ describe("macOS IMK proof target source", () => {
     expect(source).not.toContain('("swasthya karyalaya",');
     expect(source).not.toContain('("jilla prashasan karyalaya",');
     expect(packageScript).toContain("runtimeJsonBundlePath");
-    expect(packageScript).toContain("const neuralModelPackaged = false");
-    expect(packageScript).not.toContain("LekhNeuralTransliterator.mlmodelc");
+    expect(packageScript).toContain("neuralModelPackaged = true");
   });
 
   it("contains native mode switching for all four typing surfaces", () => {

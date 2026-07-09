@@ -1001,7 +1001,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       securityWarning() == nil ? nil : "dictionary-update-rejected",
       contractWarning
     ].compactMap { $0 }
-    return "engine=local contract=v1 pack=\(packSource) neural=disabled-until-async-production-model fallbackRows=\(fallbackCount) userLexicon=sqlite warning=\(warnings.isEmpty ? "none" : warnings.joined(separator: ","))"
+    return "engine=local contract=v1 pack=\(packSource) neural=async-coreml-tail-gated fallbackRows=\(fallbackCount) userLexicon=sqlite warning=\(warnings.isEmpty ? "none" : warnings.joined(separator: ","))"
   }
 
   public func securityWarning() -> String? {

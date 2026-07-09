@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {
   chmodSync,
+  cpSync,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -35,6 +36,12 @@ const runtimeJsonOutputPath = join(buildReleaseDir, "runtime-suggestions.sanitiz
 const runtimeBinaryOutputPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
 const runtimeJsonBundlePath = join(appBundle, "Contents", "Resources", "runtime-suggestions.json");
 const engineContractBundlePath = join(appBundle, "Contents", "Resources", "lekh-engine-contract.v1.json");
+const neuralModelSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
+const neuralManifestSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
+const neuralVocabSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.vocab.json");
+const neuralModelBundlePath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.mlmodelc");
+const neuralManifestBundlePath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.manifest.json");
+const neuralVocabBundlePath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.vocab.json");
 const universalExecutable = join(buildReleaseDir, `${executableName}.universal`);
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const archs = (process.env.LEKH_MAC_ARCHS ?? "arm64,x86_64")
@@ -296,9 +303,23 @@ copyFileSync(
   join(root, "data", "engine", "lekh-engine-contract.v1.json"),
   engineContractBundlePath
 );
-// Neural fallback is deliberately absent until a production-eligible,
-// open-vocabulary model and asynchronous invocation path both pass release gates.
-const neuralModelPackaged = false;
+// Neural fallback is deliberately absent by default. Benchmark packaging is
+// opt-in so the dev bundle cannot silently ship a non-production neural tail.
+const neuralPackagingRequested = process.env.LEKH_PACKAGE_NEURAL_MODEL === "1";
+let neuralModelPackaged = false;
+if (neuralPackagingRequested) {
+  const neuralPackagingFailures = [];
+  if (!existsSync(neuralModelSourcePath)) neuralPackagingFailures.push("Missing models/macos/LekhNeuralTransliterator.mlmodelc.");
+  if (!existsSync(neuralManifestSourcePath)) neuralPackagingFailures.push("Missing models/macos/LekhNeuralTransliterator.manifest.json.");
+  if (!existsSync(neuralVocabSourcePath)) neuralPackagingFailures.push("Missing models/macos/LekhNeuralTransliterator.vocab.json.");
+  if (neuralPackagingFailures.length > 0) {
+    finish("failed", { step: "neural-packaging", failures: neuralPackagingFailures }, 1);
+  }
+  cpSync(neuralModelSourcePath, neuralModelBundlePath, { recursive: true });
+  copyFileSync(neuralManifestSourcePath, neuralManifestBundlePath);
+  copyFileSync(neuralVocabSourcePath, neuralVocabBundlePath);
+  neuralModelPackaged = true;
+}
 
 if (existsSync(iconSource)) {
   copyFileSync(iconSource, join(appBundle, "Contents", "Resources", "Lekh.icns"));
@@ -353,7 +374,7 @@ const entitlementProbe = spawnSync("codesign", ["-d", "--entitlements", ":-", ap
 const entitlements = `${entitlementProbe.stdout}\n${entitlementProbe.stderr}`;
 
 const packagingFailures = [];
-for (const requiredArch of ["arm64", "x86_64"]) {
+for (const requiredArch of archs) {
   if (!lipoInfo.split(/\s+/).includes(requiredArch)) {
     packagingFailures.push(`Missing required architecture slice: ${requiredArch}.`);
   }
@@ -397,6 +418,7 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-r
   sanitizedRuntimeJsonBytes: statSync(runtimeJsonOutputPath).size,
   packagedRuntimeJsonBytes: statSync(runtimeJsonBundlePath).size,
   engineContractBytes: statSync(engineContractBundlePath).size,
+  packagedNeuralModelBytes: neuralModelPackaged ? statSync(neuralModelBundlePath).size : 0,
   deterministicP99Nanoseconds,
   runtimeBinaryBytes: statSync(runtimeBinaryOutputPath).size,
   frequencyReport: "reports/nepali-frequency-model-report.json",
