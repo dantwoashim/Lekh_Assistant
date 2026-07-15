@@ -114,6 +114,7 @@
     "probe:macos-imk-host:textedit:cgevent": "node scripts/check-macos-imk-host-textedit-cgevent.mjs",
     "probe:macos-imk-host:ghost": "node scripts/check-macos-imk-host-ghost.mjs",
     "probe:macos-imk-host:interaction-safety": "node scripts/check-macos-imk-host-interaction-safety.mjs",
+    "probe:macos-imk-host:candidate-mouse": "node scripts/check-macos-imk-host-candidate-mouse.mjs",
     "probe:macos-imk-host:textedit:manual": "native/macos-imk/skeleton/manual-host-textedit-test.sh",
     "restore:macos-keyboard": "native/macos-imk/skeleton/restore-system-keyboard.sh",
     "package:macos": "node scripts/package-native-macos-companion.mjs --signed",

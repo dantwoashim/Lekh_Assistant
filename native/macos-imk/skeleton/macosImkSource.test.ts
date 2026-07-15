@@ -607,6 +607,32 @@ describe("macOS IMK proof target source", () => {
     expect(hostHarness).toContain('snapshot?.operationStatus === expectedStatus');
   });
 
+  it("proves custom candidate mouse acceptance and drag-away cancellation in an exact cold host", () => {
+    const packageJson = readFileSync(join(root, "package.json"), "utf8");
+    const probe = readFileSync(join(root, "scripts/check-macos-imk-host-candidate-mouse.mjs"), "utf8");
+    const candidatePanel = readFileSync(join(root, "native/macos-imk/skeleton/LekhCandidatePanel.swift"), "utf8");
+
+    expect(packageJson).toContain("probe:macos-imk-host:candidate-mouse");
+    expect(packageJson).not.toContain("check:macos-imk-host:candidate-mouse");
+    expect(candidatePanel).toContain("panel.setAccessibilityRole(.window)");
+    expect(candidatePanel).toContain('panel.setAccessibilityIdentifier("lekh.candidatePanel")');
+    expect(probe).toContain("launchColdTextEdit");
+    expect(probe).toContain("waitForExactRuntimeHealth");
+    expect(probe).toContain('item.identifier === "lekh.candidatePanel"');
+    expect(probe).toContain('row.identifier === "lekh.candidate.0"');
+    expect(probe).toContain('row.identifier === "lekh.candidate.1"');
+    expect(probe).toContain(".leftMouseDown");
+    expect(probe).toContain(".leftMouseDragged");
+    expect(probe).toContain(".leftMouseUp");
+    expect(probe).toContain("topmostWindow(at:");
+    expect(probe).toContain("startWindow.pid == inputMethodPid");
+    expect(probe).toContain("CGWarpMouseCursorPosition(originalPointer)");
+    expect(probe).toContain("actual !== validated.firstText");
+    expect(probe).toContain("afterDragText !== dragChoices.visibleCompositionText");
+    expect(probe).toContain("acceptedText !== clickChoices.secondText");
+    expect(probe).not.toContain("accessibilityPerformPress");
+  });
+
   it("does not auto-select the unfinished IMK during normal dev install", () => {
     const installScript = readFileSync(join(root, "native/macos-imk/skeleton/install-dev.sh"), "utf8");
     const registerScript = readFileSync(join(root, "native/macos-imk/skeleton/register-dev.swift"), "utf8");
