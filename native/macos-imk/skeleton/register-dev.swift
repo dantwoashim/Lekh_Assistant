@@ -196,9 +196,9 @@ if currentId == inputSourceId || currentId == parentInputSourceId,
   Thread.sleep(forTimeInterval: 0.2)
 }
 // Force a genuine disabled -> enabled transition even for one discoverable
-// object. TIS can cache `isEnabled=true` after preference-array cleanup while
-// AppleEnabledInputSources has no effective row; a no-op enable then leaves the
-// menu selectable but gives TextEdit no server session.
+// object. TIS can cache `isEnabled=true` while its effective enabled-source
+// state is stale; a no-op enable then leaves the menu selectable but gives
+// TextEdit no server session.
 for duplicate in matchingSources where disableSource(duplicate) == noErr {
   duplicateSourcesDisabled += 1
 }

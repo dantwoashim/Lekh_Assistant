@@ -13,18 +13,6 @@ let staleExact: Set<String> = [
   "com.lekh.inputmethod.keyboard.dev"
 ]
 
-let preferenceDomains: [CFString] = [
-  "com.apple.HIToolbox" as CFString,
-  "com.apple.inputsources" as CFString
-]
-
-let preferenceArrayKeys: [CFString] = [
-  "AppleEnabledInputSources" as CFString,
-  "AppleSelectedInputSources" as CFString,
-  "AppleEnabledThirdPartyInputSources" as CFString,
-  "AppleInputSourceHistory" as CFString
-]
-
 func stringProperty(_ source: TISInputSource, _ key: CFString) -> String {
   TISGetInputSourceProperty(source, key)
     .map { Unmanaged<CFString>.fromOpaque($0).takeUnretainedValue() as String } ?? ""
@@ -37,63 +25,7 @@ func isLekhIdentifier(_ value: String) -> Bool {
 
 func isLekhSource(_ source: TISInputSource) -> Bool {
   let id = stringProperty(source, kTISPropertyInputSourceID)
-  if isLekhIdentifier(id) { return true }
-  let localizedName = stringProperty(source, kTISPropertyLocalizedName)
-  return localizedName.localizedCaseInsensitiveContains("Lekh")
-}
-
-func preferenceDictionary(_ value: Any) -> [AnyHashable: Any]? {
-  if let dictionary = value as? [AnyHashable: Any] {
-    return dictionary
-  }
-  guard let dictionary = value as? NSDictionary else {
-    return nil
-  }
-  var output: [AnyHashable: Any] = [:]
-  for (key, item) in dictionary {
-    guard let hashableKey = key as? AnyHashable else { continue }
-    output[hashableKey] = item
-  }
-  return output
-}
-
-func dictionaryContainsLekh(_ value: Any) -> Bool {
-  guard let dictionary = preferenceDictionary(value) else { return false }
-  for (key, item) in dictionary {
-    let keyString = String(describing: key)
-    if keyString.localizedCaseInsensitiveContains("lekh") {
-      return true
-    }
-    if let itemString = item as? String {
-      if isLekhIdentifier(itemString) || itemString.localizedCaseInsensitiveContains("lekh") {
-        return true
-      }
-    } else if preferenceDictionary(item) != nil,
-              dictionaryContainsLekh(item) {
-      return true
-    } else if let nestedArray = item as? [Any],
-              nestedArray.contains(where: dictionaryContainsLekh) {
-      return true
-    }
-  }
-  return false
-}
-
-func purgePreferenceArrays() -> Int {
-  var removed = 0
-  for domain in preferenceDomains {
-    for key in preferenceArrayKeys {
-      guard let value = CFPreferencesCopyAppValue(key, domain) else { continue }
-      if let array = value as? [Any] {
-        let filtered = array.filter { !dictionaryContainsLekh($0) }
-        guard filtered.count != array.count else { continue }
-        removed += array.count - filtered.count
-        CFPreferencesSetAppValue(key, filtered as CFArray, domain)
-      }
-    }
-    CFPreferencesAppSynchronize(domain)
-  }
-  return removed
+  return isLekhIdentifier(id)
 }
 
 func postInputSourceChangeNotification() {
@@ -114,7 +46,6 @@ guard let unmanagedList = TISCreateInputSourceList(nil, true) else {
 let list = unmanagedList.takeRetainedValue() as NSArray
 var disabled = 0
 var failed = 0
-let preferenceRowsRemoved = purgePreferenceArrays()
 
 for item in list {
   let source = item as! TISInputSource
@@ -129,5 +60,8 @@ for item in list {
 }
 
 postInputSourceChangeNotification()
-print("Purged stale Lekh input sources. tisDisabled=\(disabled) preferenceRowsRemoved=\(preferenceRowsRemoved) failed=\(failed)")
+// Never edit Apple's private input-source preference domains directly. TIS
+// owns approval, enabled-source, selected-source and history state; private
+// array rewrites can make a source flash in the menu and then disappear.
+print("Disabled stale Lekh input sources through TIS. tisDisabled=\(disabled) failed=\(failed)")
 exit(failed == 0 ? 0 : 2)

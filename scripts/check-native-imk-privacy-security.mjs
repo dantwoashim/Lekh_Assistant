@@ -76,13 +76,23 @@ for (const policyFile of [
     "--noqtn",
     "TextInputMenuAgent",
     "TextInputSwitcher",
-    "com.apple.HIToolbox.plist",
-    "com.apple.inputsources.plist"
+    "com.apple.HIToolbox",
+    "com.apple.inputsources",
+    "CFPreferencesSetAppValue",
+    "AppleEnabledInputSources",
+    "AppleSelectedInputSources",
+    "AppleEnabledThirdPartyInputSources",
+    "AppleInputSourceHistory"
   ]) {
     if (source.includes(forbidden)) {
       violations.push(`${relative(ROOT, policyFile)}: forbidden installer/input-source marker ${forbidden}`);
     }
   }
+}
+
+const purgeSource = readFileSync(join(sourceDir, "purge-lekh-input-sources.swift"), "utf8");
+if (purgeSource.includes("kTISPropertyLocalizedName") || purgeSource.includes("localizedCaseInsensitiveContains")) {
+  violations.push("native/macos-imk/skeleton/purge-lekh-input-sources.swift: cleanup must match the owned input-source identifier namespace, never a localized display name");
 }
 
 for (const [fileName, marker] of requiredMarkers) {
