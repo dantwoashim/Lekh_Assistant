@@ -572,6 +572,10 @@ describe("macOS IMK proof target source", () => {
     expect(probe).not.toContain(".cghidEventTap");
     expect(probe).not.toContain('run("pkill"');
     expect(probe).toContain('row.identifier === "lekh.inlineCompletionPanel"');
+    expect(probe).toContain('row.completionIdentifier === "lekh.inlineCompletion"');
+    expect(probe).toContain('row.completionRole === "AXStaticText"');
+    expect(probe).toContain('row.completionDescription.includes("हरू")');
+    expect(probe).toContain('compositionText !== "लेख"');
     expect(probe).toContain('line.includes("surface.result ghost=1")');
     expect(probe).toContain('actual !== "लेखहरू"');
     expect(probe).toContain("bundleIdentity = installedBundleIdentity(appBundle)");

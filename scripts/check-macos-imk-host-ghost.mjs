@@ -98,31 +98,61 @@ function readSurfaceDiagnostics(pid) {
 
 function accessibilityWindowProbe(pid) {
   if (!Number.isInteger(pid)) return { status: 1, rows: [], stderr: "Missing exact IMK process id." };
-  const probe = run("osascript", [
-    "-e", "tell application \"System Events\"",
-    "-e", `set targetProcess to first application process whose unix id is ${pid}`,
-    "-e", "set outputRows to {}",
-    "-e", "repeat with targetWindow in windows of targetProcess",
-    "-e", "set windowSize to size of targetWindow",
-    "-e", "set windowIdentifier to \"\"",
-    "-e", "try",
-    "-e", "set windowIdentifier to value of attribute \"AXIdentifier\" of targetWindow as text",
-    "-e", "end try",
-    "-e", "set end of outputRows to windowIdentifier & \"|\" & (item 1 of windowSize as text) & \"x\" & (item 2 of windowSize as text)",
-    "-e", "end repeat",
-    "-e", "set AppleScript's text item delimiters to linefeed",
-    "-e", "return outputRows as text",
-    "-e", "end tell"
-  ]);
-  const rows = probe.stdout
-    .trim()
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => {
-      const [identifier, dimensions = ""] = line.split("|");
-      const [width, height] = dimensions.split("x").map(Number);
-      return { identifier, width, height };
-    });
+  const probe = run("swift", ["-e", `
+import ApplicationServices
+import Foundation
+
+func attribute(_ element: AXUIElement, _ name: CFString) -> CFTypeRef? {
+  var value: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(element, name, &value) == .success else { return nil }
+  return value
+}
+
+func stringAttribute(_ element: AXUIElement, _ name: CFString) -> String {
+  attribute(element, name) as? String ?? ""
+}
+
+func findElement(_ element: AXUIElement, identifier: String, depth: Int = 0) -> AXUIElement? {
+  guard depth < 12 else { return nil }
+  if stringAttribute(element, kAXIdentifierAttribute as CFString) == identifier { return element }
+  let children = attribute(element, kAXChildrenAttribute as CFString) as? [AXUIElement] ?? []
+  for child in children {
+    if let match = findElement(child, identifier: identifier, depth: depth + 1) { return match }
+  }
+  return nil
+}
+
+let app = AXUIElementCreateApplication(pid_t(${pid}))
+let windows = attribute(app, kAXWindowsAttribute as CFString) as? [AXUIElement] ?? []
+var rows: [[String: Any]] = []
+for window in windows {
+  var size = CGSize.zero
+  if let value = attribute(window, kAXSizeAttribute as CFString) {
+    let sizeValue = value as! AXValue
+    AXValueGetValue(sizeValue, .cgSize, &size)
+  }
+  let completion = findElement(window, identifier: "lekh.inlineCompletion")
+  rows.append([
+    "identifier": stringAttribute(window, kAXIdentifierAttribute as CFString),
+    "width": Int(size.width.rounded()),
+    "height": Int(size.height.rounded()),
+    "completionIdentifier": completion.map { stringAttribute($0, kAXIdentifierAttribute as CFString) } ?? "",
+    "completionDescription": completion.map { stringAttribute($0, kAXDescriptionAttribute as CFString) } ?? "",
+    "completionHelp": completion.map { stringAttribute($0, kAXHelpAttribute as CFString) } ?? "",
+    "completionRole": completion.map { stringAttribute($0, kAXRoleAttribute as CFString) } ?? ""
+  ])
+}
+let data = try JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys])
+print(String(decoding: data, as: UTF8.self))
+`]);
+  let rows = (() => {
+    try {
+      const parsed = JSON.parse(probe.stdout.trim().split(/\r?\n/).at(-1) ?? "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
   return { status: probe.status, rows, stderr: probe.stderr };
 }
 
@@ -241,12 +271,16 @@ try {
   const accessibilityWindows = accessibilityWindowProbe(runtimePid);
   const surfaceDiagnostics = readSurfaceDiagnostics(runtimePid);
   const hasExactInlineWindow = accessibilityWindows.rows.some((row) =>
-    row.identifier === "lekh.inlineCompletionPanel"
+    row.identifier === "lekh.inlineCompletionPanel" &&
+    row.completionIdentifier === "lekh.inlineCompletion" &&
+    row.completionRole === "AXStaticText" &&
+    row.completionDescription.includes("हरू") &&
+    row.completionHelp.length > 0
   );
   const loggedVisibleGhost = surfaceDiagnostics.some((line) =>
     line.includes("surface.result ghost=1")
   );
-  if (!hasExactInlineWindow || !loggedVisibleGhost) {
+  if (compositionText !== "लेख" || !hasExactInlineWindow || !loggedVisibleGhost) {
     failed("assert-ghost-window", "No exact Lekh suffix-only ghost window was proven after composing lekh.", {
       compositionText,
       textEditPid: coldTextEditPid,
