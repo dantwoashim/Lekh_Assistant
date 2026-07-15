@@ -112,6 +112,52 @@ private struct LekhCompanionStateTests {
     check(!bundleOnly.selected, "bundle-only snapshot must never report selected")
     check(!bundleOnly.running, "bundle-only snapshot must never report running")
 
+    let offeredAt = Date(timeIntervalSince1970: 50)
+    let acceptedAt = Date(timeIntervalSince1970: 51)
+    let ghostEvidence = GhostRuntimeEvidence(
+      lastOfferedAt: offeredAt,
+      lastAcceptedAt: acceptedAt,
+      controllerIsActive: true,
+      rawSuppressionCounts: [
+        GhostSuppressionReason.noEligibleCompletion.rawValue: 99_999,
+        GhostSuppressionReason.presentationUnavailable.rawValue: -7,
+        "untrusted-dynamic-reason": 200
+      ]
+    )
+    check(ghostEvidence.lastOfferedAt == offeredAt, "ghost offer evidence must retain its content-free timestamp")
+    check(ghostEvidence.lastAcceptedAt == acceptedAt, "ghost acceptance evidence must retain its content-free timestamp")
+    check(ghostEvidence.controllerIsActive, "ghost evidence must expose whether its controller activation is still current")
+    let acceptedBeforeLatestOffer = GhostRuntimeEvidence(
+      lastOfferedAt: acceptedAt,
+      lastAcceptedAt: offeredAt
+    )
+    check(
+      acceptedBeforeLatestOffer.lastAcceptedAt == offeredAt,
+      "a later unaccepted offer must not erase a valid earlier acceptance"
+    )
+    check(
+      GhostRuntimeEvidence(lastAcceptedAt: acceptedAt).lastAcceptedAt == nil,
+      "acceptance evidence must not exist without any verified offer in the activation"
+    )
+    check(!GhostRuntimeEvidence.none.controllerIsActive, "empty ghost evidence must not claim an active controller")
+    check(
+      ghostEvidence.suppressionCounts[.noEligibleCompletion] == GhostRuntimeEvidence.maximumCountPerReason,
+      "ghost suppression counters must saturate at their fixed privacy bound"
+    )
+    check(
+      ghostEvidence.suppressionCounts[.presentationUnavailable] == 0,
+      "negative ghost suppression counters must clamp to zero"
+    )
+    check(
+      ghostEvidence.suppressionCounts.count == 2,
+      "unknown runtime-health keys must not enter the companion evidence model"
+    )
+    let healthyWithEvidence = NativeKeyboardStatus(ghostEvidence: ghostEvidence, readiness: healthy)
+    check(
+      healthyWithEvidence.ghostEvidence.lastOfferedAt == offeredAt,
+      "a validated healthy snapshot must expose its ghost evidence"
+    )
+
     print("LekhCompanionStateTests passed: authoritative lifecycle truth table")
   }
 

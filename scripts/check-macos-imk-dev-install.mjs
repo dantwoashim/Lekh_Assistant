@@ -388,6 +388,7 @@ if (snapshot.status !== 0) {
             bundleIdentity,
             activatedAfterMs: coldTextEdit.launchedAtMs,
             previousActivation: priorHealth.record?.controllerActivatedAt ?? null,
+            previousActivationIdentifier: priorHealth.record?.activationIdentifier ?? null,
             previousHealthMtimeMs: priorHealth.mtimeMs ?? null
           });
           health = runtime.record;
@@ -479,6 +480,10 @@ const runtimeHealthEvidence = health && typeof health === "object"
       serverStartedAt: health.serverStartedAt,
       controllerInitializedAt: health.controllerInitializedAt,
       controllerActivatedAt: health.controllerActivatedAt,
+      controllerInstanceIdentifier: health.controllerInstanceIdentifier,
+      activationIdentifier: health.activationIdentifier,
+      controllerIsActive: health.controllerIsActive,
+      controllerDeactivatedAt: health.controllerDeactivatedAt ?? null,
       healthMtimeMs,
       installedExecutablePath: bundleIdentity.executablePath,
       installedExecutableSha256: bundleIdentity.executableSha256,

@@ -306,6 +306,7 @@ try {
     bundleIdentity,
     activatedAfterMs: coldLaunch.launchedAtMs,
     previousActivation: priorHealth.record?.controllerActivatedAt ?? null,
+    previousActivationIdentifier: priorHealth.record?.activationIdentifier ?? null,
     previousHealthMtimeMs: priorHealth.mtimeMs ?? null
   });
   runtimeEvidence = {

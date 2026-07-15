@@ -209,6 +209,7 @@ export function exactRuntimeHealthIssues({
   bundleIdentity,
   activatedAfterMs,
   previousActivation = null,
+  previousActivationIdentifier = null,
   previousHealthMtimeMs = null,
   healthMtimeMs = null
 }) {
@@ -232,7 +233,39 @@ export function exactRuntimeHealthIssues({
       issues.push(`${field}=missing-or-invalid`);
     }
   }
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  for (const field of ["controllerInstanceIdentifier", "activationIdentifier"]) {
+    if (typeof record[field] !== "string" || !uuidPattern.test(record[field])) {
+      issues.push(`${field}=missing-or-invalid`);
+    }
+  }
+  if (typeof record.controllerIsActive !== "boolean") {
+    issues.push("controllerIsActive=missing-or-invalid");
+  }
+  const executableStartedAt = Date.parse(record.executableStartedAt);
+  const serverStartedAt = Date.parse(record.serverStartedAt);
+  const controllerInitializedAt = Date.parse(record.controllerInitializedAt);
   const activatedAt = Date.parse(record.controllerActivatedAt);
+  const deactivatedAt = Date.parse(record.controllerDeactivatedAt);
+  if (
+    [executableStartedAt, serverStartedAt, controllerInitializedAt, activatedAt].every(Number.isFinite) &&
+    !(
+      executableStartedAt <= serverStartedAt &&
+      executableStartedAt <= controllerInitializedAt &&
+      controllerInitializedAt <= activatedAt
+    )
+  ) {
+    issues.push("runtime lifecycle timestamps are not causally ordered");
+  }
+  if (record.controllerIsActive === true && record.controllerDeactivatedAt != null) {
+    issues.push("active controller unexpectedly has controllerDeactivatedAt");
+  }
+  if (
+    record.controllerIsActive === false &&
+    (!Number.isFinite(deactivatedAt) || !Number.isFinite(activatedAt) || deactivatedAt < activatedAt)
+  ) {
+    issues.push("deactivated controller has no causally ordered controllerDeactivatedAt");
+  }
   if (Number.isFinite(activatedAfterMs) && Number.isFinite(activatedAt) && activatedAt < activatedAfterMs - 2_000) {
     issues.push("controllerActivatedAt predates the fresh TextEdit input context");
   }
@@ -245,6 +278,13 @@ export function exactRuntimeHealthIssues({
     !Number.isFinite(healthMtimeMs)
   ) {
     issues.push("controllerActivatedAt did not change for the fresh TextEdit input context");
+  }
+  if (
+    typeof previousActivationIdentifier === "string" &&
+    previousActivationIdentifier.length > 0 &&
+    record.activationIdentifier === previousActivationIdentifier
+  ) {
+    issues.push("activationIdentifier did not change for the fresh TextEdit input context");
   }
   if (existsSync(runtimeHealthPath)) {
     const healthStat = statSync(runtimeHealthPath);
@@ -272,6 +312,7 @@ export function waitForExactRuntimeHealth({
   bundleIdentity,
   activatedAfterMs,
   previousActivation = null,
+  previousActivationIdentifier = null,
   previousHealthMtimeMs = null,
   timeoutMs = 15_000
 }) {
@@ -285,6 +326,7 @@ export function waitForExactRuntimeHealth({
       bundleIdentity,
       activatedAfterMs,
       previousActivation,
+      previousActivationIdentifier,
       previousHealthMtimeMs,
       healthMtimeMs: read.mtimeMs
     });

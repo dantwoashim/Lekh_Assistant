@@ -167,7 +167,40 @@ private func verifyFourModeContract() {
   require(passThrough.inlineSuggestion == nil && passThrough.autoCommitCandidate == nil, "Pass-through must not carry acceptance authority")
 }
 
+private func verifyRuntimeActivationGate() {
+  var gate = LekhRuntimeActivationGate()
+  let first = UUID().uuidString
+  let second = UUID().uuidString
+
+  require(!gate.activate("not-a-uuid"), "Runtime evidence must reject an invalid activation identity")
+  require(gate.activate(first), "A valid controller activation must open its evidence generation")
+  require(
+    gate.accepts(first, recordActivationIdentifier: first),
+    "The live activation must accept evidence bound to its own persisted generation"
+  )
+  require(
+    !gate.accepts(first, recordActivationIdentifier: second),
+    "Evidence must fail closed when the persisted generation does not match"
+  )
+  require(gate.activate(second), "A later controller activation must replace the live generation")
+  require(
+    !gate.accepts(first, recordActivationIdentifier: first),
+    "A delayed callback from an older controller activation must be rejected"
+  )
+  gate.deactivate(first)
+  require(
+    gate.accepts(second, recordActivationIdentifier: second),
+    "Deactivating an older controller must not invalidate the newer controller"
+  )
+  gate.deactivate(second)
+  require(
+    !gate.accepts(second, recordActivationIdentifier: second),
+    "A deactivated generation must reject later surface evidence"
+  )
+}
+
 verifyCandidateStateMachine()
 verifyAutoCommitPolicy()
 verifyFourModeContract()
+verifyRuntimeActivationGate()
 print("PASS: native candidate, delimiter, and four-mode unit contracts")

@@ -115,7 +115,28 @@ describe("native macOS companion", () => {
     expect(app).toContain("case .romanizedNepali, .traditionalNepali:");
     expect(app).toContain("case .romanizedRomanized, .traditionalRomanized:");
     expect(app).toContain('accessibilityIdentifier("ghost-preview-status")');
+    expect(app).not.toContain('accessibilityIdentifier("ghost-preview-evidence")');
+    expect(app).toContain("guard model.status.ghostEvidence.lastOfferedAt != nil else");
+    expect(app).toContain("model.copy.ghostAwaitingEvidenceStatus");
+    expect(app).toContain("model.copy.ghostVerifiedStatus");
+    expect(app).not.toContain("model.copy.ghostHealthyStatus");
+    expect(model).toContain("var ghostEvidence = GhostRuntimeEvidence.none");
+    expect(model).toContain("let lastGhostOfferedAt: Date?");
+    expect(model).toContain("let lastGhostAcceptedAt: Date?");
+    expect(model).toContain("let ghostSuppressionCounts: [String: Int]?");
+    expect(model).toContain("let controllerInstanceIdentifier: String?");
+    expect(model).toContain("let activationIdentifier: String?");
+    expect(model).toContain("let controllerIsActive: Bool?");
+    expect(model).toContain("let controllerDeactivatedAt: Date?");
+    expect(model).toContain("processStartDate(health.processIdentifier)");
+    expect(model).toContain("maximumCountPerReason = 10_000");
+    expect(model).toContain("ghostEvidence: .none");
+    expect(model).toContain("Ghost offered in most recent verified activation:");
+    expect(model).toContain("Privacy: this diagnostic evidence contains no typed or candidate text");
     expect(copy).toContain("Illustration only · verify it in TextEdit");
+    expect(copy).toContain("A running controller alone does not verify this feature");
+    expect(copy).not.toContain("controller चल्नु");
+    expect(copy).toContain("ghostStatusAccessibility");
     expect(copy).toContain("nothing is inserted until you accept it");
   });
 

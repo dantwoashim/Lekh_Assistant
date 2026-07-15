@@ -207,6 +207,59 @@ private struct RuntimeHealthRecord: Decodable {
   let serverStartedAt: Date?
   let controllerInitializedAt: Date?
   let controllerActivatedAt: Date?
+  let controllerInstanceIdentifier: String?
+  let activationIdentifier: String?
+  let controllerIsActive: Bool?
+  let controllerDeactivatedAt: Date?
+  let lastGhostOfferedAt: Date?
+  let lastGhostAcceptedAt: Date?
+  let ghostSuppressionCounts: [String: Int]?
+}
+
+enum GhostSuppressionReason: String, CaseIterable, Equatable {
+  case preferenceDisabled = "preference-disabled"
+  case noEligibleCompletion = "no-eligible-completion"
+  case compositionChanged = "composition-changed"
+  case compositionOwnerChanged = "composition-owner-changed"
+  case hostGeometryUnavailable = "host-geometry-unavailable"
+  case presentationUnavailable = "presentation-unavailable"
+  case candidateListRequested = "candidate-list-requested"
+}
+
+struct GhostRuntimeEvidence: Equatable {
+  static let maximumCountPerReason = 10_000
+  static let none = GhostRuntimeEvidence()
+
+  let lastOfferedAt: Date?
+  let lastAcceptedAt: Date?
+  let controllerIsActive: Bool
+  let suppressionCounts: [GhostSuppressionReason: Int]
+
+  init(
+    lastOfferedAt: Date? = nil,
+    lastAcceptedAt: Date? = nil,
+    controllerIsActive: Bool = false,
+    rawSuppressionCounts: [String: Int] = [:]
+  ) {
+    self.lastOfferedAt = lastOfferedAt
+    self.lastAcceptedAt = lastOfferedAt == nil ? nil : lastAcceptedAt
+    self.controllerIsActive = controllerIsActive
+    var sanitized: [GhostSuppressionReason: Int] = [:]
+    for reason in GhostSuppressionReason.allCases {
+      guard let value = rawSuppressionCounts[reason.rawValue] else { continue }
+      sanitized[reason] = min(max(value, 0), Self.maximumCountPerReason)
+    }
+    suppressionCounts = sanitized
+  }
+
+  var suppressionTotal: Int {
+    suppressionCounts.values.reduce(0, +)
+  }
+}
+
+private struct KeyboardRuntimeSnapshot {
+  let readiness: KeyboardReadiness
+  let ghostEvidence: GhostRuntimeEvidence
 }
 
 private struct ValidatedKeyboardBundle {
@@ -240,6 +293,7 @@ struct NativeKeyboardStatus: Equatable {
   var dictionaryBytes: Int64 = 0
   var neuralRuntime: NeuralRuntime = .unavailable
   var neuralArtifact: String?
+  var ghostEvidence = GhostRuntimeEvidence.none
   var readiness: KeyboardReadiness = .missing
   var lastChecked = Date()
 
@@ -532,6 +586,12 @@ final class LekhCompanionModel: ObservableObject {
     }
     let contractVersion = status.engineContractVersion.map(String.init) ?? "unknown"
     let neuralArtifact = status.neuralArtifact ?? "not packaged"
+    let ghostOffered = status.ghostEvidence.lastOfferedAt == nil ? "no" : "yes"
+    let ghostAcceptanceHandled = status.ghostEvidence.lastAcceptedAt == nil ? "no" : "yes"
+    let ghostSuppressions = GhostSuppressionReason.allCases.compactMap { reason -> String? in
+      guard let count = status.ghostEvidence.suppressionCounts[reason], count > 0 else { return nil }
+      return "\(reason.rawValue)=\(count)"
+    }.joined(separator: ",")
     return [
       "Lekh Keyboard Companion diagnostics",
       "Generated: \(ISO8601DateFormatter().string(from: Date()))",
@@ -550,9 +610,13 @@ final class LekhCompanionModel: ObservableObject {
       "Dictionary bytes: \(status.dictionaryBytes)",
       "Neural fallback: \(Self.diagnosticNeuralLabel(status.neuralRuntime))",
       "Neural artifact: \(neuralArtifact)",
+      "Controller currently active: \(status.ghostEvidence.controllerIsActive ? "yes" : "no")",
+      "Ghost offered in most recent verified activation: \(ghostOffered)",
+      "Ghost explicit acceptance handled in most recent verified activation: \(ghostAcceptanceHandled)",
+      "Most recent activation suppression counters: \(ghostSuppressions.isEmpty ? "none" : ghostSuppressions)",
       "Mode: \(preferences.mode.rawValue)",
       "Personal entries: \(learnedEntryCount)",
-      "Privacy: no typed text is included"
+      "Privacy: this diagnostic evidence contains no typed or candidate text"
     ].joined(separator: "\n")
   }
 
@@ -709,6 +773,26 @@ final class LekhCompanionModel: ObservableObject {
     return String(cString: buffer)
   }
 
+  nonisolated private static func processStartDate(_ processIdentifier: Int32) -> Date? {
+    guard processIdentifier > 0 else { return nil }
+    var info = proc_bsdinfo()
+    let expectedSize = Int32(MemoryLayout<proc_bsdinfo>.size)
+    let actualSize = withUnsafeMutablePointer(to: &info) { pointer in
+      proc_pidinfo(
+        processIdentifier,
+        PROC_PIDTBSDINFO,
+        0,
+        UnsafeMutableRawPointer(pointer),
+        expectedSize
+      )
+    }
+    guard actualSize == expectedSize, info.pbi_start_tvsec > 0 else { return nil }
+    return Date(
+      timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec) +
+        TimeInterval(info.pbi_start_tvusec) / 1_000_000
+    )
+  }
+
   nonisolated private static func canonicalPath(_ path: String) -> String {
     URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
   }
@@ -745,7 +829,7 @@ final class LekhCompanionModel: ObservableObject {
     } else {
       neuralRuntime = .unavailable
     }
-    let readiness = readKeyboardReadiness(
+    let runtime = readKeyboardRuntimeSnapshot(
       installed: installed,
       sourceCount: inputSources.sourceCount,
       registered: inputSources.registered,
@@ -765,12 +849,13 @@ final class LekhCompanionModel: ObservableObject {
       dictionaryBytes: fileBytes(dictionaryURL),
       neuralRuntime: neuralRuntime,
       neuralArtifact: manifest?["selectedArtifact"] as? String,
-      readiness: readiness,
+      ghostEvidence: runtime.ghostEvidence,
+      readiness: runtime.readiness,
       lastChecked: Date()
     )
   }
 
-  nonisolated private static func readKeyboardReadiness(
+  nonisolated private static func readKeyboardRuntimeSnapshot(
     installed: Bool,
     sourceCount: Int,
     registered: Bool,
@@ -779,53 +864,109 @@ final class LekhCompanionModel: ObservableObject {
     installedBundleVersion: String?,
     expectedExecutableURL: URL?,
     installedCodeDirectoryHash: Data?
-  ) -> KeyboardReadiness {
-    guard installed else { return .missing }
-    guard registered, sourceCount > 0 else { return .installedUnregistered }
-    guard enabled else { return .approvalRequired }
-    guard selected else { return .enabledNotSelected }
+  ) -> KeyboardRuntimeSnapshot {
+    guard installed else {
+      return KeyboardRuntimeSnapshot(readiness: .missing, ghostEvidence: .none)
+    }
+    guard registered, sourceCount > 0 else {
+      return KeyboardRuntimeSnapshot(readiness: .installedUnregistered, ghostEvidence: .none)
+    }
+    guard enabled else {
+      return KeyboardRuntimeSnapshot(readiness: .approvalRequired, ghostEvidence: .none)
+    }
+    guard selected else {
+      return KeyboardRuntimeSnapshot(readiness: .enabledNotSelected, ghostEvidence: .none)
+    }
 
     let healthURL = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/Lekh Keyboard/runtime-health.v1.json")
     guard FileManager.default.fileExists(atPath: healthURL.path) else {
-      return .selectedUntested
+      return KeyboardRuntimeSnapshot(readiness: .selectedUntested, ghostEvidence: .none)
     }
     guard let data = try? Data(contentsOf: healthURL) else {
-      return .degraded(.unreadableHealth)
+      return KeyboardRuntimeSnapshot(readiness: .degraded(.unreadableHealth), ghostEvidence: .none)
     }
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     guard let health = try? decoder.decode(RuntimeHealthRecord.self, from: data) else {
-      return .degraded(.unreadableHealth)
+      return KeyboardRuntimeSnapshot(readiness: .degraded(.unreadableHealth), ghostEvidence: .none)
     }
-    guard health.schemaVersion == 1 else { return .degraded(.wrongSchema) }
-    guard health.bundleIdentifier == inputMethodBundleIdentifier else { return .degraded(.wrongBundle) }
-    guard health.bundleVersion == installedBundleVersion else { return .degraded(.wrongBuild) }
+    guard health.schemaVersion == 1 else {
+      return KeyboardRuntimeSnapshot(readiness: .degraded(.wrongSchema), ghostEvidence: .none)
+    }
+    guard health.bundleIdentifier == inputMethodBundleIdentifier else {
+      return KeyboardRuntimeSnapshot(readiness: .degraded(.wrongBundle), ghostEvidence: .none)
+    }
+    guard health.bundleVersion == installedBundleVersion else {
+      return KeyboardRuntimeSnapshot(readiness: .degraded(.wrongBuild), ghostEvidence: .none)
+    }
     guard health.connectionName == "com.lekh.inputmethod.LekhKeyboard_Connection",
-          health.serverStartedAt != nil else { return .degraded(.wrongConnection) }
+          health.serverStartedAt != nil else {
+      return KeyboardRuntimeSnapshot(readiness: .degraded(.wrongConnection), ghostEvidence: .none)
+    }
     guard let controllerInitializedAt = health.controllerInitializedAt,
           let controllerActivatedAt = health.controllerActivatedAt,
+          let controllerInstanceIdentifier = health.controllerInstanceIdentifier,
+          UUID(uuidString: controllerInstanceIdentifier) != nil,
+          let activationIdentifier = health.activationIdentifier,
+          UUID(uuidString: activationIdentifier) != nil,
+          let controllerIsActive = health.controllerIsActive,
           let serverStartedAt = health.serverStartedAt,
           serverStartedAt >= health.executableStartedAt,
           controllerInitializedAt >= health.executableStartedAt,
           controllerActivatedAt >= controllerInitializedAt,
           controllerActivatedAt <= Date().addingTimeInterval(300) else {
-      return .degraded(.controllerMissing)
+      return KeyboardRuntimeSnapshot(readiness: .degraded(.controllerMissing), ghostEvidence: .none)
     }
     guard health.processIdentifier > 0,
           kill(health.processIdentifier, 0) == 0 || errno == EPERM else {
-      return .degraded(.processExited)
+      return KeyboardRuntimeSnapshot(readiness: .degraded(.processExited), ghostEvidence: .none)
     }
     guard let expectedExecutableURL,
           let installedCodeDirectoryHash,
           let liveExecutablePath = processExecutablePath(health.processIdentifier),
+          let liveProcessStartedAt = processStartDate(health.processIdentifier),
+          health.executableStartedAt >= liveProcessStartedAt.addingTimeInterval(-1),
+          health.executableStartedAt <= liveProcessStartedAt.addingTimeInterval(10),
           canonicalPath(liveExecutablePath) == canonicalPath(expectedExecutableURL.path),
           processCodeDirectoryHash(health.processIdentifier) == installedCodeDirectoryHash else {
-      return .degraded(.wrongBuild)
+      return KeyboardRuntimeSnapshot(readiness: .degraded(.wrongBuild), ghostEvidence: .none)
     }
-    return .healthy(
-      processIdentifier: health.processIdentifier,
-      controllerInitializedAt: controllerInitializedAt
+    let maximumEvidenceDate = Date().addingTimeInterval(300)
+    let evidenceUpperBound: Date
+    if controllerIsActive {
+      guard health.controllerDeactivatedAt == nil else {
+        return KeyboardRuntimeSnapshot(readiness: .degraded(.controllerMissing), ghostEvidence: .none)
+      }
+      evidenceUpperBound = maximumEvidenceDate
+    } else {
+      guard let controllerDeactivatedAt = health.controllerDeactivatedAt,
+            controllerDeactivatedAt >= controllerActivatedAt,
+            controllerDeactivatedAt <= maximumEvidenceDate else {
+        return KeyboardRuntimeSnapshot(readiness: .degraded(.controllerMissing), ghostEvidence: .none)
+      }
+      evidenceUpperBound = controllerDeactivatedAt
+    }
+    let lastGhostOfferedAt = health.lastGhostOfferedAt.flatMap { date in
+      date >= controllerActivatedAt && date <= evidenceUpperBound ? date : nil
+    }
+    let lastGhostAcceptedAt: Date? = health.lastGhostAcceptedAt.flatMap { date -> Date? in
+      guard lastGhostOfferedAt != nil,
+            date >= controllerActivatedAt,
+            date <= evidenceUpperBound else { return nil }
+      return date
+    }
+    return KeyboardRuntimeSnapshot(
+      readiness: .healthy(
+        processIdentifier: health.processIdentifier,
+        controllerInitializedAt: controllerInitializedAt
+      ),
+      ghostEvidence: GhostRuntimeEvidence(
+        lastOfferedAt: lastGhostOfferedAt,
+        lastAcceptedAt: lastGhostAcceptedAt,
+        controllerIsActive: controllerIsActive,
+        rawSuppressionCounts: health.ghostSuppressionCounts ?? [:]
+      )
     )
   }
 

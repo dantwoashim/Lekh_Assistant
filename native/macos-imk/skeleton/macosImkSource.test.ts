@@ -279,6 +279,48 @@ describe("macOS IMK proof target source", () => {
     expect(inlinePreviewPanel).toContain("content.setAccessibilityHelp(acceptanceHint)");
   });
 
+  it("publishes bounded content-free ghost evidence without blocking the typing thread", () => {
+    const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
+    const runtimeHealth = readFileSync(join(root, "native/macos-imk/skeleton/LekhRuntimeHealth.swift"), "utf8");
+    const secureBlock = controller.slice(
+      controller.indexOf("private func clearStateForSecureInput"),
+      controller.indexOf("private func cancelLocalComposition")
+    );
+    const acceptanceBlock = controller.slice(
+      controller.indexOf("private func commitInlineSuggestion"),
+      controller.indexOf("private func commitCandidateText")
+    );
+
+    expect(runtimeHealth).toContain("var lastGhostOfferedAt: Date?");
+    expect(runtimeHealth).toContain("var lastGhostAcceptedAt: Date?");
+    expect(runtimeHealth).toContain("var ghostSuppressionCounts: [String: Int]?");
+    expect(runtimeHealth).toContain("var controllerInstanceIdentifier: String?");
+    expect(runtimeHealth).toContain("var activationIdentifier: String?");
+    expect(runtimeHealth).toContain("var controllerIsActive: Bool?");
+    expect(runtimeHealth).toContain("var controllerDeactivatedAt: Date?");
+    expect(runtimeHealth).toContain("public enum GhostSuppressionReason: String, CaseIterable, Sendable");
+    expect(runtimeHealth).toContain("maximumGhostSuppressionCount = 10_000");
+    expect(runtimeHealth).toContain("min(current + 1, maximumGhostSuppressionCount)");
+    expect(runtimeHealth).toContain("update(coalesce: true)");
+    expect(runtimeHealth).toContain("update(forceNewRecord: true)");
+    expect(runtimeHealth).toContain("acceptsSurfaceEvidence(record, activationIdentifier: activationIdentifier)");
+    expect(runtimeHealth).toContain("record.ghostSuppressionCounts = [:]");
+    expect(runtimeHealth).toContain("max(record.executableStartedAt, min(initializedAt, now))");
+    expect(runtimeHealth).toContain("queue.asyncAfter(deadline: .now() + ghostWriteDelay");
+    expect(runtimeHealth).not.toContain("func markGhostSuppressed(_ reason: String");
+    expect(controller).toContain("recordGhostOffered()");
+    expect(controller).toContain("recordGhostSuppression(.hostGeometryUnavailable)");
+    expect(controller).toContain("recordGhostSuppression(.presentationUnavailable)");
+    expect(controller).toContain("LekhRuntimeHealth.markControllerDeactivated(");
+    expect(controller).toContain("override func inputControllerWillClose()")
+    expect(controller).toContain("deactivateRuntimeEvidence()")
+    expect(controller).toContain("Secure Event Input can turn on after a nonsecure key scheduled this");
+    expect(secureBlock).not.toContain("LekhRuntimeHealth.markGhost");
+    expect(acceptanceBlock.indexOf("let dispatched = commitCandidateText")).toBeLessThan(
+      acceptanceBlock.indexOf("recordGhostAcceptanceHandled()")
+    );
+  });
+
   it("uses passive, progressive candidate disclosure and route-consistent safe acceptance", () => {
     const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
     const candidateController = readFileSync(join(root, "native/macos-imk/skeleton/LekhCandidateController.swift"), "utf8");
@@ -541,7 +583,7 @@ describe("macOS IMK proof target source", () => {
     expect(runtimeHealth).toContain('expectedConnectionName = "com.lekh.inputmethod.LekhKeyboard_Connection"');
     expect(runtimeHealth).toContain("runtime-health.v1.json");
     expect(appMain).toContain("LekhRuntimeHealth.markServerStarted");
-    expect(controller).toContain("LekhRuntimeHealth.markControllerInitialized()");
+    expect(controller).toContain("LekhRuntimeHealth.markControllerInitialized(");
     expect(appMain.indexOf("server = IMKServer")).toBeLessThan(appMain.indexOf("LekhMetricReporterBootstrap.startIfOptedIn"));
     expect(appMain).not.toContain("runningApplications(withBundleIdentifier:");
     expect(existsSync(join(root, "native/macos-imk/skeleton/install-dev.sh"))).toBe(true);

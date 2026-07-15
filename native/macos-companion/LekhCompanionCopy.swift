@@ -235,15 +235,52 @@ struct CompanionCopy {
 
   var ghostTitle: String { value("A quiet suggestion, never a surprise", "शान्त सुझाव, कहिल्यै अनपेक्षित होइन") }
   var ghostBody: String { value("A high-confidence completion appears in gray. Tab or → accepts it. Keep typing to ignore it. Space converts only a verified safe exact mapping; otherwise it preserves your raw input.", "उच्च विश्वासको पूर्णता खैरोमा देखिन्छ। Tab वा → ले स्वीकार्छ। बेवास्ता गर्न टाइप गरिरहनुहोस्। Space ले प्रमाणित सुरक्षित मिलान मात्र रूपान्तरण गर्छ; अन्यथा टाइप गरेकै अक्षर राख्छ।") }
-  var ghostHealthyStatus: String { value("Illustration for the active, verified keyboard", "सक्रिय र प्रमाणित किबोर्डको उदाहरण") }
+  var ghostVerifiedStatus: String { value("Real ghost rendering verified", "वास्तविक खैरो सुझाव देखिएको प्रमाणित") }
+  var ghostAwaitingEvidenceStatus: String { value("Keyboard connected · no ghost shown yet", "किबोर्ड जोडिएको छ · खैरो सुझाव अझै देखिएको छैन") }
   var ghostSelectedUntestedStatus: String { value("Illustration only · verify it in TextEdit", "उदाहरण मात्र · TextEdit मा प्रमाणित गर्नुहोस्") }
   var ghostInactiveStatus: String { value("Illustration only · activate Lekh to use it", "उदाहरण मात्र · प्रयोग गर्न Lekh सक्रिय गर्नुहोस्") }
   var ghostDegradedStatus: String { value("Illustration only · the keyboard is not responding", "उदाहरण मात्र · किबोर्डले प्रतिक्रिया दिइरहेको छैन") }
   var ghostDisabledStatus: String { value("Ghost suggestions are off", "खैरो सुझाव बन्द छ") }
+  var ghostVerifiedOfferedEvidence: String {
+    value(
+      "Lekh recently showed a real gray completion. The example below is only a guide.",
+      "Lekh ले हालै वास्तविक खैरो पूर्णता देखायो। तलको उदाहरण प्रयोग विधि मात्र हो।"
+    )
+  }
+  var ghostVerifiedAcceptedEvidence: String {
+    value(
+      "Lekh recently showed a real gray completion, and Tab or → was used. The example below is only a guide.",
+      "Lekh ले हालै वास्तविक खैरो पूर्णता देखायो र Tab वा → प्रयोग भयो। तलको उदाहरण प्रयोग विधि मात्र हो।"
+    )
+  }
+  func ghostAwaitingEvidenceDetail(suppressionCount: Int) -> String {
+    if suppressionCount > 0 {
+      return value(
+        "No completion appeared during the most recent verified activation. Lekh recorded \(suppressionCount) content-free eligibility, dismissal or presentation events. This diagnostic evidence contains no typed or candidate text.",
+        "पछिल्लो प्रमाणित सक्रियतामा कुनै पूर्णता देखिएन। Lekh ले \(suppressionCount) वटा पाठरहित योग्यता, हटाउने वा प्रस्तुति घटना रेकर्ड गर्‍यो। यो डायग्नोस्टिक प्रमाणमा टाइप वा उम्मेदवार पाठ छैन।"
+      )
+    }
+    return value(
+      "Type a supported word in TextEdit to collect real on-screen evidence. A running controller alone does not verify this feature.",
+      "वास्तविक अन-स्क्रिन प्रमाणका लागि TextEdit मा समर्थित शब्द टाइप गर्नुहोस्। किबोर्ड इन्जिन चल्नु मात्रले यो सुविधा प्रमाणित गर्दैन।"
+    )
+  }
+  var ghostIllustrationOnlyEvidence: String {
+    value(
+      "This sample explains the interaction; it is not evidence that the installed keyboard displayed a completion.",
+      "यो नमुनाले प्रयोग विधि बुझाउँछ; इन्स्टल भएको किबोर्डले पूर्णता देखाएको प्रमाण होइन।"
+    )
+  }
+  var ghostDisabledEvidence: String {
+    value(
+      "No new inline completions are displayed while this setting is off.",
+      "यो सेटिङ बन्द हुँदा नयाँ इनलाइन पूर्णता देखाइँदैन।"
+    )
+  }
   var ghostConfidenceNote: String { value("Lekh shows this only when it has a confident token-level completion; nothing is inserted until you accept it.", "Lekh सँग भरपर्दो टोकन-स्तरको पूर्णता हुँदा मात्र यो देखिन्छ; तपाईंले स्वीकार नगरेसम्म केही पनि घुसाइँदैन।") }
   var enableGhostSuggestions: String { value("Turn On Ghost Suggestions", "खैरो सुझाव खोल्नुहोस्") }
   func ghostModeExample(_ mode: NativeTypingMode) -> String {
-    value("Example for \(modeName(mode))", "\(modeName(mode)) को उदाहरण")
+    value("Illustration for \(modeName(mode))", "\(modeName(mode)) को उदाहरण")
   }
   func ghostPreviewAccessibility(typed: String, suggestion: String) -> String {
     value(
@@ -255,6 +292,12 @@ struct CompanionCopy {
     value(
       "Press Tab or Right Arrow to accept the visible completion, or keep typing to ignore it.",
       "देखिएको पूर्णता स्वीकार्न Tab वा दायाँ एरो थिच्नुहोस्, वा बेवास्ता गर्न टाइप गरिरहनुहोस्।"
+    )
+  }
+  func ghostStatusAccessibility(status: String, evidence: String) -> String {
+    value(
+      "Ghost suggestion status: \(status). Evidence: \(evidence)",
+      "खैरो सुझाव स्थिति: \(status)। प्रमाण: \(evidence)"
     )
   }
   var accept: String { value("accept", "स्वीकार") }

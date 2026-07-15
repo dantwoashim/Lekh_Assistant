@@ -465,10 +465,23 @@ private struct GhostPreview: View {
           Text(model.copy.ghostTitle).font(.headline)
           Text(model.copy.ghostBody).foregroundStyle(.secondary)
         }
-        Label(previewState.label, systemImage: previewState.symbol)
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(previewState.color)
-          .accessibilityIdentifier("ghost-preview-status")
+        VStack(alignment: .leading, spacing: 5) {
+          Label(previewState.label, systemImage: previewState.symbol)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(previewState.color)
+          Text(previewState.evidence)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+          model.copy.ghostStatusAccessibility(
+            status: previewState.label,
+            evidence: previewState.evidence
+          )
+        )
+        .accessibilityIdentifier("ghost-preview-status")
         Text(model.copy.ghostModeExample(model.preferences.mode))
           .font(.callout.weight(.medium))
         ViewThatFits(in: .horizontal) {
@@ -482,7 +495,6 @@ private struct GhostPreview: View {
             acceptanceHint
           }
         }
-        .opacity(previewState.isDimmed ? 0.58 : 1)
         Text(model.copy.ghostConfidenceNote)
           .font(.caption)
           .foregroundStyle(.secondary)
@@ -509,7 +521,6 @@ private struct GhostPreview: View {
     .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(model.copy.ghostPreviewAccessibility(typed: sample.typed, suggestion: sample.suggestion))
-    .accessibilityValue(previewState.label)
     .accessibilityIdentifier("ghost-preview-sample")
   }
 
@@ -539,37 +550,49 @@ private struct GhostPreview: View {
         label: model.copy.ghostDisabledStatus,
         symbol: "eye.slash",
         color: .secondary,
-        isDimmed: true
+        evidence: model.copy.ghostDisabledEvidence
       )
     }
     switch model.status.readiness {
     case .healthy:
+      guard model.status.ghostEvidence.lastOfferedAt != nil else {
+        return GhostPreviewState(
+          label: model.copy.ghostAwaitingEvidenceStatus,
+          symbol: "circle.dashed",
+          color: .secondary,
+          evidence: model.copy.ghostAwaitingEvidenceDetail(
+            suppressionCount: model.status.ghostEvidence.suppressionTotal
+          )
+        )
+      }
       return GhostPreviewState(
-        label: model.copy.ghostHealthyStatus,
+        label: model.copy.ghostVerifiedStatus,
         symbol: "checkmark.circle.fill",
         color: .green,
-        isDimmed: false
+        evidence: model.status.ghostEvidence.lastAcceptedAt == nil
+          ? model.copy.ghostVerifiedOfferedEvidence
+          : model.copy.ghostVerifiedAcceptedEvidence
       )
     case .selectedUntested:
       return GhostPreviewState(
         label: model.copy.ghostSelectedUntestedStatus,
         symbol: "clock.badge.questionmark",
         color: .orange,
-        isDimmed: true
+        evidence: model.copy.ghostIllustrationOnlyEvidence
       )
     case .degraded:
       return GhostPreviewState(
         label: model.copy.ghostDegradedStatus,
         symbol: "exclamationmark.triangle.fill",
         color: .red,
-        isDimmed: true
+        evidence: model.copy.ghostIllustrationOnlyEvidence
       )
     case .missing, .installedUnregistered, .approvalRequired, .enabledNotSelected:
       return GhostPreviewState(
         label: model.copy.ghostInactiveStatus,
         symbol: "info.circle.fill",
         color: .orange,
-        isDimmed: true
+        evidence: model.copy.ghostIllustrationOnlyEvidence
       )
     }
   }
@@ -584,7 +607,7 @@ private struct GhostPreviewState {
   let label: String
   let symbol: String
   let color: Color
-  let isDimmed: Bool
+  let evidence: String
 }
 
 private struct TypingView: View {

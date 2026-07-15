@@ -185,6 +185,9 @@ open class LekhInputController: IMKInputController {
   private let customCandidatePanel = LekhCandidatePanel()
   private let inlinePreviewPanel = LekhInlinePreviewPanel()
   private let layoutTranslator = LekhKeyboardLayoutTranslator.shared
+  private let runtimeControllerIdentifier = UUID().uuidString
+  private var runtimeControllerInitializedAt = Date()
+  private var runtimeActivationIdentifier: String?
   private var sessionId = UUID().uuidString
   private var nativeMode = LekhNativeTypingMode.romanizedTraditional
   private var modeMenuOpen = false
@@ -231,12 +234,17 @@ open class LekhInputController: IMKInputController {
     observeSharedPreferencesChanges()
     configureModeFromDefaults()
     observeNativeModeChanges()
-    LekhRuntimeHealth.markControllerInitialized()
+    runtimeControllerInitializedAt = Date()
+    LekhRuntimeHealth.markControllerInitialized(
+      controllerIdentifier: runtimeControllerIdentifier,
+      initializedAt: runtimeControllerInitializedAt
+    )
     lekhNativeLog("controller.init")
     logSelectorAvailability()
   }
 
   deinit {
+    deactivateRuntimeEvidence()
     NotificationCenter.default.removeObserver(self)
     CFNotificationCenterRemoveObserver(
       CFNotificationCenterGetDarwinNotifyCenter(),
@@ -269,7 +277,13 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func activateServer(_ sender: Any!) {
-    LekhRuntimeHealth.markControllerActivated()
+    let activationIdentifier = UUID().uuidString
+    runtimeActivationIdentifier = activationIdentifier
+    LekhRuntimeHealth.markControllerActivated(
+      controllerIdentifier: runtimeControllerIdentifier,
+      initializedAt: runtimeControllerInitializedAt,
+      activationIdentifier: activationIdentifier
+    )
     lekhHostProbeLog("surface.lifecycle activate")
     if engineClient.hasComposition(sessionId: sessionId) {
       sharedPreferencesReloadPending = true
@@ -291,6 +305,7 @@ open class LekhInputController: IMKInputController {
   open override func deactivateServer(_ sender: Any!) {
     lekhHostProbeLog("surface.lifecycle deactivate")
     lekhNativeLog("lifecycle.deactivate")
+    deactivateRuntimeEvidence()
     hideCandidates()
     defer { engineClient.endSession(sessionId) }
     if IsSecureEventInputEnabled() {
@@ -320,6 +335,7 @@ open class LekhInputController: IMKInputController {
 
   open override func inputControllerWillClose() {
     lekhNativeLog("lifecycle.close")
+    deactivateRuntimeEvidence()
     hideCandidates()
     engineClient.endSession(sessionId)
     clearCompositionOwner()
@@ -566,7 +582,7 @@ open class LekhInputController: IMKInputController {
       if let suggestion = visibleInlineSuggestion(for: client) {
         candidateSelectionExplicit = true
         lekhNativeLog("inlineSuggestion.accept route=command.tab key=tab")
-        return commitCandidateText(suggestion.acceptedText, client: client, suffix: "")
+        return commitInlineSuggestion(suggestion, client: client)
       }
       if candidateSelectionExplicit, isCurrentCandidateSurface(for: client) {
         return commitSelectedCandidate(client: client, suffix: "")
@@ -1023,7 +1039,7 @@ open class LekhInputController: IMKInputController {
     if key == lekhArrowRightKey, let suggestion = visibleInlineSuggestion(for: client) {
       candidateSelectionExplicit = true
       lekhNativeLog("inlineSuggestion.accept route=\(route) key=right")
-      return commitCandidateText(suggestion.acceptedText, client: client, suffix: "")
+      return commitInlineSuggestion(suggestion, client: client)
     }
 
     if key == " " {
@@ -1038,7 +1054,7 @@ open class LekhInputController: IMKInputController {
       if let suggestion = visibleInlineSuggestion(for: client) {
         candidateSelectionExplicit = true
         lekhNativeLog("inlineSuggestion.accept route=\(route) key=tab")
-        return commitCandidateText(suggestion.acceptedText, client: client, suffix: "")
+        return commitInlineSuggestion(suggestion, client: client)
       }
       if candidateSelectionExplicit {
         return commitSelectedCandidate(client: client, suffix: "")
@@ -1614,8 +1630,12 @@ open class LekhInputController: IMKInputController {
       pendingNativeModeRequiresPersistence = false
     }
     if !LekhNativePreferences.inlinePreviewEnabled {
+      if pendingInlineSuggestion != nil || activeInlineSuggestion != nil || inlinePreviewPanel.isVisible {
+        recordGhostSuppression(.preferenceDisabled)
+      }
       pendingInlineSuggestion = nil
       activeInlineSuggestion = nil
+      activeInlineSuggestionToken = nil
       inlinePreviewPanel.hide()
     }
     sharedPreferencesReloadPending = true
@@ -1819,9 +1839,21 @@ open class LekhInputController: IMKInputController {
       activeAutoCommitCandidate = decision.autoCommitCandidate.flatMap {
         isValidAutoCommitCandidate($0, rawBuffer: rawBuffer) ? $0 : nil
       }
-      pendingInlineSuggestion = LekhNativePreferences.inlinePreviewEnabled
-        ? decision.inlineSuggestion
-        : nil
+      let inlinePreviewEnabled = LekhNativePreferences.inlinePreviewEnabled
+      let hadPresentedGhost = inlinePreviewPanel.isVisible && activeInlineSuggestion != nil
+      if inlinePreviewEnabled {
+        pendingInlineSuggestion = decision.inlineSuggestion
+        if decision.inlineSuggestion == nil {
+          recordGhostSuppression(.noEligibleCompletion)
+        } else if hadPresentedGhost {
+          recordGhostSuppression(.compositionChanged)
+        }
+      } else {
+        pendingInlineSuggestion = nil
+        if decision.inlineSuggestion != nil || hadPresentedGhost {
+          recordGhostSuppression(.preferenceDisabled)
+        }
+      }
       lekhHostProbeLog(
         "surface.decision mode=\(nativeMode.rawValue) candidates=\(decision.candidates.count) suggestion=\(pendingInlineSuggestion == nil ? 0 : 1) markedRaw=\(decision.markedText == rawBuffer ? 1 : 0)"
       )
@@ -1897,8 +1929,15 @@ open class LekhInputController: IMKInputController {
     guard Self.compositionSurfaceRetryDelays.indices.contains(attempt) else { return }
     let delay = Self.compositionSurfaceRetryDelays[attempt]
     DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-      guard let self,
-            self.surfaceRenderGeneration == generation,
+      guard let self else { return }
+      // Secure Event Input can turn on after a nonsecure key scheduled this
+      // render but before AppKit supplies caret geometry. Re-check here so no
+      // stale completion surface or evidence crosses that boundary.
+      guard !IsSecureEventInputEnabled() else {
+        self.clearStateForSecureInput(client: self.client())
+        return
+      }
+      guard self.surfaceRenderGeneration == generation,
             self.sessionId == sessionSnapshot,
             self.engineClient.rawBuffer(sessionId: sessionSnapshot) == rawBuffer,
             !self.compositionSurfacesDismissed else { return }
@@ -1906,6 +1945,9 @@ open class LekhInputController: IMKInputController {
       guard let surfaceClient = self.client(), self.isCompositionOwner(surfaceClient) else {
         // A delayed render must never follow focus to a different responder.
         // Keep the old marked range untouched; only its auxiliary UI is stale.
+        if self.pendingInlineSuggestion != nil {
+          self.recordGhostSuppression(.compositionOwnerChanged)
+        }
         self.hideCandidates()
         lekhNativeLog("surface.suppressed reason=compositionOwnerMismatch")
         return
@@ -1942,13 +1984,23 @@ open class LekhInputController: IMKInputController {
 
       var ghostIsVisible = false
       if let suggestion = self.pendingInlineSuggestion {
-        ghostIsVisible = self.inlinePreviewPanel.show(
-          suffix: suggestion.suffix,
-          anchorRect: anchorRect,
-          hostFont: hostFont,
-          acceptanceHint: LekhL10n.text("inline.preview.acceptHint"),
-          announce: false
-        )
+        if anchorRect != nil {
+          ghostIsVisible = self.inlinePreviewPanel.show(
+            suffix: suggestion.suffix,
+            anchorRect: anchorRect,
+            hostFont: hostFont,
+            acceptanceHint: LekhL10n.text("inline.preview.acceptHint"),
+            announce: false
+          )
+          if ghostIsVisible {
+            self.recordGhostOffered()
+          } else {
+            self.recordGhostSuppression(.presentationUnavailable)
+          }
+        } else {
+          self.recordGhostSuppression(.hostGeometryUnavailable)
+          self.inlinePreviewPanel.hide()
+        }
         self.activeInlineSuggestion = ghostIsVisible ? suggestion : nil
         self.activeInlineSuggestionToken = ghostIsVisible
           ? self.makeSurfaceToken(for: surfaceClient)
@@ -2160,6 +2212,9 @@ open class LekhInputController: IMKInputController {
   }
 
   private func dismissInlineSuggestion() {
+    if pendingInlineSuggestion != nil || activeInlineSuggestion != nil || inlinePreviewPanel.isVisible {
+      recordGhostSuppression(.candidateListRequested)
+    }
     surfaceRenderGeneration += 1
     inlineAnnouncementGeneration += 1
     pendingInlineSuggestion = nil
@@ -2344,6 +2399,48 @@ open class LekhInputController: IMKInputController {
           rect.size.height.isFinite,
           rect.height > 0 else { return false }
     return NSScreen.screens.contains { $0.frame.intersects(rect) || $0.frame.contains(rect.origin) }
+  }
+
+  private func recordGhostOffered() {
+    guard let runtimeActivationIdentifier else { return }
+    LekhRuntimeHealth.markGhostOffered(
+      activationIdentifier: runtimeActivationIdentifier
+    )
+  }
+
+  private func deactivateRuntimeEvidence() {
+    guard let runtimeActivationIdentifier else { return }
+    LekhRuntimeHealth.markControllerDeactivated(
+      activationIdentifier: runtimeActivationIdentifier
+    )
+    self.runtimeActivationIdentifier = nil
+  }
+
+  private func recordGhostAcceptanceHandled() {
+    guard let runtimeActivationIdentifier else { return }
+    LekhRuntimeHealth.markGhostAccepted(
+      activationIdentifier: runtimeActivationIdentifier
+    )
+  }
+
+  private func recordGhostSuppression(_ reason: LekhRuntimeHealth.GhostSuppressionReason) {
+    guard let runtimeActivationIdentifier else { return }
+    LekhRuntimeHealth.markGhostSuppressed(
+      reason,
+      activationIdentifier: runtimeActivationIdentifier
+    )
+  }
+
+  @discardableResult
+  private func commitInlineSuggestion(
+    _ suggestion: LekhInlineSuggestion,
+    client: IMKTextInput
+  ) -> Bool {
+    let dispatched = commitCandidateText(suggestion.acceptedText, client: client, suffix: "")
+    if dispatched {
+      recordGhostAcceptanceHandled()
+    }
+    return dispatched
   }
 
   @discardableResult
