@@ -29,6 +29,7 @@ const exportedAppBundle = join(releaseDir, "Lekh Keyboard.imkdevbundle");
 const legacyAppBundle = join(releaseDir, "Lekh Keyboard.app");
 const legacyDevBundle = join(releaseDir, "Lekh Keyboard Dev.imkdevbundle");
 const executableName = "LekhInputMethodApp";
+const expectedConnectionName = "com.lekh.inputmethod.LekhKeyboard_Connection";
 const iconSource = join(root, "build", "icon.icns");
 const legacyReleaseRuntimeJson = join(releaseDir, "runtime-suggestions.sanitized.json");
 const legacyReleaseUniversalExecutable = join(releaseDir, `${executableName}.universal`);
@@ -36,6 +37,12 @@ const runtimeJsonOutputPath = join(buildReleaseDir, "runtime-suggestions.sanitiz
 const runtimeBinaryOutputPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
 const runtimeJsonBundlePath = join(appBundle, "Contents", "Resources", "runtime-suggestions.json");
 const engineContractBundlePath = join(appBundle, "Contents", "Resources", "lekh-engine-contract.v1.json");
+const tokenCandidateSourcePath = join(root, "data", "engine", "lekh-token-candidates.v1.json");
+const tokenCandidateBundlePath = join(appBundle, "Contents", "Resources", "lekh-token-candidates.v1.json");
+const tokenCompletionSourcePath = join(root, "data", "completion", "runtime", "v1", "lekh-token-completions.v1.json");
+const tokenCompletionManifestSourcePath = join(root, "data", "completion", "runtime", "v1", "lekh-token-completions.v1.manifest.json");
+const tokenCompletionBundlePath = join(appBundle, "Contents", "Resources", "lekh-token-completions.v1.json");
+const tokenCompletionManifestBundlePath = join(appBundle, "Contents", "Resources", "lekh-token-completions.v1.manifest.json");
 const neuralModelSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
 const neuralManifestSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const neuralVocabSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.vocab.json");
@@ -174,6 +181,27 @@ const swiftPrefixMapArgs = [
   `${root}=.`
 ];
 
+run(
+  "canonical-token-contract",
+  process.execPath,
+  [join(root, "scripts", "check-canonical-token-contract.mjs")]
+);
+run(
+  "audit-token-completion-sources",
+  process.execPath,
+  [join(root, "scripts", "audit-token-completion-sources.mjs")]
+);
+run(
+  "build-token-completion-index",
+  process.execPath,
+  [join(root, "scripts", "build-token-completion-index.mjs")]
+);
+run(
+  "check-token-completion-index",
+  process.execPath,
+  [join(root, "scripts", "check-token-completion-index.mjs")]
+);
+
 const behaviorProbe = run(
   "native-behavior-performance-probe",
   "swift",
@@ -303,9 +331,13 @@ copyFileSync(
   join(root, "data", "engine", "lekh-engine-contract.v1.json"),
   engineContractBundlePath
 );
+copyFileSync(tokenCandidateSourcePath, tokenCandidateBundlePath);
+copyFileSync(tokenCompletionSourcePath, tokenCompletionBundlePath);
+copyFileSync(tokenCompletionManifestSourcePath, tokenCompletionManifestBundlePath);
 // Neural fallback is deliberately absent by default. Benchmark packaging is
 // opt-in so the dev bundle cannot silently ship a non-production neural tail.
 const neuralPackagingRequested = process.env.LEKH_PACKAGE_NEURAL_MODEL === "1";
+const experimentalNeuralTypingRequested = process.env.LEKH_EXPERIMENTAL_NEURAL_TYPING === "1";
 let neuralModelPackaged = false;
 if (neuralPackagingRequested) {
   const neuralPackagingFailures = [];
@@ -319,6 +351,19 @@ if (neuralPackagingRequested) {
   copyFileSync(neuralManifestSourcePath, neuralManifestBundlePath);
   copyFileSync(neuralVocabSourcePath, neuralVocabBundlePath);
   neuralModelPackaged = true;
+}
+if (experimentalNeuralTypingRequested && !neuralModelPackaged) {
+  finish("failed", {
+    step: "experimental-neural-typing",
+    reason: "LEKH_EXPERIMENTAL_NEURAL_TYPING=1 requires LEKH_PACKAGE_NEURAL_MODEL=1."
+  }, 1);
+}
+if (experimentalNeuralTypingRequested) {
+  run("enable-experimental-neural-typing", "/usr/libexec/PlistBuddy", [
+    "-c",
+    "Add :LekhExperimentalNeuralTypingEnabled bool true",
+    join(appBundle, "Contents", "Info.plist")
+  ]);
 }
 
 if (existsSync(iconSource)) {
@@ -374,6 +419,16 @@ const entitlementProbe = spawnSync("codesign", ["-d", "--entitlements", ":-", ap
 const entitlements = `${entitlementProbe.stdout}\n${entitlementProbe.stderr}`;
 
 const packagingFailures = [];
+const connectionNameProbe = spawnSync(
+  "/usr/bin/plutil",
+  ["-extract", "InputMethodConnectionName", "raw", "-o", "-", join(appBundle, "Contents", "Info.plist")],
+  { cwd: root, encoding: "utf8" }
+);
+if (connectionNameProbe.status !== 0 || connectionNameProbe.stdout.trim() !== expectedConnectionName) {
+  packagingFailures.push(
+    `InputMethodConnectionName must be exactly ${expectedConnectionName}; observed ${JSON.stringify(connectionNameProbe.stdout.trim())}.`
+  );
+}
 for (const requiredArch of archs) {
   if (!lipoInfo.split(/\s+/).includes(requiredArch)) {
     packagingFailures.push(`Missing required architecture slice: ${requiredArch}.`);
@@ -392,6 +447,15 @@ if (!existsSync(runtimeJsonBundlePath) || statSync(runtimeJsonBundlePath).size =
 }
 if (!existsSync(engineContractBundlePath) || statSync(engineContractBundlePath).size === 0) {
   packagingFailures.push("Packaged canonical engine contract is required.");
+}
+if (!existsSync(tokenCandidateBundlePath) || statSync(tokenCandidateBundlePath).size === 0) {
+  packagingFailures.push("Packaged canonical token-candidate contract is required.");
+}
+if (!existsSync(tokenCompletionBundlePath) || statSync(tokenCompletionBundlePath).size === 0) {
+  packagingFailures.push("Packaged verified token-completion index is required.");
+}
+if (!existsSync(tokenCompletionManifestBundlePath) || statSync(tokenCompletionManifestBundlePath).size === 0) {
+  packagingFailures.push("Packaged token-completion manifest is required.");
 }
 if (strings.includes("@rpath/Sparkle.framework")) packagingFailures.push("IMK executable must not link Sparkle.framework.");
 
@@ -418,14 +482,27 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-r
   sanitizedRuntimeJsonBytes: statSync(runtimeJsonOutputPath).size,
   packagedRuntimeJsonBytes: statSync(runtimeJsonBundlePath).size,
   engineContractBytes: statSync(engineContractBundlePath).size,
-  packagedNeuralModelBytes: neuralModelPackaged ? statSync(neuralModelBundlePath).size : 0,
+  tokenCandidateContractBytes: statSync(tokenCandidateBundlePath).size,
+  tokenCompletionIndexBytes: statSync(tokenCompletionBundlePath).size,
+  tokenCompletionManifestBytes: statSync(tokenCompletionManifestBundlePath).size,
+  packagedNeuralModelBytes: neuralModelPackaged ? treeBytes(neuralModelBundlePath) : 0,
   deterministicP99Nanoseconds,
   runtimeBinaryBytes: statSync(runtimeBinaryOutputPath).size,
   frequencyReport: "reports/nepali-frequency-model-report.json",
   sanitizerReport: "reports/runtime-suggestions-sanitizer-report.json",
   binaryLexiconReport: "reports/runtime-lexicon-binary-report.json",
+  tokenCompletionAuditReport: "reports/token-completion-source-audit.json",
+  tokenCompletionQualityReport: "reports/token-completion-quality-report.json",
   neuralModelPackaged,
+  experimentalNeuralTypingEnabled: experimentalNeuralTypingRequested,
   shortVersion,
   buildNumber,
   productionSigningRequired: signingIdentity === "-"
 }, 0);
+
+function treeBytes(path) {
+  if (!existsSync(path)) return 0;
+  const stat = lstatSync(path);
+  if (!stat.isDirectory()) return stat.size;
+  return readdirSync(path).reduce((total, entry) => total + treeBytes(join(path, entry)), 0);
+}

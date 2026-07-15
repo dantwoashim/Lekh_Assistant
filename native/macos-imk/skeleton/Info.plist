@@ -23,7 +23,7 @@
   <key>CFBundleVersion</key>
   <string>6</string>
   <key>NSPrincipalClass</key>
-  <string>LekhInputMethodApplication</string>
+  <string>NSApplication</string>
   <key>LekhDictionaryPackEd25519PublicKeyBase64</key>
   <string>leXuq4+d5aRli02qEchU+UEo7qRbrzB1kpA21t+5nHY=</string>
   <key>LekhDictionaryPackUpdatesEnabled</key>
@@ -60,7 +60,7 @@
         <key>tsInputModeDefaultStateKey</key>
         <true/>
         <key>tsInputModeScriptKey</key>
-        <string>smDevanagari</string>
+        <string>smUnicodeScript</string>
         <key>tsInputModePrimaryInScriptKey</key>
         <true/>
         <key>tsInputModeIsVisibleKey</key>

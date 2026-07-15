@@ -72,8 +72,8 @@ if (existsSync(join(root, oldNeuralSwift))) failures.push("Old synchronous/close
 const engine = readText(engineSource);
 const packager = readText(packageScript);
 const reportText = readText(level5Report);
-if (!engine.includes("neural=async-coreml-tail-gated")) {
-  failures.push("Native engine must report the async Core ML neural tail as production-gated.");
+if (!engine.includes("LekhNeuralCandidateService.shared.status")) {
+  failures.push("Native engine must report the actual async Core ML neural tail status.");
 }
 if (!packager.includes("LEKH_PACKAGE_NEURAL_MODEL") || !packager.includes("neuralPackagingRequested")) {
   failures.push("Dev packager must keep neural model packaging behind an explicit opt-in gate.");

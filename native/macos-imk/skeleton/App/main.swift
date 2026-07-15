@@ -5,9 +5,7 @@ import LekhInputMethod
 import OSLog
 
 private let appLogger = Logger(subsystem: "com.lekh.inputmethod.keyboard", category: "app")
-
-@objc(LekhInputMethodApplication)
-final class LekhInputMethodApplication: NSApplication {}
+private let expectedIMKConnectionName = LekhRuntimeHealth.expectedConnectionName
 
 private final class LekhInputMethodAppDelegate: NSObject, NSApplicationDelegate {
   private var server: IMKServer?
@@ -15,7 +13,6 @@ private final class LekhInputMethodAppDelegate: NSObject, NSApplicationDelegate 
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     LekhNativePreferences.registerDefaults()
-    LekhMetricReporterBootstrap.startIfOptedIn()
 
     guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
       appLogger.fault("Missing bundle identifier; terminating IMK server.")
@@ -24,20 +21,27 @@ private final class LekhInputMethodAppDelegate: NSObject, NSApplicationDelegate 
     }
 
     let currentPid = ProcessInfo.processInfo.processIdentifier
-    let duplicates = NSRunningApplication
-      .runningApplications(withBundleIdentifier: bundleIdentifier)
-      .filter { $0.processIdentifier != currentPid }
-    if !duplicates.isEmpty {
-      appLogger.error("Another Lekh IMK server is already running; terminating duplicate pid=\(currentPid)")
+    guard let connectionName = Bundle.main.object(forInfoDictionaryKey: "InputMethodConnectionName") as? String,
+          connectionName == expectedIMKConnectionName else {
+      appLogger.fault("Missing or unsupported InputMethodConnectionName; terminating IMK server.")
       NSApp.terminate(nil)
       return
     }
-
-    let connectionName = Bundle.main.object(forInfoDictionaryKey: "InputMethodConnectionName") as? String
-      ?? "com.lekh.inputmethod.LekhKeyboard_Connection"
+    // Establish the text-service connection before any optional subsystem or
+    // menu construction. LaunchServices already provides application-instance
+    // coalescing; a second NSRunningApplication scan is stale during atomic
+    // upgrades and can kill the replacement while the old process is exiting,
+    // leaving TIS selected with no server and causing raw-ASCII fallthrough.
     server = IMKServer(name: connectionName, bundleIdentifier: bundleIdentifier)
-    statusMenu = LekhStatusMenuController()
+    LekhRuntimeHealth.markServerStarted(connectionName: connectionName)
     appLogger.info("IMKServer started connection=\(connectionName, privacy: .public) pid=\(currentPid)")
+
+    // Everything below is nonessential to typing startup and may initialize
+    // AppKit/MetricKit state. Defer it until the server is accepting sessions.
+    DispatchQueue.main.async { [weak self] in
+      LekhMetricReporterBootstrap.startIfOptedIn()
+      self?.statusMenu = LekhStatusMenuController()
+    }
   }
 }
 

@@ -13,7 +13,10 @@ const reports = {
   neuralDataset: readJson("reports/neural-open-vocab-dataset-report.json"),
   neuralGoldProduction: readJson("reports/neural-gold-eval-production-report.json", true),
   nativePackage: readJson("reports/macos-imk-dev-package-report.json", true),
-  unsignedCompanion: readJson("reports/macos-unsigned-package-report.json", true),
+  unsignedCompanion: readJson("reports/macos-native-unsigned-package-report.json", true),
+  companionPackage: readJson("reports/macos-companion-package-check.json", true),
+  ghostHost: readJson("reports/macos-imk-host-ghost-smoke.json", true),
+  interactionSafety: readJson("reports/macos-imk-host-interaction-safety.json", true),
   qaMatrix: readJson("reports/macos-imk-qa-matrix-report.json", true),
   updateSecurity: readJson(production ? "reports/macos-update-security-production-report.json" : "reports/macos-update-security-report.json", true),
   level5Forensic: readJson("reports/level5-forensic-compliance-report.json", true),
@@ -28,7 +31,9 @@ const source = {
   candidatePanel: readText("native/macos-imk/skeleton/LekhCandidatePanel.swift"),
   candidateController: readText("native/macos-imk/skeleton/LekhCandidateController.swift"),
   packageScript: readText("scripts/package-macos-imk-dev.mjs"),
-  companionPackager: readText("scripts/package-macos-companion.mjs"),
+  companionPackager: readText("scripts/package-native-macos-companion.mjs"),
+  companionApp: readText("native/macos-companion/LekhCompanionApp.swift"),
+  companionModel: readText("native/macos-companion/LekhCompanionModel.swift"),
   contract: readText("data/engine/lekh-engine-contract.v1.json")
 };
 
@@ -44,21 +49,24 @@ const items = [
   pass("architecture.hotPathEngine", "IMK hot path uses LekhEngineCore, not fake XPC or TypeScript daemon.", !exists("native/macos-imk/skeleton/LekhXpcClient.swift") && includes(source.controller, "LekhNativeEngineClient")),
   pass("architecture.contractDigest", "Canonical engine contract is bundled and checked.", exists("data/engine/lekh-engine-contract.v1.json") && includes(source.packageScript, "lekh-engine-contract.v1.json")),
   blocked("architecture.differentialConformance", "Differential Swift/TypeScript conformance is not yet exhaustive across shared event JSONL.", "Need generated Swift/TypeScript byte-identical event corpus and CI gate."),
-  pass("architecture.noHotPathXpcNetworkModel", "No hot-path XPC/network/synchronous model inference is present.", !exists("native/macos-imk/skeleton/LekhNeuralTransliterator.swift") && includes(source.engine, "neural=async-coreml-tail-gated") && includes(source.neuralService, "DispatchQueue(label: \"com.lekh.inputmethod.neural-candidate-tail\"")),
+  pass("architecture.noHotPathXpcNetworkModel", "No hot-path XPC/network/synchronous model inference is present.", !exists("native/macos-imk/skeleton/LekhNeuralTransliterator.swift") && includes(source.engine, "LekhNeuralCandidateService.shared.status") && includes(source.neuralService, "DispatchQueue(label: \"com.lekh.inputmethod.neural-candidate-tail\"") && includes(source.neuralService, "LekhExperimentalNeuralTypingEnabled")),
 
   pass("typing.romanizedNepali", "Romanized to Nepali deterministic token path is present and gated.", includes(source.engine, "LekhRomanizedComposer") && includes(source.engine, "ruleCandidates(for:")),
   pass("typing.romanizedRomanized", "Romanized to Romanized mode is distinct and does not emit Devanagari by default.", contract?.modes?.includes("romanized-romanized") && includes(source.engine, "case .romanizedRomanized")),
   pass("typing.traditionalNepali", "Traditional to Nepali uses macOS layout translation/source-of-truth path.", includes(source.controller, "LekhKeyboardLayoutTranslator.shared") && exists("native/macos-imk/skeleton/LekhKeyboardLayoutTranslator.swift")),
   pass("typing.traditionalRomanized", "Traditional to Romanized reverse path is implemented.", contract?.modes?.includes("traditional-romanized") && includes(source.engine, "LekhDevanagariRomanizer")),
   pass("typing.safeStateTransitions", "State transitions are explicit and traced without raw text logging.", includes(source.controller, "lekhNativeLog") && includes(source.controller, "privacy: .private")),
-  pass("typing.safeKeys", "Space/Return/Tab/Escape use guarded commit/cancel behavior.", includes(source.controller, "candidateSelectionExplicit") && includes(source.engine, "smartPunctuation(for:")),
+  pass("typing.safeKeys", "Space/Return/Tab/Escape use guarded commit/cancel behavior with real TextEdit evidence.", includes(source.controller, "candidateSelectionExplicit") && includes(source.engine, "smartPunctuation(for:") && reports.interactionSafety?.status === "passed"),
   pass("typing.userOnlySelection", "Candidate selection origin is user-only.", includes(source.controller, "candidateSelectionExplicit") && includes(source.candidateController, "candidateForShortcut")),
-  pass("typing.noPhraseAutoCommit", "Token to phrase auto-commit is forbidden.", contract?.candidatePolicy?.singleTokenMayExpandToPhrase === false && includes(source.engine, "trimmedCandidate.contains(\" \")")),
+  pass("typing.noPhraseAutoCommit", "Token to phrase auto-commit is forbidden.", contract?.candidatePolicy?.singleTokenMayExpandToPhrase === false && includes(source.engine, "if !containsWhitespace(trimmedInput), containsWhitespace(trimmedCandidate)")),
   blocked("typing.threeCandidateGold", "Three-candidate guarantee is not production-proven against a gold lexicon.", "Need reviewed gold cases declaring three legitimate alternatives."),
   pass("typing.candidateA11y", "Candidate UI has accessibility role/label/help/selected state and keyboard navigation.", includes(source.candidatePanel, "setAccessibilityRole(.button)") && includes(source.candidatePanel, "setAccessibilityLabel") && includes(source.controller, "handleCandidateCommand")),
+  pass("typing.inlineGhostHost", "TextEdit shows a separate suffix-only ghost window and Tab explicitly accepts it.", reports.ghostHost?.status === "passed" && includes(source.controller, "scheduleCompositionSurfaces") && includes(source.controller, "commitCandidateText(suggestion.acceptedText"), reports.ghostHost?.acceptedText ?? ""),
+
+  pass("ux.companionBoundary", "Packaged macOS companion is a native universal settings app with real TIS status and no browser runtime.", reports.companionPackage?.status === "passed" && includes(source.companionApp, "NavigationSplitView") && includes(source.companionModel, "TISCreateInputSourceList") && includes(source.companionPackager, 'for (const arch of ["arm64", "x86_64"])') && !includes(source.companionPackager, "electron-builder")),
 
   pass("engine.largeDataset", "Open-vocabulary dataset has >=1,000,000 generated rows.", datasetRows >= 1_000_000),
-  pass("engine.modelDisabledTruthful", "Model is truly open-vocabulary with proven invocation, or gated and not marketed as production.", productionNeuralVerified || (includes(source.engine, "neural=async-coreml-tail-gated") && includes(source.packageScript, "LEKH_PACKAGE_NEURAL_MODEL"))),
+  pass("engine.modelDisabledTruthful", "Model is truly open-vocabulary with proven invocation, or gated and not marketed as production.", productionNeuralVerified || (includes(source.engine, "LekhNeuralCandidateService.shared.status") && includes(source.packageScript, "LEKH_PACKAGE_NEURAL_MODEL"))),
   blocked("engine.productionModel", "Production neural model/data provenance and immutable hashes are incomplete.", "Need trained open-vocabulary Core ML model, manifest, hashes, predictions, and two-device benchmark."),
   blocked("engine.blindEvaluation", "Blind evaluation is not production-complete.", "Need production gold counts and leakage-audited blind evaluation."),
 

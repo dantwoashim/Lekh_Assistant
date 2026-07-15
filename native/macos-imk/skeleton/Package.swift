@@ -8,7 +8,8 @@ let package = Package(
   products: [
     .library(name: "LekhInputMethod", targets: ["LekhInputMethod"]),
     .executable(name: "LekhInputMethodApp", targets: ["LekhInputMethodApp"]),
-    .executable(name: "LekhInputMethodBehaviorProbe", targets: ["LekhInputMethodBehaviorProbe"])
+    .executable(name: "LekhInputMethodBehaviorProbe", targets: ["LekhInputMethodBehaviorProbe"]),
+    .executable(name: "LekhInputMethodUnitProbe", targets: ["LekhInputMethodUnitProbe"])
   ],
   dependencies: [],
   targets: [
@@ -47,6 +48,8 @@ let package = Package(
         "LekhNativePreferences.swift",
         "LekhNeuralCandidateService.swift",
         "LekhPreferencesWindow.swift",
+        "LekhRuntimeHealth.swift",
+        "LekhTokenCompletionIndex.swift",
         "LekhEngineCore.swift"
       ],
       linkerSettings: [
@@ -68,6 +71,14 @@ let package = Package(
         "LekhInputMethod"
       ],
       path: "Tests/LekhInputMethodBehaviorProbe",
+      sources: ["main.swift"]
+    ),
+    .executableTarget(
+      name: "LekhInputMethodUnitProbe",
+      dependencies: [
+        "LekhInputMethod"
+      ],
+      path: "Tests/LekhInputMethodUnitProbe",
       sources: ["main.swift"]
     )
   ]

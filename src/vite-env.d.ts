@@ -47,6 +47,11 @@ interface LekhUpdateStatus {
   build?: string;
 }
 
+interface LekhExcludedApplication {
+  bundleIdentifier: string;
+  displayName: string;
+}
+
 interface Window {
   lekhDesktop?: {
     kind: "companion";
@@ -59,6 +64,7 @@ interface Window {
     updatePreferences(patch: Partial<LekhNativePreferences>): Promise<{ ok: boolean }>;
     openKeyboardSettings(): Promise<{ ok: boolean }>;
     revealInputMethod(): Promise<{ ok: boolean; error: string | null }>;
+    chooseExcludedApplications(): Promise<LekhExcludedApplication[]>;
     checkForUpdates(): Promise<LekhUpdateStatus>;
     downloadVerifiedUpdate(): Promise<{ ok: boolean; version: string }>;
   };

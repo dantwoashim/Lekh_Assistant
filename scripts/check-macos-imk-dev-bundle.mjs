@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -17,9 +18,14 @@ const pkgInfoPath = join(appBundle, "Contents", "PkgInfo");
 const executablePath = join(appBundle, "Contents", "MacOS", "LekhInputMethodApp");
 const sparkleFrameworkPath = join(appBundle, "Contents", "Frameworks", "Sparkle.framework");
 const runtimeBinaryPackPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
+const engineContractPath = join(appBundle, "Contents", "Resources", "lekh-engine-contract.v1.json");
+const tokenCandidateContractPath = join(appBundle, "Contents", "Resources", "lekh-token-candidates.v1.json");
+const tokenCompletionIndexPath = join(appBundle, "Contents", "Resources", "lekh-token-completions.v1.json");
+const tokenCompletionManifestPath = join(appBundle, "Contents", "Resources", "lekh-token-completions.v1.manifest.json");
 const localizedInfoPath = join(appBundle, "Contents", "Resources", "en.lproj", "InfoPlist.strings");
 const nepaliLocalizedInfoPath = join(appBundle, "Contents", "Resources", "ne.lproj", "InfoPlist.strings");
 const failures = [];
+const expectedConnectionName = "com.lekh.inputmethod.LekhKeyboard_Connection";
 
 if (!existsSync(appBundle)) failures.push("IMK dev app bundle is missing.");
 if (!existsSync(plistPath)) failures.push("IMK Info.plist is missing.");
@@ -27,6 +33,10 @@ if (!existsSync(pkgInfoPath)) failures.push("IMK PkgInfo is missing.");
 if (existsSync(pkgInfoPath) && statSync(pkgInfoPath).size !== 8) failures.push("IMK PkgInfo must be exactly 8 bytes.");
 if (!existsSync(executablePath)) failures.push("IMK executable is missing.");
 if (!existsSync(runtimeBinaryPackPath)) failures.push("IMK runtime binary lexicon pack is missing.");
+if (!existsSync(engineContractPath)) failures.push("IMK engine contract is missing.");
+if (!existsSync(tokenCandidateContractPath)) failures.push("IMK shared token-candidate contract is missing.");
+if (!existsSync(tokenCompletionIndexPath)) failures.push("IMK verified token-completion index is missing.");
+if (!existsSync(tokenCompletionManifestPath)) failures.push("IMK token-completion manifest is missing.");
 if (!existsSync(localizedInfoPath)) failures.push("IMK localized input-mode name file is missing.");
 if (!existsSync(nepaliLocalizedInfoPath)) failures.push("IMK Nepali localized input-mode name file is missing.");
 if (existsSync(executablePath) && !(statSync(executablePath).mode & 0o111)) failures.push("IMK executable is not executable.");
@@ -40,7 +50,7 @@ if (existsSync(plistPath)) {
     "InputMethodServerControllerClass",
     "LekhInputController",
     "NSPrincipalClass",
-    "LekhInputMethodApplication",
+    "NSApplication",
     "tsInputMethodIconFileKey",
     "tsInputMethodCharacterRepertoireKey",
     "ComponentInputModeDict",
@@ -51,6 +61,14 @@ if (existsSync(plistPath)) {
     "Deva"
   ]) {
     if (!plist.includes(marker)) failures.push(`Info.plist missing ${marker}.`);
+  }
+  const connectionName = spawnSync(
+    "/usr/bin/plutil",
+    ["-extract", "InputMethodConnectionName", "raw", "-o", "-", plistPath],
+    { encoding: "utf8" }
+  );
+  if (connectionName.status !== 0 || connectionName.stdout.trim() !== expectedConnectionName) {
+    failures.push(`Info.plist InputMethodConnectionName must equal ${expectedConnectionName} exactly.`);
   }
 }
 
@@ -71,17 +89,54 @@ if (existsSync(runtimeBinaryPackPath)) {
   }
 }
 
+if (existsSync(tokenCompletionIndexPath) && existsSync(tokenCompletionManifestPath)) {
+  try {
+    const artifactBytes = readFileSync(tokenCompletionIndexPath);
+    const artifact = JSON.parse(artifactBytes.toString("utf8"));
+    const manifest = JSON.parse(readFileSync(tokenCompletionManifestPath, "utf8"));
+    const digest = createHash("sha256").update(artifactBytes).digest("hex");
+    const candidateCount = (artifact.entries ?? []).reduce(
+      (sum, entry) => sum + (entry.candidates?.length ?? 0),
+      0
+    );
+    if (manifest.artifact?.path !== "lekh-token-completions.v1.json") {
+      failures.push("Token-completion manifest references an unexpected artifact path.");
+    }
+    if (manifest.artifact?.sha256 !== digest) {
+      failures.push("Token-completion artifact does not match its packaged SHA-256 manifest.");
+    }
+    if (manifest.artifact?.bytes !== artifactBytes.length) {
+      failures.push("Token-completion artifact does not match its packaged byte-count manifest.");
+    }
+    if (manifest.artifact?.entryCount !== artifact.entries?.length ||
+        manifest.artifact?.candidateCount !== candidateCount) {
+      failures.push("Token-completion artifact does not match its packaged count manifest.");
+    }
+    if (artifact.runtimePolicy?.explicitAcceptanceOnly !== true ||
+        artifact.runtimePolicy?.singleTokenOnly !== true ||
+        artifact.runtimePolicy?.namesAllowed !== false ||
+        artifact.runtimePolicy?.phrasesAllowed !== false) {
+      failures.push("Token-completion runtime policy is not conservative explicit-accept token-only.");
+    }
+    if (manifest.quality?.explicitSuggestionRuntimeEligible !== true) {
+      failures.push("Token-completion manifest is not eligible for explicit runtime suggestions.");
+    }
+  } catch (error) {
+    failures.push(`Packaged token-completion artifacts are invalid JSON: ${error.message}`);
+  }
+}
+
 if (existsSync(localizedInfoPath)) {
   const localizedInfo = readFileSync(localizedInfoPath, "utf8");
   if (!localizedInfo.includes('"com.lekh.inputmethod.LekhKeyboard.Main" = "Lekh Keyboard";')) {
-    failures.push("Localized input-mode name is missing for Lekh Keyboard.");
+    failures.push("Localized transport-mode name is missing for Lekh Keyboard.");
   }
 }
 
 if (existsSync(nepaliLocalizedInfoPath)) {
   const localizedInfo = readFileSync(nepaliLocalizedInfoPath, "utf8");
   if (!localizedInfo.includes('"com.lekh.inputmethod.LekhKeyboard.Main" = "लेख";')) {
-    failures.push("Nepali localized input-mode name is missing.");
+    failures.push("Nepali localized transport-mode name is missing.");
   }
 }
 

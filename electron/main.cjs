@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
 const { existsSync } = require("node:fs");
 const { execFile, spawn } = require("node:child_process");
 const { createHash, createPublicKey, verify: verifySignature } = require("node:crypto");
@@ -11,6 +11,7 @@ const isDevServer = Boolean(process.env.LEKH_COMPANION_DEV_SERVER);
 const execFileAsync = promisify(execFile);
 const nativePreferenceDomain = "com.lekh.inputmethod.LekhKeyboard";
 const nativeBundlePath = path.join(homedir(), "Library", "Input Methods", "Lekh Keyboard.app");
+const windowsTsfClsid = "{3F04E1EA-7D90-47E1-865B-11D6F13D0301}";
 const nativePreferenceKeys = new Map([
   ["inlinePreviewEnabled", ["LekhInlinePreviewEnabled", true]],
   ["customCandidatePanelEnabled", ["LekhCustomCandidatePanelEnabled", true]],
@@ -35,12 +36,12 @@ let verifiedUpdate = null;
 
 function createWindow() {
   const window = new BrowserWindow({
-    width: 1180,
-    height: 780,
-    minWidth: 960,
-    minHeight: 640,
+    width: 980,
+    height: 720,
+    minWidth: 760,
+    minHeight: 600,
     title: "Lekh Keyboard Companion",
-    backgroundColor: "#f7f4ef",
+    backgroundColor: "#ececec",
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -97,7 +98,7 @@ function isSafeExternalUrl(url) {
 
 app.setName("Lekh Keyboard Companion");
 app.whenReady().then(() => {
-  Menu.setApplicationMenu(null);
+  installApplicationMenu();
   registerCompanionIpc();
   startDaemonIfAvailable();
   createWindow();
@@ -106,14 +107,71 @@ app.whenReady().then(() => {
   });
 });
 
+function installApplicationMenu() {
+  const template = [
+    ...(process.platform === "darwin" ? [{
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        {
+          label: "Settings…",
+          accelerator: "CmdOrCtrl+,",
+          click: () => {
+            const [window] = BrowserWindow.getAllWindows();
+            if (!window) return;
+            if (window.isMinimized()) window.restore();
+            window.show();
+            window.focus();
+          }
+        },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" }
+      ]
+    }] : []),
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" }
+      ]
+    },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        ...(process.platform === "darwin" ? [
+          { type: "separator" },
+          { role: "front" }
+        ] : [{ role: "close" }])
+      ]
+    }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function registerCompanionIpc() {
   ipcMain.handle("lekh:status", async () => {
+    if (process.platform === "win32") return windowsNativeStatus();
     const installed = process.platform === "darwin" && existsSync(nativeBundlePath);
-    const [version, enabledSources, selectedSource, selectedSources] = await Promise.all([
+    const [version, enabledSources, selectedSource, selectedSources, releaseSigned] = await Promise.all([
       installed ? readPlistValue("CFBundleShortVersionString") : Promise.resolve(null),
       readDefaults("com.apple.HIToolbox", "AppleEnabledInputSources"),
       readDefaults("com.apple.HIToolbox", "AppleCurrentKeyboardLayoutInputSourceID"),
-      readDefaults("com.apple.HIToolbox", "AppleSelectedInputSources")
+      readDefaults("com.apple.HIToolbox", "AppleSelectedInputSources"),
+      installed ? isDeveloperIdSigned(nativeBundlePath) : Promise.resolve(null)
     ]);
     const sourceIdentifier = "com.lekh.inputmethod.LekhKeyboard";
     return {
@@ -123,11 +181,12 @@ function registerCompanionIpc() {
       enabled: enabledSources.includes(sourceIdentifier),
       selected: `${selectedSource}\n${selectedSources}`.includes(sourceIdentifier),
       bundlePath: installed ? nativeBundlePath : null,
-      releaseSigned: app.isPackaged && process.mas === true ? true : null
+      releaseSigned
     };
   });
 
   ipcMain.handle("lekh:preferences:read", async () => {
+    if (process.platform === "win32") return defaultCompanionPreferences();
     const settings = {};
     await Promise.all(Array.from(nativePreferenceKeys.entries()).map(async ([publicKey, [nativeKey, fallback]]) => {
       const value = await readDefaults(nativePreferenceDomain, nativeKey);
@@ -142,6 +201,9 @@ function registerCompanionIpc() {
   });
 
   ipcMain.handle("lekh:preferences:update", async (_event, patch) => {
+    if (process.platform === "win32") {
+      throw new Error("Windows native preference integration is not yet available.");
+    }
     if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
       throw new Error("Invalid preference update.");
     }
@@ -188,11 +250,23 @@ function registerCompanionIpc() {
   });
 
   ipcMain.handle("lekh:open-keyboard-settings", async () => {
-    await shell.openExternal("x-apple.systempreferences:com.apple.Keyboard-Settings.extension");
+    const settingsUrl = process.platform === "win32"
+      ? "ms-settings:regionlanguage"
+      : "x-apple.systempreferences:com.apple.Keyboard-Settings.extension";
+    await shell.openExternal(settingsUrl);
     return { ok: true };
   });
 
   ipcMain.handle("lekh:reveal-input-method", async () => {
+    if (process.platform === "win32") {
+      const tsfPath = windowsTsfBundlePath();
+      if (tsfPath) {
+        shell.showItemInFolder(tsfPath);
+        return { ok: true, error: null };
+      }
+      const error = await shell.openPath(process.resourcesPath);
+      return { ok: error === "", error: error || null };
+    }
     const target = existsSync(nativeBundlePath)
       ? nativeBundlePath
       : path.join(homedir(), "Library", "Input Methods");
@@ -200,7 +274,41 @@ function registerCompanionIpc() {
     return { ok: error === "", error: error || null };
   });
 
+  ipcMain.handle("lekh:privacy:choose-excluded-applications", async () => {
+    if (process.platform !== "darwin") return [];
+    const result = await dialog.showOpenDialog({
+      title: "Never learn in these applications",
+      defaultPath: "/Applications",
+      buttonLabel: "Exclude Applications",
+      properties: ["openFile", "multiSelections", "dontAddToRecent"]
+    });
+    if (result.canceled) return [];
+
+    const applications = [];
+    for (const applicationPath of result.filePaths.slice(0, 25)) {
+      if (path.extname(applicationPath).toLowerCase() !== ".app") continue;
+      const infoPlist = path.join(applicationPath, "Contents", "Info.plist");
+      const [bundleIdentifier, displayName, bundleName] = await Promise.all([
+        readPlistAtPath(infoPlist, "CFBundleIdentifier"),
+        readPlistAtPath(infoPlist, "CFBundleDisplayName"),
+        readPlistAtPath(infoPlist, "CFBundleName")
+      ]);
+      if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(bundleIdentifier ?? "")) continue;
+      applications.push({
+        bundleIdentifier,
+        displayName: displayName || bundleName || path.basename(applicationPath, ".app")
+      });
+    }
+    return applications;
+  });
+
   ipcMain.handle("lekh:updates:check", async () => {
+    if (process.platform === "win32") {
+      return {
+        status: "disabled",
+        message: "Windows updates remain disabled until an Authenticode-signed TSF release is validated."
+      };
+    }
     if (process.platform !== "darwin" || !app.isPackaged || !(await isDeveloperIdSigned())) {
       return {
         status: "disabled",
@@ -255,11 +363,75 @@ function registerCompanionIpc() {
   });
 }
 
-async function isDeveloperIdSigned() {
+function defaultCompanionPreferences() {
+  return {
+    nativeTypingMode: "romanized-traditional",
+    inlinePreviewEnabled: true,
+    customCandidatePanelEnabled: true,
+    proofreadAsYouTypeEnabled: true,
+    smartPunctuationEnabled: true,
+    personalizationEnabled: false,
+    nextWordPredictionEnabled: true,
+    excludedApplicationBundleIdentifiers: []
+  };
+}
+
+async function windowsNativeStatus() {
+  const tsfPath = windowsTsfBundlePath();
+  const registered = await isWindowsTsfRegistered();
+  return {
+    platform: process.platform,
+    installed: Boolean(tsfPath),
+    version: tsfPath ? app.getVersion() : null,
+    enabled: registered,
+    // The companion has no reliable cross-process proof of the foreground TSF
+    // profile. Never turn registration into a false "active now" claim.
+    selected: false,
+    bundlePath: tsfPath,
+    releaseSigned: tsfPath ? await isWindowsAuthenticodeSigned(tsfPath) : null
+  };
+}
+
+function windowsTsfBundlePath() {
+  const candidates = [
+    path.join(process.resourcesPath, "native", "windows-tsf", "LekhTextService.dll"),
+    path.join(process.resourcesPath, "native", "windows-tsf", "build", "bin", "Release", "LekhTextService.dll")
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
+async function isWindowsTsfRegistered() {
+  try {
+    await execFileAsync("reg.exe", [
+      "query",
+      `HKCU\\Software\\Classes\\CLSID\\${windowsTsfClsid}`
+    ], { timeout: 3000, windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isWindowsAuthenticodeSigned(target) {
+  try {
+    const { stdout } = await execFileAsync("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "(Get-AuthenticodeSignature -LiteralPath $args[0]).Status",
+      target
+    ], { timeout: 5000, windowsHide: true });
+    return stdout.trim() === "Valid";
+  } catch {
+    return false;
+  }
+}
+
+async function isDeveloperIdSigned(target = process.execPath) {
   try {
     const { stderr } = await execFileAsync(
       "/usr/bin/codesign",
-      ["-d", "--verbose=4", process.execPath],
+      ["-d", "--verbose=4", target],
       { timeout: 3000 }
     );
     return /Authority=Developer ID Application:/.test(stderr);
@@ -356,6 +528,19 @@ function parseDefaultsArray(value) {
 async function readPlistValue(key) {
   try {
     const plistPath = path.join(nativeBundlePath, "Contents", "Info.plist");
+    const { stdout } = await execFileAsync(
+      "/usr/libexec/PlistBuddy",
+      ["-c", `Print :${key}`, plistPath],
+      { timeout: 3000 }
+    );
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function readPlistAtPath(plistPath, key) {
+  try {
     const { stdout } = await execFileAsync(
       "/usr/libexec/PlistBuddy",
       ["-c", `Print :${key}`, plistPath],

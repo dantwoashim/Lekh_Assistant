@@ -28,7 +28,11 @@ for (let index = 2; index < process.argv.length; index += 1) {
 const inputPath = args.get("input") ?? DEFAULT_INPUT;
 const outputPath = args.get("output") ?? DEFAULT_OUTPUT;
 const reportPath = args.get("report") ?? DEFAULT_REPORT;
-const includePhrases = args.get("include-phrases") !== "0";
+// Native IMK composition terminates at Space. Phrase rows and multi-token
+// synthetic names are unreachable there and, worse, can crowd token rows out
+// of the fixed-size prefix table. They are opt-in for diagnostic builds only.
+const includePhrases = args.get("include-phrases") === "1";
+const singleTokenOnly = args.get("single-token-only") !== "0";
 const startedAt = performance.now();
 
 function main() {
@@ -40,7 +44,7 @@ try {
     finish("failed", { input: relative(ROOT, inputPath), validation }, 1);
   }
 
-  const compiled = compileLexicon(pack, { includePhrases });
+  const compiled = compileLexicon(pack, { includePhrases, singleTokenOnly });
   const binaryValidation = validateBinaryLexiconBuffer(compiled.buffer);
   if (binaryValidation.failures.length > 0) {
     finish("failed", {
@@ -80,7 +84,9 @@ try {
       coldStartTargetMs: 5,
       perLookupP99TargetMs: 1,
       steadyStateRssTargetMb: 25,
-      includePhrases
+      includePhrases,
+      singleTokenOnly,
+      filteredMultiTokenRows: compiled.filteredMultiTokenRows
     },
     validation,
     binaryValidation,
@@ -96,12 +102,16 @@ try {
 }
 }
 
-function compileLexicon(pack, options = { includePhrases: true }) {
-  const sourceRows = [
+function compileLexicon(pack, options = { includePhrases: false, singleTokenOnly: true }) {
+  const unfilteredRows = [
     ...(options.includePhrases ? rowsForKind(pack.phrases ?? [], "phrase", 1, 0) : []),
     ...rowsForKind(pack.words ?? [], "word", 2, 10_000),
     ...rowsForKind(pack.names ?? [], "name", 3, 30_000)
   ];
+  const sourceRows = options.singleTokenOnly
+    ? unfilteredRows.filter((row) => isSingleTokenRow(row))
+    : unfilteredRows;
+  const filteredMultiTokenRows = unfilteredRows.length - sourceRows.length;
   const entries = sourceRows
     .sort(compareRows)
     .filter((row, index, rows) => index === 0 || row.romanized !== rows[index - 1].romanized || row.unicode !== rows[index - 1].unicode);
@@ -139,7 +149,11 @@ function compileLexicon(pack, options = { includePhrases: true }) {
   const prefixRows = [];
   for (const [prefix, indexes] of [...prefixes.entries()].sort(([a], [b]) => asciiCompare(a, b))) {
     const sortedRefs = indexes
-      .sort((left, right) => compareRows(entries[left], entries[right]))
+      .sort((left, right) => {
+        const leftExact = entries[left].romanized === prefix ? 0 : 1;
+        const rightExact = entries[right].romanized === prefix ? 0 : 1;
+        return leftExact - rightExact || compareRows(entries[left], entries[right]);
+      })
       .slice(0, MAX_PREFIX_REFS);
     const startRef = refIndexes.length;
     refIndexes.push(...sortedRefs);
@@ -193,8 +207,13 @@ function compileLexicon(pack, options = { includePhrases: true }) {
     prefixRows,
     refCount: refIndexes.length,
     stringBytes: stringTable.length,
+    filteredMultiTokenRows,
     queries
   };
+}
+
+function isSingleTokenRow(row) {
+  return !/\s/u.test(row.romanized) && !/\s/u.test(row.unicode);
 }
 
 function rowsForKind(rows, kind, kindCode, priorityOffset) {

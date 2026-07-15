@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "registryId": "lekh-token-completion-sources-v1",
+  "sources": [
+    {
+      "id": "lekh-repository-curated-completion-v1",
+      "name": "Lekh repository-authored token completion seeds",
+      "origin": "repository-authored",
+      "path": "data/completion/v1/token-completion-seeds.json",
+      "license": "MIT",
+      "redistributionAllowed": true,
+      "runtimeEligible": true,
+      "allowedUse": "explicit-single-token-completion",
+      "reviewTier": "repository-curated-regression",
+      "humanRated": false,
+      "notes": "Small explicit allowlist authored for Lekh. It is not copied from social text, names, private writing, or the quarantined corpus, and it is not a human-rated production quality claim."
+    }
+  ]
+}

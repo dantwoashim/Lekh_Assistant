@@ -96,6 +96,13 @@ if (schema) {
   assert(property(schema, "modelBytes")?.maximum === 16_777_216, "schema must enforce 16 MB compiled model cap");
   assert(property(schema, "contextWindowWords")?.minimum === 2, "schema must require at least two context tokens");
   assert(property(schema, "performance")?.properties?.p99Ms?.maximum === 3, "schema must enforce p99 <= 3ms");
+  const deviceSchema = property(schema, "performance")?.properties?.devices?.items;
+  assert(deviceSchema?.properties?.packagedApp?.const === true, "schema must require packaged-app device evidence");
+  assert(deviceSchema?.properties?.secureFieldInferenceCount?.const === 0, "schema must require zero secure-field inference per benchmark device");
+  assert(deviceSchema?.properties?.p50Ms?.maximum === 3, "schema must enforce device p50 <= 3ms");
+  assert(deviceSchema?.properties?.p95Ms?.maximum === 3, "schema must enforce device p95 <= 3ms");
+  assert(deviceSchema?.properties?.p99Ms?.maximum === 3, "schema must enforce device p99 <= 3ms");
+  assert(property(schema, "sha256")?.required?.includes("vocabMetadata"), "schema must require the exact runtime vocabulary digest");
   assert(property(schema, "metrics")?.properties?.tailTop1Accuracy?.minimum === 0.88, "schema must enforce tail top1 gate");
   assert(property(schema, "metrics")?.properties?.chatConventionTop1Accuracy?.minimum === 0.92, "schema must enforce chat top1 gate");
   assert(property(schema, "metrics")?.properties?.protectedFalseConversionRate?.const === 0, "schema must require zero protected false conversion");

@@ -12,7 +12,7 @@
     "programmaticSelectionMayCommit": false
   },
   "commitPolicy": {
-    "Space": "raw-with-space-unless-explicit-selection",
+    "Space": "engine-authorized-safe-auto-else-raw-with-space",
     "Enter": "raw-with-newline-unless-explicit-selection",
     "Tab": "pass-through-unless-explicit-selection",
     "Escape": "preserve-raw"

@@ -27,7 +27,7 @@ const packageScript = readText(packageScriptPath);
 const packageSwift = readText(packageSwiftPath);
 
 if (existsSync(oldNeuralPath)) failures.push("Old native LekhNeuralTransliterator.swift must remain deleted until replaced by the production async service.");
-requireContains(engine, "neural=async-coreml-tail-gated", "Native diagnostics must explicitly report the async Core ML tail as gated until production evidence enables it.");
+requireContains(engine, "LekhNeuralCandidateService.shared.status", "Native diagnostics must report the actual async Core ML neural tail status.");
 requireContains(engine, "return .passThrough", "Engine must retain fail-open pass-through behavior.");
 requireContains(controller, "IsSecureEventInputEnabled()", "Controller must check secure input.");
 requireContains(controller, "requestAsyncNeuralCandidates", "Controller must request neural tail candidates asynchronously after deterministic candidates.");
@@ -35,6 +35,8 @@ requireContains(controller, "processFailOpenKey", "Controller must keep fail-ope
 requireContains(controller, "candidateSelectionExplicit", "Candidate acceptance must remain explicit.");
 requireContains(neuralService, "DispatchQueue(label: \"com.lekh.inputmethod.neural-candidate-tail\"", "Neural service must run inference off the IMK keystroke hot path.");
 requireContains(neuralService, "MLModel(contentsOf:", "Neural service must invoke a real Core ML model when production-gated resources are present.");
+requireContains(neuralService, "LekhExperimentalNeuralTypingEnabled", "Neural service must support an explicitly labeled experimental override without changing production eligibility.");
+requireContains(neuralService, "LEKH_EXPERIMENTAL_NEURAL_TYPING", "Neural service must support a local test override for experimental neural typing.");
 requireContains(neuralService, "neverInvokeInSecureFields", "Neural service must encode the secure-field no-inference policy.");
 requireContains(neuralService, "failOpenRawTypingOnError", "Neural service must encode fail-open behavior on errors.");
 requireContains(neuralService, "guard !secureInputActive else", "Neural service must return without inference in secure fields.");

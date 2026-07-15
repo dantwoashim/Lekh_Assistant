@@ -5,6 +5,8 @@
 "menu.diagnostics" = "Diagnostics…";
 "menu.dictionaryWarning" = "Dictionary Update Warning…";
 "menu.forgetCandidate" = "Forget Current Candidate";
+"menu.privateMode" = "Private Mode";
+"menu.privateMode.help" = "Pause personal learning. Secure fields are always private.";
 "menu.switchABC" = "Switch to ABC";
 "menu.openKeyboardSettings" = "Open macOS Keyboard Settings";
 "mode.romanizedRomanized" = "Romanized → Romanized";
@@ -22,7 +24,15 @@
 "candidate.explain.roman" = "Romanized helper form.";
 "candidate.explain.fix" = "Proofread suggestion for the active token.";
 "candidate.accessibility" = "Candidate %d, %@, %@";
+"candidate.panel.accessibility" = "Lekh candidate choices";
+"candidate.count" = "%d suggestions";
+"candidate.page" = "Page %d of %d";
+"candidate.hint.passive" = "↓ More choices · ⌥1–⌥3 choose";
+"candidate.hint.passiveAuto" = "Space inserts %@ · ↓ more choices";
+"candidate.hint.active" = "↑↓ Move · Return choose · Esc raw text";
 "inline.preview.accessibility" = "Inline completion preview";
+"inline.preview.suggestedEnding" = "Suggested ending: %@";
+"inline.preview.acceptHint" = "Tab/→ accept · ↓ choices";
 "preferences.title" = "Lekh Settings";
 "preferences.typing" = "Typing";
 "preferences.personal" = "Personal Dictionary";
@@ -46,7 +56,7 @@
 "preferences.refresh" = "Refresh";
 "preferences.close" = "Close";
 "tutorial.title" = "Type namaste";
-"tutorial.body" = "After selecting Lekh, type namaste. The marked preview shows नमस्ते. Space preserves raw input unless you explicitly choose a candidate. Control-Option-Space opens the mode chooser.";
+"tutorial.body" = "After selecting Lekh, type namaste. The marked preview shows नमस्ते. Space converts only a verified whole word; otherwise Lekh preserves exactly what you typed. Tab or Right Arrow accepts grey completion text. Control-Option-Space opens the mode chooser.";
 "tutorial.start" = "Start Typing";
 "common.ok" = "OK";
 "common.cancel" = "Cancel";

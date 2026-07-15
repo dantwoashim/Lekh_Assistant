@@ -1,5 +1,6 @@
 import { suggestWords } from "../../core/dictionary/suggestWords";
 import engineContract from "../../../data/engine/lekh-engine-contract.v1.json";
+import tokenCandidatePack from "../../../data/engine/lekh-token-candidates.v1.json";
 import { convertRomanized } from "../romanized";
 import { nowMs } from "../util/time";
 import { contextualPredictionCandidates } from "./contextPredictor";
@@ -14,6 +15,24 @@ import type { Candidate, CandidateUpdate, KeyboardSession, TypingContext } from 
 
 const MAX_CANDIDATES = engineContract.candidatePolicy.maximumVisible;
 
+type PrefixCandidateRow = {
+  input: string;
+  output: string;
+  label?: string;
+  confidence: number;
+  reason: string;
+  allowPrefix?: boolean;
+};
+
+const SHARED_TOKEN_ROWS: PrefixCandidateRow[] = tokenCandidatePack.rows.flatMap((row) =>
+  row.outputs.map((output) => ({
+    input: row.input,
+    output: output.text,
+    confidence: output.confidence,
+    reason: `Shared ${tokenCandidatePack.id} deterministic token candidate`,
+    allowPrefix: true
+  }))
+);
 const TYPE_PRIORITY: Record<Candidate["type"], number> = {
   protected: 100,
   personal: 90,
@@ -309,14 +328,10 @@ export function finalizeCandidates(candidates: Candidate[], max = MAX_CANDIDATES
 
 function prefixCandidates(input: string, rangeEnd: number, context?: TypingContext): Candidate[] {
   const normalized = input.toLowerCase().replace(/\s+/g, " ").trim();
-  const rows: Array<{ input: string; output: string; label?: string; confidence: number; reason: string; allowPrefix?: boolean }> = [
+  const legacyRows: PrefixCandidateRow[] = [
     { input: "swas", output: "स्वास्थ्य", confidence: 0.96, reason: "Keyboard health prefix completion" },
     { input: "swas", output: "स्वस्थ", confidence: 0.88, reason: "Keyboard health adjective prefix" },
     { input: "swas", output: "स्वास", confidence: 0.78, reason: "Keyboard alternate health prefix" },
-    { input: "swasthya", output: "स्वास्थ्य", confidence: 0.98, reason: "Keyboard exact health vocabulary" },
-    { input: "k", output: "के", confidence: 0.995, reason: "Casual shorthand question particle" },
-    { input: "ke", output: "के", confidence: 0.96, reason: "Casual question particle" },
-    { input: "kasto", output: "कस्तो", confidence: 0.96, reason: "Casual adjective" },
     { input: "kasto cha", output: "कस्तो छ", confidence: 0.97, reason: "Casual greeting phrase" },
     { input: "k cha", output: "के छ", confidence: 0.96, reason: "Casual greeting phrase" },
     { input: "ke cha", output: "के छ", confidence: 0.96, reason: "Casual greeting phrase" },
@@ -324,62 +339,7 @@ function prefixCandidates(input: string, rangeEnd: number, context?: TypingConte
     { input: "k gardai chau", output: "के गर्दै छौ", confidence: 0.96, reason: "Casual activity question" },
     { input: "ke gardai chau", output: "के गर्दै छौ", confidence: 0.96, reason: "Casual activity question" },
     { input: "k gardai xau", output: "के गर्दै छौ", confidence: 0.95, reason: "Casual x spelling activity question" },
-    { input: "kaha", output: "कहाँ", confidence: 0.95, reason: "Casual location question" },
-    { input: "kahaa", output: "कहाँ", confidence: 0.94, reason: "Casual long-vowel location question" },
-    { input: "kahile", output: "कहिले", confidence: 0.94, reason: "Casual time question" },
-    { input: "kina", output: "किन", confidence: 0.94, reason: "Casual why question" },
-    { input: "kasari", output: "कसरी", confidence: 0.94, reason: "Casual how question" },
-    { input: "kati", output: "कति", confidence: 0.94, reason: "Casual quantity question" },
-    { input: "mero", output: "मेरो", confidence: 0.97, reason: "Keyboard common pronoun" },
-    { input: "ma", output: "म", confidence: 0.94, reason: "Casual first-person pronoun" },
-    { input: "ma", output: "मा", confidence: 0.88, reason: "Casual locative postposition candidate" },
-    { input: "malai", output: "मलाई", confidence: 0.96, reason: "Casual pronoun inflection" },
-    { input: "malaai", output: "मलाई", confidence: 0.94, reason: "Casual long-vowel pronoun inflection" },
-    { input: "timi", output: "तिमी", confidence: 0.95, reason: "Casual second-person pronoun" },
-    { input: "timro", output: "तिम्रो", confidence: 0.95, reason: "Casual possessive pronoun" },
-    { input: "tapai", output: "तपाईं", confidence: 0.95, reason: "Polite second-person pronoun" },
     { input: "tapai kahaa hunuhuncha", output: "तपाईं कहाँ हुनुहुन्छ", confidence: 0.95, reason: "Polite location phrase" },
-    { input: "hami", output: "हामी", confidence: 0.94, reason: "Casual first-person plural" },
-    { input: "hamro", output: "हाम्रो", confidence: 0.94, reason: "Casual possessive plural" },
-    { input: "naam", output: "नाम", confidence: 0.97, reason: "Keyboard common noun" },
-    { input: "cha", output: "छ", confidence: 0.96, reason: "Casual present auxiliary" },
-    { input: "chha", output: "छ", confidence: 0.95, reason: "Casual aspirated auxiliary spelling" },
-    { input: "xa", output: "छ", confidence: 0.94, reason: "Casual x auxiliary spelling" },
-    { input: "chau", output: "छौ", confidence: 0.94, reason: "Casual second-person auxiliary" },
-    { input: "xau", output: "छौ", confidence: 0.93, reason: "Casual x spelling second-person auxiliary" },
-    { input: "chu", output: "छु", confidence: 0.94, reason: "Casual first-person auxiliary" },
-    { input: "xu", output: "छु", confidence: 0.93, reason: "Casual x spelling first-person auxiliary" },
-    { input: "ho", output: "हो", confidence: 0.95, reason: "Casual copula" },
-    { input: "hoina", output: "होइन", confidence: 0.95, reason: "Casual negated copula" },
-    { input: "chaina", output: "छैन", confidence: 0.95, reason: "Casual negative auxiliary" },
-    { input: "chhaina", output: "छैन", confidence: 0.95, reason: "Casual aspirated negative auxiliary" },
-    { input: "xaina", output: "छैन", confidence: 0.94, reason: "Casual x spelling negative auxiliary" },
-    { input: "huncha", output: "हुन्छ", confidence: 0.96, reason: "Casual modal verb" },
-    { input: "hunchha", output: "हुन्छ", confidence: 0.95, reason: "Casual aspirated modal verb" },
-    { input: "hunxa", output: "हुन्छ", confidence: 0.95, reason: "Casual x spelling modal verb" },
-    { input: "hunuhuncha", output: "हुनुहुन्छ", confidence: 0.95, reason: "Polite verb form" },
-    { input: "parcha", output: "पर्छ", confidence: 0.95, reason: "Casual obligation verb" },
-    { input: "parxa", output: "पर्छ", confidence: 0.94, reason: "Casual x spelling obligation verb" },
-    { input: "garna", output: "गर्न", confidence: 0.95, reason: "Casual infinitive verb" },
-    { input: "garne", output: "गर्ने", confidence: 0.95, reason: "Casual participle verb" },
-    { input: "garchu", output: "गर्छु", confidence: 0.94, reason: "Casual first-person verb" },
-    { input: "garxu", output: "गर्छु", confidence: 0.93, reason: "Casual x spelling first-person verb" },
-    { input: "gardai", output: "गर्दै", confidence: 0.95, reason: "Casual progressive verb" },
-    { input: "gareko", output: "गरेको", confidence: 0.94, reason: "Casual perfective verb" },
-    { input: "bhayo", output: "भयो", confidence: 0.95, reason: "Casual past verb" },
-    { input: "vayo", output: "भयो", confidence: 0.93, reason: "Casual b/v spelling past verb" },
-    { input: "bhayena", output: "भएन", confidence: 0.95, reason: "Casual negative past verb" },
-    { input: "vayena", output: "भएन", confidence: 0.93, reason: "Casual b/v spelling negative past verb" },
-    { input: "aaja", output: "आज", confidence: 0.95, reason: "Casual time word" },
-    { input: "aja", output: "आज", confidence: 0.94, reason: "Casual time word spelling" },
-    { input: "bholi", output: "भोलि", confidence: 0.95, reason: "Casual time word" },
-    { input: "voli", output: "भोलि", confidence: 0.93, reason: "Casual b/v time word spelling" },
-    { input: "hijo", output: "हिजो", confidence: 0.94, reason: "Casual time word" },
-    { input: "pachi", output: "पछि", confidence: 0.94, reason: "Casual time postposition" },
-    { input: "paxi", output: "पछि", confidence: 0.93, reason: "Casual x spelling time postposition" },
-    { input: "ghar", output: "घर", confidence: 0.95, reason: "Casual place noun" },
-    { input: "awastha", output: "अवस्था", confidence: 0.95, reason: "Casual/formal status noun" },
-    { input: "abastha", output: "अवस्था", confidence: 0.94, reason: "Casual b/v status noun spelling" },
     { input: "mero ke cha", output: "मेरो के छ अवस्था", label: "mero ke cha awastha", confidence: 0.93, reason: "Casual status sentence completion", allowPrefix: false },
     { input: "mero k cha", output: "मेरो के छ अवस्था", label: "mero ke cha awastha", confidence: 0.92, reason: "Casual shorthand status sentence completion", allowPrefix: false },
     { input: "mero k xa", output: "मेरो के छ अवस्था", label: "mero ke cha awastha", confidence: 0.92, reason: "Casual x spelling status sentence completion", allowPrefix: false },
@@ -392,47 +352,19 @@ function prefixCandidates(input: string, rangeEnd: number, context?: TypingConte
     { input: "k xa awastha", output: "के छ अवस्था", confidence: 0.95, reason: "Casual shorthand status phrase", allowPrefix: false },
     { input: "ke cha awastha", output: "के छ अवस्था", confidence: 0.95, reason: "Casual status phrase", allowPrefix: false },
     { input: "ghar jane", output: "घर जाने", confidence: 0.95, reason: "Casual movement phrase" },
-    { input: "jane", output: "जाने", confidence: 0.94, reason: "Casual movement verb" },
-    { input: "aaune", output: "आउने", confidence: 0.94, reason: "Casual movement verb" },
-    { input: "aaudai", output: "आउँदै", confidence: 0.94, reason: "Casual progressive movement verb" },
-    { input: "audai", output: "आउँदै", confidence: 0.93, reason: "Casual movement spelling" },
     { input: "ma aaudai xu", output: "म आउँदै छु", confidence: 0.96, reason: "Casual arrival phrase" },
     { input: "ma audai xu", output: "म आउँदै छु", confidence: 0.95, reason: "Casual arrival phrase spelling" },
     { input: "timi kaha chau", output: "तिमी कहाँ छौ", confidence: 0.95, reason: "Casual location question phrase" },
     { input: "timi kahaa chau", output: "तिमी कहाँ छौ", confidence: 0.94, reason: "Casual location question long-vowel phrase" },
-    { input: "khana", output: "खाना", confidence: 0.94, reason: "Casual food noun" },
-    { input: "pani", output: "पनि", confidence: 0.9, reason: "Ambiguous casual additive particle" },
-    { input: "pani", output: "पानी", confidence: 0.88, reason: "Ambiguous casual water noun" },
-    { input: "lai", output: "लाई", confidence: 0.94, reason: "Casual postposition" },
-    { input: "le", output: "ले", confidence: 0.94, reason: "Casual ergative postposition" },
-    { input: "ko", output: "को", confidence: 0.94, reason: "Casual genitive postposition" },
-    { input: "ramro", output: "राम्रो", confidence: 0.96, reason: "Casual adjective" },
     { input: "ramro lagyo", output: "राम्रो लाग्यो", confidence: 0.97, reason: "Casual reaction phrase" },
     { input: "maya lagcha", output: "माया लाग्छ", confidence: 0.95, reason: "Casual feeling phrase" },
     { input: "bhok lagyo", output: "भोक लाग्यो", confidence: 0.95, reason: "Casual feeling phrase" },
-    { input: "sanchai", output: "सञ्चै", confidence: 0.94, reason: "Casual wellness word" },
     { input: "sanchai chau", output: "सञ्चै छौ", confidence: 0.94, reason: "Casual wellness phrase" },
     { input: "thik cha", output: "ठीक छ", confidence: 0.96, reason: "Casual acknowledgement phrase" },
     { input: "thikai cha", output: "ठीकै छ", confidence: 0.95, reason: "Casual acknowledgement phrase" },
     { input: "dherai dhanyabad", output: "धेरै धन्यवाद", confidence: 0.96, reason: "Casual gratitude phrase" },
-    { input: "dhanyabad", output: "धन्यवाद", confidence: 0.95, reason: "Casual gratitude word" },
-    { input: "namaste", output: "नमस्ते", confidence: 0.95, reason: "Casual greeting word" },
-    { input: "bhetumla", output: "भेटौँला", confidence: 0.94, reason: "Casual farewell phrase" },
-    { input: "pathaideu", output: "पठाइदेऊ", confidence: 0.94, reason: "Casual request verb" },
-    { input: "deu", output: "देऊ", confidence: 0.93, reason: "Casual request verb" },
-    { input: "dinu", output: "दिनु", confidence: 0.93, reason: "Casual request verb" },
-    { input: "prabin", output: "प्रबिन", confidence: 0.93, reason: "Keyboard common name spelling" },
-    { input: "prabin", output: "प्रवीण", confidence: 0.9, reason: "Keyboard alternate name spelling" },
-    { input: "rajaniti", output: "राजनीति", confidence: 0.97, reason: "Keyboard exact office vocabulary" },
-    { input: "raajanitigya", output: "राजनीतिज्ञ", confidence: 0.97, reason: "Keyboard exact office vocabulary" },
-    { input: "samachar", output: "समाचार", confidence: 0.97, reason: "Keyboard common vocabulary" },
-    { input: "bikas", output: "विकास", confidence: 0.97, reason: "Keyboard common vocabulary" },
-    { input: "sankalpa", output: "संकल्प", confidence: 0.96, reason: "Keyboard common vocabulary" },
-    { input: "dridha", output: "दृढ", confidence: 0.95, reason: "Keyboard retroflex consonant vocabulary" },
-    { input: "ram", output: "राम", label: "ram", confidence: 0.995, reason: "Short exact name prior" },
     { input: "mero naam", output: "मेरो नाम", confidence: 0.96, reason: "Keyboard common introduction phrase" },
     { input: "dridha sankalpa", output: "दृढ संकल्प", label: "driDha sankalpa", confidence: 0.95, reason: "Keyboard formal resolve phrase" },
-    { input: "jilla", output: "जिल्ला", confidence: 0.97, reason: "Keyboard government word" },
     { input: "swasthya karyalaya", output: "स्वास्थ्य कार्यालय", confidence: 0.97, reason: "Keyboard health office phrase" },
     { input: "shiksha mantralaya", output: "शिक्षा मन्त्रालय", confidence: 0.96, reason: "Keyboard education phrase" },
     { input: "jilla pra", output: "जिल्ला प्रशासन", confidence: 0.95, reason: "Keyboard government phrase prefix" },
@@ -451,6 +383,10 @@ function prefixCandidates(input: string, rangeEnd: number, context?: TypingConte
     { input: "rajaswa shakha", output: "राजस्व शाखा", confidence: 0.94, reason: "Keyboard office phrase" },
     { input: "kar karyalaya", output: "कर कार्यालय", confidence: 0.94, reason: "Keyboard revenue office phrase" },
     { input: "mero nid form", output: "मेरो NID form", confidence: 0.96, reason: "Keyboard mixed English protected phrase" }
+  ];
+  const rows = [
+    ...SHARED_TOKEN_ROWS,
+    ...legacyRows
   ];
   return rows
     .filter((row) =>

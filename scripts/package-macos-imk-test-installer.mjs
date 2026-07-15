@@ -42,6 +42,7 @@ const appShortVersion = process.env.LEKH_APP_SHORT_VERSION || packageVersion.mat
 const gitBuild = spawnSync("git", ["rev-list", "--count", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
 const appBuild = Number(process.env.LEKH_APP_BUILD || gitBuild);
 const releaseChannel = signingIdentity === "-" ? "test-adhoc" : "developer-id";
+const expectedConnectionName = "com.lekh.inputmethod.LekhKeyboard_Connection";
 const minisignSecretKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY ||
   join(root, "data", "private", "lekh-release-manifest-minisign.sec");
 const minisignPublicKey = join(root, "public", "security", "lekh-release-manifest-minisign.pub");
@@ -414,6 +415,18 @@ if (!existsSync(imkBundle)) {
 mkdirSync(toolchainEnv.CLANG_MODULE_CACHE_PATH, { recursive: true });
 mkdirSync(toolchainEnv.SWIFT_MODULE_CACHE_PATH, { recursive: true });
 run("verify-imk-payload", "codesign", ["--verify", "--deep", "--strict", imkBundle]);
+const payloadConnectionName = run(
+  "verify-imk-connection-name",
+  "/usr/bin/plutil",
+  ["-extract", "InputMethodConnectionName", "raw", "-o", "-", join(imkBundle, "Contents", "Info.plist")]
+).stdout.trim();
+if (payloadConnectionName !== expectedConnectionName) {
+  finish("failed", {
+    step: "verify-imk-connection-name",
+    reason: `InputMethodConnectionName must be exactly ${expectedConnectionName}.`,
+    observed: payloadConnectionName
+  }, 1);
+}
 
 rmSync(zipPath, { force: true });
 rmSync(distFolder, { recursive: true, force: true });
@@ -437,14 +450,61 @@ LOG_DIR="$HOME/Library/Logs/LekhKeyboard"
 LOG_FILE="$LOG_DIR/install.log"
 TMP_DEST="$HOME/Library/Input Methods/.Lekh Keyboard.app.installing.$$"
 SUPPORT_DIR="$HOME/Library/Application Support/Lekh Keyboard"
-BACKUP_ROOT="$SUPPORT_DIR/InstallBackups"
+LEGACY_BACKUP_ROOT="$SUPPORT_DIR/InstallBackups"
+BACKUP_ROOT="$SUPPORT_DIR/InstallBackups.noindex"
+BACKUP_EXTRACT_ROOT="$SUPPORT_DIR/.Lekh Keyboard.rollback.$$"
+RUNTIME_HEALTH="$SUPPORT_DIR/runtime-health.v1.json"
+EXPECTED_CONNECTION_NAME="${expectedConnectionName}"
 BACKUP_DEST=""
 OLD_DEST=""
 DEST_REPLACED=0
 SWAPPED_DEST=0
 
 mkdir -p "$LOG_DIR" "$BACKUP_ROOT" || exit 1
+/usr/bin/touch "$BACKUP_ROOT/.metadata_never_index"
 log() { printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG_FILE"; }
+lekh_pid_is_running() {
+  local pid="$1"
+  local command_name
+  command_name="$(/bin/ps -p "$pid" -o comm= 2>/dev/null | /usr/bin/tr -d '[:space:]')"
+  [[ "$command_name" == "LekhInputMethodApp" ]]
+}
+remaining_lekh_pids() {
+  local pid
+  for pid in "$@"; do
+    if lekh_pid_is_running "$pid"; then
+      printf '%s ' "$pid"
+    fi
+  done
+}
+stop_lekh_input_method_for_replacement() {
+  local pids
+  local remaining
+  local attempt=0
+  pids="$(/usr/bin/pgrep -x LekhInputMethodApp 2>/dev/null || true)"
+  [[ -n "$pids" ]] || return 0
+
+  log "requesting graceful input-method termination pids=$pids"
+  /bin/kill -TERM $pids >> "$LOG_FILE" 2>&1 || true
+  while (( attempt < 30 )); do
+    remaining="$(remaining_lekh_pids $pids)"
+    [[ -z "$remaining" ]] && return 0
+    /bin/sleep 0.1
+    attempt=$((attempt + 1))
+  done
+
+  log "graceful termination timed out; forcing only remaining pids=$remaining"
+  /bin/kill -KILL $remaining >> "$LOG_FILE" 2>&1 || true
+  attempt=0
+  while (( attempt < 20 )); do
+    remaining="$(remaining_lekh_pids $remaining)"
+    [[ -z "$remaining" ]] && return 0
+    /bin/sleep 0.1
+    attempt=$((attempt + 1))
+  done
+  log "input-method termination failed pids=$remaining"
+  return 1
+}
 dialog() {
   if [[ "\${LEKH_INSTALLER_NO_DIALOG:-0}" == "1" ]]; then
     return 0
@@ -467,12 +527,19 @@ rollback() {
     "$RESOURCE_DIR/register-lekh-input-source" "$DEST" >/dev/null 2>&1 || true
     return
   fi
-  if [[ "$DEST_REPLACED" == "1" && -n "$BACKUP_DEST" && -d "$BACKUP_DEST" ]]; then
-    log "rollback restoring previous bundle"
-    /bin/rm -rf "$DEST"
-    /usr/bin/ditto --norsrc --noextattr --noacl "$BACKUP_DEST" "$DEST" >/dev/null 2>&1 || true
-    "$RESOURCE_DIR/register-lekh-input-source" "$DEST" >/dev/null 2>&1 || true
-  fi
+	  if [[ "$DEST_REPLACED" == "1" && -n "$BACKUP_DEST" && -f "$BACKUP_DEST" ]]; then
+	    log "rollback restoring previous bundle"
+	    /bin/rm -rf "$DEST"
+	    /bin/rm -rf "$BACKUP_EXTRACT_ROOT"
+	    /bin/mkdir -p "$BACKUP_EXTRACT_ROOT"
+	    /usr/bin/ditto -x -k "$BACKUP_DEST" "$BACKUP_EXTRACT_ROOT" >/dev/null 2>&1 || true
+	    RESTORED_APP="$(/usr/bin/find "$BACKUP_EXTRACT_ROOT" -maxdepth 2 -type d -name 'Lekh Keyboard.app' -print -quit 2>/dev/null)"
+	    if [[ -n "$RESTORED_APP" && -d "$RESTORED_APP" ]]; then
+	      /usr/bin/ditto --norsrc --noextattr --noacl "$RESTORED_APP" "$DEST" >/dev/null 2>&1 || true
+	    fi
+	    /bin/rm -rf "$BACKUP_EXTRACT_ROOT"
+	    "$RESOURCE_DIR/register-lekh-input-source" "$DEST" >/dev/null 2>&1 || true
+	  fi
 }
 fail() {
   local message="$1"
@@ -481,21 +548,41 @@ fail() {
   dialog "Lekh Keyboard installation failed. Nothing was left half-installed. Details were written to ~/Library/Logs/LekhKeyboard/install.log.\n\nलेख किबोर्ड स्थापना असफल भयो। आधा-स्थापित अवस्थामा केही छोडिएको छैन। विवरण ~/Library/Logs/LekhKeyboard/install.log मा लेखिएको छ।"
   exit 1
 }
-cleanup() {
-  /bin/rm -rf "$TMP_DEST"
-}
+	cleanup() {
+	  /bin/rm -rf "$TMP_DEST" "$BACKUP_EXTRACT_ROOT"
+	}
+	migrate_legacy_backup_bundles() {
+	  for backup_root in "$LEGACY_BACKUP_ROOT" "$BACKUP_ROOT"; do
+	    /usr/bin/find "$backup_root" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print0 2>/dev/null |
+	      while IFS= read -r -d '' backup; do
+	        "$LSREGISTER" -u "$backup" >> "$LOG_FILE" 2>&1 || true
+	        backup_name="$(/usr/bin/basename "$backup")"
+	        archive="$BACKUP_ROOT/$backup_name.zip"
+	        [[ -e "$archive" ]] && archive="$BACKUP_ROOT/$backup_name.$$.zip"
+	        archive_tmp="$archive.installing"
+	        /bin/rm -f "$archive_tmp"
+	        if /usr/bin/ditto -c -k --norsrc --noextattr --keepParent "$backup" "$archive_tmp" >> "$LOG_FILE" 2>&1; then
+	          /bin/mv "$archive_tmp" "$archive"
+	          /bin/rm -rf "$backup"
+	        else
+	          /bin/rm -f "$archive_tmp"
+	          fail "could not archive an indexed rollback backup"
+	        fi
+	      done
+	  done
+	}
 rotate_backups() {
   local keep_count=3
   local existing_count
-  existing_count="$(/usr/bin/find "$BACKUP_ROOT" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+	  existing_count="$(/usr/bin/find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'Lekh Keyboard.app.backup.*.zip' 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
   if [[ "\${existing_count:-0}" -le "$keep_count" ]]; then
     return
   fi
-  /usr/bin/find "$BACKUP_ROOT" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print 2>/dev/null |
+	  /usr/bin/find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'Lekh Keyboard.app.backup.*.zip' -print 2>/dev/null |
     /usr/bin/sort -r |
     /usr/bin/tail -n +"$((keep_count + 1))" |
     while IFS= read -r old_backup; do
-      [[ -n "$old_backup" ]] && /bin/rm -rf "$old_backup"
+	      [[ -n "$old_backup" ]] && /bin/rm -f "$old_backup"
     done
 }
 trap 'rollback; cleanup' EXIT
@@ -503,24 +590,31 @@ trap 'fail "installation interrupted"' INT TERM HUP
 
 APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PAYLOAD/Contents/Info.plist" 2>/dev/null || printf 'unknown')"
 APP_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PAYLOAD/Contents/Info.plist" 2>/dev/null || printf 'unknown')"
+PAYLOAD_CONNECTION_NAME="$(/usr/bin/plutil -extract InputMethodConnectionName raw -o - "$PAYLOAD/Contents/Info.plist" 2>/dev/null || true)"
 log "install started payload=$PAYLOAD dest=$DEST version=$APP_VERSION build=$APP_BUILD"
 [[ -d "$PAYLOAD" ]] || fail "missing embedded payload"
+[[ "$PAYLOAD_CONNECTION_NAME" == "$EXPECTED_CONNECTION_NAME" ]] || fail "embedded payload has an unsupported InputMethodConnectionName"
 /usr/bin/codesign --verify --deep --strict "$PAYLOAD" >> "$LOG_FILE" 2>&1 || fail "embedded payload signature failed"
 /bin/mkdir -p "$HOME/Library/Input Methods" || fail "could not create Input Methods directory"
 
+"$RESOURCE_DIR/restore-system-keyboard" --snapshot >> "$LOG_FILE" 2>&1 || log "could not snapshot the current non-Lekh input source"
+"$RESOURCE_DIR/restore-system-keyboard" >> "$LOG_FILE" 2>&1 || fail "could not select a safe input source before replacement"
 "$RESOURCE_DIR/register-lekh-input-source" "$DEST" --disable >> "$LOG_FILE" 2>&1 || true
-/usr/bin/pkill -x LekhInputMethodApp >> "$LOG_FILE" 2>&1 || true
-"$RESOURCE_DIR/restore-system-keyboard" --snapshot >> "$LOG_FILE" 2>&1 || true
+	stop_lekh_input_method_for_replacement || fail "could not stop the running input method before replacement"
+	migrate_legacy_backup_bundles
 
 if [[ -d "$DEST" ]]; then
-  BACKUP_DEST="$BACKUP_ROOT/Lekh Keyboard.app.backup.$(/bin/date -u '+%Y%m%dT%H%M%SZ')"
-  /usr/bin/ditto --norsrc --noextattr --noacl "$DEST" "$BACKUP_DEST" >> "$LOG_FILE" 2>&1 || fail "could not back up existing install"
+  "$LSREGISTER" -u "$DEST" >> "$LOG_FILE" 2>&1 || true
+	  BACKUP_DEST="$BACKUP_ROOT/Lekh Keyboard.app.backup.$(/bin/date -u '+%Y%m%dT%H%M%SZ').zip"
+	  /usr/bin/ditto -c -k --norsrc --noextattr --keepParent "$DEST" "$BACKUP_DEST" >> "$LOG_FILE" 2>&1 || fail "could not archive existing install"
   rotate_backups
 fi
 
 /bin/rm -rf "$TMP_DEST"
 /usr/bin/ditto --norsrc --noextattr --noacl "$PAYLOAD" "$TMP_DEST" >> "$LOG_FILE" 2>&1 || fail "could not copy payload"
 /usr/bin/codesign --verify --deep --strict "$TMP_DEST" >> "$LOG_FILE" 2>&1 || fail "copied payload signature failed"
+TMP_CONNECTION_NAME="$(/usr/bin/plutil -extract InputMethodConnectionName raw -o - "$TMP_DEST/Contents/Info.plist" 2>/dev/null || true)"
+[[ "$TMP_CONNECTION_NAME" == "$EXPECTED_CONNECTION_NAME" ]] || fail "copied payload changed the IMK connection contract"
 
 if [[ -d "$DEST" ]]; then
   "$LSREGISTER" -u "$DEST" >> "$LOG_FILE" 2>&1 || true
@@ -531,17 +625,22 @@ if [[ -d "$DEST" ]]; then
   SWAPPED_DEST=1
 fi
 "$RESOURCE_DIR/purge-lekh-input-sources" >> "$LOG_FILE" 2>&1 || true
+	migrate_legacy_backup_bundles
 if [[ "$SWAPPED_DEST" == "0" ]]; then
   /bin/mv "$TMP_DEST" "$DEST" || fail "could not move install into place"
   TMP_DEST=""
 fi
+
+"$LSREGISTER" -f "$DEST" >> "$LOG_FILE" 2>&1 || log "LaunchServices registration returned non-zero"
+"$RESOURCE_DIR/register-lekh-input-source" "$DEST" >> "$LOG_FILE" 2>&1 || fail "input source registration failed"
+INSTALLED_CONNECTION_NAME="$(/usr/bin/plutil -extract InputMethodConnectionName raw -o - "$DEST/Contents/Info.plist" 2>/dev/null || true)"
+[[ "$INSTALLED_CONNECTION_NAME" == "$EXPECTED_CONNECTION_NAME" ]] || fail "installed bundle changed the IMK connection contract"
 DEST_REPLACED=0
 SWAPPED_DEST=0
 /bin/rm -rf "$OLD_DEST"
 OLD_DEST=""
-
-"$LSREGISTER" -f "$DEST" >> "$LOG_FILE" 2>&1 || log "LaunchServices registration returned non-zero"
-"$RESOURCE_DIR/register-lekh-input-source" "$DEST" >> "$LOG_FILE" 2>&1 || fail "input source registration failed"
+		migrate_legacy_backup_bundles
+/bin/rm -f "$RUNTIME_HEALTH"
 
 log "install completed"
 dialog "Lekh Keyboard installed and enabled. Open the input menu in the menu bar to switch between ABC and Lekh Keyboard. If it does not appear immediately, log out and back in.\n\nलेख किबोर्ड स्थापना र सक्षम भयो। ABC र लेख किबोर्डबीच स्विच गर्न menu bar को input menu खोल्नुहोस्। तुरुन्त नदेखिए log out गरेर फेरि log in गर्नुहोस्।"
@@ -564,9 +663,62 @@ LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchS
 LOG_DIR="$HOME/Library/Logs/LekhKeyboard"
 LOG_FILE="$LOG_DIR/uninstall.log"
 SUPPORT_DIR="$HOME/Library/Application Support/Lekh Keyboard"
+LEGACY_BACKUP_ROOT="$SUPPORT_DIR/InstallBackups"
+ARCHIVE_BACKUP_ROOT="$SUPPORT_DIR/InstallBackups.noindex"
 CACHE_DIR="$HOME/Library/Caches/LekhKeyboardInstall"
+RUNTIME_HEALTH="$SUPPORT_DIR/runtime-health.v1.json"
 mkdir -p "$LOG_DIR" || exit 1
 log() { printf '%s %s\\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG_FILE"; }
+lekh_pid_is_running() {
+  local pid="$1"
+  local command_name
+  command_name="$(/bin/ps -p "$pid" -o comm= 2>/dev/null | /usr/bin/tr -d '[:space:]')"
+  [[ "$command_name" == "LekhInputMethodApp" ]]
+}
+remaining_lekh_pids() {
+  local pid
+  for pid in "$@"; do
+    if lekh_pid_is_running "$pid"; then
+      printf '%s ' "$pid"
+    fi
+  done
+}
+stop_lekh_input_method_for_removal() {
+  local pids
+  local remaining
+  local attempt=0
+  pids="$(/usr/bin/pgrep -x LekhInputMethodApp 2>/dev/null || true)"
+  [[ -n "$pids" ]] || return 0
+
+  log "requesting graceful input-method termination pids=$pids"
+  /bin/kill -TERM $pids >> "$LOG_FILE" 2>&1 || true
+  while (( attempt < 30 )); do
+    remaining="$(remaining_lekh_pids $pids)"
+    [[ -z "$remaining" ]] && return 0
+    /bin/sleep 0.1
+    attempt=$((attempt + 1))
+  done
+
+  log "graceful termination timed out; forcing only remaining pids=$remaining"
+  /bin/kill -KILL $remaining >> "$LOG_FILE" 2>&1 || true
+  attempt=0
+  while (( attempt < 20 )); do
+    remaining="$(remaining_lekh_pids $remaining)"
+    [[ -z "$remaining" ]] && return 0
+    /bin/sleep 0.1
+    attempt=$((attempt + 1))
+  done
+  log "input-method termination failed pids=$remaining"
+  return 1
+}
+unregister_backup_bundles() {
+  for backup_root in "$LEGACY_BACKUP_ROOT" "$ARCHIVE_BACKUP_ROOT"; do
+    /usr/bin/find "$backup_root" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print0 2>/dev/null |
+      while IFS= read -r -d '' backup; do
+        "$LSREGISTER" -u "$backup" >> "$LOG_FILE" 2>&1 || true
+      done
+  done
+}
 dialog() {
   LEKH_DIALOG_MESSAGE="$1" /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1
 display dialog (system attribute "LEKH_DIALOG_MESSAGE") buttons {"OK"} default button "OK" with title "Lekh Keyboard" with icon note
@@ -607,10 +759,12 @@ log "uninstall started"
 if [[ -d "$DEST" ]]; then
   "$LSREGISTER" -u "$DEST" >> "$LOG_FILE" 2>&1 || true
 fi
-/usr/bin/pkill -x LekhInputMethodApp >> "$LOG_FILE" 2>&1 || true
+unregister_backup_bundles
+	stop_lekh_input_method_for_removal || { log "could not stop the running input method before removal"; exit 1; }
 /bin/rm -rf "$DEST"
 "$RESOURCE_DIR/purge-lekh-input-sources" >> "$LOG_FILE" 2>&1 || true
-/bin/rm -rf "$SUPPORT_DIR/Packs" "$SUPPORT_DIR/Models" "$SUPPORT_DIR/InstallBackups" "$SUPPORT_DIR/Diagnostics" "$CACHE_DIR"
+		/bin/rm -rf "$SUPPORT_DIR/Packs" "$SUPPORT_DIR/Models" "$LEGACY_BACKUP_ROOT" "$ARCHIVE_BACKUP_ROOT" "$SUPPORT_DIR/Diagnostics" "$CACHE_DIR"
+/bin/rm -f "$RUNTIME_HEALTH"
 if [[ "$REMOVE_PERSONAL_DICTIONARY" == "1" ]]; then
   /bin/rm -f "$SUPPORT_DIR/lekh-keyboard.sqlite3" "$SUPPORT_DIR/lekh-keyboard.sqlite3-wal" "$SUPPORT_DIR/lekh-keyboard.sqlite3-shm"
 elif [[ -f "$SUPPORT_DIR/lekh-keyboard.sqlite3" ]]; then
@@ -767,7 +921,7 @@ writeFileSync(
     "   ./Install\\ Lekh\\ Keyboard\\ from\\ Terminal.command",
     "5. After it finishes, use the macOS input menu in the menu bar to choose Lekh Keyboard.",
     "6. If Lekh Keyboard does not appear immediately, log out and back in, then open Keyboard Settings > Text Input > Edit and add it under Nepali.",
-    "7. Installer rollback backups are stored under ~/Library/Application Support/Lekh Keyboard/InstallBackups and rotated to the newest 3 copies.",
+    "7. Installer rollback backups are compressed under ~/Library/Application Support/Lekh Keyboard/InstallBackups.noindex and rotated to the newest 3 copies so macOS cannot rediscover them as duplicate input methods.",
     "",
     "Uninstall:",
     "Open Lekh Keyboard Uninstaller.app. If Finder blocks it, use Uninstall Lekh Keyboard from Terminal.command. It asks for confirmation, restores the previous keyboard when possible, deletes packs, models, backups, caches, and logs, and can optionally delete local learned words.",
@@ -901,6 +1055,27 @@ const extractedInstaller = join(extractedRoot, "Lekh Keyboard Test Installer.app
 const extractedUninstaller = join(extractedRoot, "Lekh Keyboard Uninstaller.app");
 verifySignedPath(extractedInstaller, "verify-extracted-installer");
 verifySignedPath(extractedUninstaller, "verify-extracted-uninstaller");
+const extractedPayloadPlist = join(
+  extractedInstaller,
+  "Contents",
+  "Resources",
+  "Lekh Keyboard.app",
+  "Contents",
+  "Info.plist"
+);
+const extractedConnectionName = run(
+  "verify-extracted-payload-connection-name",
+  "/usr/bin/plutil",
+  ["-extract", "InputMethodConnectionName", "raw", "-o", "-", extractedPayloadPlist]
+).stdout.trim();
+if (extractedConnectionName !== expectedConnectionName) {
+  finish("failed", {
+    step: "verify-extracted-payload-connection-name",
+    reason: "Extracted installer payload changed the IMK connection contract.",
+    expected: expectedConnectionName,
+    observed: extractedConnectionName
+  }, 1);
+}
 stripCodeSignBlockedXattrs(extractedInstaller);
 stripCodeSignBlockedXattrs(extractedUninstaller);
 verifySignedPathRaw(extractedInstaller, "verify-extracted-installer-raw");

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "policyId": "lekh-token-completion-quarantine-v1",
+  "dispositions": [
+    {
+      "path": "src/data/keyboard-packs/v0.1/runtime-suggestions.json",
+      "status": "quarantined-from-token-completion",
+      "reasons": ["missing-row-level-provenance", "mixed-quality-tiers", "contains-phrase-and-name-sections"]
+    },
+    {
+      "path": "data/keyboard-corpus/curated/v0.1/D1_word_aliases.v0.1.jsonl",
+      "status": "research-only-for-token-completion",
+      "reasons": ["auto-reviewed-not-human-rated", "external-open-dataset"]
+    },
+    {
+      "path": "data/keyboard-corpus/curated/v0.1/D2_phrase_aliases.v0.1.jsonl",
+      "status": "blocked-from-token-completion",
+      "reasons": ["phrase-rows", "single-token-contract"]
+    },
+    {
+      "path": "data/keyboard-corpus/curated/v0.1/D3_casual_romanized_sentences.v0.1.jsonl",
+      "status": "blocked-from-token-completion",
+      "reasons": ["public-social-text", "bronze-quality", "pattern-mining-only"]
+    },
+    {
+      "path": "data/keyboard-corpus/curated/v0.1/D4_mixed_nepali_english_sentences.v0.1.jsonl",
+      "status": "blocked-from-token-completion",
+      "reasons": ["public-social-text", "mixed-script", "bronze-quality", "pattern-mining-only"]
+    },
+    {
+      "path": "data/keyboard-corpus/curated/v0.1/D6_name_surname_variants.v0.1.jsonl",
+      "status": "blocked-from-token-completion",
+      "reasons": ["name-rows", "synthetic", "name-completion-disabled"]
+    },
+    {
+      "path": "data/keyboard-corpus/curated/v0.1/D7_next_word_contexts.v0.1.jsonl",
+      "status": "blocked-from-token-completion",
+      "reasons": ["context-not-token-completion", "derived-from-social-text", "license-requires-verification"]
+    },
+    {
+      "path": "data/engine/lekh-token-candidates.v1.json",
+      "status": "evidence-only-for-token-completion",
+      "reasons": ["productionGold-false", "contains-name-regressions", "no-row-level-review-provenance"]
+    }
+  ]
+}

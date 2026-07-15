@@ -9,6 +9,7 @@ const startedAt = performance.now();
 const signed = process.argv.includes("--signed");
 const unsigned = process.argv.includes("--unsigned") || !signed;
 const reportPath = join(root, "reports", signed ? "windows-signed-package-report.json" : "windows-unsigned-package-report.json");
+const tsfDll = join(root, "native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhTextService.dll");
 
 function finish(status, details, exitCode) {
   mkdirSync(join(root, "reports"), { recursive: true });
@@ -52,7 +53,7 @@ if (process.platform !== "win32" && !process.env.LEKH_ALLOW_CROSS_WINDOWS_PACKAG
       manualCommands: [
         "npm ci",
         "npm run build:daemon",
-        "npm run build",
+        "npm run build:companion-ui",
         "npm run build:windows",
         signed ? "npm run package:windows" : "npm run package:windows:unsigned",
         "npm run check:windows-release"
@@ -62,12 +63,36 @@ if (process.platform !== "win32" && !process.env.LEKH_ALLOW_CROSS_WINDOWS_PACKAG
   );
 }
 
+if (process.platform === "win32") {
+  const nativeBuild = spawnSync("npm", ["run", "build:windows"], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: "pipe"
+  });
+  if (nativeBuild.status !== 0) {
+    finish("failed", {
+      step: "windows-tsf-build",
+      stdout: nativeBuild.stdout,
+      stderr: nativeBuild.stderr
+    }, nativeBuild.status ?? 1);
+  }
+}
+
+if (!existsSync(tsfDll)) {
+  finish("failed", {
+    step: "windows-tsf-artifact",
+    reason: "The required TSF DLL is missing. A companion-only installer is forbidden.",
+    expectedArtifact: tsfDll,
+    buildCommand: "npm run build:windows"
+  }, 1);
+}
+
 const daemonBuild = spawnSync("npm", ["run", "build:daemon"], { cwd: root, encoding: "utf8", stdio: "pipe" });
 if (daemonBuild.status !== 0) {
   finish("failed", { step: "daemon-build", stdout: daemonBuild.stdout, stderr: daemonBuild.stderr }, daemonBuild.status ?? 1);
 }
 
-const build = spawnSync("npm", ["run", "build"], { cwd: root, encoding: "utf8", stdio: "pipe" });
+const build = spawnSync("npm", ["run", "build:companion-ui"], { cwd: root, encoding: "utf8", stdio: "pipe" });
 if (build.status !== 0) {
   finish("failed", { step: "vite-build", stdout: build.stdout, stderr: build.stderr }, build.status ?? 1);
 }

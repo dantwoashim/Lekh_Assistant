@@ -40,8 +40,12 @@ const cases = [
   "traditional-input",
   "backspace-composition",
   "escape-cancel",
+  "two-stage-escape",
   "enter-commit",
   "tab-candidate-or-focus",
+  "ghost-tab-accept",
+  "passive-digit-safety",
+  "explicit-option-candidate",
   "space-commit",
   "command-shortcuts-pass-through",
   "input-source-switching",
@@ -167,7 +171,9 @@ function collectTextEditSmokeEvidence(target) {
   if (!target) return [];
   const smokeReports = [
     "reports/macos-imk-host-textedit-smoke.json",
-    "reports/macos-imk-host-textedit-cgevent-smoke.json"
+    "reports/macos-imk-host-textedit-cgevent-smoke.json",
+    "reports/macos-imk-host-ghost-smoke.json",
+    "reports/macos-imk-host-interaction-safety.json"
   ];
   const supportedCases = [
     "romanized-word-swasthya",
@@ -181,6 +187,42 @@ function collectTextEditSmokeEvidence(target) {
     try {
       const parsed = JSON.parse(readFileSync(absolute, "utf8"));
       if (parsed.status !== "passed") continue;
+      if (parsed.suite === "macos-imk-host-ghost") {
+        evidence.push({
+          target,
+          app: "TextEdit",
+          case: "ghost-tab-accept",
+          report,
+          sourceSuite: parsed.suite,
+          generatedAt: parsed.generatedAt,
+          note: "Derived from HID proof of an on-screen suffix window and Tab acceptance."
+        });
+        continue;
+      }
+      if (parsed.suite === "macos-imk-host-interaction-safety") {
+        const mapping = {
+          "uncalibrated-forward-space-raw": ["space-commit"],
+          "explicit-down-space": ["romanized-word-swasthya", "romanized-to-nepali", "space-commit"],
+          "passive-digit-is-text": ["passive-digit-safety"],
+          "option-two-explicit": ["explicit-option-candidate"],
+          "two-stage-escape": ["escape-cancel", "two-stage-escape"]
+        };
+        for (const item of parsed.cases ?? []) {
+          if (item.pass !== true) continue;
+          for (const testCase of mapping[item.id] ?? []) {
+            evidence.push({
+              target,
+              app: "TextEdit",
+              case: testCase,
+              report,
+              sourceSuite: parsed.suite,
+              generatedAt: parsed.generatedAt,
+              note: item.proves
+            });
+          }
+        }
+        continue;
+      }
       if (parsed.expected !== "स्वास्थ्य " || parsed.actual !== "स्वास्थ्य ") continue;
       for (const testCase of supportedCases) {
         evidence.push({

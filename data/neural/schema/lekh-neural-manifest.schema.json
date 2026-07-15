@@ -244,7 +244,17 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "macOS", "architecture", "p99Ms"],
+            "required": [
+              "name",
+              "macOS",
+              "architecture",
+              "packagedApp",
+              "secureFieldInferenceCount",
+              "p50Ms",
+              "p95Ms",
+              "p99Ms",
+              "artifact"
+            ],
             "properties": {
               "name": {
                 "type": "string",
@@ -257,10 +267,30 @@
               "architecture": {
                 "enum": ["arm64", "x86_64"]
               },
+              "packagedApp": {
+                "const": true
+              },
+              "secureFieldInferenceCount": {
+                "const": 0
+              },
+              "p50Ms": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "p95Ms": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 3
+              },
               "p99Ms": {
                 "type": "number",
                 "minimum": 0,
                 "maximum": 3
+              },
+              "artifact": {
+                "type": "string",
+                "minLength": 1
               }
             }
           },
@@ -322,7 +352,7 @@
     "sha256": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["compiledModel", "sourceCheckpoint", "trainingDatasetManifest"],
+      "required": ["compiledModel", "sourceCheckpoint", "trainingDatasetManifest", "vocabMetadata"],
       "properties": {
         "compiledModel": {
           "$ref": "#/$defs/sha256"
@@ -331,6 +361,9 @@
           "$ref": "#/$defs/sha256"
         },
         "trainingDatasetManifest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "vocabMetadata": {
           "$ref": "#/$defs/sha256"
         }
       }

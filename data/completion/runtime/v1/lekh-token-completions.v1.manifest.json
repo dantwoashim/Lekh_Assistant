@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "manifestId": "lekh-token-completions-v1-manifest",
+  "artifact": {
+    "path": "lekh-token-completions.v1.json",
+    "sha256": "e28bf95090de98039b98424258e70c164c7f38c0e9671a5f03200d07f1b284a2",
+    "bytes": 13869,
+    "schemaVersion": 1,
+    "entryCount": 36,
+    "candidateCount": 36
+  },
+  "provenance": {
+    "seedSet": {
+      "path": "data/completion/v1/token-completion-seeds.json",
+      "sha256": "78ae591aed970d17b62c184126227515e03522cc1ba97732346fa9a2ccd600ed"
+    },
+    "sourceRegistry": {
+      "path": "data/completion/v1/source-registry.json",
+      "sha256": "4451a42ad83486e77fff8db548444ef8ec59cfbdb2d09305d5935653c5fb17fc"
+    },
+    "regressionEvaluation": {
+      "path": "data/completion/v1/eval-regression.json",
+      "sha256": "71449b4daba275ec4179d7214c4e708e1fc24d275a44af1c31d098d8a962dff4"
+    }
+  },
+  "runtimePolicy": {
+    "minimumPrefixLength": 4,
+    "maximumSourceSuffixLength": 12,
+    "maximumResultsPerPrefix": 3,
+    "minimumWinnerMargin": 40,
+    "explicitAcceptanceOnly": true,
+    "singleTokenOnly": true,
+    "namesAllowed": false,
+    "phrasesAllowed": false
+  },
+  "quality": {
+    "seedCount": 29,
+    "regressionEvidenceTier": "repository-regression-not-human-rated",
+    "regressionPositiveTop1Accuracy": 1,
+    "regressionNegativeSuppressionRate": 1,
+    "humanRatedHoldoutRows": 0,
+    "explicitSuggestionRuntimeEligible": true,
+    "productionQualityClaimEligible": false,
+    "productionBlockers": [
+      "No frozen native-speaker-rated completion holdout.",
+      "No calibrated useful-versus-harmful suggestion threshold.",
+      "No multi-day opt-in pilot acceptance and dismissal evidence."
+    ]
+  }
+}

@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("lekhDesktop", {
   updatePreferences: (patch) => ipcRenderer.invoke("lekh:preferences:update", patch),
   openKeyboardSettings: () => ipcRenderer.invoke("lekh:open-keyboard-settings"),
   revealInputMethod: () => ipcRenderer.invoke("lekh:reveal-input-method"),
+  chooseExcludedApplications: () => ipcRenderer.invoke("lekh:privacy:choose-excluded-applications"),
   checkForUpdates: () => ipcRenderer.invoke("lekh:updates:check"),
   downloadVerifiedUpdate: () => ipcRenderer.invoke("lekh:updates:download")
 });

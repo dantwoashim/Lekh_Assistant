@@ -71,7 +71,7 @@ if (daemonBuild.status !== 0) {
   finish("failed", { step: "daemon-build", stdout: daemonBuild.stdout, stderr: daemonBuild.stderr }, daemonBuild.status ?? 1);
 }
 
-const build = spawnSync("npm", ["run", "build"], { cwd: root, encoding: "utf8", stdio: "pipe" });
+const build = spawnSync("npm", ["run", "build:companion-ui"], { cwd: root, encoding: "utf8", stdio: "pipe" });
 if (build.status !== 0) {
   finish("failed", { step: "vite-build", stdout: build.stdout, stderr: build.stderr }, build.status ?? 1);
 }

@@ -2,7 +2,8 @@ import Carbon
 import Foundation
 
 let args = Array(CommandLine.arguments.dropFirst())
-let shouldSelect = args.contains("--select")
+let shouldSelectOnly = args.contains("--select-only")
+let shouldSelect = args.contains("--select") || shouldSelectOnly
 let shouldDisable = args.contains("--disable")
 let bundlePath = args.first(where: { !$0.hasPrefix("--") }) ?? NSHomeDirectory() + "/Library/Input Methods/Lekh Keyboard.app"
 let bundleURL = URL(fileURLWithPath: bundlePath) as CFURL
@@ -30,6 +31,9 @@ func firstInputMode(from infoPlist: NSDictionary) -> (modeId: String, inputSourc
   return nil
 }
 
+// `.Main` is the single macOS transport mode required for reliable IMK launch
+// on current macOS. The four product typing modes remain internal engine
+// pipelines and are never exposed as competing TIS sources.
 let inputMode = firstInputMode(from: infoPlist)
 let inputSourceId = inputMode?.inputSourceId ?? parentInputSourceId
 
@@ -77,7 +81,9 @@ func allMatchingSources(_ inputSourceId: String) -> [TISInputSource] {
     for item in list {
       let source = item as! TISInputSource
       if stringProperty(source, kTISPropertyInputSourceID) == inputSourceId {
-        output.append(source)
+        if !output.contains(where: { CFEqual($0, source) }) {
+          output.append(source)
+        }
       }
     }
   }
@@ -107,10 +113,32 @@ func isEnabled(_ inputSourceId: String) -> Bool {
   return boolProperty(source, kTISPropertyInputSourceIsEnabled)
 }
 
-func ensureInputSourceRegistered() -> (source: TISInputSource?, parent: TISInputSource?, registerStatus: OSStatus?) {
-  if let existing = findInputSource(inputSourceId) {
-    return (existing, findInputSource(parentInputSourceId), nil)
+func selectExistingSource() -> (selected: Bool, status: OSStatus) {
+  var lastStatus = OSStatus(paramErr)
+  for attempt in 0..<30 {
+    guard let refreshedSource = findInputSource(inputSourceId) else {
+      Thread.sleep(forTimeInterval: 0.5)
+      continue
+    }
+    lastStatus = TISSelectInputSource(refreshedSource)
+    Thread.sleep(forTimeInterval: 0.15)
+    let selectedFlag = boolProperty(refreshedSource, kTISPropertyInputSourceIsSelected)
+    let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    let currentId = stringProperty(current, kTISPropertyInputSourceID)
+    if lastStatus == noErr && (selectedFlag || currentId == inputSourceId) {
+      return (true, lastStatus)
+    }
+    fputs("Select attempt \(attempt + 1) failed with status=\(lastStatus) selected=\(selectedFlag) current=\(currentId); retrying.\n", stderr)
+    Thread.sleep(forTimeInterval: 0.5)
   }
+  return (false, lastStatus)
+}
+
+func ensureInputSourceRegistered() -> (source: TISInputSource?, parent: TISInputSource?, registerStatus: OSStatus?) {
+  // Registration is not merely discovery. After an atomic bundle replacement,
+  // TIS may still expose an old source object while imklaunchagent has no live
+  // endpoint for the new executable. Re-register the canonical installed URL
+  // every time, then normalize any duplicate objects below.
   let status = TISRegisterInputSource(bundleURL)
   return (findInputSource(inputSourceId), findInputSource(parentInputSourceId), status)
 }
@@ -133,52 +161,92 @@ if shouldDisable {
   exit(0)
 }
 
+if shouldSelectOnly {
+  guard findInputSource(inputSourceId) != nil else {
+    fputs("Lekh Keyboard input source is not registered. Run install-dev.sh before --select-only. id=\(inputSourceId)\n", stderr)
+    exit(10)
+  }
+  guard isEnabled(inputSourceId) else {
+    fputs("Lekh Keyboard input source is registered but not enabled. Approve it in System Settings, then retry. id=\(inputSourceId)\n", stderr)
+    exit(11)
+  }
+  let selection = selectExistingSource()
+  guard selection.selected else {
+    fputs("Lekh Keyboard input source could not be selected without re-registration. status=\(selection.status)\n", stderr)
+    exit(5)
+  }
+  print("Lekh Keyboard input source selected through TIS without re-registering or re-enabling. id=\(inputSourceId)")
+  exit(0)
+}
+
 let registered = ensureInputSourceRegistered()
-guard let source = registered.source else {
+guard registered.source != nil else {
   let registerStatus = registered.registerStatus.map(String.init) ?? "not-run"
   fputs("Lekh Keyboard input source was not discoverable after registration. registerStatus=\(registerStatus)\n", stderr)
   exit(2)
 }
 
+var duplicateSourcesDisabled = 0
+let matchingSources = allMatchingSources(inputSourceId)
+let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+let currentId = stringProperty(current, kTISPropertyInputSourceID)
+if currentId == inputSourceId || currentId == parentInputSourceId,
+   let abc = findInputSource("com.apple.keylayout.ABC") {
+  _ = TISSelectInputSource(abc)
+  Thread.sleep(forTimeInterval: 0.2)
+}
+// Force a genuine disabled -> enabled transition even for one discoverable
+// object. TIS can cache `isEnabled=true` after preference-array cleanup while
+// AppleEnabledInputSources has no effective row; a no-op enable then leaves the
+// menu selectable but gives TextEdit no server session.
+for duplicate in matchingSources where disableSource(duplicate) == noErr {
+  duplicateSourcesDisabled += 1
+}
+postInputSourceChangeNotification()
+Thread.sleep(forTimeInterval: 0.25)
+
+guard let source = findInputSource(inputSourceId) ?? findInputSource(parentInputSourceId) else {
+  fputs("Lekh Keyboard input source disappeared during duplicate normalization. id=\(inputSourceId)\n", stderr)
+  exit(8)
+}
 let enableStatus = enableSource(source)
 guard enableStatus == noErr else {
   fputs("Lekh Keyboard input source could not be enabled. status=\(enableStatus)\n", stderr)
   exit(3)
 }
 postInputSourceChangeNotification()
-Thread.sleep(forTimeInterval: 0.5)
+var activationApproved = false
+for attempt in 0..<120 {
+  if isEnabled(inputSourceId) || isEnabled(parentInputSourceId) {
+    activationApproved = true
+    break
+  }
+  if attempt == 4 {
+    fputs("macOS approval required: choose Allow in the Keyboard settings sheet to enable Lekh Keyboard. Waiting up to 30 seconds.\n", stderr)
+  }
+  Thread.sleep(forTimeInterval: 0.25)
+}
 postInputSourceChangeNotification()
 
-guard isEnabled(inputSourceId) || isEnabled(parentInputSourceId) else {
-  fputs("Lekh Keyboard input source is discoverable but still not enabled after TISEnableInputSource. id=\(inputSourceId)\n", stderr)
+guard activationApproved else {
+  fputs("Lekh Keyboard is installed but macOS activation approval was not completed. Open System Settings > Keyboard > Text Input > Edit, approve Lekh Keyboard, then rerun registration. id=\(inputSourceId)\n", stderr)
   exit(7)
+}
+let enabledMatches = allMatchingSources(inputSourceId).filter {
+  boolProperty($0, kTISPropertyInputSourceIsEnabled)
+}
+guard enabledMatches.count == 1 else {
+  fputs("Lekh Keyboard duplicate normalization left \(enabledMatches.count) enabled sources for id=\(inputSourceId).\n", stderr)
+  exit(9)
 }
 
 if shouldSelect {
-  var selected = false
-  var lastSelectStatus = OSStatus(paramErr)
-  for attempt in 0..<30 {
-    guard let refreshedSource = findInputSource(inputSourceId) ?? findInputSource(parentInputSourceId) else {
-      Thread.sleep(forTimeInterval: 0.5)
-      continue
-    }
-    lastSelectStatus = TISSelectInputSource(refreshedSource)
-    Thread.sleep(forTimeInterval: 0.15)
-    let selectedFlag = boolProperty(refreshedSource, kTISPropertyInputSourceIsSelected)
-    let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
-    let currentId = stringProperty(current, kTISPropertyInputSourceID)
-    if lastSelectStatus == noErr && (selectedFlag || currentId == inputSourceId || currentId == parentInputSourceId) {
-      selected = true
-      break
-    }
-    fputs("Select attempt \(attempt + 1) failed with status=\(lastSelectStatus) selected=\(selectedFlag) current=\(currentId); retrying.\n", stderr)
-    Thread.sleep(forTimeInterval: 0.5)
-  }
-  guard selected else {
-    fputs("Lekh Keyboard input source could not be selected. status=\(lastSelectStatus)\n", stderr)
+  let selection = selectExistingSource()
+  guard selection.selected else {
+    fputs("Lekh Keyboard input source could not be selected. status=\(selection.status)\n", stderr)
     exit(5)
   }
-  print("Lekh Keyboard input source registered, enabled, and selected through TIS. id=\(inputSourceId)")
+  print("Lekh Keyboard input source registered, normalized, enabled, and selected through TIS. id=\(inputSourceId) duplicatesDisabled=\(duplicateSourcesDisabled)")
 } else {
-  print("Lekh Keyboard input source registered and enabled through TIS. It was not selected. id=\(inputSourceId)")
+  print("Lekh Keyboard input source registered, normalized, and enabled through TIS. It was not selected. id=\(inputSourceId) duplicatesDisabled=\(duplicateSourcesDisabled)")
 }

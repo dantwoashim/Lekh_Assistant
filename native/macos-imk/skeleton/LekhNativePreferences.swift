@@ -73,7 +73,10 @@ public enum LekhNativePreferences {
 
   public static func mayPersonalize(bundleIdentifier: String?) -> Bool {
     guard personalizationEnabled else { return false }
-    guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return true }
+    // Unknown clients are not proof of a normal editable application. Secure
+    // fields, remote editors and compatibility shims can omit this identity;
+    // privacy must fail closed rather than silently learning from them.
+    guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return false }
     return !excludedApplicationBundleIdentifiers.contains(bundleIdentifier)
   }
 
@@ -115,7 +118,9 @@ public enum LekhMixedScriptPolicy {
     "api", "otp", "pan", "pdf", "url", "http", "https", "email", "gmail", "icloud",
     "login", "username", "password", "wifi", "wi-fi", "qr", "id", "pin", "cvv",
     "esewa", "khalti", "ime", "ntc", "ncell", "tiktok", "whatsapp", "viber",
-    "zoom", "teams", "slack", "github", "git", "xcode", "swift", "json", "csv"
+    "zoom", "teams", "slack", "github", "git", "xcode", "swift", "json", "csv",
+    "openai", "npm", "swiftui", "macos", "readme", "hello",
+    "user", "candidate", "phrase", "detect", "wrong", "upload", "submit"
   ]
 
   private static let conversationalLoanwords: Set<String> = [

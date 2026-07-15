@@ -14,6 +14,9 @@
     "types": ["vitest/globals", "@testing-library/jest-dom"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "paths": {
+      "@lekh/app-entry": ["./src/app/App.tsx"]
+    },
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,

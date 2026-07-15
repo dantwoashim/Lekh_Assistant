@@ -2,6 +2,25 @@
 
 Generated: 2026-06-11
 
+> Historical note: the prototype findings below are retained as audit history.
+> The normative current behavior and release gates live in
+> `LEKH_SOTA_UX_CONTRACT.md` and
+> `LEKH_LEVEL5_FORENSIC_TRANSFORMATION_REPORT.md`. The keyboard now uses an
+> in-process deterministic engine and an optional asynchronous local Core ML
+> tail; typing never depends on XPC or a network.
+
+## 2026-07-15 IMK Launch Correction
+
+On macOS 26.2, real `imklaunchagent` diagnostics proved that the legacy
+`Lekh_Keyboard_Connection` name was refused as an unrecognized connection
+identity. The transport contract now uses the bundle-derived third-party name
+`com.lekh.inputmethod.LekhKeyboard_Connection` consistently in the plist,
+server startup, companion health attestation, packaging, installation and host
+probes. TextEdit then reached the actual controller path and explicitly
+accepted `swasthya` as `स्वास्थ्य`. Natural TIS launch remains a required
+regression test after every packaged install; a prelaunched server is diagnostic
+evidence only.
+
 ## 2026-06-11 Implementation Update
 
 Implemented in the repo after the initial diagnosis:
@@ -32,7 +51,7 @@ Still not production-ready:
 
 - The CGEvent TextEdit probe currently records `blocked-automation`: it can select Lekh, but did not prove host text insertion in this desktop automation environment.
 - Manual hardware host-app matrix evidence is still required.
-- Real macOS XPC/full engine bridge, Developer ID signing, notarization, fresh-machine installer, and multi-day pilot remain open gates.
+- Developer ID signing, notarization, fresh-machine installer evidence, the full host matrix, and a multi-day pilot remain open gates.
 
 ## 1. Executive Diagnosis
 
@@ -47,7 +66,7 @@ Local evidence gathered on 2026-06-11:
 - TIS sees one enabled input source: `com.lekh.inputmethod.keyboard`, localized name `Lekh Keyboard`, type `TISTypeKeyboardInputMethodWithoutModes`.
 - The active input source was restored to `com.apple.keylayout.ABC`.
 - The binary exports `_OBJC_CLASS_$_LekhInputController`, so the Swift controller class export is not the current smoking gun.
-- `InputMethodConnectionName` in `Info.plist` and `IMKServer(name:)` both use `Lekh_Keyboard_Connection`, so a connection-name mismatch is ruled out for the current source.
+- At that historical checkpoint, `InputMethodConnectionName` and `IMKServer(name:)` both used `Lekh_Keyboard_Connection`; macOS 26.2 later proved that matching an arbitrary value internally was insufficient.
 - Two controlled scripted TextEdit probes selected Lekh successfully but produced no `/tmp/lekh-imk-host.log` events and TextEdit remained empty. This confirms the script is not reliable host-app proof. It does not prove real hardware typing fails or works.
 
 ## 2. Root-Cause Table
@@ -57,7 +76,7 @@ Local evidence gathered on 2026-06-11:
 | Bundle registration | Dev app bundle is discoverable and enabled | confirmed working | TIS registry lists `com.lekh.inputmethod.keyboard` as enabled keyboard input method | `register-dev.swift`, local TIS query |
 | Active keyboard safety | ABC restore works | confirmed working | `restore-system-keyboard.swift` selects ABC/US through TIS | local restore result |
 | Controller class export | `LekhInputController` exists as Objective-C class | ruled out as current blocker | binary contains `_OBJC_CLASS_$_LekhInputController` | `nm -m` |
-| Connection mismatch | Plist/server names match | ruled out as current blocker | plist and `App/main.swift` use `Lekh_Keyboard_Connection` | source inspection |
+| Connection identity | Plist/server names matched but the name was not bundle-derived | later confirmed launch blocker | macOS 26.2 logged `Refusing connection name for bundle` | real `imklaunchagent` evidence, 2026-07-15 |
 | Real host typing proof | No accepted evidence yet | confirmed blocker | TextEdit probe produced empty content and no controller event log | `reports/macos-imk-host-textedit-smoke.json`, 2026-06-11 probes |
 | Automation reliability | AppleScript is not a release gate | confirmed blocker in test method | scripted `System Events keystroke` can bypass, race, or be denied before IMK event delivery | no `handle`/`inputText` log |
 | Event route ambiguity | Controller implements `inputText`, `handle`, and partial `didCommand` | highly likely blocker | IMK has three alternative event styles; if keybinding route is used, Backspace/Enter/Tab may become selectors and current `didCommand` handles only Escape/cancel | SDK header plus source |
@@ -104,9 +123,9 @@ Lekh Keyboard.app/
     MacOS/LekhKeyboardIMK
     Resources/LekhInputSource.icns
     Resources/runtime-suggestions.json
-    XPCServices/com.lekh.keyboard.EngineXPC.xpc/
-      Contents/Info.plist
-      Contents/MacOS/com.lekh.keyboard.EngineXPC
+    Resources/lekh-engine-contract.v1.json
+    Resources/runtime-suggestions.lkb
+    Resources/LekhNeuralTransliterator.mlmodelc/  # only after neural release gates
 ```
 
 Install the IMK app under `~/Library/Input Methods/Lekh Keyboard.app` for per-user installs. Production may also support `/Library/Input Methods` only with admin installer validation.
@@ -117,9 +136,9 @@ Use stable values and make code read from plist so names cannot drift:
 
 ```xml
 <key>CFBundleIdentifier</key>
-<string>com.lekh.inputmethod.keyboard</string>
+<string>com.lekh.inputmethod.LekhKeyboard</string>
 <key>CFBundleExecutable</key>
-<string>LekhKeyboardIMK</string>
+<string>LekhInputMethodApp</string>
 <key>CFBundlePackageType</key>
 <string>APPL</string>
 <key>LSUIElement</key>
@@ -127,7 +146,7 @@ Use stable values and make code read from plist so names cannot drift:
 <key>LSMinimumSystemVersion</key>
 <string>13.0</string>
 <key>InputMethodConnectionName</key>
-<string>com.lekh.inputmethod.keyboard_Connection</string>
+<string>com.lekh.inputmethod.LekhKeyboard_Connection</string>
 <key>InputMethodServerControllerClass</key>
 <string>LekhInputController</string>
 <key>tsInputMethodCharacterRepertoireKey</key>
@@ -139,7 +158,12 @@ Use stable values and make code read from plist so names cannot drift:
 <string>LekhInputSource.icns</string>
 ```
 
-The exact connection name is less important than consistency, but production should use a bundle-ID-derived name and update both plist and `IMKServer` together.
+The exact connection name is a runtime contract, not a naming preference. On
+macOS 26.2, `imklaunchagent` rejected the arbitrary legacy
+`Lekh_Keyboard_Connection` value as unrecognized. The shipping plist,
+`IMKServer`, packaging gates, installer payload and installed bundle must all
+use exactly `com.lekh.inputmethod.LekhKeyboard_Connection`; startup fails
+closed if the value is missing or different.
 
 ### App Lifecycle
 

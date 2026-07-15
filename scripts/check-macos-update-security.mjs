@@ -36,6 +36,8 @@ const minisignPublicKeyPath = join(ROOT, "public", "security", "lekh-release-man
 const sparklePublicKeyPath = join(ROOT, "public", "security", "lekh-sparkle-ed25519-public.txt");
 const packPublicKeyPath = join(ROOT, "public", "security", "lekh-pack-ed25519-public.txt");
 const companionMainPath = join(ROOT, "electron", "main.cjs");
+const nativeCompanionModelPath = join(ROOT, "native", "macos-companion", "LekhCompanionModel.swift");
+const packageJsonPath = join(ROOT, "package.json");
 const failures = [];
 const warnings = [];
 const HEADER_SIZE = 64;
@@ -73,7 +75,9 @@ const report = {
   failures,
   warnings,
   policy: {
-    appUpdates: "Companion-pinned HTTPS appcast with SHA-256 and Ed25519 archive verification; production additionally requires Developer ID signing and notarization",
+    appUpdates: shipsNativeCompanion()
+      ? "Native companion production updates remain blocked until a signed native update controller verifies the pinned appcast; Electron evidence is excluded"
+      : "Companion-pinned HTTPS appcast with SHA-256 and Ed25519 archive verification; production additionally requires Developer ID signing and notarization",
     dictionaryUpdates: "independent Ed25519 signed LEKHBLX1 full and delta pack manifests",
     releaseManifest: "SHA256 manifest over release directory files signed with minisign",
     noDuplicateRuntimePacks: true,
@@ -107,6 +111,18 @@ function checkImkPlist(plist) {
 }
 
 function checkCompanionUpdater() {
+  if (shipsNativeCompanion()) {
+    const nativeSource = readTextIfExists(nativeCompanionModelPath);
+    if (!nativeSource) {
+      critical(`Native companion source is missing: ${relative(ROOT, nativeCompanionModelPath)}`);
+      return;
+    }
+    if (!nativeSource.includes("LekhNativeUpdateController")) {
+      policy("The shipping native companion has no signed native update controller. Electron updater evidence cannot certify the native macOS product.");
+    }
+    return;
+  }
+
   const source = readTextIfExists(companionMainPath);
   if (!source) {
     critical(`Companion updater source is missing: ${relative(ROOT, companionMainPath)}`);
@@ -140,6 +156,16 @@ function checkCompanionUpdater() {
     "maximumBytes"
   ]) {
     if (!source.includes(marker)) critical(`Companion updater is missing security marker ${marker}.`);
+  }
+}
+
+function shipsNativeCompanion() {
+  const packageJson = readTextIfExists(packageJsonPath);
+  try {
+    return Boolean(packageJson && JSON.parse(packageJson).scripts?.["package:macos"]?.includes("package-native-macos-companion.mjs"));
+  } catch {
+    critical("package.json is invalid while checking the shipping macOS companion route.");
+    return false;
   }
 }
 

@@ -1,0 +1,160 @@
+import Foundation
+import LekhInputMethod
+
+@discardableResult
+private func require(_ condition: @autoclosure () -> Bool, _ message: String) -> Bool {
+  guard condition() else {
+    fputs("FAIL: \(message)\n", stderr)
+    exit(1)
+  }
+  return true
+}
+
+private func verifyCandidateStateMachine() {
+  let passive = LekhCandidateController()
+  passive.updateCandidates(["पहिलो", "दोस्रो"], rawBuffer: "pahilo")
+  require(passive.currentState().selectedIndex == nil, "Fresh candidates must remain passive")
+  require(passive.selectedCandidate() == nil, "Passive candidates must not expose an accepted row")
+
+  passive.updateCandidates(["पहिलो", "दोस्रो"], selectedIndex: 99)
+  require(passive.currentState().selectedIndex == nil, "An invalid programmatic index must not invent selection")
+
+  let navigation = LekhCandidateController()
+  navigation.updateCandidates(["एक", "दुई", "तीन"])
+  require(navigation.moveSelection(delta: 1) == "एक", "Down must enter browsing at the first row")
+  require(navigation.moveSelection(delta: -1) == "तीन", "Up must wrap to the final row")
+  require(navigation.moveSelection(delta: 1) == "एक", "Down must wrap back to the first row")
+
+  let retention = LekhCandidateController()
+  retention.updateCandidates(["एक", "दुई", "तीन"])
+  require(retention.select(index: 1) == "दुई", "Explicit selection must select the requested row")
+  retention.updateCandidates(["शून्य", "दुई"])
+  require(retention.currentState().selectedIndex == 1, "A surviving candidate may retain its selection")
+  require(retention.selectedCandidate() == "दुई", "Selection must be retained by text, not stale index")
+  retention.updateCandidates(["चार", "पाँच"])
+  require(retention.currentState().selectedIndex == nil, "A replaced list must return to passive state")
+
+  let shortcuts = LekhCandidateController()
+  shortcuts.updateCandidates((1...10).map(String.init))
+  require(shortcuts.candidateForShortcut(1) == "1", "Shortcut 1 must select row 1")
+  require(shortcuts.candidateForShortcut(8) == "8", "Shortcut 8 must select row 8")
+  require(shortcuts.candidateForShortcut(9) == nil, "Shortcut 9 must be rejected")
+  require(shortcuts.select(index: 8) == "9", "Page-two seed selection must succeed")
+  require(shortcuts.candidateForShortcut(1) == "9", "Page shortcut 1 must select page row 1")
+  require(shortcuts.candidateForShortcut(2) == "10", "Page shortcut 2 must select page row 2")
+  require(shortcuts.candidateForShortcut(3) == nil, "A shortcut beyond the final page must be rejected")
+  shortcuts.clearSelection()
+  require(shortcuts.selectedCandidate() == nil, "Clearing selection must restore passive state")
+}
+
+private func verifyAutoCommitPolicy() {
+  let allowed = LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
+    text: "स्वास्थ्य",
+    sourceInput: "swasthya",
+    calibratedProbability: 0.92,
+    runnerUpProbability: 0.80,
+    isExactDeterministicToken: true
+  )
+  require(allowed?.policy == .calibratedExactDeterministicToken, "Exact calibrated thresholds must authorize the forward token")
+
+  require(
+    LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
+      text: "स्वास्थ्य",
+      sourceInput: "swasthya",
+      calibratedProbability: 0.919,
+      runnerUpProbability: 0.70,
+      isExactDeterministicToken: true
+    ) == nil,
+    "Forward probability below 0.92 must fail closed"
+  )
+  require(
+    LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
+      text: "स्वास्थ्य",
+      sourceInput: "swasthya",
+      calibratedProbability: 0.95,
+      runnerUpProbability: 0.84,
+      isExactDeterministicToken: true
+    ) == nil,
+    "Forward margin below 0.12 must fail closed"
+  )
+
+  let blockedFlags: [(Bool, Bool, Bool, Bool, Bool)] = [
+    (true, false, false, false, false),
+    (false, true, false, false, false),
+    (false, false, true, false, false),
+    (false, false, false, true, false),
+    (false, false, false, false, true)
+  ]
+  for (isName, isPhrase, isProtected, isPersonal, isNeural) in blockedFlags {
+    require(
+      LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
+        text: "स्वास्थ्य",
+        sourceInput: "swasthya",
+        calibratedProbability: 0.99,
+        runnerUpProbability: 0.10,
+        isExactDeterministicToken: true,
+        isName: isName,
+        isPhrase: isPhrase,
+        isProtected: isProtected,
+        isPersonal: isPersonal,
+        isNeural: isNeural
+      ) == nil,
+      "Names, phrases, protected, personal, and neural rows must never passively commit"
+    )
+  }
+  require(
+    LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
+      text: "नेपाल राम्रो",
+      sourceInput: "nepal",
+      calibratedProbability: 0.99,
+      runnerUpProbability: 0.01,
+      isExactDeterministicToken: true
+    ) == nil,
+    "A single active token must never expand into a phrase"
+  )
+
+  let reverse = LekhNativeAutoCommitPolicy.uniqueReversibleReverseCandidate(
+    text: "swasthya",
+    sourceInput: "स्वास्थ्य",
+    isUnique: true,
+    isReversible: true
+  )
+  require(reverse?.policy == .uniqueReversibleReverse, "A unique reversible Roman output may commit")
+  require(
+    LekhNativeAutoCommitPolicy.uniqueReversibleReverseCandidate(
+      text: "swasthya",
+      sourceInput: "स्वास्थ्य",
+      isUnique: false,
+      isReversible: true
+    ) == nil,
+    "An ambiguous reverse candidate must fail closed"
+  )
+  require(
+    LekhNativeAutoCommitPolicy.uniqueReversibleReverseCandidate(
+      text: "स्वास्थ्य",
+      sourceInput: "स्वास्थ्य",
+      isUnique: true,
+      isReversible: true
+    ) == nil,
+    "Reverse auto-commit output must be Roman"
+  )
+}
+
+private func verifyFourModeContract() {
+  let visible = LekhNativeTypingMode.visibleModes.map(\.rawValue)
+  require(visible.count == 4, "Exactly four native modes must be visible")
+  require(Set(visible).count == 4, "All four native modes must remain distinct")
+  require(Set(visible) == Set(LekhNativeTypingMode.allCases.map(\.rawValue)), "Visible modes must cover every engine mode")
+
+  let passThrough = LekhInputDecision.passThrough
+  require(!passThrough.handled, "Pass-through must not claim handling")
+  require(passThrough.shouldPassThrough, "Pass-through must preserve the host event")
+  require(passThrough.markedText == nil && passThrough.committedText == nil, "Pass-through must not mutate text")
+  require(passThrough.candidates.isEmpty, "Pass-through must not publish candidates")
+  require(passThrough.inlineSuggestion == nil && passThrough.autoCommitCandidate == nil, "Pass-through must not carry acceptance authority")
+}
+
+verifyCandidateStateMachine()
+verifyAutoCommitPolicy()
+verifyFourModeContract()
+print("PASS: native candidate, delimiter, and four-mode unit contracts")

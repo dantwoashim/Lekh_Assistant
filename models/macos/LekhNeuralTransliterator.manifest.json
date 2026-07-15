@@ -87,6 +87,6 @@
     "Not production-eligible until private human-reviewed Phase 7 sources meet required row counts.",
     "Not production-eligible until evaluation is run from exported Core ML predictions on production gold.",
     "Not production-eligible until packaged-app Core ML latency is measured on both arm64 and x86_64 Macs.",
-    "Not production-eligible until the native async Core ML tail service replaces disabled neural diagnostics."
+    "Native async Core ML tail integration exists but remains experimental until packaged host-matrix cancellation, secure-transition, end-to-end latency, and candidate-quality evidence passes."
   ]
 }

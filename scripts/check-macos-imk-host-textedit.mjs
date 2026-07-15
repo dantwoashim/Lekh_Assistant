@@ -9,6 +9,7 @@ const root = process.cwd();
 const startedAt = performance.now();
 const appBundle = join(homedir(), "Library", "Input Methods", "Lekh Keyboard.app");
 const registerScript = join(root, "native", "macos-imk", "skeleton", "register-dev.swift");
+const restoreSourceScript = join(root, "native", "macos-imk", "skeleton", "restore-system-keyboard.swift");
 const restoreScript = join(root, "native", "macos-imk", "skeleton", "restore-system-keyboard.sh");
 const reportPath = join(root, "reports", "macos-imk-host-textedit-smoke.json");
 const tempTextEditFile = "/tmp/lekh-native-host-smoke.txt";
@@ -63,12 +64,12 @@ if (!existsSync(registerScript)) failures.push("register-dev.swift is missing.")
 if (!existsSync(restoreScript)) failures.push("restore-system-keyboard.sh is missing.");
 if (failures.length > 0) fail();
 
+const snapshot = run("swift", [restoreSourceScript, "--snapshot"]);
+if (snapshot.status !== 0) fail({ step: "snapshot-input-source", stdout: snapshot.stdout, stderr: snapshot.stderr });
 run(restoreScript, []);
 
 try {
   writeFileSync(tempTextEditFile, "");
-  run("open", ["-gj", appBundle]);
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 800);
   run("open", ["-a", "TextEdit", tempTextEditFile]);
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 800);
 
@@ -79,7 +80,7 @@ try {
   ]);
   if (prep.status !== 0) fail({ step: "prepare-textedit", stdout: prep.stdout, stderr: prep.stderr });
 
-  const select = run("swift", [registerScript, appBundle, "--select"]);
+  const select = run("swift", [registerScript, appBundle, "--select-only"]);
   if (select.status !== 0) fail({ step: "select-input-source", stdout: select.stdout, stderr: select.stderr });
 
   let read = { status: 1, stdout: "", stderr: "" };

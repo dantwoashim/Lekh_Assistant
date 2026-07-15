@@ -1,0 +1,521 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "lekh-token-completions-v1",
+  "normalization": "nfc-lower-ascii-apostrophe-v1",
+  "runtimePolicy": {
+    "minimumPrefixLength": 4,
+    "maximumSourceSuffixLength": 12,
+    "maximumResultsPerPrefix": 3,
+    "minimumWinnerMargin": 40,
+    "explicitAcceptanceOnly": true,
+    "singleTokenOnly": true,
+    "namesAllowed": false,
+    "phrasesAllowed": false
+  },
+  "entries": [
+    {
+      "prefix": "aaun",
+      "candidates": [
+        {
+          "source": "aaune",
+          "target": "आउने",
+          "score": 864,
+          "seedId": "completion-aaune",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "ahil",
+      "candidates": [
+        {
+          "source": "ahile",
+          "target": "अहिले",
+          "score": 849,
+          "seedId": "completion-ahile",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "awas",
+      "candidates": [
+        {
+          "source": "awastha",
+          "target": "अवस्था",
+          "score": 912,
+          "seedId": "completion-awastha",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "baat",
+      "candidates": [
+        {
+          "source": "baato",
+          "target": "बाटो",
+          "score": 854,
+          "seedId": "completion-baato",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "bhaye",
+      "candidates": [
+        {
+          "source": "bhayena",
+          "target": "भएन",
+          "score": 918,
+          "seedId": "completion-bhayena",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "bhet",
+      "candidates": [
+        {
+          "source": "bhetumla",
+          "target": "भेटौँला",
+          "score": 891,
+          "seedId": "completion-bhetumla",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "bhol",
+      "candidates": [
+        {
+          "source": "bholi",
+          "target": "भोलि",
+          "score": 889,
+          "seedId": "completion-bholi",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "dhany",
+      "candidates": [
+        {
+          "source": "dhanyabad",
+          "target": "धन्यवाद",
+          "score": 976,
+          "seedId": "completion-dhanyabad",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "dhanya",
+      "candidates": [
+        {
+          "source": "dhanyabad",
+          "target": "धन्यवाद",
+          "score": 977,
+          "seedId": "completion-dhanyabad",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "dher",
+      "candidates": [
+        {
+          "source": "dherai",
+          "target": "धेरै",
+          "score": 938,
+          "seedId": "completion-dherai",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "gard",
+      "candidates": [
+        {
+          "source": "gardai",
+          "target": "गर्दै",
+          "score": 928,
+          "seedId": "completion-gardai",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "gare",
+      "candidates": [
+        {
+          "source": "gareko",
+          "target": "गरेको",
+          "score": 923,
+          "seedId": "completion-gareko",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "garn",
+      "candidates": [
+        {
+          "source": "garnu",
+          "target": "गर्नु",
+          "score": 869,
+          "seedId": "completion-garnu",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "hunuh",
+      "candidates": [
+        {
+          "source": "hunuhuncha",
+          "target": "हुनुहुन्छ",
+          "score": 965,
+          "seedId": "completion-hunuhuncha",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "hunuhun",
+      "candidates": [
+        {
+          "source": "hunuhuncha",
+          "target": "हुनुहुन्छ",
+          "score": 967,
+          "seedId": "completion-hunuhuncha",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "kahi",
+      "candidates": [
+        {
+          "source": "kahile",
+          "target": "कहिले",
+          "score": 883,
+          "seedId": "completion-kahile",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "khan",
+      "candidates": [
+        {
+          "source": "khana",
+          "target": "खाना",
+          "score": 909,
+          "seedId": "completion-khana",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "lekh",
+      "candidates": [
+        {
+          "source": "lekhharu",
+          "target": "लेखहरू",
+          "score": 996,
+          "seedId": "completion-lekhharu",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "mala",
+      "candidates": [
+        {
+          "source": "malai",
+          "target": "मलाई",
+          "score": 879,
+          "seedId": "completion-malai",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "manchhe",
+      "candidates": [
+        {
+          "source": "manchheharu",
+          "target": "मान्छेहरू",
+          "score": 986,
+          "seedId": "completion-manchheharu",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "nama",
+      "candidates": [
+        {
+          "source": "namaste",
+          "target": "नमस्ते",
+          "score": 972,
+          "seedId": "completion-namaste",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "namas",
+      "candidates": [
+        {
+          "source": "namaste",
+          "target": "नमस्ते",
+          "score": 973,
+          "seedId": "completion-namaste",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "nepa",
+      "candidates": [
+        {
+          "source": "nepali",
+          "target": "नेपाली",
+          "score": 933,
+          "seedId": "completion-nepali",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "pach",
+      "candidates": [
+        {
+          "source": "pachi",
+          "target": "पछि",
+          "score": 859,
+          "seedId": "completion-pachi",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "patha",
+      "candidates": [
+        {
+          "source": "pathaideu",
+          "target": "पठाइदेऊ",
+          "score": 961,
+          "seedId": "completion-pathaideu",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "pathai",
+      "candidates": [
+        {
+          "source": "pathaideu",
+          "target": "पठाइदेऊ",
+          "score": 962,
+          "seedId": "completion-pathaideu",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "raajaniti",
+      "candidates": [
+        {
+          "source": "raajanitigya",
+          "target": "राजनीतिज्ञ",
+          "score": 952,
+          "seedId": "completion-raajanitigya",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "raja",
+      "candidates": [
+        {
+          "source": "rajaniti",
+          "target": "राजनीति",
+          "score": 956,
+          "seedId": "completion-rajaniti",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "rajan",
+      "candidates": [
+        {
+          "source": "rajaniti",
+          "target": "राजनीति",
+          "score": 957,
+          "seedId": "completion-rajaniti",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "ramr",
+      "candidates": [
+        {
+          "source": "ramro",
+          "target": "राम्रो",
+          "score": 904,
+          "seedId": "completion-ramro",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "sama",
+      "candidates": [
+        {
+          "source": "samachar",
+          "target": "समाचार",
+          "score": 946,
+          "seedId": "completion-samachar",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "samac",
+      "candidates": [
+        {
+          "source": "samachar",
+          "target": "समाचार",
+          "score": 947,
+          "seedId": "completion-samachar",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "sanc",
+      "candidates": [
+        {
+          "source": "sanchai",
+          "target": "सञ्चै",
+          "score": 897,
+          "seedId": "completion-sanchai",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "sanka",
+      "candidates": [
+        {
+          "source": "sankalpa",
+          "target": "संकल्प",
+          "score": 942,
+          "seedId": "completion-sankalpa",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "sankal",
+      "candidates": [
+        {
+          "source": "sankalpa",
+          "target": "संकल्प",
+          "score": 943,
+          "seedId": "completion-sankalpa",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    },
+    {
+      "prefix": "tapa",
+      "candidates": [
+        {
+          "source": "tapai",
+          "target": "तपाईं",
+          "score": 874,
+          "seedId": "completion-tapai",
+          "sourceId": "lekh-repository-curated-completion-v1",
+          "license": "MIT",
+          "reviewTier": "repository-curated-regression"
+        }
+      ]
+    }
+  ]
+}

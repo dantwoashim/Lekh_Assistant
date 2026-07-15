@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "lekh-token-completion-regression-v1",
+  "evidenceTier": "repository-regression-not-human-rated",
+  "positive": [
+    { "prefix": "lekh", "expectedSource": "lekhharu", "expectedTarget": "लेखहरू" },
+    { "prefix": "manchhe", "expectedSource": "manchheharu", "expectedTarget": "मान्छेहरू" },
+    { "prefix": "dhany", "expectedSource": "dhanyabad", "expectedTarget": "धन्यवाद" },
+    { "prefix": "nama", "expectedSource": "namaste", "expectedTarget": "नमस्ते" },
+    { "prefix": "hunuhun", "expectedSource": "hunuhuncha", "expectedTarget": "हुनुहुन्छ" },
+    { "prefix": "pathai", "expectedSource": "pathaideu", "expectedTarget": "पठाइदेऊ" },
+    { "prefix": "sankal", "expectedSource": "sankalpa", "expectedTarget": "संकल्प" },
+    { "prefix": "dher", "expectedSource": "dherai", "expectedTarget": "धेरै" }
+  ],
+  "negative": [
+    { "prefix": "openai", "reason": "protected-latin-token" },
+    { "prefix": "github", "reason": "protected-latin-token" },
+    { "prefix": "prab", "reason": "name-prefix" },
+    { "prefix": "nira", "reason": "name-prefix" },
+    { "prefix": "mero", "reason": "complete-common-token-with-no-reviewed-extension" },
+    { "prefix": "pani", "reason": "ambiguous-complete-token" },
+    { "prefix": "nepal", "reason": "complete-token-do-not-force-nepali" },
+    { "prefix": "janma miti", "reason": "phrase" },
+    { "prefix": "a@b.com", "reason": "email-like" },
+    { "prefix": "9800000000", "reason": "phone-like" }
+  ]
+}
