@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import {
+  closeSync,
   copyFileSync,
   existsSync,
+  fstatSync,
   mkdtempSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -35,8 +38,8 @@ const publicationJournal = join(root, "release", ".lekh-companion-publication-tr
 const publicationJournalCandidate = `${publicationJournal}.${process.pid}.tmp`;
 const stagingRoot = mkdtempSync(join(tmpdir(), "lekh-native-companion-"));
 const appBundle = join(stagingRoot, "Lekh Keyboard Companion.app");
-const publicationLockDirectory = join(root, "release", ".lekh-companion-publication.lock");
-const publicationLockOwner = join(publicationLockDirectory, "owner.json");
+const publicationLockFile = join(root, "release", ".lekh-companion-publication.lockfile");
+const publicationLockHelper = join(root, "scripts", "macos-companion-publication-lock.swift");
 const executableName = "LekhKeyboardCompanion";
 const executable = join(appBundle, "Contents", "MacOS", executableName);
 const buildRoot = join(root, ".tmp", `native-macos-companion-${process.pid}`);
@@ -66,6 +69,7 @@ const publicationState = {
   readyToCommit: false,
   committed: false
 };
+let publicationLockDescriptor = null;
 
 process.on("exit", () => {
   rmSync(stagingRoot, { recursive: true, force: true });
@@ -79,7 +83,10 @@ process.on("exit", () => {
   if (publicationState.lockHeld && !existsSync(publicationJournal)) {
     rmSync(deliveryExchange, { recursive: true, force: true });
     if (dmgDeliveryExchange) rmSync(dmgDeliveryExchange, { force: true });
-    rmSync(publicationLockDirectory, { recursive: true, force: true });
+  }
+  if (publicationLockDescriptor !== null) {
+    try { closeSync(publicationLockDescriptor); } catch {}
+    publicationLockDescriptor = null;
   }
 });
 
@@ -221,68 +228,61 @@ function sleep(milliseconds) {
   spawnSync("/bin/sleep", [(milliseconds / 1000).toFixed(3)], { stdio: "ignore" });
 }
 
-function processIsAlive(processIdentifier) {
-  if (!Number.isInteger(processIdentifier) || processIdentifier <= 0) return false;
-  try {
-    process.kill(processIdentifier, 0);
-    return true;
-  } catch (error) {
-    return error?.code === "EPERM";
-  }
-}
-
-function processStartIdentity(processIdentifier) {
-  if (!Number.isInteger(processIdentifier) || processIdentifier <= 0) return null;
-  const result = spawnSync("/bin/ps", ["-p", String(processIdentifier), "-o", "lstart="], {
-    encoding: "utf8",
-    stdio: "pipe"
-  });
-  const value = result.status === 0 ? result.stdout.trim() : "";
-  return value || null;
-}
-
 function acquirePublicationLock() {
   if (publicationState.lockHeld) return;
   mkdirSync(join(root, "release"), { recursive: true });
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      mkdirSync(publicationLockDirectory);
-      writeFileSync(publicationLockOwner, `${JSON.stringify({
-        processIdentifier: process.pid,
-        processStartIdentity: processStartIdentity(process.pid),
-        createdAt: new Date().toISOString()
-      }, null, 2)}\n`);
-      publicationState.lockHeld = true;
-      return;
-    } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
-      let owner = null;
-      try {
-        owner = JSON.parse(readFileSync(publicationLockOwner, "utf8"));
-      } catch {
-        // A just-created lock may exist briefly before its owner record. Treat
-        // a recent unknown lock as live instead of deleting another package.
-      }
-      const lockAgeMs = Date.now() - statSync(publicationLockDirectory).mtimeMs;
-      const ownerIdentifierIsValid = Number.isInteger(owner?.processIdentifier) && owner.processIdentifier > 0;
-      const ownerIsAlive = processIsAlive(owner?.processIdentifier);
-      const ownerStartIdentityIsRecorded = typeof owner?.processStartIdentity === "string" &&
-        owner.processStartIdentity.length > 0;
-      const ownerIdentityMatches = ownerIdentifierIsValid &&
-        ownerStartIdentityIsRecorded &&
-        owner.processStartIdentity === processStartIdentity(owner.processIdentifier);
-      if (
-        (ownerIsAlive && ownerIdentityMatches) ||
-        (lockAgeMs < 30_000 && (!ownerIdentifierIsValid || (ownerIsAlive && !ownerStartIdentityIsRecorded)))
-      ) {
-        throw new Error(
-          `Another companion publication owns ${publicationLockDirectory} (pid ${owner?.processIdentifier ?? "unknown"}).`
-        );
-      }
-      rmSync(publicationLockDirectory, { recursive: true, force: true });
-    }
+  try {
+    publicationLockDescriptor = openSync(publicationLockFile, "a+", 0o600);
+  } catch (error) {
+    throw Object.assign(new Error(`Could not open the companion publication lock file: ${error instanceof Error ? error.message : String(error)}`), {
+      code: "publication-lock-open-failed"
+    });
   }
-  throw new Error("Could not acquire the companion publication lock.");
+  const result = spawnSync("/usr/bin/swift", [publicationLockHelper, "--lock-fd", "3"], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe", publicationLockDescriptor],
+    timeout: 30_000
+  });
+  let evidence = null;
+  try {
+    evidence = JSON.parse(result.stdout || "null");
+  } catch {
+    // The exit status and stderr below retain fail-closed diagnostics.
+  }
+  if (result.status !== 0 || evidence?.status !== "acquired") {
+    try {
+      closeSync(publicationLockDescriptor);
+    } catch {}
+    publicationLockDescriptor = null;
+    const busy = result.status === 75 || evidence?.status === "busy";
+    throw Object.assign(new Error(
+      busy
+        ? "Another companion publication holds the kernel advisory lock."
+        : `Could not acquire the companion publication advisory lock: ${evidence?.reason ?? result.stderr?.trim() ?? "unknown helper failure"}.`
+    ), {
+      code: busy ? "publication-lock-busy" : "publication-lock-failed",
+      evidence: {
+        helperStatus: result.status,
+        helperSignal: result.signal ?? null,
+        helperEvidence: evidence
+      }
+    });
+  }
+  assertPublicationLockHeld();
+  publicationState.lockHeld = true;
+}
+
+function assertPublicationLockHeld() {
+  if (publicationLockDescriptor === null) {
+    throw new Error("The companion publication process does not own a lock descriptor.");
+  }
+  try {
+    const descriptorMetadata = fstatSync(publicationLockDescriptor);
+    if (!descriptorMetadata.isFile()) throw new Error("lock descriptor is not a regular file");
+  } catch (error) {
+    throw new Error(`The companion publication lock descriptor is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function dmgPaths(shortVersion) {
@@ -330,6 +330,7 @@ function inspectedFileSha256(path) {
 }
 
 function rollbackJournalArtifact({ kind, canonical, exchange, hadPrevious, targetMatches }) {
+  assertPublicationLockHeld();
   const canonicalExists = existsSync(canonical);
   const exchangeExists = existsSync(exchange);
   const canonicalIsTarget = canonicalExists && targetMatches(canonical);
@@ -366,6 +367,7 @@ function rollbackJournalArtifact({ kind, canonical, exchange, hadPrevious, targe
 }
 
 function recoverInterruptedPublication() {
+  assertPublicationLockHeld();
   if (!existsSync(publicationJournal)) {
     // No journal is the commit marker. Any remaining exchange is either an
     // uncommitted pre-swap candidate or an old backup left after a committed
@@ -424,6 +426,7 @@ function recoverInterruptedPublication() {
 }
 
 function writePublicationTransaction(transaction) {
+  assertPublicationLockHeld();
   rmSync(publicationJournalCandidate, { force: true });
   writeFileSync(publicationJournalCandidate, `${JSON.stringify(transaction, null, 2)}\n`, { flag: "wx" });
   spawnSync("/bin/sync", [], { stdio: "ignore" });
@@ -442,6 +445,7 @@ function reportPathForTransaction(transaction) {
 }
 
 function finalizeCommittedPublication(transaction) {
+  assertPublicationLockHeld();
   if (transaction.phase !== "committed-awaiting-report" || !transaction.report) {
     throw new Error("Publication finalization record is incomplete.");
   }
@@ -537,6 +541,7 @@ function commitPublicationWithReport(report) {
 }
 
 function atomicSwapBundles(firstPath, secondPath) {
+  assertPublicationLockHeld();
   const result = spawnSync("/usr/bin/swift", [
     join(root, "native/macos-imk/skeleton/atomic-install-swap.swift"),
     firstPath,
@@ -770,6 +775,7 @@ function publishDeliveredArtifacts() {
     if (transaction.app.hadPrevious) {
       atomicSwapBundles(deliveryExchange, deliveredAppBundle);
     } else {
+      assertPublicationLockHeld();
       renameSync(deliveryExchange, deliveredAppBundle);
     }
     spawnSync("/bin/sync", [], { stdio: "ignore" });
@@ -784,6 +790,7 @@ function publishDeliveredArtifacts() {
       if (transaction.dmg.hadPrevious) {
         atomicSwapBundles(dmgDeliveryExchange, deliveredDmg);
       } else {
+        assertPublicationLockHeld();
         renameSync(dmgDeliveryExchange, deliveredDmg);
       }
       spawnSync("/bin/sync", [], { stdio: "ignore" });
@@ -880,13 +887,22 @@ try {
   acquirePublicationLock();
   recoveredInterruptedPublicationAtStartup = recoverInterruptedPublication();
 } catch (error) {
-  finishRecovery("failed-recovery", {
+  const lockBusy = error?.code === "publication-lock-busy";
+  finishRecovery(lockBusy ? "retry-publication-lock-busy" : "failed-recovery", {
     reason: error instanceof Error ? error.message : String(error),
     evidence: error?.evidence ?? null
-  }, 1);
+  }, lockBusy ? 75 : 1);
 }
 if (recoveredInterruptedPublicationAtStartup) {
-  finishRecovery("passed-recovery-retry-required", recoveredInterruptedPublicationAtStartup, 0);
+  const explicitRecovery = process.argv.includes("--recover-publication");
+  if (recoveredInterruptedPublicationAtStartup === "finalized-committed-publication") {
+    finishRecovery("passed-recovery-completed", recoveredInterruptedPublicationAtStartup, 0);
+  }
+  finishRecovery(
+    explicitRecovery ? "passed-recovery-retry-required" : "recovered-rollback-retry-required",
+    recoveredInterruptedPublicationAtStartup,
+    explicitRecovery ? 0 : 75
+  );
 }
 if (process.argv.includes("--recover-publication")) {
   finishRecovery("passed-no-recovery-required", null, 0);

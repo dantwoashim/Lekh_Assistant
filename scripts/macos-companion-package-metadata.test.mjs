@@ -113,6 +113,7 @@ describe("native macOS companion package metadata", () => {
   it("checks the delivered app directly and never masks it with a clean verification copy", () => {
     const packager = readFileSync("scripts/package-native-macos-companion.mjs", "utf8");
     const checker = readFileSync("scripts/check-native-macos-companion.mjs", "utf8");
+    const lockHelper = readFileSync("scripts/macos-companion-publication-lock.swift", "utf8");
     expect(packager).toContain("LEKH_APP_SHORT_VERSION");
     expect(packager).toContain("LEKH_APP_BUILD");
     expect(packager).toContain("Signed releases require an explicit trusted monotonic LEKH_APP_BUILD");
@@ -125,6 +126,12 @@ describe("native macOS companion package metadata", () => {
     expect(packager).toContain("signatureVerifiedOnDeliveredBundle");
     expect(packager).toContain("settledVerificationSamples");
     expect(packager).toContain("acquirePublicationLock()");
+    expect(packager).toContain('openSync(publicationLockFile, "a+", 0o600)');
+    expect(packager).toContain('stdio: ["ignore", "pipe", "pipe", publicationLockDescriptor]');
+    expect(packager).toContain("assertPublicationLockHeld()");
+    expect(packager).not.toContain("publicationLockDirectory");
+    expect(lockHelper).toContain("flock(descriptor, LOCK_EX | LOCK_NB)");
+    expect(lockHelper).toContain("Never call LOCK_UN here");
     expect(packager).toContain("recoverInterruptedPublication()");
     expect(packager).toContain("writePublicationTransaction(transaction)");
     expect(packager).toContain("LEKH_PACKAGE_TEST_FAULT_AFTER_APP_SWAP");
