@@ -294,6 +294,8 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("guard candidateSelectionExplicit else");
     expect(controller).toContain("pendingInlineSuggestion");
     expect(controller).toContain("activeInlineSuggestion = ghostIsVisible ? suggestion : nil");
+    expect(controller).toContain("if !candidateSelectionExplicit, candidates.count < 2");
+    expect(controller).toContain('surface.candidates suppressed=singlePassive');
     expect(controller).toContain("private static let compositionSurfaceRetryDelays");
     expect(controller).toContain("Self.compositionSurfaceRetryDelays.indices.contains(attempt + 1)");
     expect(controller).toContain("private func lekhHostProbeLog(_ message: String)");
@@ -318,6 +320,8 @@ describe("macOS IMK proof target source", () => {
     expect(candidatePanel).toContain('LekhL10n.text("candidate.hint.passiveAuto", passiveCommitText)');
     expect(candidatePanel).toContain("public static let passiveVisibleRows = 3");
     expect(candidatePanel).toContain("override func mouseDown(with event:");
+    expect(candidatePanel).toContain("override func acceptsFirstMouse(for event:");
+    expect(candidatePanel).toContain("bounds.contains(convert(event.locationInWindow, from: nil))");
     expect(candidatePanel).toContain("override func mouseDragged(with event:");
     expect(candidatePanel).toContain("mouseUp(with event:");
     expect(candidatePanel).toContain("let shouldCommit = isPressActive && bounds.contains(point)");

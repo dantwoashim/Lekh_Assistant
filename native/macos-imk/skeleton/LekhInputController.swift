@@ -2045,6 +2045,15 @@ open class LekhInputController: IMKInputController {
       hideCandidateWindow()
       return .unavailable
     }
+    // A passive one-row panel repeats the marked-text preview without giving
+    // the user a decision. Suppress that visual churn while typing prefixes;
+    // an explicit Arrow command sets `candidateSelectionExplicit` first and
+    // still opens the single available row when the user asks for choices.
+    if !candidateSelectionExplicit, candidates.count < 2 {
+      hideCandidateWindow()
+      lekhHostProbeLog("surface.candidates suppressed=singlePassive count=\(candidates.count)")
+      return .unavailable
+    }
     if LekhNativePreferences.customCandidatePanelEnabled {
       candidatePanel?.hide()
       candidatePresentationToken = nil

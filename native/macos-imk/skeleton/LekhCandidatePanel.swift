@@ -44,6 +44,11 @@ private final class LekhCandidateRowView: NSView {
 
   override var acceptsFirstResponder: Bool { false }
 
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    guard let event else { return false }
+    return bounds.contains(convert(event.locationInWindow, from: nil))
+  }
+
   override func mouseDown(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
     guard bounds.contains(point) else { return }
