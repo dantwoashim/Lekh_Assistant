@@ -1,4 +1,7 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const model = readFileSync("native/macos-companion/LekhCompanionModel.swift", "utf8");
@@ -10,6 +13,8 @@ const packageJson = readFileSync("package.json", "utf8");
 describe("native macOS companion", () => {
   it("reads real TIS installation and selection state", () => {
     expect(model).toContain("TISCreateInputSourceList");
+    expect(model).toContain("inputSources(includeAllInstalled: true)");
+    expect(model).toContain("inputSources(includeAllInstalled: false)");
     expect(model).toContain("TISCopyCurrentKeyboardInputSource");
     expect(model).toContain("kTISPropertyInputSourceIsEnabled");
     expect(model).toContain("LekhNeuralTransliterator.manifest.json");
@@ -17,11 +22,54 @@ describe("native macOS companion", () => {
     expect(app).toContain("experimentalLocalFallback");
   });
 
+  it("uses readiness as the sole lifecycle authority for UI facts and actions", () => {
+    expect(model).toContain("var installed: Bool { readiness.installed }");
+    expect(model).toContain("var registered: Bool { readiness.registered }");
+    expect(model).toContain("var enabled: Bool { readiness.enabled }");
+    expect(model).toContain("var selected: Bool { readiness.selected }");
+    expect(model).toContain("var running: Bool { readiness.running }");
+    expect(model).toContain("var primaryAction: KeyboardPrimaryAction { readiness.primaryAction }");
+    expect(model).not.toContain("var installed = false");
+    expect(model).not.toContain("var enabled = false");
+    expect(model).not.toContain("var selected = false");
+    expect(app).toContain("model.performPrimaryAction()");
+    expect(app).toContain("model.status.recoveryPlan");
+    expect(app).not.toContain("if !model.status.installed");
+    expect(app).not.toContain("else if model.status.installed");
+  });
+
+  const swiftModelTest = process.platform === "darwin" ? it : it.skip;
+  swiftModelTest("passes the authoritative Swift lifecycle truth table", () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "lekh-companion-state-tests-"));
+    const executable = join(temporaryDirectory, "LekhCompanionStateTests");
+    const architecture = execFileSync("uname", ["-m"], { encoding: "utf8" }).trim();
+    try {
+      execFileSync("xcrun", [
+        "swiftc",
+        "-parse-as-library",
+        "-target", `${architecture}-apple-macos13`,
+        "-framework", "AppKit",
+        "-framework", "Carbon",
+        "-framework", "Security",
+        "-framework", "UniformTypeIdentifiers",
+        "-lsqlite3",
+        "native/macos-companion/LekhCompanionModel.swift",
+        "native/macos-companion/LekhCompanionCopy.swift",
+        "native/macos-companion/Tests/LekhCompanionStateTests.swift",
+        "-o", executable
+      ], { cwd: process.cwd(), stdio: "pipe" });
+      const output = execFileSync(executable, [], { encoding: "utf8" });
+      expect(output).toContain("authoritative lifecycle truth table");
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("serializes HIToolbox input-source reads on the main actor", () => {
     expect(model).toContain("private struct InputSourceSnapshot: Sendable");
     expect(model).toContain("let inputSourceSnapshot = Self.readInputSourceSnapshot()");
     expect(model).toContain("Self.readNativeStatus(inputSources: inputSourceSnapshot)");
-    expect(model).toContain("private static func inputSources()");
+    expect(model).toContain("private static func inputSources(includeAllInstalled: Bool)");
     expect(model).not.toContain("nonisolated private static func inputSources()");
     expect(model).not.toContain("nonisolated private static func stringProperty(");
     expect(model).not.toContain("nonisolated private static func boolProperty(");
@@ -81,9 +129,42 @@ describe("native macOS companion", () => {
 
   it("localizes learned-entry plurality and accessible state language", () => {
     expect(copy).toContain('count == 1 ? "1 local entry" : "\\(count) local entries"');
-    expect(app).toContain("accessibilityState: model.status.installed ? model.copy.setupComplete : model.copy.setupIncomplete");
+    expect(app).toContain("accessibilityState: setupState(model.status.installed)");
+    expect(app).toContain("model.status.buildVerification == .mismatched");
+    expect(copy).toContain("setupNeedsAttention");
     expect(app).toContain("shortcutAccessibility(keys:");
     expect(app).not.toContain('accessibilityValue(complete ? "Complete" : "Incomplete")');
+  });
+
+  it("shows distinct setup, runtime-build and state-dependent recovery evidence", () => {
+    expect(app).toContain('accessibilityIdentifier("authoritative-setup-progress")');
+    expect(app).toContain('accessibilityIdentifier("keyboard-primary-action")');
+    expect(app).toContain('accessibilityIdentifier("keyboard-recovery-guide")');
+    expect(app).toContain("model.status.registered");
+    expect(app).toContain("model.status.running");
+    expect(app).toContain("buildVerificationLabel");
+    expect(copy).toContain("The input source is registered, but macOS reports it disabled.");
+    expect(copy).toContain("The live input-method process belongs to a different build");
+    expect(copy).toContain("Replace the stale build");
+  });
+
+  it("registers safely and verifies the exact installed and running bundle", () => {
+    expect(model).toContain("TISRegisterInputSource(Self.installedBundleURL as CFURL)");
+    expect(model).toContain("validatedInstalledBundle()");
+    expect(model).toContain("bundle.bundleIdentifier == inputMethodBundleIdentifier");
+    expect(model).toContain("modeList[inputSourceIdentifier] != nil");
+    expect(model).toContain("processExecutablePath(health.processIdentifier)");
+    expect(model).toContain("processCodeDirectoryHash(health.processIdentifier) == installedCodeDirectoryHash");
+    expect(model).toContain("health.processIdentifier > 0");
+    expect(model).toContain("controllerActivatedAt >= controllerInitializedAt");
+    expect(copy).toContain("registrationBundleInvalid");
+  });
+
+  it("preserves recovery order and settings localization for assistive technology", () => {
+    expect(app).toContain("model.copy.recoveryStep(");
+    expect(copy).toContain('"Step \\(index) of \\(total). \\(text)"');
+    expect(app).toContain("Button(model.copy.settingsCommand)");
+    expect(app).not.toContain('Button("Lekh Keyboard Settings…")');
   });
 
   it("adapts privacy cards and contrast without relying on color alone", () => {

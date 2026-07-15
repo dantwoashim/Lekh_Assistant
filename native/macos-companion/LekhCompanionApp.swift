@@ -17,7 +17,7 @@ struct LekhCompanionApp: App {
     .commands {
       CommandGroup(replacing: .newItem) { }
       CommandGroup(replacing: .appSettings) {
-        Button("Lekh Keyboard Settings…") {
+        Button(model.copy.settingsCommand) {
           NSApp.activate(ignoringOtherApps: true)
           NSApp.windows.first?.makeKeyAndOrderFront(nil)
         }
@@ -241,6 +241,7 @@ private struct HomeView: View {
       PageIntroduction(title: model.copy.welcomeTitle, body: model.copy.welcomeBody)
       StatusHero()
       SetupProgressView()
+      RecoveryGuide()
       GhostPreview()
     }
   }
@@ -267,34 +268,24 @@ private struct StatusHero: View {
           }
         }
         Spacer(minLength: 12)
-        Button(actionTitle) { primaryAction() }
+        Button(model.copy.primaryActionTitle(model.status.primaryAction)) {
+          model.performPrimaryAction()
+        }
           .buttonStyle(.borderedProminent)
           .controlSize(.large)
+          .disabled(model.isRefreshing)
+          .accessibilityIdentifier("keyboard-primary-action")
       }
     }
     .accessibilityElement(children: .contain)
   }
 
   private var statusTitle: String {
-    switch model.status.readiness {
-    case .missing: return model.copy.missingTitle
-    case .installedUnregistered, .approvalRequired: return model.copy.addTitle
-    case .enabledNotSelected: return model.copy.readyTitle
-    case .selectedUntested: return model.copy.selectedUnverifiedTitle
-    case .healthy: return model.copy.workingTitle
-    case .degraded: return model.copy.notRespondingTitle
-    }
+    model.copy.statusTitle(model.status.readiness)
   }
 
   private var statusBody: String {
-    switch model.status.readiness {
-    case .missing: return model.copy.missingBody
-    case .installedUnregistered, .approvalRequired: return model.copy.addBody
-    case .enabledNotSelected: return model.copy.readyBody
-    case .selectedUntested: return model.copy.selectedUnverifiedBody
-    case .healthy: return model.copy.workingBody
-    case .degraded: return model.copy.notRespondingBody
-    }
+    model.copy.statusBody(model.status.readiness)
   }
 
   private var statusSymbol: String {
@@ -317,22 +308,6 @@ private struct StatusHero: View {
     }
   }
 
-  private var actionTitle: String {
-    if !model.status.installed || model.status.sourceCount == 0 { return model.copy.openKeyboardSettings }
-    if !model.status.enabled { return model.copy.enableLekh }
-    if !model.status.selected { return model.copy.useLekhNow }
-    return model.copy.tryTextEdit
-  }
-
-  private func primaryAction() {
-    if model.status.selected {
-      model.openPracticeApp()
-    } else if model.status.installed, model.status.sourceCount > 0 {
-      model.activateKeyboard()
-    } else {
-      model.openKeyboardSettings()
-    }
-  }
 }
 
 private struct SetupProgressView: View {
@@ -346,45 +321,83 @@ private struct SetupProgressView: View {
           SetupStep(
             label: model.copy.installed,
             complete: model.status.installed,
-            accessibilityState: model.status.installed ? model.copy.setupComplete : model.copy.setupIncomplete
+            hasProblem: false,
+            accessibilityState: setupState(model.status.installed)
+          )
+          SetupConnector(complete: model.status.registered)
+          SetupStep(
+            label: model.copy.registered,
+            complete: model.status.registered,
+            hasProblem: false,
+            accessibilityState: setupState(model.status.registered)
           )
           SetupConnector(complete: model.status.enabled)
           SetupStep(
-            label: model.copy.added,
+            label: model.copy.enabledInMacOS,
             complete: model.status.enabled,
-            accessibilityState: model.status.enabled ? model.copy.setupComplete : model.copy.setupIncomplete
+            hasProblem: false,
+            accessibilityState: setupState(model.status.enabled)
           )
           SetupConnector(complete: model.status.selected)
           SetupStep(
-            label: model.copy.active,
+            label: model.copy.selectedNow,
             complete: model.status.selected,
-            accessibilityState: model.status.selected ? model.copy.setupComplete : model.copy.setupIncomplete
+            hasProblem: false,
+            accessibilityState: setupState(model.status.selected)
+          )
+          SetupConnector(complete: model.status.running)
+          SetupStep(
+            label: model.copy.engineConnected,
+            complete: model.status.running && model.status.buildVerification == .matched,
+            hasProblem: model.status.buildVerification == .mismatched,
+            accessibilityState: engineAccessibilityState
           )
         }
       }
     }
+    .accessibilityIdentifier("authoritative-setup-progress")
+  }
+
+  private func setupState(_ complete: Bool) -> String {
+    complete ? model.copy.setupComplete : model.copy.setupIncomplete
+  }
+
+  private var engineAccessibilityState: String {
+    if model.status.buildVerification == .mismatched { return model.copy.setupNeedsAttention }
+    return setupState(model.status.running && model.status.buildVerification == .matched)
   }
 }
 
 private struct SetupStep: View {
   let label: String
   let complete: Bool
+  let hasProblem: Bool
   let accessibilityState: String
 
   var body: some View {
     VStack(spacing: 7) {
-      Image(systemName: complete ? "checkmark.circle.fill" : "circle")
+      Image(systemName: symbol)
         .font(.title3)
-        .foregroundStyle(complete ? Color.green : Color.secondary.opacity(0.45))
+        .foregroundStyle(color)
       Text(label)
         .font(.caption)
-        .foregroundStyle(complete ? .primary : .secondary)
+        .foregroundStyle(complete || hasProblem ? .primary : .secondary)
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
     }
     .accessibilityElement(children: .combine)
     .accessibilityLabel(label)
     .accessibilityValue(accessibilityState)
+  }
+
+  private var symbol: String {
+    if hasProblem { return "exclamationmark.triangle.fill" }
+    return complete ? "checkmark.circle.fill" : "circle"
+  }
+
+  private var color: Color {
+    if hasProblem { return .red }
+    return complete ? .green : Color.secondary.opacity(0.45)
   }
 }
 
@@ -395,6 +408,50 @@ private struct SetupConnector: View {
       .fill(complete ? Color.green.opacity(0.7) : Color.secondary.opacity(0.2))
       .frame(height: 2)
       .accessibilityHidden(true)
+  }
+}
+
+private struct RecoveryGuide: View {
+  @EnvironmentObject private var model: LekhCompanionModel
+
+  var body: some View {
+    Card {
+      VStack(alignment: .leading, spacing: 13) {
+        Label(
+          model.copy.recoveryTitle(model.status.recoveryPlan),
+          systemImage: model.status.running ? "checkmark.seal.fill" : "arrow.trianglehead.2.clockwise.rotate.90"
+        )
+        .font(.headline)
+        .foregroundStyle(model.status.running ? Color.green : Color.primary)
+
+        ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+          HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("\(index + 1)")
+              .font(.caption.weight(.bold).monospacedDigit())
+              .foregroundStyle(.secondary)
+              .frame(width: 20, height: 20)
+              .background(Color.secondary.opacity(0.12), in: Circle())
+              .accessibilityHidden(true)
+            Text(step)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel(
+            model.copy.recoveryStep(
+              index: index + 1,
+              total: steps.count,
+              text: step
+            )
+          )
+        }
+      }
+    }
+    .accessibilityIdentifier("keyboard-recovery-guide")
+  }
+
+  private var steps: [String] {
+    model.copy.recoverySteps(model.status.recoveryPlan)
   }
 }
 
@@ -795,9 +852,15 @@ private struct DiagnosticsView: View {
         VStack(alignment: .leading, spacing: 0) {
           DiagnosticRow(label: model.copy.keyboardBundle, value: model.status.installed ? model.copy.installed : model.copy.unavailable)
           Divider()
+          DiagnosticRow(label: model.copy.registeredState, value: model.status.registered ? model.copy.yes : model.copy.no)
+          Divider()
           DiagnosticRow(label: model.copy.enabledState, value: model.status.enabled ? model.copy.yes : model.copy.no)
           Divider()
           DiagnosticRow(label: model.copy.selectedState, value: model.status.selected ? model.copy.yes : model.copy.no)
+          Divider()
+          DiagnosticRow(label: model.copy.runningState, value: model.status.running ? model.copy.yes : model.copy.no)
+          Divider()
+          DiagnosticRow(label: model.copy.buildState, value: buildVerificationLabel)
           Divider()
           DiagnosticRow(label: model.copy.runtimeHealth, value: runtimeHealthLabel)
           Divider()
@@ -857,6 +920,14 @@ private struct DiagnosticsView: View {
     case .selectedUntested: return model.copy.selectedUnverifiedTitle
     case .degraded: return model.copy.notRespondingTitle
     default: return model.copy.unavailable
+    }
+  }
+
+  private var buildVerificationLabel: String {
+    switch model.status.buildVerification {
+    case .matched: return model.copy.buildMatched
+    case .mismatched: return model.copy.buildMismatched
+    case .notChecked: return model.copy.notVerified
     }
   }
 

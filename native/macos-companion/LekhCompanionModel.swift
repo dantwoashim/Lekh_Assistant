@@ -77,6 +77,107 @@ enum KeyboardReadiness: Equatable {
   case degraded(KeyboardFailure)
 }
 
+enum KeyboardBuildVerification: Equatable {
+  case notChecked
+  case matched
+  case mismatched
+}
+
+enum KeyboardPrimaryAction: Equatable {
+  case showInstallLocation
+  case register
+  case enable
+  case select
+  case verify
+  case write
+  case reconnect
+  case replaceBuild
+}
+
+enum KeyboardRecoveryPlan: Equatable {
+  case install
+  case register
+  case enable
+  case select
+  case verify
+  case ready
+  case reconnect
+  case replaceBuild
+}
+
+extension KeyboardReadiness {
+  var installed: Bool {
+    if case .missing = self { return false }
+    return true
+  }
+
+  var registered: Bool {
+    switch self {
+    case .missing, .installedUnregistered: return false
+    default: return true
+    }
+  }
+
+  var enabled: Bool {
+    switch self {
+    case .missing, .installedUnregistered, .approvalRequired: return false
+    default: return true
+    }
+  }
+
+  var selected: Bool {
+    switch self {
+    case .selectedUntested, .healthy, .degraded: return true
+    default: return false
+    }
+  }
+
+  var running: Bool {
+    if case .healthy = self { return true }
+    return false
+  }
+
+  var buildVerification: KeyboardBuildVerification {
+    switch self {
+    case .healthy: return .matched
+    case .degraded(.wrongBuild): return .mismatched
+    default: return .notChecked
+    }
+  }
+
+  var primaryAction: KeyboardPrimaryAction {
+    switch self {
+    case .missing: return .showInstallLocation
+    case .installedUnregistered: return .register
+    case .approvalRequired: return .enable
+    case .enabledNotSelected: return .select
+    case .selectedUntested: return .verify
+    case .healthy: return .write
+    case .degraded(let failure):
+      switch failure {
+      case .wrongSchema, .wrongBundle, .wrongBuild: return .replaceBuild
+      case .unreadableHealth, .wrongConnection, .processExited, .controllerMissing: return .reconnect
+      }
+    }
+  }
+
+  var recoveryPlan: KeyboardRecoveryPlan {
+    switch self {
+    case .missing: return .install
+    case .installedUnregistered: return .register
+    case .approvalRequired: return .enable
+    case .enabledNotSelected: return .select
+    case .selectedUntested: return .verify
+    case .healthy: return .ready
+    case .degraded(let failure):
+      switch failure {
+      case .wrongSchema, .wrongBundle, .wrongBuild: return .replaceBuild
+      case .unreadableHealth, .wrongConnection, .processExited, .controllerMissing: return .reconnect
+      }
+    }
+  }
+}
+
 struct CompanionNotice: Identifiable, Equatable {
   enum Severity: Equatable {
     case success
@@ -108,6 +209,14 @@ private struct RuntimeHealthRecord: Decodable {
   let controllerActivatedAt: Date?
 }
 
+private struct ValidatedKeyboardBundle {
+  let bundle: Bundle
+  let executableURL: URL
+  let shortVersion: String?
+  let buildVersion: String
+  let codeDirectoryHash: Data
+}
+
 struct NativeKeyboardStatus: Equatable {
   enum Signature: Equatable {
     case developerID(String)
@@ -123,9 +232,6 @@ struct NativeKeyboardStatus: Equatable {
     case unavailable
   }
 
-  var installed = false
-  var enabled = false
-  var selected = false
   var version: String?
   var sourceCount = 0
   var signature: Signature = .unavailable
@@ -136,9 +242,22 @@ struct NativeKeyboardStatus: Equatable {
   var neuralArtifact: String?
   var readiness: KeyboardReadiness = .missing
   var lastChecked = Date()
+
+  // `readiness` is the single lifecycle authority. These facts must never be
+  // stored independently, because a bundle on disk is not proof that macOS has
+  // registered, enabled, selected or connected the input method.
+  var installed: Bool { readiness.installed }
+  var registered: Bool { readiness.registered }
+  var enabled: Bool { readiness.enabled }
+  var selected: Bool { readiness.selected }
+  var running: Bool { readiness.running }
+  var buildVerification: KeyboardBuildVerification { readiness.buildVerification }
+  var primaryAction: KeyboardPrimaryAction { readiness.primaryAction }
+  var recoveryPlan: KeyboardRecoveryPlan { readiness.recoveryPlan }
 }
 
 private struct InputSourceSnapshot: Sendable {
+  let registered: Bool
   let enabled: Bool
   let selected: Bool
   let sourceCount: Int
@@ -280,7 +399,7 @@ final class LekhCompanionModel: ObservableObject {
   }
 
   func activateKeyboard() {
-    guard let source = Self.inputSources().first else {
+    guard let source = Self.inputSources(includeAllInstalled: true).first else {
       openKeyboardSettings()
       return
     }
@@ -292,6 +411,37 @@ final class LekhCompanionModel: ObservableObject {
     } else {
       showNotice(copy.activationFailed, severity: .error)
       openKeyboardSettings(preserveNotice: true)
+    }
+  }
+
+  func performPrimaryAction() {
+    switch status.primaryAction {
+    case .showInstallLocation, .replaceBuild:
+      revealInputMethod()
+    case .register:
+      registerKeyboard()
+    case .enable, .select:
+      activateKeyboard()
+    case .verify, .write, .reconnect:
+      openPracticeApp()
+    }
+  }
+
+  func registerKeyboard() {
+    guard Self.validatedInstalledBundle() != nil else {
+      showNotice(copy.registrationBundleInvalid, severity: .error)
+      revealInputMethod()
+      return
+    }
+    let registrationStatus = TISRegisterInputSource(Self.installedBundleURL as CFURL)
+    guard registrationStatus == noErr else {
+      showNotice(copy.registrationFailed, severity: .error)
+      openKeyboardSettings(preserveNotice: true)
+      return
+    }
+    showNotice(copy.registrationSucceeded, severity: .success)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+      self?.refresh()
     }
   }
 
@@ -386,8 +536,11 @@ final class LekhCompanionModel: ObservableObject {
       "Lekh Keyboard Companion diagnostics",
       "Generated: \(ISO8601DateFormatter().string(from: Date()))",
       "Installed: \(status.installed)",
+      "Registered: \(status.registered)",
       "Enabled: \(status.enabled)",
       "Selected: \(status.selected)",
+      "Engine running: \(status.running)",
+      "Runtime build: \(Self.diagnosticBuildLabel(status.buildVerification))",
       "Readiness: \(Self.diagnosticReadinessLabel(status.readiness))",
       "Version: \(status.version ?? "unknown")",
       "Registered sources: \(status.sourceCount)",
@@ -477,15 +630,98 @@ final class LekhCompanionModel: ObservableObject {
       .appendingPathComponent("Library/Input Methods/Lekh Keyboard.app", isDirectory: true)
   }
 
+  nonisolated private static func validatedInstalledBundle() -> ValidatedKeyboardBundle? {
+    let url = installedBundleURL
+    guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+          values.isDirectory == true,
+          values.isSymbolicLink != true,
+          let bundle = Bundle(url: url),
+          bundle.bundleIdentifier == inputMethodBundleIdentifier,
+          bundle.object(forInfoDictionaryKey: "InputMethodConnectionName") as? String ==
+            "com.lekh.inputmethod.LekhKeyboard_Connection",
+          let modes = bundle.object(forInfoDictionaryKey: "ComponentInputModeDict") as? [String: Any],
+          let modeList = modes["tsInputModeListKey"] as? [String: Any],
+          modeList[inputSourceIdentifier] != nil,
+          let executableURL = bundle.executableURL,
+          let executableValues = try? executableURL.resourceValues(forKeys: [.isRegularFileKey]),
+          executableValues.isRegularFile == true,
+          let buildVersion = (bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
+            ?? (bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? NSNumber)?.stringValue,
+          !buildVersion.isEmpty,
+          let codeDirectoryHash = staticCodeDirectoryHash(url) else {
+      return nil
+    }
+    let shortVersion = (bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+      ?? (bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? NSNumber)?.stringValue
+    return ValidatedKeyboardBundle(
+      bundle: bundle,
+      executableURL: executableURL,
+      shortVersion: shortVersion,
+      buildVersion: buildVersion,
+      codeDirectoryHash: codeDirectoryHash
+    )
+  }
+
+  nonisolated private static func staticCodeDirectoryHash(_ url: URL) -> Data? {
+    var staticCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
+          let staticCode,
+          SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess else { return nil }
+    var information: CFDictionary?
+    guard SecCodeCopySigningInformation(
+      staticCode,
+      SecCSFlags(rawValue: kSecCSSigningInformation),
+      &information
+    ) == errSecSuccess,
+      let dictionary = information as? [String: Any] else { return nil }
+    return dictionary[kSecCodeInfoUnique as String] as? Data
+  }
+
+  nonisolated private static func processCodeDirectoryHash(_ processIdentifier: Int32) -> Data? {
+    guard processIdentifier > 0 else { return nil }
+    let attributes = [
+      kSecGuestAttributePid as String: NSNumber(value: processIdentifier)
+    ] as CFDictionary
+    var code: SecCode?
+    guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+          let code,
+          SecCodeCheckValidity(code, [], nil) == errSecSuccess else { return nil }
+    var staticCode: SecStaticCode?
+    guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
+          let staticCode else { return nil }
+    var information: CFDictionary?
+    guard SecCodeCopySigningInformation(
+      staticCode,
+      SecCSFlags(rawValue: kSecCSSigningInformation),
+      &information
+    ) == errSecSuccess,
+      let dictionary = information as? [String: Any] else { return nil }
+    return dictionary[kSecCodeInfoUnique as String] as? Data
+  }
+
+  nonisolated private static func processExecutablePath(_ processIdentifier: Int32) -> String? {
+    guard processIdentifier > 0 else { return nil }
+    var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+    let length = buffer.withUnsafeMutableBufferPointer { pointer in
+      proc_pidpath(processIdentifier, pointer.baseAddress, UInt32(pointer.count))
+    }
+    guard length > 0 else { return nil }
+    return String(cString: buffer)
+  }
+
+  nonisolated private static func canonicalPath(_ path: String) -> String {
+    URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+  }
+
   nonisolated private static func readNativeStatus(
     inputSources: InputSourceSnapshot
   ) -> NativeKeyboardStatus {
     let bundleURL = installedBundleURL
-    let installed = FileManager.default.fileExists(atPath: bundleURL.path)
-    let bundle = installed ? Bundle(url: bundleURL) : nil
-    let version = bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-    let bundleVersion = (bundle?.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
-      ?? (bundle?.object(forInfoDictionaryKey: "CFBundleVersion") as? NSNumber)?.stringValue
+    let validatedBundle = validatedInstalledBundle()
+    let installed = validatedBundle != nil
+    let bundle = validatedBundle?.bundle
+    let version = validatedBundle?.shortVersion
+    let bundleVersion = validatedBundle?.buildVersion
     let resources = bundleURL.appendingPathComponent("Contents/Resources", isDirectory: true)
     let dictionaryURL = resources.appendingPathComponent("runtime-suggestions.lkb")
     let contractURL = resources.appendingPathComponent("lekh-engine-contract.v1.json")
@@ -512,14 +748,14 @@ final class LekhCompanionModel: ObservableObject {
     let readiness = readKeyboardReadiness(
       installed: installed,
       sourceCount: inputSources.sourceCount,
+      registered: inputSources.registered,
       enabled: inputSources.enabled,
       selected: inputSources.selected,
-      installedBundleVersion: bundleVersion
+      installedBundleVersion: bundleVersion,
+      expectedExecutableURL: validatedBundle?.executableURL,
+      installedCodeDirectoryHash: validatedBundle?.codeDirectoryHash
     )
     return NativeKeyboardStatus(
-      installed: installed,
-      enabled: inputSources.enabled,
-      selected: inputSources.selected,
       version: version,
       sourceCount: inputSources.sourceCount,
       signature: installed ? signatureStatus(bundleURL) : .unavailable,
@@ -537,12 +773,15 @@ final class LekhCompanionModel: ObservableObject {
   nonisolated private static func readKeyboardReadiness(
     installed: Bool,
     sourceCount: Int,
+    registered: Bool,
     enabled: Bool,
     selected: Bool,
-    installedBundleVersion: String?
+    installedBundleVersion: String?,
+    expectedExecutableURL: URL?,
+    installedCodeDirectoryHash: Data?
   ) -> KeyboardReadiness {
     guard installed else { return .missing }
-    guard sourceCount > 0 else { return .installedUnregistered }
+    guard registered, sourceCount > 0 else { return .installedUnregistered }
     guard enabled else { return .approvalRequired }
     guard selected else { return .enabledNotSelected }
 
@@ -565,9 +804,24 @@ final class LekhCompanionModel: ObservableObject {
     guard health.connectionName == "com.lekh.inputmethod.LekhKeyboard_Connection",
           health.serverStartedAt != nil else { return .degraded(.wrongConnection) }
     guard let controllerInitializedAt = health.controllerInitializedAt,
-          health.controllerActivatedAt != nil else { return .degraded(.controllerMissing) }
-    guard kill(health.processIdentifier, 0) == 0 || errno == EPERM else {
+          let controllerActivatedAt = health.controllerActivatedAt,
+          let serverStartedAt = health.serverStartedAt,
+          serverStartedAt >= health.executableStartedAt,
+          controllerInitializedAt >= health.executableStartedAt,
+          controllerActivatedAt >= controllerInitializedAt,
+          controllerActivatedAt <= Date().addingTimeInterval(300) else {
+      return .degraded(.controllerMissing)
+    }
+    guard health.processIdentifier > 0,
+          kill(health.processIdentifier, 0) == 0 || errno == EPERM else {
       return .degraded(.processExited)
+    }
+    guard let expectedExecutableURL,
+          let installedCodeDirectoryHash,
+          let liveExecutablePath = processExecutablePath(health.processIdentifier),
+          canonicalPath(liveExecutablePath) == canonicalPath(expectedExecutableURL.path),
+          processCodeDirectoryHash(health.processIdentifier) == installedCodeDirectoryHash else {
+      return .degraded(.wrongBuild)
     }
     return .healthy(
       processIdentifier: health.processIdentifier,
@@ -608,18 +862,38 @@ final class LekhCompanionModel: ObservableObject {
     }
   }
 
+  nonisolated private static func diagnosticBuildLabel(
+    _ verification: KeyboardBuildVerification
+  ) -> String {
+    switch verification {
+    case .notChecked: return "not-verified"
+    case .matched: return "matches-installed-build"
+    case .mismatched: return "mismatch"
+    }
+  }
+
   private static func readInputSourceSnapshot() -> InputSourceSnapshot {
-    let sources = inputSources()
-    let enabled = sources.contains(where: { boolProperty($0, kTISPropertyInputSourceIsEnabled) })
+    let registeredSources = inputSources(includeAllInstalled: true)
+    let enabledSources = inputSources(includeAllInstalled: false)
+    let registered = !registeredSources.isEmpty
+    let enabled = enabledSources.contains(where: { boolProperty($0, kTISPropertyInputSourceIsEnabled) })
     let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
     let currentID = stringProperty(current, kTISPropertyInputSourceID)
     let selected = currentID == inputSourceIdentifier || currentID.hasPrefix("\(inputMethodBundleIdentifier).")
-    let sourceCount = Set(sources.map { stringProperty($0, kTISPropertyInputSourceID) }).count
-    return InputSourceSnapshot(enabled: enabled, selected: selected, sourceCount: sourceCount)
+    // Preserve duplicate registrations in diagnostics instead of collapsing
+    // identical IDs; duplicate bundles are precisely the stale-install state
+    // users need the companion to expose.
+    let sourceCount = registeredSources.count
+    return InputSourceSnapshot(
+      registered: registered,
+      enabled: enabled,
+      selected: selected,
+      sourceCount: sourceCount
+    )
   }
 
-  private static func inputSources() -> [TISInputSource] {
-    guard let unmanaged = TISCreateInputSourceList(nil, false) else { return [] }
+  private static func inputSources(includeAllInstalled: Bool) -> [TISInputSource] {
+    guard let unmanaged = TISCreateInputSourceList(nil, includeAllInstalled) else { return [] }
     let all = unmanaged.takeRetainedValue() as NSArray
     return (all as! [TISInputSource]).filter {
       let identifier = stringProperty($0, kTISPropertyInputSourceID)

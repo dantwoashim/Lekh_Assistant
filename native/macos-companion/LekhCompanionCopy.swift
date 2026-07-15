@@ -9,6 +9,7 @@ struct CompanionCopy {
 
   var appName: String { "Lekh Keyboard" }
   var companion: String { value("Companion", "साथी") }
+  var settingsCommand: String { value("Lekh Keyboard Settings…", "Lekh Keyboard सेटिङ…") }
   var home: String { value("Home", "गृह") }
   var typing: String { value("Typing", "टाइपिङ") }
   var privacy: String { value("Privacy", "गोपनीयता") }
@@ -17,8 +18,11 @@ struct CompanionCopy {
   var refresh: String { value("Refresh status", "स्थिति रिफ्रेस गर्नुहोस्") }
   var saved: String { value("Saved. New words use this setting immediately.", "सेभ भयो। नयाँ शब्दमा यो सेटिङ तुरुन्त लागू हुन्छ।") }
   var returnToRefresh: String { value("Return here after changing Keyboard Settings; Lekh will refresh automatically.", "Keyboard Settings बदलेपछि यहाँ फर्कनुहोस्; Lekh स्वतः रिफ्रेस हुन्छ।") }
-  var keyboardActivated: String { value("Lekh is active. Control–Space always returns to your previous input source.", "Lekh सक्रिय भयो। Control–Space ले सधैं अघिल्लो इनपुट स्रोतमा फर्काउँछ।") }
+  var keyboardActivated: String { value("macOS selected Lekh. Open a text field to verify that its engine connects; Control–Space returns to your previous source.", "macOS ले Lekh चयन गर्‍यो। यसको इन्जिन जोडिएको पुष्टि गर्न टेक्स्ट फिल्ड खोल्नुहोस्; Control–Space ले अघिल्लो स्रोतमा फर्काउँछ।") }
   var activationFailed: String { value("macOS could not activate Lekh directly. Keyboard Settings is open so you can select it manually.", "macOS ले Lekh सीधै सक्रिय गर्न सकेन। म्यानुअल रूपमा छान्न Keyboard Settings खोलिएको छ।") }
+  var registrationSucceeded: String { value("Lekh was registered with macOS. The setup status will refresh now.", "Lekh macOS मा दर्ता भयो। सेटअप स्थिति अब रिफ्रेस हुन्छ।") }
+  var registrationFailed: String { value("macOS could not register this keyboard bundle. Keyboard Settings is open for recovery.", "macOS ले यो किबोर्ड bundle दर्ता गर्न सकेन। समाधानका लागि Keyboard Settings खोलिएको छ।") }
+  var registrationBundleInvalid: String { value("The installed Lekh bundle failed identity or signature validation. Replace it before registration.", "इन्स्टल भएको Lekh bundle को पहिचान वा हस्ताक्षर प्रमाणीकरण असफल भयो। दर्ता गर्नुअघि यसलाई बदल्नुहोस्।") }
   var diagnosticsCopied: String { value("Diagnostics copied without typed text.", "टाइप गरिएको पाठबिना डायग्नोस्टिक्स कपी भयो।") }
   var learningCleared: String { value("Personal learning was cleared from this Mac.", "व्यक्तिगत सिकाइ यो Mac बाट हटाइयो।") }
   var learningClearFailed: String { value("Personal learning could not be cleared. Quit apps using Lekh and try again.", "व्यक्तिगत सिकाइ हटाउन सकिएन। Lekh चलाइरहेका एप बन्द गरेर फेरि प्रयास गर्नुहोस्।") }
@@ -33,6 +37,8 @@ struct CompanionCopy {
   var missingBody: String { value("The native input method is not present in your Input Methods folder.", "नेटिभ इनपुट मेथड तपाईंको Input Methods फोल्डरमा छैन।") }
   var addTitle: String { value("Add Lekh once", "Lekh एकपटक थप्नुहोस्") }
   var addBody: String { value("Open Keyboard Settings, edit Input Sources, then add Lekh Keyboard under Nepali.", "Keyboard Settings खोल्नुहोस्, Input Sources सम्पादन गर्नुहोस्, अनि नेपालीअन्तर्गत Lekh Keyboard थप्नुहोस्।") }
+  var approvalTitle: String { value("Enable Lekh in macOS", "macOS मा Lekh सक्षम गर्नुहोस्") }
+  var approvalBody: String { value("The input source is registered, but macOS reports it disabled. Enable Lekh in Keyboard Settings and approve any system prompt.", "इनपुट स्रोत दर्ता छ, तर macOS ले यसलाई बन्द देखाउँछ। Keyboard Settings मा Lekh सक्षम गरेर प्रणालीको अनुरोध स्वीकार्नुहोस्।") }
   var readyTitle: String { value("Ready whenever you need it", "चाहिएको बेला तयार") }
   var readyBody: String { value("Choose Lekh from the menu bar or press Control–Space. ABC stays available as a safe fallback.", "मेनु बारबाट Lekh छान्नुहोस् वा Control–Space थिच्नुहोस्। सुरक्षित विकल्पका रूपमा ABC उपलब्ध रहन्छ।") }
   var activeTitle: String { value("Lekh is active", "Lekh सक्रिय छ") }
@@ -49,9 +55,183 @@ struct CompanionCopy {
   var tryTextEdit: String { value("Try in TextEdit", "TextEdit मा प्रयास गर्नुहोस्") }
   var revealInstallation: String { value("Reveal installation", "इन्स्टलेशन देखाउनुहोस्") }
   var setupProgress: String { value("Setup", "सेटअप") }
+  var registered: String { value("Registered", "दर्ता") }
+  var enabledInMacOS: String { value("Enabled", "सक्षम") }
+  var selectedNow: String { value("Selected", "चयनित") }
+  var engineConnected: String { value("Engine verified", "इन्जिन प्रमाणित") }
   var setupComplete: String { value("Complete", "पूरा") }
   var setupIncomplete: String { value("Incomplete", "अपूर्ण") }
+  var setupNeedsAttention: String { value("Needs attention", "ध्यान चाहिन्छ") }
   var version: String { value("Version", "संस्करण") }
+
+  func statusTitle(_ readiness: KeyboardReadiness) -> String {
+    switch readiness {
+    case .missing: return missingTitle
+    case .installedUnregistered: return addTitle
+    case .approvalRequired: return approvalTitle
+    case .enabledNotSelected: return readyTitle
+    case .selectedUntested: return selectedUnverifiedTitle
+    case .healthy: return workingTitle
+    case .degraded: return notRespondingTitle
+    }
+  }
+
+  func statusBody(_ readiness: KeyboardReadiness) -> String {
+    switch readiness {
+    case .missing: return missingBody
+    case .installedUnregistered: return addBody
+    case .approvalRequired: return approvalBody
+    case .enabledNotSelected: return readyBody
+    case .selectedUntested: return selectedUnverifiedBody
+    case .healthy: return workingBody
+    case .degraded(let failure): return degradedBody(failure)
+    }
+  }
+
+  func primaryActionTitle(_ action: KeyboardPrimaryAction) -> String {
+    switch action {
+    case .showInstallLocation: return value("Open Input Methods Folder", "Input Methods फोल्डर खोल्नुहोस्")
+    case .register: return value("Add in Keyboard Settings", "Keyboard Settings मा थप्नुहोस्")
+    case .enable: return value("Enable in Keyboard Settings", "Keyboard Settings मा सक्षम गर्नुहोस्")
+    case .select: return useLekhNow
+    case .verify: return value("Verify in TextEdit", "TextEdit मा प्रमाणित गर्नुहोस्")
+    case .write: return value("Start Writing", "लेख्न सुरु गर्नुहोस्")
+    case .reconnect: return value("Reconnect in TextEdit", "TextEdit मा पुनः जडान गर्नुहोस्")
+    case .replaceBuild: return value("Reveal Installed Build", "इन्स्टल भएको build देखाउनुहोस्")
+    }
+  }
+
+  func recoveryTitle(_ plan: KeyboardRecoveryPlan) -> String {
+    switch plan {
+    case .ready: return value("Connection verified", "जडान प्रमाणित")
+    case .replaceBuild: return value("Replace the stale build", "पुरानो build बदल्नुहोस्")
+    case .reconnect: return value("Reconnect the engine", "इन्जिन पुनः जडान गर्नुहोस्")
+    default: return value("Finish setup", "सेटअप पूरा गर्नुहोस्")
+    }
+  }
+
+  func recoveryStep(index: Int, total: Int, text: String) -> String {
+    value(
+      "Step \(index) of \(total). \(text)",
+      "चरण \(index), जम्मा \(total)। \(text)"
+    )
+  }
+
+  func recoverySteps(_ plan: KeyboardRecoveryPlan) -> [String] {
+    switch plan {
+    case .install:
+      return localizedSteps(
+        english: [
+          "Place Lekh Keyboard.app in ~/Library/Input Methods.",
+          "Sign out and back in so macOS can register the input method."
+        ],
+        nepali: [
+          "Lekh Keyboard.app लाई ~/Library/Input Methods मा राख्नुहोस्।",
+          "macOS ले इनपुट मेथड दर्ता गर्न sign out गरेर फेरि sign in गर्नुहोस्।"
+        ]
+      )
+    case .register:
+      return localizedSteps(
+        english: [
+          "Open Keyboard Settings, then open Text Input → Edit.",
+          "Add Lekh Keyboard under Nepali and return here."
+        ],
+        nepali: [
+          "Keyboard Settings खोलेर Text Input → Edit खोल्नुहोस्।",
+          "नेपालीअन्तर्गत Lekh Keyboard थपेर यहाँ फर्कनुहोस्।"
+        ]
+      )
+    case .enable:
+      return localizedSteps(
+        english: [
+          "Enable the registered Lekh source in Keyboard Settings.",
+          "Approve any macOS prompt, then return here for an automatic refresh."
+        ],
+        nepali: [
+          "Keyboard Settings मा दर्ता भएको Lekh स्रोत सक्षम गर्नुहोस्।",
+          "macOS को अनुरोध स्वीकारेर स्वतः रिफ्रेसका लागि यहाँ फर्कनुहोस्।"
+        ]
+      )
+    case .select:
+      return localizedSteps(
+        english: [
+          "Select Lekh now or choose it from the menu-bar Input menu.",
+          "Keep ABC available; Control–Space switches back safely."
+        ],
+        nepali: [
+          "अहिले Lekh चयन गर्नुहोस् वा मेनु बारको Input मेनुबाट छान्नुहोस्।",
+          "ABC उपलब्ध राख्नुहोस्; Control–Space ले सुरक्षित रूपमा फर्काउँछ।"
+        ]
+      )
+    case .verify:
+      return localizedSteps(
+        english: [
+          "Open TextEdit and click a new plain-text document.",
+          "Type namaste, then return here; the live controller should become verified."
+        ],
+        nepali: [
+          "TextEdit खोलेर नयाँ plain-text document मा क्लिक गर्नुहोस्।",
+          "namaste टाइप गरेर यहाँ फर्कनुहोस्; चलिरहेको कन्ट्रोलर प्रमाणित हुनुपर्छ।"
+        ]
+      )
+    case .ready:
+      return localizedSteps(
+        english: [
+          "The selected source, live controller and installed build match.",
+          "Write in any regular text field; macOS handles secure fields with its safe fallback."
+        ],
+        nepali: [
+          "चयनित स्रोत, चलिरहेको कन्ट्रोलर र इन्स्टल भएको build मिल्छन्।",
+          "सामान्य टेक्स्ट फिल्डमा लेख्नुहोस्; सुरक्षित फिल्ड macOS ले सुरक्षित fallback बाट सम्हाल्छ।"
+        ]
+      )
+    case .reconnect:
+      return localizedSteps(
+        english: [
+          "Open TextEdit to give the selected source a fresh text client.",
+          "If it remains disconnected, switch to ABC and back to Lekh from the Input menu.",
+          "Return here; connection status refreshes automatically."
+        ],
+        nepali: [
+          "चयनित स्रोतलाई नयाँ text client दिन TextEdit खोल्नुहोस्।",
+          "जडान नभए Input मेनुबाट ABC मा गएर फेरि Lekh छान्नुहोस्।",
+          "यहाँ फर्कनुहोस्; जडान स्थिति स्वतः रिफ्रेस हुन्छ।"
+        ]
+      )
+    case .replaceBuild:
+      return localizedSteps(
+        english: [
+          "Quit apps using Lekh and reveal the installed keyboard bundle.",
+          "Replace it with the intended build and remove duplicate Lekh bundles.",
+          "Sign out and back in, select Lekh, then verify it in TextEdit."
+        ],
+        nepali: [
+          "Lekh चलाइरहेका एप बन्द गरेर इन्स्टल भएको keyboard bundle देखाउनुहोस्।",
+          "सही build ले बदल्नुहोस् र दोहोरिएका Lekh bundle हटाउनुहोस्।",
+          "Sign out गरेर फेरि sign in गर्नुहोस्, Lekh छानेर TextEdit मा प्रमाणित गर्नुहोस्।"
+        ]
+      )
+    }
+  }
+
+  private func degradedBody(_ failure: KeyboardFailure) -> String {
+    switch failure {
+    case .wrongBuild:
+      return value("The live input-method process belongs to a different build than the installed keyboard bundle.", "चलिरहेको इनपुट-मिथड प्रक्रिया इन्स्टल भएको keyboard bundle भन्दा फरक build को हो।")
+    case .wrongBundle:
+      return value("The runtime health record belongs to a different input-method bundle.", "रनटाइम स्वास्थ्य रेकर्ड फरक इनपुट-मिथड bundle को हो।")
+    case .wrongSchema, .unreadableHealth:
+      return value("Lekh is selected, but its runtime health record cannot be verified safely.", "Lekh चयनित छ, तर यसको रनटाइम स्वास्थ्य रेकर्ड सुरक्षित रूपमा प्रमाणित हुन सकेन।")
+    case .wrongConnection, .controllerMissing:
+      return value("Lekh is selected, but its server and text-input controller have not completed a valid connection.", "Lekh चयनित छ, तर यसको सर्भर र text-input controller को मान्य जडान पूरा भएको छैन।")
+    case .processExited:
+      return value("Lekh is selected, but the last verified input-method process is no longer running.", "Lekh चयनित छ, तर पछिल्लो प्रमाणित इनपुट-मिथड प्रक्रिया अब चलिरहेको छैन।")
+    }
+  }
+
+  private func localizedSteps(english: [String], nepali: [String]) -> [String] {
+    locale == .english ? english : nepali
+  }
 
   var ghostTitle: String { value("A quiet suggestion, never a surprise", "शान्त सुझाव, कहिल्यै अनपेक्षित होइन") }
   var ghostBody: String { value("A high-confidence completion appears in gray. Tab or → accepts it. Keep typing to ignore it. Space converts only a verified safe exact mapping; otherwise it preserves your raw input.", "उच्च विश्वासको पूर्णता खैरोमा देखिन्छ। Tab वा → ले स्वीकार्छ। बेवास्ता गर्न टाइप गरिरहनुहोस्। Space ले प्रमाणित सुरक्षित मिलान मात्र रूपान्तरण गर्छ; अन्यथा टाइप गरेकै अक्षर राख्छ।") }
@@ -197,8 +377,14 @@ struct CompanionCopy {
   var signedProduction: String { value("Developer ID signed", "Developer ID हस्ताक्षरित") }
   var developmentBuild: String { value("Development build", "विकास build") }
   var unavailable: String { value("Unavailable", "उपलब्ध छैन") }
+  var registeredState: String { value("Registered", "दर्ता") }
   var enabledState: String { value("Enabled", "सक्षम") }
   var selectedState: String { value("Selected", "चयनित") }
+  var runningState: String { value("Engine running", "इन्जिन चलिरहेको") }
+  var buildState: String { value("Runtime build", "रनटाइम build") }
+  var buildMatched: String { value("Matches installed build", "इन्स्टल भएको build सँग मिल्छ") }
+  var buildMismatched: String { value("Mismatch", "मिलेन") }
+  var notVerified: String { value("Not verified", "प्रमाणित छैन") }
   var yes: String { value("Yes", "हो") }
   var no: String { value("No", "होइन") }
   var copyDiagnostics: String { value("Copy Safe Diagnostics", "सुरक्षित diagnostics कपी गर्नुहोस्") }
