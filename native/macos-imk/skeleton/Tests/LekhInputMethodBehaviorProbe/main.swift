@@ -531,6 +531,51 @@ private func assertTokenCompletionArtifactIsVerifiedAndExplicitOnly() {
   print("native-token-completion-index=passed entries=\(index.entryCount) status=\(index.status)")
 }
 
+private func assertCompletionAcceptanceCannotPoisonExactPersonalization() {
+  let engine = LekhNativeEngineClient()
+  let completion = "लेखहरू"
+  require(
+    !engine.mayPersonalizeExplicitChoice(
+      rawInput: "lekh",
+      chosenOutput: completion,
+      mode: .romanizedTraditional
+    ),
+    "A verified suffix completion must not become an exact-token personalization mapping"
+  )
+  require(
+    engine.mayPersonalizeExplicitChoice(
+      rawInput: "pani",
+      chosenOutput: "पानी",
+      mode: .romanizedTraditional
+    ),
+    "A legitimate alternate reading must remain eligible for explicit-choice personalization"
+  )
+
+  // Simulate a legacy database row created before completion provenance was
+  // separated. Two observations make it eligible under the user-lexicon
+  // frequency threshold; the live engine must still filter it without I/O.
+  for index in 0..<2 {
+    engine.observeCommit(
+      sessionId: "legacy-completion-\(index)",
+      rawInput: "lekh",
+      chosenOutput: completion,
+      allowPersonalization: true
+    )
+  }
+  let decision = type(
+    "lekh",
+    engine: engine,
+    sessionId: "completion-personalization-regression",
+    mode: .romanizedTraditional
+  )
+  require(decision.markedText == "लेख", "Solid marked text must remain the exact typed-token interpretation")
+  require(decision.candidates.first == "लेख", "A legacy learned completion must not displace the typed token")
+  require(
+    decision.inlineSuggestion?.suffix == "हरू" && decision.inlineSuggestion?.acceptedText == completion,
+    "The completion must remain an optional suffix-only ghost after legacy personalization"
+  )
+}
+
 private func assertTraditionalRomanizedModeShowsRomanizedTargetPreview() {
   let engine = behaviorEngine
   let sessionId = "probe-traditional-helper-\(UUID().uuidString)"
@@ -1048,6 +1093,7 @@ assertRomanizedRomanizedModeDoesNotConvertMarkedTextToDevanagari()
 assertProtectedLatinTokensStayByteExactAndBypassNeuralTail()
 assertPrimaryModeEmitsSafeTargetScriptGhostCompletion()
 assertTokenCompletionArtifactIsVerifiedAndExplicitOnly()
+assertCompletionAcceptanceCannotPoisonExactPersonalization()
 assertTraditionalRomanizedModeShowsRomanizedTargetPreview()
 assertPassiveSpaceAutoCommitPolicyIsEvidenceBounded()
 assertEscapeCancelsAndBackspaceEditsComposition()

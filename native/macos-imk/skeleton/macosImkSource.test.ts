@@ -87,6 +87,13 @@ describe("macOS IMK proof target source", () => {
     expect(packageScript).toContain("LEKH_PACKAGE_NEURAL_MODEL");
     expect(packageScript).toContain("LEKH_EXPERIMENTAL_NEURAL_TYPING");
     expect(packageScript).toContain("neuralPackagingRequested");
+    expect(source).toContain("mayPersonalizeExplicitChoice");
+    expect(source).toContain("isVerifiedTokenCompletionCandidate");
+    expect(controller).toContain("engineClient.mayPersonalizeExplicitChoice");
+    expect(packageScript).toContain(".lekh-imk-package.${process.pid}");
+    expect(packageScript).toContain("publish-bundle-atomic-swap");
+    expect(packageScript).toContain("published-codesign-verify");
+    expect(packageScript).toContain("artifact: publishedAppBundle");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhMetricReporter.swift"), "utf8")).toContain("LekhMetricKitOptIn");
     expect(source).toContain("lekh-keyboard.sqlite3");
     expect(source).toContain("CREATE TABLE IF NOT EXISTS user_lexicon");
@@ -264,7 +271,8 @@ describe("macOS IMK proof target source", () => {
     expect(candidatePanel).toContain("panel.canHide = false");
     expect(candidatePanel).not.toContain("NSEvent.mouseLocation");
     expect(candidatePanel).not.toContain("cursor: .pointingHand");
-    expect(inlinePreviewPanel).toContain("panel.setAccessibilityElement(false)");
+    expect(inlinePreviewPanel).toContain("panel.setAccessibilityElement(true)");
+    expect(inlinePreviewPanel).toContain("panel.setAccessibilityRole(.window)");
     expect(inlinePreviewPanel).toContain("content.setAccessibilityHelp(acceptanceHint)");
   });
 
@@ -611,6 +619,10 @@ describe("macOS IMK proof target source", () => {
     expect(installScript).not.toContain("xattr -cr");
     expect(installScript).not.toContain("--noqtn");
     expect(installScript).toContain("atomic-install-swap.swift");
+    expect(installScript).toContain("verify_bundle \"$APP\"");
+    expect(installScript).toContain("verify_bundle \"$TMP_DEST\"");
+    expect(installScript).toContain("verify_bundle \"$DEST\"");
+    expect(installScript).toContain("restoring the prior input method");
     expect(installScript).toContain("stop_lekh_input_method_for_replacement");
     expect(installScript).toContain("/bin/kill -TERM");
     expect(installScript).toContain("/bin/kill -KILL");

@@ -138,6 +138,11 @@ public protocol LekhEngineClient {
     chosenOutput: String,
     allowPersonalization: Bool
   )
+  func mayPersonalizeExplicitChoice(
+    rawInput: String,
+    chosenOutput: String,
+    mode: LekhNativeTypingMode
+  ) -> Bool
   func forgetCandidate(sessionId: String, chosenOutput: String)
   func resetSession(_ sessionId: String)
   func endSession(_ sessionId: String)
@@ -871,6 +876,23 @@ public final class LekhNativeEngineClient: LekhEngineClient {
     )
   }
 
+  /// Completion acceptance is useful interaction evidence, but it is not an
+  /// exact transliteration mapping. Storing `lekh -> लेखहरू` in the user
+  /// lexicon turns a future optional suffix into solid marked text and makes
+  /// the ghost disappear. Until a separate completion-preference model exists,
+  /// keep those events out of exact-token personalization.
+  public func mayPersonalizeExplicitChoice(
+    rawInput: String,
+    chosenOutput: String,
+    mode: LekhNativeTypingMode
+  ) -> Bool {
+    !isVerifiedTokenCompletionCandidate(
+      normalizedInput: Self.normalize(rawInput),
+      chosenOutput: chosenOutput,
+      mode: mode
+    )
+  }
+
   public func forgetCandidate(sessionId: String, chosenOutput: String) {
     let normalized = Self.normalize(buffers[sessionId] ?? "")
     guard !normalized.isEmpty else { return }
@@ -933,7 +955,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
           LekhMixedScriptPolicy.preserveCandidate(for: rawBuffer) == nil,
           LekhRomanizedComposer.canonicalCandidates(for: normalized).isEmpty,
           runtimeRows(for: normalized, exactOnly: true, limit: 1).isEmpty,
-          userLexicon.candidates(for: normalized, romanizedOutput: false).isEmpty else {
+          personalizedCandidates(for: normalized, mode: mode).isEmpty else {
       return false
     }
     return true
@@ -1070,10 +1092,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
     if let preserved {
       currentTokenCandidates.append(preserved)
     }
-    let personalized = userLexicon.candidates(
-      for: normalized,
-      romanizedOutput: mode == .romanizedRomanized
-    )
+    let personalized = personalizedCandidates(for: normalized, mode: mode)
     currentTokenCandidates.append(contentsOf: personalized)
     let canonical = mode == .romanizedTraditional
       ? LekhRomanizedComposer.canonicalCandidates(for: normalized)
@@ -1125,6 +1144,42 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       limit: secondary.count
     )
     return Array(Self.unique(rankedPrimary + rankedSecondary, limit: candidateLimit).prefix(candidateLimit))
+  }
+
+  private func personalizedCandidates(
+    for normalized: String,
+    mode: LekhNativeTypingMode
+  ) -> [String] {
+    userLexicon.candidates(
+      for: normalized,
+      romanizedOutput: mode == .romanizedRomanized
+    ).filter {
+      // Filter legacy rows learned before completion provenance was separated.
+      // This is intentionally read-only on the typing path; no SQLite cleanup
+      // or write is permitted per keystroke.
+      !isVerifiedTokenCompletionCandidate(
+        normalizedInput: normalized,
+        chosenOutput: $0,
+        mode: mode
+      )
+    }
+  }
+
+  private func isVerifiedTokenCompletionCandidate(
+    normalizedInput: String,
+    chosenOutput: String,
+    mode: LekhNativeTypingMode
+  ) -> Bool {
+    guard mode == .romanizedTraditional || mode == .romanizedRomanized else {
+      return false
+    }
+    let normalizedOutput = chosenOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+      .precomposedStringWithCanonicalMapping
+    guard !normalizedInput.isEmpty, !normalizedOutput.isEmpty else { return false }
+    return tokenCompletionIndex.candidates(for: normalizedInput).contains { row in
+      let output = mode == .romanizedTraditional ? row.target : row.source
+      return output.precomposedStringWithCanonicalMapping == normalizedOutput
+    }
   }
 
   private static func isAllowedActiveTokenCandidate(

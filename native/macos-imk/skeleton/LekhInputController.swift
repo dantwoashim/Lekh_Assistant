@@ -2350,7 +2350,12 @@ open class LekhInputController: IMKInputController {
       sessionId: sessionId,
       rawInput: raw,
       chosenOutput: text,
-      allowPersonalization: shouldPersonalize(client: client)
+      allowPersonalization: shouldPersonalize(client: client) &&
+        engineClient.mayPersonalizeExplicitChoice(
+          rawInput: raw,
+          chosenOutput: text,
+          mode: nativeMode
+        )
     )
     client.insertText(text + suffix, replacementRange: replacementRange(for: client))
     engineClient.resetSession(sessionId)

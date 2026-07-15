@@ -110,6 +110,12 @@ public final class LekhInlinePreviewPanel {
     let panel = self.panel ?? makePanel()
     self.panel = panel
     panel.contentView = content
+    // Keep the floating surface discoverable as a window, while the child is
+    // the single element that speaks the detailed suffix. The window label is
+    // intentionally generic so VoiceOver does not announce the same completion
+    // twice when entering and then traversing the panel.
+    panel.setAccessibilityLabel(LekhL10n.text("inline.preview.accessibility"))
+    panel.setAccessibilityHelp(acceptanceHint)
 
     let y = min(max(anchorRect.minY, visible.minY + 4), visible.maxY - height - 4)
     let wasVisible = isVisible
@@ -166,10 +172,8 @@ public final class LekhInlinePreviewPanel {
     panel.isReleasedWhenClosed = false
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
     panel.animationBehavior = .none
-    // The content view is the single semantic static-text element. Exposing
-    // the window as a second identical element makes VoiceOver read the ghost
-    // twice when traversing the host's nearby accessibility hierarchy.
-    panel.setAccessibilityElement(false)
+    panel.setAccessibilityElement(true)
+    panel.setAccessibilityRole(.window)
     panel.setAccessibilityIdentifier("lekh.inlineCompletionPanel")
     return panel
   }

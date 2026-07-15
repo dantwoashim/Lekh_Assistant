@@ -8,6 +8,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync
@@ -24,7 +25,9 @@ const reportPath = join(root, "reports", "macos-imk-dev-package-report.json");
 const releaseDir = join(root, "release", "native", "macos");
 const buildReleaseDir = process.env.LEKH_MACOS_IMK_BUILD_DIR ||
   join(homedir(), "Library", "Caches", "LekhKeyboardBuild", "native", "macos");
-const appBundle = join(buildReleaseDir, "Lekh Keyboard.imkdevbundle");
+const buildWorkDir = join(buildReleaseDir, `.lekh-imk-package.${process.pid}`);
+const appBundle = join(buildWorkDir, "Lekh Keyboard.imkdevbundle");
+const publishedAppBundle = join(buildReleaseDir, "Lekh Keyboard.imkdevbundle");
 const exportedAppBundle = join(releaseDir, "Lekh Keyboard.imkdevbundle");
 const legacyAppBundle = join(releaseDir, "Lekh Keyboard.app");
 const legacyDevBundle = join(releaseDir, "Lekh Keyboard Dev.imkdevbundle");
@@ -33,7 +36,7 @@ const expectedConnectionName = "com.lekh.inputmethod.LekhKeyboard_Connection";
 const iconSource = join(root, "build", "icon.icns");
 const legacyReleaseRuntimeJson = join(releaseDir, "runtime-suggestions.sanitized.json");
 const legacyReleaseUniversalExecutable = join(releaseDir, `${executableName}.universal`);
-const runtimeJsonOutputPath = join(buildReleaseDir, "runtime-suggestions.sanitized.json");
+const runtimeJsonOutputPath = join(buildWorkDir, "runtime-suggestions.sanitized.json");
 const runtimeBinaryOutputPath = join(appBundle, "Contents", "Resources", "runtime-suggestions.lkb");
 const runtimeJsonBundlePath = join(appBundle, "Contents", "Resources", "runtime-suggestions.json");
 const engineContractBundlePath = join(appBundle, "Contents", "Resources", "lekh-engine-contract.v1.json");
@@ -49,8 +52,8 @@ const neuralVocabSourcePath = join(root, "models", "macos", "LekhNeuralTranslite
 const neuralModelBundlePath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.mlmodelc");
 const neuralManifestBundlePath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.manifest.json");
 const neuralVocabBundlePath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.vocab.json");
-const universalExecutable = join(buildReleaseDir, `${executableName}.universal`);
-const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+const universalExecutable = join(buildWorkDir, `${executableName}.universal`);
+const atomicInstallSwap = join(skeletonDir, "atomic-install-swap.swift");
 const archs = (process.env.LEKH_MAC_ARCHS ?? "arm64,x86_64")
   .split(",")
   .map((arch) => arch.trim())
@@ -85,6 +88,10 @@ function finish(status, details, exitCode) {
     )}\n`
   );
   console.log(JSON.stringify({ status, report: "reports/macos-imk-dev-package-report.json", ...details }, null, 2));
+  // A failed build must never leave a discoverable half-bundle. Successful
+  // publication has already moved/swapped the validated bundle out of this
+  // private work directory, leaving only the prior artifact (if any).
+  rmSync(buildWorkDir, { recursive: true, force: true });
   process.exit(exitCode);
 }
 
@@ -100,10 +107,6 @@ function run(step, command, args, options = {}) {
     finish("failed", { step, command, args, stdout: result.stdout, stderr: result.stderr }, result.status ?? 1);
   }
   return result;
-}
-
-function sleep(milliseconds) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
 function walkPaths(path) {
@@ -167,6 +170,8 @@ if (archs.length === 0) {
 
 mkdirSync(releaseDir, { recursive: true });
 mkdirSync(buildReleaseDir, { recursive: true });
+rmSync(buildWorkDir, { recursive: true, force: true });
+mkdirSync(buildWorkDir, { recursive: true });
 mkdirSync(toolchainEnv.CLANG_MODULE_CACHE_PATH, { recursive: true });
 mkdirSync(toolchainEnv.SWIFT_MODULE_CACHE_PATH, { recursive: true });
 rmSync(universalExecutable, { force: true });
@@ -249,7 +254,6 @@ if (archExecutables.length === 1) {
 }
 run("strip-symbols", "strip", ["-S", universalExecutable]);
 
-rmSync(appBundle, { recursive: true, force: true });
 rmSync(exportedAppBundle, { recursive: true, force: true });
 rmSync(legacyAppBundle, { recursive: true, force: true });
 rmSync(legacyDevBundle, { recursive: true, force: true });
@@ -403,9 +407,6 @@ signArgs.push(appBundle);
 stripCodeSignBlockedXattrs(appBundle);
 run("codesign", "codesign", signArgs);
 run("codesign-verify", "codesign", ["--verify", "--deep", "--strict", appBundle]);
-spawnSync(lsregister, ["-u", "-v", appBundle], { cwd: root, encoding: "utf8", stdio: "ignore" });
-sleep(500);
-spawnSync(lsregister, ["-u", "-v", appBundle], { cwd: root, encoding: "utf8", stdio: "ignore" });
 
 const lipoInfo = run("lipo-archs", "lipo", ["-archs", join(appBundle, "Contents", "MacOS", executableName)]).stdout.trim();
 const fileInfo = run("file-info", "file", [join(appBundle, "Contents", "MacOS", executableName)]).stdout.trim();
@@ -471,23 +472,72 @@ if (packagingFailures.length > 0) {
   }, 1);
 }
 
+// Publish only the fully built, signed, and gated bundle. The prior artifact
+// remains continuously available while this private bundle is assembled. A
+// same-volume rename swap makes the final transition atomic even when another
+// process is reading the published path.
+const replacingPublishedBundle = existsSync(publishedAppBundle);
+if (replacingPublishedBundle) {
+  run(
+    "publish-bundle-atomic-swap",
+    "swift",
+    [atomicInstallSwap, appBundle, publishedAppBundle]
+  );
+} else {
+  renameSync(appBundle, publishedAppBundle);
+}
+const publishedSignature = spawnSync(
+  "codesign",
+  ["--verify", "--deep", "--strict", publishedAppBundle],
+  { cwd: root, env: toolchainEnv, encoding: "utf8", stdio: "pipe" }
+);
+if (publishedSignature.status !== 0) {
+  if (replacingPublishedBundle && existsSync(appBundle)) {
+    spawnSync("swift", [atomicInstallSwap, appBundle, publishedAppBundle], {
+      cwd: root,
+      env: toolchainEnv,
+      encoding: "utf8",
+      stdio: "pipe"
+    });
+  } else {
+    rmSync(publishedAppBundle, { recursive: true, force: true });
+  }
+  finish("failed", {
+    step: "published-codesign-verify",
+    reason: "The atomically published bundle failed verification and the prior artifact was restored when available.",
+    stdout: publishedSignature.stdout,
+    stderr: publishedSignature.stderr
+  }, publishedSignature.status ?? 1);
+}
+// After a successful RENAME_SWAP the old published artifact lives at the
+// private staging path. Remove it only after the new public path verifies.
+rmSync(appBundle, { recursive: true, force: true });
+const publishedFileInfo = run(
+  "published-file-info",
+  "file",
+  [join(publishedAppBundle, "Contents", "MacOS", executableName)]
+).stdout.trim();
+const publishedResources = join(publishedAppBundle, "Contents", "Resources");
+
 finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-ready", {
-  artifact: appBundle,
+  artifact: publishedAppBundle,
   exportedArtifact: null,
   installCommand: "native/macos-imk/skeleton/install-dev.sh",
   uninstallCommand: "native/macos-imk/skeleton/uninstall-dev.sh",
   signed: signingIdentity === "-" ? "ad-hoc-hardened-runtime" : signingIdentity,
   archs: lipoInfo,
-  fileInfo,
+  fileInfo: publishedFileInfo,
   sanitizedRuntimeJsonBytes: statSync(runtimeJsonOutputPath).size,
-  packagedRuntimeJsonBytes: statSync(runtimeJsonBundlePath).size,
-  engineContractBytes: statSync(engineContractBundlePath).size,
-  tokenCandidateContractBytes: statSync(tokenCandidateBundlePath).size,
-  tokenCompletionIndexBytes: statSync(tokenCompletionBundlePath).size,
-  tokenCompletionManifestBytes: statSync(tokenCompletionManifestBundlePath).size,
-  packagedNeuralModelBytes: neuralModelPackaged ? treeBytes(neuralModelBundlePath) : 0,
+  packagedRuntimeJsonBytes: statSync(join(publishedResources, "runtime-suggestions.json")).size,
+  engineContractBytes: statSync(join(publishedResources, "lekh-engine-contract.v1.json")).size,
+  tokenCandidateContractBytes: statSync(join(publishedResources, "lekh-token-candidates.v1.json")).size,
+  tokenCompletionIndexBytes: statSync(join(publishedResources, "lekh-token-completions.v1.json")).size,
+  tokenCompletionManifestBytes: statSync(join(publishedResources, "lekh-token-completions.v1.manifest.json")).size,
+  packagedNeuralModelBytes: neuralModelPackaged
+    ? treeBytes(join(publishedResources, "LekhNeuralTransliterator.mlmodelc"))
+    : 0,
   deterministicP99Nanoseconds,
-  runtimeBinaryBytes: statSync(runtimeBinaryOutputPath).size,
+  runtimeBinaryBytes: statSync(join(publishedResources, "runtime-suggestions.lkb")).size,
   frequencyReport: "reports/nepali-frequency-model-report.json",
   sanitizerReport: "reports/runtime-suggestions-sanitizer-report.json",
   binaryLexiconReport: "reports/runtime-lexicon-binary-report.json",
