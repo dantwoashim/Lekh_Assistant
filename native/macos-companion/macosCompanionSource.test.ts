@@ -53,7 +53,11 @@ describe("native macOS companion", () => {
     expect(app).toContain(".toggleStyle(.switch)");
     expect(app).toContain("accessibilityReduceTransparency");
     expect(app).toContain("accessibilityReduceMotion");
-    expect(model).toContain("LekhCompanionSection");
+    expect(app).toContain("ScrollViewReader");
+    expect(app).toContain('scrollProxy.scrollTo("lekh-companion-detail-top", anchor: .top)');
+    expect(app).toContain("@State private var selectedSection");
+    expect(app).toContain("LekhCompanionSection");
+    expect(model).not.toContain("@Published var selectedSection");
   });
 
   it("keeps ghost education truthful across readiness, preference and all four modes", () => {

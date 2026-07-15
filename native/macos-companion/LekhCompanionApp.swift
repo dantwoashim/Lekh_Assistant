@@ -31,8 +31,15 @@ struct CompanionRootView: View {
   @EnvironmentObject private var model: LekhCompanionModel
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var selectedSection: CompanionSection
   @State private var showingClearConfirmation = false
   private let refreshTimer = Timer.publish(every: 5.0, on: .main, in: .common).autoconnect()
+
+  init() {
+    let stored = UserDefaults.standard.string(forKey: "LekhCompanionSection")
+      .flatMap(CompanionSection.init(rawValue:)) ?? .home
+    _selectedSection = State(initialValue: stored)
+  }
 
   var body: some View {
     NavigationSplitView {
@@ -49,6 +56,9 @@ struct CompanionRootView: View {
     .onReceive(refreshTimer) { _ in
       if scenePhase == .active { model.refreshIfStale() }
     }
+    .onChange(of: selectedSection) { section in
+      UserDefaults.standard.set(section.rawValue, forKey: "LekhCompanionSection")
+    }
     .alert(model.copy.clearLearningTitle, isPresented: $showingClearConfirmation) {
       Button(model.copy.cancel, role: .cancel) { }
       Button(model.copy.clear, role: .destructive) { model.clearPersonalization() }
@@ -58,7 +68,7 @@ struct CompanionRootView: View {
   }
 
   private var sidebar: some View {
-    List(selection: $model.selectedSection) {
+    List(selection: $selectedSection) {
       Section {
         ForEach(CompanionSection.allCases) { section in
           Label(sectionLabel(section), systemImage: section.symbol)
@@ -86,29 +96,44 @@ struct CompanionRootView: View {
   }
 
   @ViewBuilder private var detail: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 20) {
-        switch model.selectedSection {
-        case .home:
-          HomeView()
-        case .typing:
-          TypingView()
-        case .privacy:
-          PrivacyView(showingClearConfirmation: $showingClearConfirmation)
-        case .diagnostics:
-          DiagnosticsView()
+    ScrollViewReader { scrollProxy in
+      ScrollView {
+        VStack(alignment: .leading, spacing: 20) {
+          switch selectedSection {
+          case .home:
+            HomeView()
+          case .typing:
+            TypingView()
+          case .privacy:
+            PrivacyView(showingClearConfirmation: $showingClearConfirmation)
+          case .diagnostics:
+            DiagnosticsView()
+          }
+        }
+        .frame(maxWidth: 760, alignment: .leading)
+        .padding(28)
+        .id("lekh-companion-detail-top")
+      }
+      .background(Color(nsColor: .windowBackgroundColor))
+      .safeAreaInset(edge: .bottom) {
+        if let notice = model.notice {
+          CompanionNoticeView(notice: notice)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+            .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
         }
       }
-      .frame(maxWidth: 760, alignment: .leading)
-      .padding(28)
-    }
-    .background(Color(nsColor: .windowBackgroundColor))
-    .safeAreaInset(edge: .bottom) {
-      if let notice = model.notice {
-        CompanionNoticeView(notice: notice)
-          .padding(.horizontal, 20)
-          .padding(.bottom, 12)
-          .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
+      .onChange(of: selectedSection) { _ in
+        // Let the newly selected page lay out before moving the existing
+        // scroll view. Replacing the whole ScrollView caused transient negative
+        // AppKit geometry on navigation; a stable reader avoids that churn.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+          var transaction = Transaction()
+          transaction.disablesAnimations = true
+          withTransaction(transaction) {
+            scrollProxy.scrollTo("lekh-companion-detail-top", anchor: .top)
+          }
+        }
       }
     }
   }
@@ -127,7 +152,7 @@ struct CompanionRootView: View {
     }
   }
 
-  private var sectionTitle: String { sectionLabel(model.selectedSection) }
+  private var sectionTitle: String { sectionLabel(selectedSection) }
 
   private func sectionLabel(_ section: CompanionSection) -> String {
     switch section {

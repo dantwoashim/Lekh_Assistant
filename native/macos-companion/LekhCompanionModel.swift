@@ -163,9 +163,6 @@ final class LekhCompanionModel: ObservableObject {
     static let excludedApplications = "LekhExcludedApplicationBundleIdentifiers"
   }
 
-  @Published var selectedSection: CompanionSection {
-    didSet { UserDefaults.standard.set(selectedSection.rawValue, forKey: "LekhCompanionSection") }
-  }
   @Published var locale: CompanionLocale
   @Published private(set) var status = NativeKeyboardStatus()
   @Published private(set) var preferences = CompanionPreferences()
@@ -182,8 +179,6 @@ final class LekhCompanionModel: ObservableObject {
 
   init() {
     preferenceDefaults = UserDefaults(suiteName: Self.inputMethodBundleIdentifier) ?? .standard
-    selectedSection = UserDefaults.standard.string(forKey: "LekhCompanionSection")
-      .flatMap(CompanionSection.init(rawValue:)) ?? .home
     let savedLocale = UserDefaults.standard.string(forKey: "LekhCompanionLocale")
     if let savedLocale, let parsed = CompanionLocale(rawValue: savedLocale) {
       locale = parsed
