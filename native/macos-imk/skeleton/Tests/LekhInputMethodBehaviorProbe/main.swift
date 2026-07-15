@@ -490,6 +490,70 @@ private func assertTokenCompletionArtifactIsVerifiedAndExplicitOnly() {
   )
   require(romanized.autoCommitCandidate == nil, "A completion score must never authorize auto-commit")
 
+  let allCaps = type(
+    "LEKH",
+    engine: behaviorEngine,
+    sessionId: "probe-completion-r2r-all-caps-\(UUID().uuidString)",
+    mode: .romanizedRomanized
+  )
+  require(allCaps.markedText == "LEKH", "R→R marked text must preserve ALL CAPS input")
+  require(
+    allCaps.candidates.contains("LEKHHARU") &&
+      !allCaps.candidates.contains("lekh") &&
+      !allCaps.candidates.contains("lekhharu"),
+    "ALL CAPS completion candidates must extend, not rewrite, user casing; observed=\(allCaps.candidates)"
+  )
+  require(
+    allCaps.inlineSuggestion == LekhInlineSuggestion(suffix: "HARU", acceptedText: "LEKHHARU"),
+    "ALL CAPS R→R input must receive a case-preserving suffix-only ghost"
+  )
+  require(allCaps.autoCommitCandidate == nil, "A case-preserving completion must remain explicit-only")
+
+  let leadingCapital = type(
+    "Lekh",
+    engine: behaviorEngine,
+    sessionId: "probe-completion-r2r-leading-capital-\(UUID().uuidString)",
+    mode: .romanizedRomanized
+  )
+  require(
+    leadingCapital.inlineSuggestion == LekhInlineSuggestion(suffix: "haru", acceptedText: "Lekhharu"),
+    "Leading-capital R→R input must receive a matching case-preserving ghost"
+  )
+  require(
+    !behaviorEngine.mayPersonalizeExplicitChoice(
+      rawInput: "Lekh",
+      chosenOutput: "Lekhharu",
+      mode: .romanizedRomanized
+    ),
+    "Accepting a cased completion must not teach it as an exact-token mapping"
+  )
+
+  let irregularCase = type(
+    "LeKh",
+    engine: behaviorEngine,
+    sessionId: "probe-completion-r2r-irregular-case-\(UUID().uuidString)",
+    mode: .romanizedRomanized
+  )
+  require(
+    irregularCase.inlineSuggestion == nil && !irregularCase.candidates.contains("lekhharu"),
+    "Irregular mixed case must fail closed instead of offering a case-changing completion"
+  )
+  require(
+    !irregularCase.candidates.contains("lekh"),
+    "Irregular mixed case must also reject a normalized exact-runtime candidate"
+  )
+
+  let allCapsOOV = type(
+    "XYZQ",
+    engine: behaviorEngine,
+    sessionId: "probe-completion-r2r-all-caps-oov-\(UUID().uuidString)",
+    mode: .romanizedRomanized
+  )
+  require(
+    allCapsOOV.markedText == "XYZQ" && !allCapsOOV.candidates.contains("xyzq"),
+    "R→R deterministic fallback must not expose a lowercased OOV candidate; observed=\(allCapsOOV.candidates)"
+  )
+
   let nepali = type(
     "dhany",
     engine: behaviorEngine,
@@ -573,6 +637,58 @@ private func assertCompletionAcceptanceCannotPoisonExactPersonalization() {
   require(
     decision.inlineSuggestion?.suffix == "हरू" && decision.inlineSuggestion?.acceptedText == completion,
     "The completion must remain an optional suffix-only ghost after legacy personalization"
+  )
+
+  let romanizedEngine = LekhNativeEngineClient()
+  require(
+    !romanizedEngine.mayPersonalizeExplicitChoice(
+      rawInput: "LEKH",
+      chosenOutput: "LEKH",
+      mode: .romanizedRomanized
+    ),
+    "A case-only R→R choice must never become a normalized spelling mapping"
+  )
+  // Exercise the public observation API directly as defense in depth. Even a
+  // caller that mistakenly requests learning must not persist casing-only data.
+  for index in 0..<2 {
+    romanizedEngine.observeCommit(
+      sessionId: "case-only-r2r-\(index)",
+      rawInput: "LEKH",
+      chosenOutput: "LEKH",
+      allowPersonalization: true
+    )
+  }
+  let lowercaseAfterCaseOnly = type(
+    "lekh",
+    engine: romanizedEngine,
+    sessionId: "case-only-r2r-lowercase",
+    mode: .romanizedRomanized
+  )
+  require(
+    !lowercaseAfterCaseOnly.candidates.contains("LEKH"),
+    "A casing-only observation must not later rewrite lowercase input; observed=\(lowercaseAfterCaseOnly.candidates)"
+  )
+
+  // Simulate the legacy cased completion variant independently of the normal
+  // acceptance guard. Provenance matching must ignore presentation casing.
+  for index in 0..<2 {
+    romanizedEngine.observeCommit(
+      sessionId: "legacy-cased-r2r-completion-\(index)",
+      rawInput: "lekh",
+      chosenOutput: "Lekhharu",
+      allowPersonalization: true
+    )
+  }
+  let afterLegacyCasedCompletion = type(
+    "lekh",
+    engine: romanizedEngine,
+    sessionId: "legacy-cased-r2r-completion-check",
+    mode: .romanizedRomanized
+  )
+  require(
+    !afterLegacyCasedCompletion.candidates.contains("Lekhharu") &&
+      afterLegacyCasedCompletion.inlineSuggestion?.acceptedText == "lekhharu",
+    "A cased legacy completion must remain suffix-only and never displace the typed token; observed=\(afterLegacyCasedCompletion.candidates)"
   )
 }
 

@@ -886,8 +886,15 @@ public final class LekhNativeEngineClient: LekhEngineClient {
     chosenOutput: String,
     mode: LekhNativeTypingMode
   ) -> Bool {
-    !isVerifiedTokenCompletionCandidate(
-      normalizedInput: Self.normalize(rawInput),
+    if mode == .romanizedRomanized,
+       Self.normalize(rawInput) == Self.normalize(chosenOutput) {
+      // Case-only acceptance is presentation, not a learned spelling mapping.
+      // Persisting LEKH→LEKH under the normalized key `lekh` can later place an
+      // uppercase candidate ahead of lowercase input.
+      return false
+    }
+    return !isVerifiedTokenCompletionCandidate(
+      sourceInput: rawInput,
       chosenOutput: chosenOutput,
       mode: mode
     )
@@ -1050,8 +1057,12 @@ public final class LekhNativeEngineClient: LekhEngineClient {
     var completionCandidates: [String] = []
 
     if mode == .romanizedTraditional || mode == .romanizedRomanized {
-      completionCandidates.append(contentsOf: tokenCompletionIndex.candidates(for: normalized).map {
-        mode == .romanizedTraditional ? $0.target : $0.source
+      completionCandidates.append(contentsOf: tokenCompletionIndex.candidates(for: normalized).compactMap {
+        if mode == .romanizedTraditional { return $0.target }
+        return Self.casePreservingRomanizedCompletion(
+          source: $0.source,
+          rawPrefix: rawBuffer
+        )
       })
     } else {
       // Traditional modes have no trusted source-side prefix score. They may
@@ -1115,19 +1126,37 @@ public final class LekhNativeEngineClient: LekhEngineClient {
     // Completion is a separate, provenance-checked, explicit-accept tier.
     // Runtime transliteration/context rows are intentionally ineligible: their
     // corpus confidence is not a calibrated completion-quality probability.
-    let completionCandidates = tokenCompletionIndex.candidates(for: normalized).map {
-      mode == .romanizedRomanized ? $0.source : $0.target
+    let completionCandidates = tokenCompletionIndex.candidates(for: normalized).compactMap {
+      if mode == .romanizedTraditional { return $0.target }
+      return Self.casePreservingRomanizedCompletion(source: $0.source, rawPrefix: buffer)
     }
 
+    // Every Romanized→Romanized source tier (personal, runtime, rule, context,
+    // and completion) is stored in a normalized artifact form. Apply the
+    // user's unambiguous casing pattern once at the boundary before anything
+    // becomes visible or explicitly acceptable. This prevents an exact row
+    // such as `lekh` from silently surviving beside a safe `LEKHHARU`
+    // completion and rewriting raw `LEKH` when clicked.
+    let visibleCurrentTokenCandidates = mode == .romanizedRomanized
+      ? currentTokenCandidates.compactMap {
+          Self.casePreservingRomanizedCandidate(source: $0, rawInput: buffer)
+        }
+      : currentTokenCandidates
+    let visibleCompletionCandidates = mode == .romanizedRomanized
+      ? completionCandidates.compactMap {
+          Self.casePreservingRomanizedCandidate(source: $0, rawInput: buffer)
+        }
+      : completionCandidates
+
     let primary = Self.unique(
-      currentTokenCandidates.filter {
+      visibleCurrentTokenCandidates.filter {
         Self.isAllowedActiveTokenCandidate(input: normalized, candidate: $0, mode: mode)
       },
       limit: 16
     )
     let primarySet = Set(primary.map { $0.precomposedStringWithCanonicalMapping })
     let secondary = Self.unique(
-      completionCandidates.filter {
+      visibleCompletionCandidates.filter {
         Self.isAllowedActiveTokenCandidate(input: normalized, candidate: $0, mode: mode) &&
           !primarySet.contains($0.precomposedStringWithCanonicalMapping)
       },
@@ -1158,7 +1187,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       // This is intentionally read-only on the typing path; no SQLite cleanup
       // or write is permitted per keystroke.
       !isVerifiedTokenCompletionCandidate(
-        normalizedInput: normalized,
+        sourceInput: normalized,
         chosenOutput: $0,
         mode: mode
       )
@@ -1166,20 +1195,86 @@ public final class LekhNativeEngineClient: LekhEngineClient {
   }
 
   private func isVerifiedTokenCompletionCandidate(
-    normalizedInput: String,
+    sourceInput: String,
     chosenOutput: String,
     mode: LekhNativeTypingMode
   ) -> Bool {
     guard mode == .romanizedTraditional || mode == .romanizedRomanized else {
       return false
     }
+    let normalizedInput = Self.normalize(sourceInput)
     let normalizedOutput = chosenOutput.trimmingCharacters(in: .whitespacesAndNewlines)
       .precomposedStringWithCanonicalMapping
     guard !normalizedInput.isEmpty, !normalizedOutput.isEmpty else { return false }
     return tokenCompletionIndex.candidates(for: normalizedInput).contains { row in
-      let output = mode == .romanizedTraditional ? row.target : row.source
-      return output.precomposedStringWithCanonicalMapping == normalizedOutput
+      let output: String?
+      if mode == .romanizedTraditional {
+        output = row.target
+      } else {
+        // Completion provenance is case-insensitive in Roman helper mode.
+        // A legacy `Lekhharu` row is the same completion artifact as
+        // `lekhharu` and must not become an exact-token learned mapping.
+        output = Self.normalize(row.source) == Self.normalize(normalizedOutput)
+          ? normalizedOutput
+          : nil
+      }
+      return output?.precomposedStringWithCanonicalMapping == normalizedOutput
     }
+  }
+
+  /// Romanized helper completions may extend the user's casing, but may never
+  /// rewrite it. Lowercase, ALL CAPS, and leading-capital prefixes have an
+  /// unambiguous deterministic continuation; irregular mixed case fails closed
+  /// instead of exposing a case-changing candidate or teaching it as an exact
+  /// personalization mapping.
+  private static func casePreservingRomanizedCompletion(
+    source: String,
+    rawPrefix: String
+  ) -> String? {
+    let prefix = rawPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+      .precomposedStringWithCanonicalMapping
+    let normalizedPrefix = normalize(prefix)
+    guard !prefix.isEmpty,
+          source.hasPrefix(normalizedPrefix),
+          source != normalizedPrefix,
+          let completion = casePreservingRomanizedCandidate(
+            source: source,
+            rawInput: prefix
+          ) else {
+      return nil
+    }
+
+    guard completion.hasPrefix(prefix), completion != prefix else { return nil }
+    return completion
+  }
+
+  private static func casePreservingRomanizedCandidate(
+    source: String,
+    rawInput: String
+  ) -> String? {
+    let input = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+      .precomposedStringWithCanonicalMapping
+    guard !input.isEmpty,
+          input.unicodeScalars.contains(where: {
+            (65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value))
+          }) else {
+      return nil
+    }
+
+    let normalizedSource = normalize(source)
+    guard !normalizedSource.isEmpty else { return nil }
+    if input == input.lowercased() {
+      return normalizedSource
+    }
+    if input == input.uppercased() {
+      return normalizedSource.uppercased()
+    }
+    if let first = input.first,
+              String(first) == String(first).uppercased(),
+              String(input.dropFirst()) == String(input.dropFirst()).lowercased() {
+      return String(normalizedSource.prefix(1)).uppercased() + normalizedSource.dropFirst()
+    }
+    return nil
   }
 
   private static func isAllowedActiveTokenCandidate(
@@ -1404,7 +1499,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
        normalized.count <= 64,
        !Self.containsWhitespace(normalized),
        !Self.containsWhitespace(chosenOutput),
-       chosenOutput.trimmingCharacters(in: .whitespacesAndNewlines) != normalized {
+       Self.normalize(chosenOutput) != normalized {
       userLexicon.record(normalizedInput: normalized, chosenOutput: chosenOutput)
     }
     if allowPersonalization,
