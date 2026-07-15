@@ -607,6 +607,40 @@ describe("macOS IMK proof target source", () => {
     expect(hostHarness).toContain('snapshot?.operationStatus === expectedStatus');
   });
 
+  it("blocks every GUI host probe before preferences, TIS selection, or host launch when the console session is ineligible", () => {
+    const hostHarness = readFileSync(join(root, "scripts/lib/macos-imk-host-harness.mjs"), "utf8");
+    const probes = [
+      "scripts/check-macos-imk-host-ghost.mjs",
+      "scripts/check-macos-imk-host-interaction-safety.mjs",
+      "scripts/check-macos-imk-host-candidate-mouse.mjs"
+    ];
+
+    for (const relativePath of probes) {
+      const source = readFileSync(join(root, relativePath), "utf8");
+      const guardIndex = source.indexOf("  const consoleSession = consoleSessionPrecondition();");
+      const inputSourceSnapshotIndex = source.indexOf("  previousInputSource = currentInputSource();", guardIndex);
+      const preferenceSnapshotIndex = source.indexOf("  preferenceSnapshots = {", guardIndex);
+      const preferenceMutationIndex = source.indexOf("  const preferenceWrites = [", guardIndex);
+      const tisMutationIndex = source.indexOf('"--select-only"', guardIndex);
+      const hostLaunchIndex = source.indexOf("launchColdTextEdit(realTempTextEditFile)", guardIndex);
+
+      expect(source).toContain("consoleSessionPrecondition,");
+      expect(guardIndex, relativePath).toBeGreaterThan(-1);
+      expect(inputSourceSnapshotIndex, relativePath).toBeGreaterThan(guardIndex);
+      expect(preferenceSnapshotIndex, relativePath).toBeGreaterThan(guardIndex);
+      expect(preferenceMutationIndex, relativePath).toBeGreaterThan(guardIndex);
+      expect(tisMutationIndex, relativePath).toBeGreaterThan(guardIndex);
+      expect(hostLaunchIndex, relativePath).toBeGreaterThan(guardIndex);
+      expect(source).toContain('blocked("host-session-precondition"');
+      expect(source).toContain("sideEffectsPrevented: {");
+      expect(source).toContain("No Lekh preference was changed, no input source was changed, and TextEdit was not launched.");
+    }
+    expect(hostHarness).toContain('"console-session-state-unavailable"');
+    expect(hostHarness).toContain('"console-login-incomplete"');
+    expect(hostHarness).toContain('"not-active-console-session"');
+    expect(hostHarness).toContain('"console-session-locked"');
+  });
+
   it("proves custom candidate mouse acceptance and drag-away cancellation in an exact cold host", () => {
     const packageJson = readFileSync(join(root, "package.json"), "utf8");
     const probe = readFileSync(join(root, "scripts/check-macos-imk-host-candidate-mouse.mjs"), "utf8");
@@ -676,7 +710,7 @@ describe("macOS IMK proof target source", () => {
     expect(hostHarness).toContain("currentConsoleSessionState");
     expect(hostHarness).toContain("CGSessionCopyCurrentDictionary");
     expect(checkScript).toContain("host-session-precondition");
-    expect(checkScript.indexOf("currentConsoleSessionState()")).toBeLessThan(checkScript.indexOf('spawnSync("swift", [restoreSourceScript, "--snapshot"]'));
+    expect(checkScript.indexOf("consoleSessionPrecondition()")).toBeLessThan(checkScript.indexOf('spawnSync("swift", [restoreSourceScript, "--snapshot"]'));
     expect(checkScript).toContain("launchColdTextEdit");
     expect(checkScript).toContain("prepareExactTextEdit");
     expect(checkScript.indexOf("prepareExactTextEdit(")).toBeLessThan(checkScript.indexOf("waitForExactRuntimeHealth({"));

@@ -104,6 +104,35 @@ print(String(decoding: data, as: UTF8.self))
   }
 }
 
+export function consoleSessionPrecondition() {
+  const observed = currentConsoleSessionState();
+  const code = observed.status !== 0
+    ? "console-session-state-unavailable"
+    : !observed.loginDone
+      ? "console-login-incomplete"
+      : !observed.onConsole
+        ? "not-active-console-session"
+        : observed.screenLocked
+          ? "console-session-locked"
+          : null;
+  const message = code === "console-session-state-unavailable"
+    ? "macOS console-session state could not be read."
+    : code === "console-login-incomplete"
+      ? "The macOS desktop login is not complete."
+      : code === "not-active-console-session"
+        ? "The invoking session is not the active macOS console session."
+        : code === "console-session-locked"
+          ? "The macOS console session is locked."
+          : "The active macOS console session is ready.";
+  return {
+    eligible: code === null,
+    code,
+    message,
+    required: { loginDone: true, onConsole: true, screenLocked: false },
+    observed
+  };
+}
+
 export function restoreExactInputSource(inputSourceId) {
   if (typeof inputSourceId !== "string" || inputSourceId.length === 0) {
     return { status: 2, stdout: "", stderr: "The prior input source id is empty.\n", restoredId: "" };

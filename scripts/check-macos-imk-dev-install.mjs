@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
 import {
-  currentConsoleSessionState,
+  consoleSessionPrecondition,
   currentInputSource,
   installedBundleIdentity,
   launchColdTextEdit,
@@ -286,21 +286,14 @@ if (failures.length > 0) fail({ registryStdout: registryCheck.stdout, registrySt
 // A locked/non-console GUI session cannot make the exact TextEdit text area
 // first responder, so InputMethodKit will not create a controller. Detect that
 // prerequisite before snapshotting or changing the user's current input source.
-const consoleSession = currentConsoleSessionState();
-if (
-  consoleSession.status !== 0 ||
-  !consoleSession.loginDone ||
-  !consoleSession.onConsole ||
-  consoleSession.screenLocked
-) {
-  failures.push(
-    consoleSession.screenLocked
-      ? "The macOS GUI session is locked; unlock it before running the installed-host health proof."
-      : "An active, logged-in console GUI session is required for the installed-host health proof."
-  );
+const consoleSessionCheck = consoleSessionPrecondition();
+const consoleSession = consoleSessionCheck.observed;
+if (!consoleSessionCheck.eligible) {
+  failures.push(`${consoleSessionCheck.message} The installed-host health proof requires an active, logged-in, unlocked desktop session.`);
   fail({
     step: "host-session-precondition",
     reason: "No input source was changed and no host application was launched.",
+    prerequisite: consoleSessionCheck,
     consoleSession,
     registryStdout: registryCheck.stdout
   });

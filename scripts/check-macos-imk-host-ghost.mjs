@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
+  consoleSessionPrecondition,
   currentInputSource,
   installedBundleIdentity,
   launchColdTextEdit,
@@ -180,6 +181,22 @@ try {
   if (process.platform !== "darwin") failed("platform", "Ghost host proof must run on macOS.", { platform: process.platform });
   if (![appBundle, registerScript, restoreScript].every(existsSync)) {
     failed("preflight", "Installed Lekh bundle or host-probe support script is missing.");
+  }
+
+  const consoleSession = consoleSessionPrecondition();
+  if (!consoleSession.eligible) {
+    blocked("host-session-precondition", {
+      prerequisite: {
+        ...consoleSession,
+        message: `${consoleSession.message} Run the probe from the active, logged-in, unlocked desktop session.`
+      },
+      sideEffectsPrevented: {
+        preferencesChanged: true,
+        inputSourceChanged: true,
+        hostApplicationLaunched: true
+      },
+      note: `${consoleSession.message} No Lekh preference was changed, no input source was changed, and TextEdit was not launched.`
+    });
   }
 
   previousInputSource = currentInputSource();
