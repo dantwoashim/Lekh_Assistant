@@ -64,6 +64,46 @@ if let pointer = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
   };
 }
 
+export function currentConsoleSessionState() {
+  const result = run("swift", ["-e", `
+import ApplicationServices
+import Foundation
+
+guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else {
+  exit(2)
+}
+let output: [String: Any] = [
+  "loginDone": session["kCGSessionLoginDoneKey"] as? Bool ?? false,
+  "onConsole": session["kCGSSessionOnConsoleKey"] as? Bool ?? false,
+  "screenLocked": session["CGSSessionScreenIsLocked"] as? Bool ?? false,
+  "screenLockedAt": session["CGSSessionScreenLockedTime"] as? Double ?? 0
+]
+let data = try JSONSerialization.data(withJSONObject: output, options: [.sortedKeys])
+print(String(decoding: data, as: UTF8.self))
+`]);
+  const line = result.stdout.trim().split(/\r?\n/).at(-1) ?? "";
+  try {
+    const state = JSON.parse(line);
+    return {
+      status: result.status,
+      loginDone: state.loginDone === true,
+      onConsole: state.onConsole === true,
+      screenLocked: state.screenLocked === true,
+      screenLockedAt: Number.isFinite(state.screenLockedAt) ? state.screenLockedAt : 0,
+      stderr: result.stderr
+    };
+  } catch {
+    return {
+      status: result.status || 3,
+      loginDone: false,
+      onConsole: false,
+      screenLocked: false,
+      screenLockedAt: 0,
+      stderr: result.stderr || "Could not decode the current console-session state.\n"
+    };
+  }
+}
+
 export function restoreExactInputSource(inputSourceId) {
   if (typeof inputSourceId !== "string" || inputSourceId.length === 0) {
     return { status: 2, stdout: "", stderr: "The prior input source id is empty.\n", restoredId: "" };

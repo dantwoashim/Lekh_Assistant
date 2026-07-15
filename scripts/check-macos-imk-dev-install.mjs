@@ -5,10 +5,12 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
 import {
+  currentConsoleSessionState,
   currentInputSource,
   installedBundleIdentity,
   launchColdTextEdit,
   lekhInputSourceId,
+  prepareExactTextEdit,
   readRuntimeHealth,
   removeProbeFile,
   restoreExactInputSource,
@@ -281,6 +283,29 @@ if (staleBackupRegisteredPaths.length > 0) {
 
 if (failures.length > 0) fail({ registryStdout: registryCheck.stdout, registryStderr: registryCheck.stderr });
 
+// A locked/non-console GUI session cannot make the exact TextEdit text area
+// first responder, so InputMethodKit will not create a controller. Detect that
+// prerequisite before snapshotting or changing the user's current input source.
+const consoleSession = currentConsoleSessionState();
+if (
+  consoleSession.status !== 0 ||
+  !consoleSession.loginDone ||
+  !consoleSession.onConsole ||
+  consoleSession.screenLocked
+) {
+  failures.push(
+    consoleSession.screenLocked
+      ? "The macOS GUI session is locked; unlock it before running the installed-host health proof."
+      : "An active, logged-in console GUI session is required for the installed-host health proof."
+  );
+  fail({
+    step: "host-session-precondition",
+    reason: "No input source was changed and no host application was launched.",
+    consoleSession,
+    registryStdout: registryCheck.stdout
+  });
+}
+
 const installedBundleVersion = plistValue("CFBundleVersion");
 if (!installedBundleVersion) failures.push("Installed bundle has no CFBundleVersion for runtime-health matching.");
 
@@ -299,6 +324,7 @@ let healthIssues = ["runtime health was not evaluated"];
 let healthMtimeMs = null;
 let endpointLog = { status: null, stderr: "", correlatedRejectionLines: [], unattributedWarningLines: [] };
 let coldTextEdit = { status: null, pid: null };
+let preparedTextEdit = null;
 
 if (originalSourceSnapshot.status !== 0 || originalSourceSnapshot.id !== originalInputSourceId) {
   failures.push("Could not bind the registry snapshot to the user's exact current input source.");
@@ -331,17 +357,51 @@ if (snapshot.status !== 0) {
       if (coldTextEdit.status !== 0 || !Number.isInteger(coldTextEdit.pid)) {
         failures.push("Could not launch a fresh exact TextEdit PID after selecting Lekh.");
       } else {
-        const runtime = waitForExactRuntimeHealth({
-          runtimeHealthPath,
-          bundleIdentity,
-          activatedAfterMs: coldTextEdit.launchedAtMs,
-          previousActivation: priorHealth.record?.controllerActivatedAt ?? null,
-          previousHealthMtimeMs: priorHealth.mtimeMs ?? null
-        });
-        health = runtime.record;
-        healthReadError = runtime.readError;
-        healthIssues = runtime.issues;
-        healthMtimeMs = runtime.mtimeMs ?? null;
+        // A newly launched TextEdit process does not create an IMK client just
+        // because its PID exists. Prove that the exact probe document is the
+        // sole, frontmost window and that its text area is focused before
+        // requiring controller lifecycle evidence from the installed bundle.
+        for (let attempt = 1; attempt <= 4; attempt += 1) {
+          const preparation = prepareExactTextEdit(
+            coldTextEdit.pid,
+            realTempTextEditFile,
+            "runtime probe\n"
+          );
+          preparedTextEdit = {
+            attempt,
+            status: preparation.status,
+            accessibility: preparation.snapshot,
+            inputSource: currentInputSource()
+          };
+          if (
+            preparation.status === 0 &&
+            preparation.snapshot?.text === "runtime probe\n" &&
+            preparedTextEdit.inputSource.status === 0 &&
+            preparedTextEdit.inputSource.id === lekhInputSourceId
+          ) break;
+          wait(200);
+        }
+
+        if (
+          preparedTextEdit?.status !== 0 ||
+          preparedTextEdit?.accessibility?.text !== "runtime probe\n" ||
+          preparedTextEdit?.inputSource?.id !== lekhInputSourceId
+        ) {
+          failures.push("Could not focus the exact fresh TextEdit document while Lekh remained selected.");
+          healthIssues = ["exact TextEdit input context was not prepared"];
+        } else {
+          const runtime = waitForExactRuntimeHealth({
+            runtimeHealthPath,
+            bundleIdentity,
+            activatedAfterMs: coldTextEdit.launchedAtMs,
+            previousActivation: priorHealth.record?.controllerActivatedAt ?? null,
+            previousHealthMtimeMs: priorHealth.mtimeMs ?? null
+          });
+          health = runtime.record;
+          healthReadError = runtime.readError;
+          healthIssues = runtime.issues;
+          healthMtimeMs = runtime.mtimeMs ?? null;
+        }
       }
     }
     if (healthIssues.length > 0) {
@@ -445,6 +505,8 @@ if (failures.length > 0) {
     runtimeHealth: runtimeHealthEvidence,
     bundleIdentity,
     coldTextEdit,
+    preparedTextEdit,
+    consoleSession,
     endpointLog,
     restoreStatus: restoreProbe?.status ?? null,
     restoreStdout: restoreProbe?.stdout ?? "",
@@ -460,6 +522,8 @@ writeReport("passed", {
   runtimeHealth: runtimeHealthEvidence,
   bundleIdentity,
   coldTextEdit,
+  preparedTextEdit,
+  consoleSession,
   endpointLog,
   note: "Lekh was selected before a fresh TextEdit process created its input context; health matched the exact installed PID/build, and the user's exact prior source was restored."
 });

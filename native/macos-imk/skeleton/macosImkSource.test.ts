@@ -673,7 +673,14 @@ describe("macOS IMK proof target source", () => {
     expect(installScript).toContain('swift "$(dirname "$0")/register-dev.swift" "$DEST"');
     expect(installScript).not.toContain('swift "$(dirname "$0")/register-dev.swift" "$DEST" --select');
     expect(checkScript).toContain('"--select-only"');
+    expect(hostHarness).toContain("currentConsoleSessionState");
+    expect(hostHarness).toContain("CGSessionCopyCurrentDictionary");
+    expect(checkScript).toContain("host-session-precondition");
+    expect(checkScript.indexOf("currentConsoleSessionState()")).toBeLessThan(checkScript.indexOf('spawnSync("swift", [restoreSourceScript, "--snapshot"]'));
     expect(checkScript).toContain("launchColdTextEdit");
+    expect(checkScript).toContain("prepareExactTextEdit");
+    expect(checkScript.indexOf("prepareExactTextEdit(")).toBeLessThan(checkScript.indexOf("waitForExactRuntimeHealth({"));
+    expect(checkScript).toContain("Could not focus the exact fresh TextEdit document while Lekh remained selected.");
     expect(checkScript).toContain("waitForExactRuntimeHealth");
     expect(checkScript).toContain("restoreExactInputSource");
     expect(checkScript).toContain("unattributedWarningLines");
