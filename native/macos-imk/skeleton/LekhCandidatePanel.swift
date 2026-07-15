@@ -314,7 +314,12 @@ public final class LekhCandidatePanel: NSObject {
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
     panel.animationBehavior = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .none : .utilityWindow
     panel.setAccessibilityElement(true)
-    panel.setAccessibilityRole(.group)
+    // Expose the floating surface as a real accessibility window. Its content
+    // remains a list and each choice remains an individually pressable row.
+    // A top-level `.group` made the panel difficult for VoiceOver, Switch
+    // Control, and host automation to discover among the IMK process windows.
+    panel.setAccessibilityRole(.window)
+    panel.setAccessibilityIdentifier("lekh.candidatePanel")
     panel.setAccessibilityLabel(LekhL10n.text("candidate.panel.accessibility"))
     return panel
   }

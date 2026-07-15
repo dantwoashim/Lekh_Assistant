@@ -269,6 +269,9 @@ describe("macOS IMK proof target source", () => {
     expect(candidatePanel).toContain("differentiateWithoutColor");
     expect(candidatePanel).toContain('labelWithString: isSelected ? "✓" : ""');
     expect(candidatePanel).toContain("panel.canHide = false");
+    expect(candidatePanel).toContain("panel.setAccessibilityRole(.window)");
+    expect(candidatePanel).toContain('panel.setAccessibilityIdentifier("lekh.candidatePanel")');
+    expect(candidatePanel).not.toContain("panel.setAccessibilityRole(.group)");
     expect(candidatePanel).not.toContain("NSEvent.mouseLocation");
     expect(candidatePanel).not.toContain("cursor: .pointingHand");
     expect(inlinePreviewPanel).toContain("panel.setAccessibilityElement(true)");
