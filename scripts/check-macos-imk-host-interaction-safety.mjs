@@ -142,16 +142,31 @@ function restoreBooleanPreference(key, snapshot) {
   run("notifyutil", ["-p", preferencesNotification]);
 }
 
-function readSurfaceDiagnostics(pid) {
-  if (!Number.isInteger(pid)) return [];
+function readSurfaceDiagnostics(pid, sinceMs) {
+  if (!Number.isInteger(pid) || !Number.isFinite(sinceMs)) return [];
   const logs = run("/usr/bin/log", [
-    "show", "--last", "3m", "--style", "compact",
+    "show", "--start", `@${Math.floor(sinceMs / 1000)}`, "--style", "ndjson",
+    "--process", String(pid),
     "--predicate", 'subsystem == "com.lekh.inputmethod.keyboard" AND category == "imk"'
   ]);
   return logs.stdout
     .split(/\r?\n/)
-    .filter((line) => line.includes("surface.") && line.includes(`LekhInputMethodApp[${pid}:`))
-    .slice(-120);
+    .flatMap((line) => {
+      try {
+        const event = JSON.parse(line);
+        const timestampMs = Date.parse(event.timestamp ?? "");
+        if (
+          event.processID !== pid ||
+          !event.eventMessage?.startsWith("surface.") ||
+          !Number.isFinite(timestampMs) ||
+          timestampMs < sinceMs
+        ) return [];
+        return [{ timestamp: event.timestamp, message: event.eventMessage }];
+      } catch {
+        return [];
+      }
+    })
+    .slice(-48);
 }
 
 function ensureExactContext(pid, realPath) {
@@ -295,6 +310,7 @@ try {
     const focusedContext = ensureExactContext(coldTextEditPid, realTempTextEditFile);
     if (!focusedContext.ready) blocked(`focus-and-source-${testCase.id}`, { attempts: focusedContext.attempts });
 
+    const caseStartedAtMs = Date.now();
     const post = run("swift", ["-e", targetedPostingSource(testCase.events, coldTextEditPid)]);
     if (post.status !== 0) blocked(`post-${testCase.id}`, { stdout: post.stdout, stderr: post.stderr });
     wait(850);
@@ -323,7 +339,8 @@ try {
       engineProof: testCase.provesEngine && pass,
       rawABCObserved,
       accessibility: read.snapshot,
-      surfaceDiagnostics: readSurfaceDiagnostics(inputMethodPid),
+      surfaceDiagnosticsStartedAt: new Date(caseStartedAtMs).toISOString(),
+      surfaceDiagnostics: readSurfaceDiagnostics(inputMethodPid, caseStartedAtMs),
       actual,
       pass
     });

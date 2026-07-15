@@ -587,6 +587,10 @@ describe("macOS IMK proof target source", () => {
     expect(interactionProbe).not.toContain(".cghidEventTap");
     expect(interactionProbe).toContain("lekhInputSourceId");
     expect(interactionProbe).toContain("engineProof");
+    expect(interactionProbe).toContain('"--style", "ndjson"');
+    expect(interactionProbe).toContain("event.processID !== pid");
+    expect(interactionProbe).toContain("timestampMs < sinceMs");
+    expect(interactionProbe).toContain("surfaceDiagnosticsStartedAt");
     expect(hostHarness).toContain('export const lekhInputSourceId = "com.lekh.inputmethod.LekhKeyboard.Main"');
     expect(hostHarness).toContain('run("/usr/bin/open", ["-F", "-n", "-a", "TextEdit", realDocumentPath])');
     expect(hostHarness).toContain("processExecutablePath(record.processIdentifier)");
