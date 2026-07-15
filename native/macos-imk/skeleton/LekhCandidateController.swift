@@ -77,12 +77,15 @@ public final class LekhCandidateController {
 
   @discardableResult
   public func moveSelection(delta: Int) -> String? {
-    guard !state.candidates.isEmpty else { return nil }
+    guard !state.candidates.isEmpty, delta != 0 else { return nil }
     let target: Int
     if let selectedIndex = state.selectedIndex {
       // Candidate navigation is cyclic, matching system input-source menus and
-      // avoiding a silent dead end at either edge of the list.
-      target = Self.wrapped(selectedIndex + delta, candidateCount: state.candidates.count)
+      // avoiding a silent dead end at either edge of the list. Reduce an
+      // arbitrary command delta before adding it so malformed responder input
+      // cannot overflow Int and crash the IMK process.
+      let boundedDelta = delta % state.candidates.count
+      target = Self.wrapped(selectedIndex + boundedDelta, candidateCount: state.candidates.count)
     } else {
       target = delta < 0 ? state.candidates.count - 1 : 0
     }
@@ -91,10 +94,18 @@ public final class LekhCandidateController {
 
   @discardableResult
   public func movePage(delta: Int, pageSize: Int) -> String? {
-    guard !state.candidates.isEmpty, pageSize > 0 else { return nil }
+    guard !state.candidates.isEmpty, pageSize > 0, delta != 0 else { return nil }
     let pageCount = Int(ceil(Double(state.candidates.count) / Double(pageSize)))
     let currentPage = (state.selectedIndex ?? 0) / pageSize
-    let targetPage = min(max(currentPage + delta, 0), max(pageCount - 1, 0))
+    let lastPage = max(pageCount - 1, 0)
+    let targetPage: Int
+    if delta > 0 {
+      targetPage = currentPage + min(delta, lastPage - currentPage)
+    } else {
+      // `-Int.min` overflows. Comparing the requested negative distance to
+      // the small current page avoids negation while still clamping to page 0.
+      targetPage = delta < -currentPage ? 0 : currentPage + delta
+    }
     let positionWithinPage = (state.selectedIndex ?? 0) % pageSize
     return select(index: min(targetPage * pageSize + positionWithinPage, state.candidates.count - 1))
   }

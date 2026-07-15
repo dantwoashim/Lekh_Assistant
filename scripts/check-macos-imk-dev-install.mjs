@@ -1,9 +1,20 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
+import {
+  currentInputSource,
+  installedBundleIdentity,
+  launchColdTextEdit,
+  lekhInputSourceId,
+  readRuntimeHealth,
+  removeProbeFile,
+  restoreExactInputSource,
+  terminateColdTextEdit,
+  waitForExactRuntimeHealth
+} from "./lib/macos-imk-host-harness.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -19,6 +30,7 @@ const executablePath = join(installedBundle, "Contents", "MacOS", "LekhInputMeth
 const installedEngineContract = join(installedBundle, "Contents", "Resources", "lekh-engine-contract.v1.json");
 const installedTokenCandidateContract = join(installedBundle, "Contents", "Resources", "lekh-token-candidates.v1.json");
 const runtimeHealthPath = join(homedir(), "Library", "Application Support", "Lekh Keyboard", "runtime-health.v1.json");
+const tempTextEditFile = `/tmp/lekh-native-install-health-${process.pid}.txt`;
 const registerScript = join(root, "native", "macos-imk", "skeleton", "register-dev.swift");
 const restoreSourceScript = join(root, "native", "macos-imk", "skeleton", "restore-system-keyboard.swift");
 const restoreScript = join(root, "native", "macos-imk", "skeleton", "restore-system-keyboard.sh");
@@ -79,54 +91,6 @@ function inputMethodPids() {
     .filter(Boolean)
     .map(Number)
     .filter(Number.isInteger);
-}
-
-function runtimeHealthRecord() {
-  if (!existsSync(runtimeHealthPath)) return { record: null, readError: "missing" };
-  try {
-    return { record: JSON.parse(readFileSync(runtimeHealthPath, "utf8")), readError: null };
-  } catch (error) {
-    return { record: null, readError: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-function runtimeHealthIssues(record, installedBundleVersion, pidsBeforeActivation, activationStartedAtMs) {
-  const issues = [];
-  if (!record || typeof record !== "object") return ["runtime health record is missing or unreadable"];
-  if (record.schemaVersion !== 1) issues.push(`schemaVersion=${JSON.stringify(record.schemaVersion)}`);
-  if (record.bundleIdentifier !== expectedBundleIdentifier) {
-    issues.push(`bundleIdentifier=${JSON.stringify(record.bundleIdentifier)}`);
-  }
-  if (record.bundleVersion !== installedBundleVersion) {
-    issues.push(`bundleVersion=${JSON.stringify(record.bundleVersion)}`);
-  }
-  if (record.connectionName !== expectedConnectionName) {
-    issues.push(`connectionName=${JSON.stringify(record.connectionName)}`);
-  }
-  if (!Number.isInteger(record.processIdentifier) || !inputMethodPids().includes(record.processIdentifier)) {
-    issues.push(`processIdentifier=${JSON.stringify(record.processIdentifier)} is not a live LekhInputMethodApp`);
-  }
-  for (const field of ["executableStartedAt", "serverStartedAt", "controllerInitializedAt", "controllerActivatedAt"]) {
-    if (typeof record[field] !== "string" || !Number.isFinite(Date.parse(record[field]))) {
-      issues.push(`${field}=missing-or-invalid`);
-    }
-  }
-  if (
-    pidsBeforeActivation.length === 0 &&
-    typeof record.serverStartedAt === "string" &&
-    Number.isFinite(Date.parse(record.serverStartedAt)) &&
-    Date.parse(record.serverStartedAt) < activationStartedAtMs - 2_000
-  ) {
-    issues.push("serverStartedAt predates this TIS activation attempt");
-  }
-  if (existsSync(runtimeHealthPath)) {
-    const healthStat = statSync(runtimeHealthPath);
-    if ((healthStat.mode & 0o777) !== 0o600) issues.push("runtime health permissions are not 0600");
-    if (typeof process.getuid === "function" && healthStat.uid !== process.getuid()) {
-      issues.push("runtime health file is not owned by the current user");
-    }
-  }
-  return issues;
 }
 
 if (process.platform !== "darwin") {
@@ -291,10 +255,6 @@ if (registryValue(registryCheck.stdout, "parentTypes") !== "TISTypeKeyboardInput
   failures.push("The Lekh parent TIS source must have type TISTypeKeyboardInputMethodModeEnabled.");
 }
 
-if ([inputSourceId, parentInputSourceId].includes(registryValue(registryCheck.stdout, "current"))) {
-  failures.push("Dev installer left Lekh selected as the current input source; this is unsafe until host-app typing is proven.");
-}
-
 const launchServices = spawnSync(lsregister, ["-dump"], {
   encoding: "utf8",
   maxBuffer: 80 * 1024 * 1024
@@ -325,8 +285,10 @@ const installedBundleVersion = plistValue("CFBundleVersion");
 if (!installedBundleVersion) failures.push("Installed bundle has no CFBundleVersion for runtime-health matching.");
 
 const originalInputSourceId = registryValue(registryCheck.stdout, "current");
+const originalSourceSnapshot = currentInputSource();
 const pidsBeforeActivation = inputMethodPids();
-const activationStartedAtMs = Date.now();
+const bundleIdentity = installedBundleIdentity(installedBundle);
+const priorHealth = readRuntimeHealth(runtimeHealthPath);
 const logStart = spawnSync("/bin/date", ["+%Y-%m-%d %H:%M:%S"], { encoding: "utf8" }).stdout.trim();
 let selectProbe = null;
 let restoreProbe = null;
@@ -334,7 +296,13 @@ let restoredRegistry = null;
 let health = null;
 let healthReadError = null;
 let healthIssues = ["runtime health was not evaluated"];
-let endpointLog = { status: null, stderr: "", rejectionLines: [] };
+let healthMtimeMs = null;
+let endpointLog = { status: null, stderr: "", correlatedRejectionLines: [], unattributedWarningLines: [] };
+let coldTextEdit = { status: null, pid: null };
+
+if (originalSourceSnapshot.status !== 0 || originalSourceSnapshot.id !== originalInputSourceId) {
+  failures.push("Could not bind the registry snapshot to the user's exact current input source.");
+}
 
 const snapshot = spawnSync("swift", [restoreSourceScript, "--snapshot"], {
   encoding: "utf8",
@@ -350,22 +318,35 @@ if (snapshot.status !== 0) {
   if (selectProbe.status !== 0) {
     failures.push("TIS could not select the installed .Main source without re-registering or re-enabling it.");
   } else {
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      const read = runtimeHealthRecord();
-      health = read.record;
-      healthReadError = read.readError;
-      healthIssues = runtimeHealthIssues(
-        health,
-        installedBundleVersion,
-        pidsBeforeActivation,
-        activationStartedAtMs
-      );
-      if (healthIssues.length === 0) break;
-      wait(125);
+    const selected = currentInputSource();
+    if (selected.status !== 0 || selected.id !== lekhInputSourceId) {
+      failures.push("TIS selection returned success but the exact installed .Main source was not current.");
+    } else {
+      // `-F -n` creates a new TextEdit process without restoring any of the
+      // user's documents. Because Lekh was selected first, this PID's initial
+      // NSTextInputContext cannot inherit ABC/PressAndHold.
+      writeFileSync(tempTextEditFile, "runtime probe\n");
+      const realTempTextEditFile = realpathSync(tempTextEditFile);
+      coldTextEdit = launchColdTextEdit(realTempTextEditFile);
+      if (coldTextEdit.status !== 0 || !Number.isInteger(coldTextEdit.pid)) {
+        failures.push("Could not launch a fresh exact TextEdit PID after selecting Lekh.");
+      } else {
+        const runtime = waitForExactRuntimeHealth({
+          runtimeHealthPath,
+          bundleIdentity,
+          activatedAfterMs: coldTextEdit.launchedAtMs,
+          previousActivation: priorHealth.record?.controllerActivatedAt ?? null,
+          previousHealthMtimeMs: priorHealth.mtimeMs ?? null
+        });
+        health = runtime.record;
+        healthReadError = runtime.readError;
+        healthIssues = runtime.issues;
+        healthMtimeMs = runtime.mtimeMs ?? null;
+      }
     }
     if (healthIssues.length > 0) {
       failures.push(
-        "The TIS-launched installed build did not publish matching server/controller runtime health; focus a normal editable field and retry."
+        "The fresh TextEdit context did not publish runtime health for the exact installed executable PID/build."
       );
     }
   }
@@ -385,17 +366,34 @@ if (logStart) {
     ],
     { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 }
   );
-  const rejectionLines = logProbe.stdout
+  const warningLines = logProbe.stdout
     .split(/\r?\n/)
     .filter((line) => line.includes("Refusing connection name") || line.includes("unrecognized 'InputMethodConnectionName'"));
-  endpointLog = { status: logProbe.status, stderr: logProbe.stderr, rejectionLines };
-  if (rejectionLines.length > 0) {
+  const correlationMarkers = [expectedConnectionName, expectedBundleIdentifier, installedBundle];
+  const correlatedRejectionLines = warningLines.filter((line) =>
+    correlationMarkers.some((marker) => line.includes(marker))
+  );
+  const unattributedWarningLines = warningLines.filter((line) => !correlatedRejectionLines.includes(line));
+  endpointLog = { status: logProbe.status, stderr: logProbe.stderr, correlatedRejectionLines, unattributedWarningLines };
+  if (correlatedRejectionLines.length > 0) {
     failures.push("imklaunchagent rejected InputMethodConnectionName during the controlled TIS activation.");
   }
 }
 
-restoreProbe = spawnSync(restoreScript, [], { encoding: "utf8", env: toolchainEnv });
-if (restoreProbe.status !== 0) {
+if (Number.isInteger(coldTextEdit.pid)) {
+  const terminated = terminateColdTextEdit(coldTextEdit.pid);
+  if (terminated.status !== 0) failures.push(terminated.note);
+}
+removeProbeFile(tempTextEditFile);
+
+restoreProbe = restoreExactInputSource(originalInputSourceId);
+if (restoreProbe.status !== 0 || currentInputSource().id !== originalInputSourceId) {
+  const fallbackRestore = spawnSync(restoreScript, [], { encoding: "utf8", env: toolchainEnv });
+  restoreProbe = {
+    status: fallbackRestore.status || restoreProbe.status,
+    stdout: `${restoreProbe.stdout ?? ""}${fallbackRestore.stdout ?? ""}`,
+    stderr: `${restoreProbe.stderr ?? ""}${fallbackRestore.stderr ?? ""}`
+  };
   failures.push("Could not restore the input source that was active before the controlled health probe.");
 } else {
   restoredRegistry = runRegistryCheck();
@@ -427,7 +425,11 @@ const runtimeHealthEvidence = health && typeof health === "object"
       executableStartedAt: health.executableStartedAt,
       serverStartedAt: health.serverStartedAt,
       controllerInitializedAt: health.controllerInitializedAt,
-      controllerActivatedAt: health.controllerActivatedAt
+      controllerActivatedAt: health.controllerActivatedAt,
+      healthMtimeMs,
+      installedExecutablePath: bundleIdentity.executablePath,
+      installedExecutableSha256: bundleIdentity.executableSha256,
+      exactInstalledRuntimeVerified: healthIssues.length === 0
     }
   : null;
 
@@ -441,6 +443,8 @@ if (failures.length > 0) {
     healthReadError,
     healthIssues,
     runtimeHealth: runtimeHealthEvidence,
+    bundleIdentity,
+    coldTextEdit,
     endpointLog,
     restoreStatus: restoreProbe?.status ?? null,
     restoreStdout: restoreProbe?.stdout ?? "",
@@ -454,7 +458,9 @@ writeReport("passed", {
   restoredRegistryStdout: restoredRegistry?.stdout ?? "",
   runtimeWasAlreadyRunning: pidsBeforeActivation.length > 0,
   runtimeHealth: runtimeHealthEvidence,
+  bundleIdentity,
+  coldTextEdit,
   endpointLog,
-  note: "The exact installed TIS sources were selected through TIS, published content-free server/controller health for this build, and restored the user's previous input source without terminating the IMK process."
+  note: "Lekh was selected before a fresh TextEdit process created its input context; health matched the exact installed PID/build, and the user's exact prior source was restored."
 });
 console.log(JSON.stringify({ status: "passed", report: "reports/macos-imk-dev-install-check.json", installedBundle }, null, 2));

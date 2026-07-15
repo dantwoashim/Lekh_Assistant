@@ -12,19 +12,27 @@ public struct LekhCandidateDisplayItem: Equatable {
 private final class LekhCandidateRowView: NSView {
   let candidateIndex: Int
   let candidateText: String
-  var onHighlight: ((Int, String) -> Void)?
   var onSelect: ((Int, String) -> Void)?
 
   private var trackingArea: NSTrackingArea?
   private var isPointerInside = false
+  private var isPressActive = false
   private let selected: Bool
   private let increaseContrast: Bool
+  private let differentiateWithoutColor: Bool
 
-  init(candidateIndex: Int, candidateText: String, selected: Bool, increaseContrast: Bool) {
+  init(
+    candidateIndex: Int,
+    candidateText: String,
+    selected: Bool,
+    increaseContrast: Bool,
+    differentiateWithoutColor: Bool
+  ) {
     self.candidateIndex = candidateIndex
     self.candidateText = candidateText
     self.selected = selected
     self.increaseContrast = increaseContrast
+    self.differentiateWithoutColor = differentiateWithoutColor
     super.init(frame: .zero)
     wantsLayer = true
     updateBackground()
@@ -36,14 +44,32 @@ private final class LekhCandidateRowView: NSView {
 
   override var acceptsFirstResponder: Bool { false }
 
-  override func mouseUp(with event: NSEvent) {
+  override func mouseDown(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
     guard bounds.contains(point) else { return }
-    if event.clickCount >= 2 {
-      onSelect?(candidateIndex, candidateText)
-    } else {
-      onHighlight?(candidateIndex, candidateText)
-    }
+    isPressActive = true
+    isPointerInside = true
+    updateBackground()
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    guard isPressActive else { return }
+    isPointerInside = bounds.contains(convert(event.locationInWindow, from: nil))
+    updateBackground()
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    let point = convert(event.locationInWindow, from: nil)
+    let shouldCommit = isPressActive && bounds.contains(point)
+    isPressActive = false
+    isPointerInside = bounds.contains(point)
+    updateBackground()
+    guard shouldCommit else { return }
+    // A validated mouse-up is already an explicit user acceptance. Commit on
+    // the first click like a native macOS candidate row; the controller still
+    // verifies the exact client, composition generation, row text and secure
+    // state before it is allowed to mutate the host document.
+    onSelect?(candidateIndex, candidateText)
   }
 
   override func mouseEntered(with event: NSEvent) {
@@ -71,10 +97,6 @@ private final class LekhCandidateRowView: NSView {
     self.trackingArea = trackingArea
   }
 
-  override func resetCursorRects() {
-    addCursorRect(bounds, cursor: .pointingHand)
-  }
-
   override func accessibilityPerformPress() -> Bool {
     onSelect?(candidateIndex, candidateText)
     return true
@@ -84,6 +106,8 @@ private final class LekhCandidateRowView: NSView {
     let color: NSColor
     if selected {
       color = NSColor.controlAccentColor.withAlphaComponent(increaseContrast ? 0.34 : 0.20)
+    } else if isPressActive && isPointerInside {
+      color = NSColor.controlAccentColor.withAlphaComponent(increaseContrast ? 0.26 : 0.14)
     } else if isPointerInside {
       color = NSColor.labelColor.withAlphaComponent(increaseContrast ? 0.14 : 0.07)
     } else {
@@ -91,6 +115,13 @@ private final class LekhCandidateRowView: NSView {
     }
     layer?.backgroundColor = color.cgColor
     layer?.cornerRadius = 8
+    if selected && (increaseContrast || differentiateWithoutColor) {
+      layer?.borderWidth = increaseContrast ? 2 : 1
+      layer?.borderColor = NSColor.controlAccentColor.cgColor
+    } else {
+      layer?.borderWidth = 0
+      layer?.borderColor = nil
+    }
   }
 }
 
@@ -102,8 +133,30 @@ public final class LekhCandidatePanel: NSObject {
   public static let passiveVisibleRows = 3
 
   private var panel: NSPanel?
-  private var onHighlight: ((Int, String) -> Void)?
   private var onSelect: ((Int, String) -> Void)?
+  private var stableWidth: CGFloat?
+  private var lastExpandedState: Bool?
+  private var lastContentSignature: ContentSignature?
+
+  private struct AccessibilityAppearance: Equatable {
+    let reduceTransparency: Bool
+    let increaseContrast: Bool
+    let differentiateWithoutColor: Bool
+  }
+
+  private struct ContentSignature: Equatable {
+    let indexes: [Int]
+    let items: [LekhCandidateDisplayItem]
+    let title: String
+    let sourceText: String?
+    let selectedIndex: Int?
+    let page: Int
+    let pageCount: Int
+    let totalCount: Int
+    let expanded: Bool
+    let passiveCommitText: String?
+    let appearance: AccessibilityAppearance
+  }
 
   public var isVisible: Bool {
     guard let panel, panel.isVisible else { return false }
@@ -124,7 +177,6 @@ public final class LekhCandidatePanel: NSObject {
     expanded: Bool,
     passiveCommitText: String? = nil,
     announceSelection: Bool = false,
-    onHighlight: @escaping (Int, String) -> Void,
     onSelect: @escaping (Int, String) -> Void
   ) -> Bool {
     guard !items.isEmpty,
@@ -133,7 +185,6 @@ public final class LekhCandidatePanel: NSObject {
       hide()
       return false
     }
-    self.onHighlight = onHighlight
     self.onSelect = onSelect
 
     let pageSize = Self.pageSize
@@ -143,12 +194,15 @@ public final class LekhCandidatePanel: NSObject {
     let requestedRowCount = expanded ? pageSize : Self.passiveVisibleRows
     let pageEnd = min(pageStart + requestedRowCount, items.count)
     let indexedItems = (pageStart..<pageEnd).map { ($0, items[$0]) }
-
-    let panel = self.panel ?? makePanel()
-    self.panel = panel
-    panel.animationBehavior = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .none : .utilityWindow
-    panel.contentView = contentView(
-      items: indexedItems,
+    let workspace = NSWorkspace.shared
+    let appearance = AccessibilityAppearance(
+      reduceTransparency: workspace.accessibilityDisplayShouldReduceTransparency,
+      increaseContrast: workspace.accessibilityDisplayShouldIncreaseContrast,
+      differentiateWithoutColor: workspace.accessibilityDisplayShouldDifferentiateWithoutColor
+    )
+    let contentSignature = ContentSignature(
+      indexes: indexedItems.map(\.0),
+      items: indexedItems.map(\.1),
       title: title,
       sourceText: sourceText,
       selectedIndex: selectedIndex,
@@ -156,15 +210,50 @@ public final class LekhCandidatePanel: NSObject {
       pageCount: pageCount,
       totalCount: items.count,
       expanded: expanded,
-      passiveCommitText: passiveCommitText
+      passiveCommitText: passiveCommitText,
+      appearance: appearance
     )
+
+    let panel = self.panel ?? makePanel()
+    self.panel = panel
+    panel.animationBehavior = workspace.accessibilityDisplayShouldReduceMotion ? .none : .utilityWindow
+    if panel.contentView == nil || lastContentSignature != contentSignature {
+      panel.contentView = contentView(
+        items: indexedItems,
+        title: title,
+        sourceText: sourceText,
+        selectedIndex: selectedIndex,
+        page: selectedPage,
+        pageCount: pageCount,
+        totalCount: items.count,
+        expanded: expanded,
+        passiveCommitText: passiveCommitText,
+        appearance: appearance
+      )
+      lastContentSignature = contentSignature
+    }
     panel.contentView?.layoutSubtreeIfNeeded()
 
     let fitting = panel.contentView?.fittingSize ?? NSSize(width: 420, height: 180)
     let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchorRect) }) ?? NSScreen.main
     let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     let minimumWidth: CGFloat = expanded ? 360 : 292
-    let width = min(max(fitting.width, minimumWidth), min(480, screenFrame.width - 24))
+    let maximumWidth = min(480, screenFrame.width - 24)
+    guard maximumWidth >= 120, screenFrame.height >= 96 else {
+      hide()
+      return false
+    }
+    let fittedWidth = min(max(fitting.width, min(minimumWidth, maximumWidth)), maximumWidth)
+    let wasVisible = isVisible
+    if !wasVisible || lastExpandedState != expanded {
+      stableWidth = nil
+    }
+    // Candidate labels frequently fluctuate by a few points while the user is
+    // typing. Grow when necessary, but do not repeatedly shrink and re-expand
+    // the window during one passive/browsing presentation.
+    let width = min(max(fittedWidth, stableWidth ?? 0), maximumWidth)
+    stableWidth = width
+    lastExpandedState = expanded
     let height = min(max(fitting.height, 72), screenFrame.height - 24)
     let x = min(max(anchorRect.minX, screenFrame.minX + 12), screenFrame.maxX - width - 12)
     let preferredY = anchorRect.minY - height - 8
@@ -172,8 +261,12 @@ public final class LekhCandidatePanel: NSObject {
     let y = preferredY >= screenFrame.minY + 12
       ? preferredY
       : min(max(alternateY, screenFrame.minY + 12), screenFrame.maxY - height - 12)
-    panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
-    panel.orderFrontRegardless()
+    panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: false)
+    if wasVisible {
+      panel.displayIfNeeded()
+    } else {
+      panel.orderFrontRegardless()
+    }
 
     if announceSelection,
        NSWorkspace.shared.isVoiceOverEnabled,
@@ -190,8 +283,11 @@ public final class LekhCandidatePanel: NSObject {
   }
 
   public func hide() {
-    panel?.orderOut(nil)
-    onHighlight = nil
+    if panel?.isVisible == true {
+      panel?.orderOut(nil)
+    }
+    stableWidth = nil
+    lastExpandedState = nil
     onSelect = nil
   }
 
@@ -203,6 +299,8 @@ public final class LekhCandidatePanel: NSObject {
       defer: false
     )
     panel.level = .floating
+    panel.isFloatingPanel = true
+    panel.worksWhenModal = true
     // Candidate UI belongs to the active text session, not to the IMK agent's
     // activation/hidden state. Keep it independently visible without stealing
     // focus from the host application.
@@ -230,11 +328,11 @@ public final class LekhCandidatePanel: NSObject {
     pageCount: Int,
     totalCount: Int,
     expanded: Bool,
-    passiveCommitText: String?
+    passiveCommitText: String?,
+    appearance: AccessibilityAppearance
   ) -> NSView {
-    let workspace = NSWorkspace.shared
-    let reduceTransparency = workspace.accessibilityDisplayShouldReduceTransparency
-    let increaseContrast = workspace.accessibilityDisplayShouldIncreaseContrast
+    let reduceTransparency = appearance.reduceTransparency
+    let increaseContrast = appearance.increaseContrast
 
     let visual = NSVisualEffectView()
     visual.material = .popover
@@ -312,7 +410,8 @@ public final class LekhCandidatePanel: NSObject {
           isSelected: indexedItem.index == selectedIndex,
           expanded: expanded,
           showBadge: showBadges,
-          increaseContrast: increaseContrast
+          increaseContrast: increaseContrast,
+          differentiateWithoutColor: appearance.differentiateWithoutColor
         )
       )
     }
@@ -348,19 +447,18 @@ public final class LekhCandidatePanel: NSObject {
     isSelected: Bool,
     expanded: Bool,
     showBadge: Bool,
-    increaseContrast: Bool
+    increaseContrast: Bool,
+    differentiateWithoutColor: Bool
   ) -> NSView {
     let row = LekhCandidateRowView(
       candidateIndex: absoluteIndex,
       candidateText: item.text,
       selected: isSelected,
-      increaseContrast: increaseContrast
+      increaseContrast: increaseContrast,
+      differentiateWithoutColor: differentiateWithoutColor
     )
     row.onSelect = { [weak self] index, candidate in
       self?.onSelect?(index, candidate)
-    }
-    row.onHighlight = { [weak self] index, candidate in
-      self?.onHighlight?(index, candidate)
     }
     row.toolTip = item.explanation
     row.setAccessibilityElement(true)
@@ -377,6 +475,16 @@ public final class LekhCandidatePanel: NSObject {
     container.spacing = 8
     container.edgeInsets = NSEdgeInsets(top: 4, left: 3, bottom: 4, right: 3)
     container.translatesAutoresizingMaskIntoConstraints = false
+
+    if differentiateWithoutColor {
+      let selectionIndicator = NSTextField(labelWithString: isSelected ? "✓" : "")
+      selectionIndicator.alignment = .center
+      selectionIndicator.font = .systemFont(ofSize: 11, weight: .bold)
+      selectionIndicator.textColor = .labelColor
+      selectionIndicator.widthAnchor.constraint(equalToConstant: 12).isActive = true
+      selectionIndicator.setAccessibilityElement(false)
+      container.addArrangedSubview(selectionIndicator)
+    }
 
     let shortcutText = expanded ? "\(shortcutNumber)" : "⌥\(shortcutNumber)"
     let shortcut = NSTextField(labelWithString: shortcutText)

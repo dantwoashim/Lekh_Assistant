@@ -72,6 +72,7 @@ public final class LekhInlinePreviewPanel {
     content.setAccessibilityRole(.staticText)
     content.setAccessibilityIdentifier("lekh.inlineCompletion")
     content.setAccessibilityLabel(accessibilityText)
+    content.setAccessibilityHelp(acceptanceHint)
     let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchorRect) }) ?? NSScreen.main
     let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     let x = anchorRect.maxX + 1
@@ -109,12 +110,15 @@ public final class LekhInlinePreviewPanel {
     let panel = self.panel ?? makePanel()
     self.panel = panel
     panel.contentView = content
-    panel.setAccessibilityLabel(accessibilityText)
 
     let y = min(max(anchorRect.minY, visible.minY + 4), visible.maxY - height - 4)
-    panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
-    panel.orderFrontRegardless()
-    panel.displayIfNeeded()
+    let wasVisible = isVisible
+    panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: false)
+    if wasVisible {
+      panel.displayIfNeeded()
+    } else {
+      panel.orderFrontRegardless()
+    }
 
     if announce {
       self.announce(suffix: suffix, acceptanceHint: acceptanceHint)
@@ -135,7 +139,9 @@ public final class LekhInlinePreviewPanel {
   }
 
   public func hide() {
-    panel?.orderOut(nil)
+    if panel?.isVisible == true {
+      panel?.orderOut(nil)
+    }
   }
 
   private func makePanel() -> NSPanel {
@@ -146,6 +152,8 @@ public final class LekhInlinePreviewPanel {
       defer: false
     )
     panel.level = .floating
+    panel.isFloatingPanel = true
+    panel.worksWhenModal = true
     // Input-method agents may be hidden by LaunchServices while their client
     // remains active. This surface must remain independently orderable without
     // activating or unhiding the agent application.
@@ -158,8 +166,10 @@ public final class LekhInlinePreviewPanel {
     panel.isReleasedWhenClosed = false
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
     panel.animationBehavior = .none
-    panel.setAccessibilityElement(true)
-    panel.setAccessibilityRole(.staticText)
+    // The content view is the single semantic static-text element. Exposing
+    // the window as a second identical element makes VoiceOver read the ghost
+    // twice when traversing the host's nearby accessibility hierarchy.
+    panel.setAccessibilityElement(false)
     panel.setAccessibilityIdentifier("lekh.inlineCompletionPanel")
     return panel
   }

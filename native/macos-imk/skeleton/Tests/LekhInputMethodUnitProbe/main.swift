@@ -45,6 +45,19 @@ private func verifyCandidateStateMachine() {
   require(shortcuts.candidateForShortcut(3) == nil, "A shortcut beyond the final page must be rejected")
   shortcuts.clearSelection()
   require(shortcuts.selectedCandidate() == nil, "Clearing selection must restore passive state")
+
+  let noOp = LekhCandidateController()
+  noOp.updateCandidates(["एक", "दुई", "तीन"])
+  require(noOp.moveSelection(delta: 0) == nil, "A zero row delta must not invent a selection")
+  require(noOp.movePage(delta: 0, pageSize: 8) == nil, "A zero page delta must remain passive")
+  require(noOp.currentState().selectedIndex == nil, "No-op navigation must preserve passive state")
+
+  let hardened = LekhCandidateController()
+  hardened.updateCandidates((1...18).map(String.init))
+  require(hardened.movePage(delta: Int.max, pageSize: 8) == "17", "A huge Page Down delta must clamp to the final page")
+  require(hardened.movePage(delta: Int.min, pageSize: 8) == "1", "A huge Page Up delta must clamp without integer overflow")
+  require(hardened.moveSelection(delta: Int.max) != nil, "A huge row delta must wrap without integer overflow")
+  require(hardened.moveSelection(delta: Int.min) != nil, "A minimum row delta must wrap without integer overflow")
 }
 
 private func verifyAutoCommitPolicy() {

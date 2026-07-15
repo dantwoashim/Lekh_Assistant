@@ -258,8 +258,14 @@ describe("macOS IMK proof target source", () => {
     expect(candidatePanel).toContain("override func accessibilityPerformPress() -> Bool");
     expect(candidatePanel).toContain("accessibilityDisplayShouldReduceTransparency");
     expect(candidatePanel).toContain("accessibilityDisplayShouldIncreaseContrast");
+    expect(candidatePanel).toContain("accessibilityDisplayShouldDifferentiateWithoutColor");
+    expect(candidatePanel).toContain("differentiateWithoutColor");
+    expect(candidatePanel).toContain('labelWithString: isSelected ? "✓" : ""');
     expect(candidatePanel).toContain("panel.canHide = false");
     expect(candidatePanel).not.toContain("NSEvent.mouseLocation");
+    expect(candidatePanel).not.toContain("cursor: .pointingHand");
+    expect(inlinePreviewPanel).toContain("panel.setAccessibilityElement(false)");
+    expect(inlinePreviewPanel).toContain("content.setAccessibilityHelp(acceptanceHint)");
   });
 
   it("uses passive, progressive candidate disclosure and route-consistent safe acceptance", () => {
@@ -300,12 +306,21 @@ describe("macOS IMK proof target source", () => {
     expect(candidatePanel).toContain("passiveCommitText: String?");
     expect(candidatePanel).toContain('LekhL10n.text("candidate.hint.passiveAuto", passiveCommitText)');
     expect(candidatePanel).toContain("public static let passiveVisibleRows = 3");
+    expect(candidatePanel).toContain("override func mouseDown(with event:");
+    expect(candidatePanel).toContain("override func mouseDragged(with event:");
     expect(candidatePanel).toContain("mouseUp(with event:");
-    expect(candidatePanel).toContain("if event.clickCount >= 2");
-    expect(candidatePanel).toContain("onHighlight?(candidateIndex, candidateText)");
+    expect(candidatePanel).toContain("let shouldCommit = isPressActive && bounds.contains(point)");
     expect(candidatePanel).toContain("onSelect?(candidateIndex, candidateText)");
-    expect(controller).toContain("onHighlight: { [weak self] selectedIndex, selectedText in");
+    expect(candidatePanel).not.toContain("onHighlight");
+    expect(controller).toContain("onSelect: { [weak self] selectedIndex, selectedText in");
     expect(candidatePanel).toContain("let minimumWidth: CGFloat = expanded ? 360 : 292");
+    expect(candidatePanel).toContain("private var stableWidth: CGFloat?");
+    expect(candidatePanel).toContain("lastContentSignature != contentSignature");
+    expect(candidatePanel).toContain("panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: false)");
+    expect(candidatePanel).toContain("if wasVisible {");
+    expect(candidatePanel).toContain("panel.displayIfNeeded()");
+    expect(candidateController).toContain("delta != 0");
+    expect(candidateController).toContain("delta % state.candidates.count");
   });
 
   it("fails open through command-selector secure fields and never traps host Escape", () => {
@@ -542,6 +557,7 @@ describe("macOS IMK proof target source", () => {
   it("binds ghost evidence to the exact host process, surface, text, and installed build", () => {
     const probe = readFileSync(join(root, "scripts/check-macos-imk-host-ghost.mjs"), "utf8");
     const interactionProbe = readFileSync(join(root, "scripts/check-macos-imk-host-interaction-safety.mjs"), "utf8");
+    const hostHarness = readFileSync(join(root, "scripts/lib/macos-imk-host-harness.mjs"), "utf8");
 
     expect(probe).toContain("CGEvent.postToPid");
     expect(probe).toContain("targetedKeyPostingSource");
@@ -550,19 +566,29 @@ describe("macOS IMK proof target source", () => {
     expect(probe).toContain('row.identifier === "lekh.inlineCompletionPanel"');
     expect(probe).toContain('line.includes("surface.result ghost=1")');
     expect(probe).toContain('actual !== "लेखहरू"');
-    expect(probe).toContain("bundleIdentity: installedBundleIdentity()");
-    expect(probe).toContain("executableSha256");
-    expect(probe).toContain('productionLifecycleEvidence: runtimeLaunchMode === "tis"');
+    expect(probe).toContain("bundleIdentity = installedBundleIdentity(appBundle)");
+    expect(probe).toContain("waitForExactRuntimeHealth");
+    expect(probe).toContain("productionLifecycleEvidence: true");
+    expect(probe).toContain("rawABCObserved");
     expect(interactionProbe).toContain("CGEvent.postToPid");
     expect(interactionProbe).toContain("targetedPostingSource");
     expect(interactionProbe).not.toContain(".cghidEventTap");
-    expect(interactionProbe).toContain('const expectedId = "com.lekh.inputmethod.LekhKeyboard.Main"');
+    expect(interactionProbe).toContain("lekhInputSourceId");
+    expect(interactionProbe).toContain("engineProof");
+    expect(hostHarness).toContain('export const lekhInputSourceId = "com.lekh.inputmethod.LekhKeyboard.Main"');
+    expect(hostHarness).toContain('run("/usr/bin/open", ["-F", "-n", "-a", "TextEdit", realDocumentPath])');
+    expect(hostHarness).toContain("processExecutablePath(record.processIdentifier)");
+    expect(hostHarness).toContain("running executable SHA-256 does not match the installed bundle");
+    expect(hostHarness).toContain("restoreExactInputSource");
+    expect(hostHarness.match(/var selectedRange = CFRange/g)).toHaveLength(1);
+    expect(hostHarness).toContain('snapshot?.operationStatus === expectedStatus');
   });
 
   it("does not auto-select the unfinished IMK during normal dev install", () => {
     const installScript = readFileSync(join(root, "native/macos-imk/skeleton/install-dev.sh"), "utf8");
     const registerScript = readFileSync(join(root, "native/macos-imk/skeleton/register-dev.swift"), "utf8");
     const checkScript = readFileSync(join(root, "scripts/check-macos-imk-dev-install.mjs"), "utf8");
+    const hostHarness = readFileSync(join(root, "scripts/lib/macos-imk-host-harness.mjs"), "utf8");
 
     expect(registerScript).toContain("--select");
     expect(registerScript).toContain("--select-only");
@@ -593,10 +619,12 @@ describe("macOS IMK proof target source", () => {
     expect(installScript).not.toContain("killall imklaunchagent");
     expect(installScript).toContain('swift "$(dirname "$0")/register-dev.swift" "$DEST"');
     expect(installScript).not.toContain('swift "$(dirname "$0")/register-dev.swift" "$DEST" --select');
-    expect(checkScript).toContain("unsafe until host-app typing is proven");
     expect(checkScript).toContain('"--select-only"');
-    expect(checkScript).toContain("runtimeHealthIssues");
-    expect(checkScript).toContain("controllerActivatedAt");
+    expect(checkScript).toContain("launchColdTextEdit");
+    expect(checkScript).toContain("waitForExactRuntimeHealth");
+    expect(checkScript).toContain("restoreExactInputSource");
+    expect(checkScript).toContain("unattributedWarningLines");
+    expect(hostHarness).toContain("controllerActivatedAt");
     expect(checkScript).toContain("registryIsExact");
     expect(checkScript).not.toContain('spawn(executablePath');
     expect(checkScript).not.toContain('spawnSync("pkill"');

@@ -112,6 +112,28 @@ private struct LekhCompositionAnchor {
   let hostFont: NSFont?
 }
 
+/// Computes the only document range that the unmarked fail-open path may
+/// replace. The raw token was already inserted immediately before the caret;
+/// replacing while the host owns a non-empty selection could erase unrelated
+/// user text after a mouse/selection change.
+public enum LekhFailOpenReplacementPolicy {
+  public static func replacementRange(
+    rawUTF16Length: Int,
+    selection: NSRange
+  ) -> NSRange? {
+    guard rawUTF16Length > 0,
+          selection.location != NSNotFound,
+          selection.length == 0,
+          selection.location >= rawUTF16Length else {
+      return nil
+    }
+    return NSRange(
+      location: selection.location - rawUTF16Length,
+      length: rawUTF16Length
+    )
+  }
+}
+
 /// Binds an actionable suggestion surface to the exact host client and engine
 /// snapshot that presented it. A window merely remaining on screen is not
 /// sufficient authority to insert text after a focus/session transition.
@@ -462,6 +484,7 @@ open class LekhInputController: IMKInputController {
     }
 
     if shouldPassThrough(modifiers: modifiers) {
+      finishCompositionBeforeModifierPassThrough(client: sender as? IMKTextInput)
       lekhNativeLog("event.passThrough route=\(route) reason=modifier")
       return false
     }
@@ -501,6 +524,14 @@ open class LekhInputController: IMKInputController {
       clearStateForSecureInput(client: sender as? IMKTextInput)
       return false
     }
+    // Command callbacks can be delivered after a responder transition even
+    // when the key-event route has not run for the new client. Apply the same
+    // ownership barrier before Backspace is allowed to mutate engine state;
+    // otherwise a delayed delete could rebind old marked text to a new field.
+    if let client = sender as? IMKTextInput {
+      prepareForClientTransition(client)
+    }
+    applyPendingPreferencesAtBoundary()
     if selector == #selector(NSResponder.cancelOperation(_:)) {
       guard engineClient.hasComposition(sessionId: sessionId) else { return false }
       if !usesInlineComposition {
@@ -626,6 +657,23 @@ open class LekhInputController: IMKInputController {
           let client = sender as? IMKTextInput else { return false }
     _ = commitRawComposition(client: client, suffix: "")
     return false
+  }
+
+  /// Finalizes the current raw token, then returns control to the host so its
+  /// Command/Control/Option shortcut is delivered exactly once. In the
+  /// unmarked fail-open route the raw text is already in the document, so only
+  /// local engine/UI state is reset—reinserting it would duplicate text.
+  private func finishCompositionBeforeModifierPassThrough(client: IMKTextInput?) {
+    guard engineClient.hasComposition(sessionId: sessionId) else { return }
+    if usesInlineComposition, let client {
+      _ = commitRawComposition(client: client, suffix: "")
+      return
+    }
+    engineClient.resetSession(sessionId)
+    clearCompositionOwner()
+    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
+    candidateSelectionExplicit = false
+    hideCandidates()
   }
 
   open override func candidates(_ sender: Any!) -> [Any]! {
@@ -1148,7 +1196,15 @@ open class LekhInputController: IMKInputController {
     }
 
     if key == "\u{7f}" {
-      _ = engineDecision(for: key, route: route)
+      let decision = engineDecision(for: key, route: route)
+      candidateState.updateCandidates(
+        decision.candidates,
+        rawBuffer: engineClient.rawBuffer(sessionId: sessionId),
+        modeLabel: nativeMode.menuLabel
+      )
+      if decision.shouldCancel {
+        hideCandidates()
+      }
       lekhNativeLog("failOpen route=\(route) action=backspace")
       return false
     }
@@ -1177,14 +1233,19 @@ open class LekhInputController: IMKInputController {
       return false
     }
 
+    // A delimiter decision ends the engine composition even when the host
+    // cannot safely expose a document range. Revoke all stale candidate UI
+    // before returning the delimiter to the host.
+    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
+    candidateSelectionExplicit = false
+    hideCandidates()
+
     guard let client = sender as? IMKTextInput else {
       lekhNativeLog("failOpen route=\(route) action=noClient")
       return false
     }
 
     if replacePreviouslyPassedThroughRawText(raw, with: committed, client: client) {
-      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-      hideCandidates()
       lekhNativeLog("failOpen route=\(route) action=replace rawLength=\(raw.utf16.count) committedLength=\(committed.utf16.count)")
       return true
     }
@@ -1196,10 +1257,10 @@ open class LekhInputController: IMKInputController {
   private func replacePreviouslyPassedThroughRawText(_ raw: String, with committed: String, client: IMKTextInput) -> Bool {
     let selection = client.selectedRange()
     let rawLength = raw.utf16.count
-    guard selection.location != NSNotFound, selection.location >= rawLength else {
-      return false
-    }
-    let range = NSRange(location: selection.location - rawLength, length: rawLength + selection.length)
+    guard let range = LekhFailOpenReplacementPolicy.replacementRange(
+      rawUTF16Length: rawLength,
+      selection: selection
+    ) else { return false }
     client.insertText(committed, replacementRange: range)
     return true
   }
@@ -1842,7 +1903,13 @@ open class LekhInputController: IMKInputController {
             self.engineClient.rawBuffer(sessionId: sessionSnapshot) == rawBuffer,
             !self.compositionSurfacesDismissed else { return }
 
-      let surfaceClient = self.client()
+      guard let surfaceClient = self.client(), self.isCompositionOwner(surfaceClient) else {
+        // A delayed render must never follow focus to a different responder.
+        // Keep the old marked range untouched; only its auxiliary UI is stale.
+        self.hideCandidates()
+        lekhNativeLog("surface.suppressed reason=compositionOwnerMismatch")
+        return
+      }
       let freshAnchor = self.compositionAnchor(for: surfaceClient)
       if let freshAnchor {
         self.lastCompositionAnchorRect = freshAnchor.rect
@@ -1933,6 +2000,8 @@ open class LekhInputController: IMKInputController {
             !IsSecureEventInputEnabled(),
             self.sessionId == sessionSnapshot,
             self.engineClient.rawBuffer(sessionId: sessionSnapshot) == rawBuffer,
+            let client = self.client(),
+            self.isCompositionOwner(client),
             !neuralCandidates.isEmpty else { return }
       let merged = Self.uniqueCandidates(deterministicCandidates + neuralCandidates, limit: 8)
       self.candidateState.updateCandidates(merged, rawBuffer: rawBuffer, modeLabel: self.nativeMode.menuLabel)
@@ -1960,7 +2029,11 @@ open class LekhInputController: IMKInputController {
     anchorRect: NSRect? = nil,
     announceSelection: Bool = false
   ) -> LekhCandidatePresentation {
-    let presentationClient = self.client()
+    guard let presentationClient = self.client(),
+          isCompositionOwner(presentationClient) else {
+      hideCandidateWindow()
+      return .unavailable
+    }
     guard !compositionSurfacesDismissed,
           visibleInlineSuggestion(for: presentationClient) == nil else {
       hideCandidateWindow()
@@ -1997,38 +2070,22 @@ open class LekhInputController: IMKInputController {
         expanded: candidateSelectionExplicit,
         passiveCommitText: activeAutoCommitCandidate?.text,
         announceSelection: announceSelection,
-        onHighlight: { [weak self] selectedIndex, selectedText in
+        onSelect: { [weak self] selectedIndex, selectedText in
           guard let self, let client = self.client() else { return }
           guard !IsSecureEventInputEnabled(),
                 self.isCurrentSurfaceToken(presentationToken, client: client),
                 self.candidatePresentationToken == presentationToken,
-                self.customCandidatePanel.isVisible else { return }
+                self.customCandidatePanel.isVisible else {
+            return
+          }
           let currentCandidates = self.candidateState.currentState().candidates
           guard currentCandidates.indices.contains(selectedIndex),
                 currentCandidates[selectedIndex] == selectedText else { return }
-          self.dismissInlineSuggestion()
           self.candidateState.select(index: selectedIndex)
           self.candidateSelectionExplicit = true
-          self.compositionSurfacesDismissed = false
-          if !self.refreshCandidatePanel(announceSelection: true).isVisible {
-            self.revokeCandidateAcceptance()
-          }
+          self.commitCandidateText(selectedText, client: client, suffix: "")
         }
-      ) { [weak self] selectedIndex, selectedText in
-        guard let self, let client = self.client() else { return }
-        guard !IsSecureEventInputEnabled(),
-              self.isCurrentSurfaceToken(presentationToken, client: client),
-              self.candidatePresentationToken == presentationToken,
-              self.customCandidatePanel.isVisible else {
-          return
-        }
-        let currentCandidates = self.candidateState.currentState().candidates
-        guard currentCandidates.indices.contains(selectedIndex),
-              currentCandidates[selectedIndex] == selectedText else { return }
-        self.candidateState.select(index: selectedIndex)
-        self.candidateSelectionExplicit = true
-        self.commitCandidateText(selectedText, client: client, suffix: "")
-      }
+      )
       lekhHostProbeLog(
         "surface.candidates custom=1 count=\(state.displayItems.count) shown=\(panelShown ? 1 : 0) visible=\(customCandidatePanel.isVisible ? 1 : 0)"
       )
@@ -2143,7 +2200,7 @@ open class LekhInputController: IMKInputController {
   }
 
   private func makeSurfaceToken(for client: IMKTextInput?) -> LekhSurfaceToken? {
-    guard let client else { return nil }
+    guard let client, isCompositionOwner(client) else { return nil }
     return LekhSurfaceToken(
       generation: surfaceRenderGeneration,
       sessionId: sessionId,

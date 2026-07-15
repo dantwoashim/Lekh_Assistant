@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import InputMethodKit
 import LekhInputMethod
 
 private let skeletonDirectory = URL(fileURLWithPath: #filePath)
@@ -26,6 +28,111 @@ setenv("LEKH_TEST_TOKEN_COMPLETIONS_MANIFEST_PATH", sourceTokenCompletionManifes
 setenv("LEKH_TEST_PERSONALIZATION_DB_PATH", testPersonalizationDatabase.path, 1)
 setenv("LEKH_TEST_PERSONALIZATION_RESET_EPOCH", "1", 1)
 private let behaviorEngine = LekhNativeEngineClient()
+
+private final class ProbeTextInputClient: NSObject, IMKTextInput {
+  private(set) var text = ""
+  private(set) var markedTextMutations: [String] = []
+  private(set) var committedTextMutations: [String] = []
+  private var selection = NSRange(location: 0, length: 0)
+  private var activeMarkedRange = NSRange(location: NSNotFound, length: NSNotFound)
+
+  func insertText(_ value: Any!, replacementRange: NSRange) {
+    let inserted = Self.string(from: value)
+    committedTextMutations.append(inserted)
+    let target = resolvedRange(replacementRange)
+    replace(target, with: inserted)
+    activeMarkedRange = NSRange(location: NSNotFound, length: NSNotFound)
+  }
+
+  func setMarkedText(_ value: Any!, selectionRange: NSRange, replacementRange: NSRange) {
+    let inserted = Self.string(from: value)
+    markedTextMutations.append(inserted)
+    let target = resolvedRange(replacementRange)
+    let start = target.location
+    replace(target, with: inserted)
+    activeMarkedRange = inserted.isEmpty
+      ? NSRange(location: NSNotFound, length: NSNotFound)
+      : NSRange(location: start, length: inserted.utf16.count)
+    selection = NSRange(
+      location: start + min(selectionRange.location, inserted.utf16.count),
+      length: min(selectionRange.length, max(0, inserted.utf16.count - selectionRange.location))
+    )
+  }
+
+  func selectedRange() -> NSRange { selection }
+  func markedRange() -> NSRange { activeMarkedRange }
+
+  func setHostSelection(_ range: NSRange) {
+    selection = range
+  }
+
+  func attributedSubstring(from range: NSRange) -> NSAttributedString! {
+    guard let swiftRange = Range(range, in: text) else { return nil }
+    return NSAttributedString(string: String(text[swiftRange]))
+  }
+
+  func length() -> Int { text.utf16.count }
+
+  func characterIndex(
+    for point: NSPoint,
+    tracking mappingMode: IMKLocationToOffsetMappingMode,
+    inMarkedRange: UnsafeMutablePointer<ObjCBool>!
+  ) -> Int {
+    inMarkedRange?.pointee = false
+    return NSNotFound
+  }
+
+  func attributes(
+    forCharacterIndex index: Int,
+    lineHeightRectangle lineRect: UnsafeMutablePointer<NSRect>!
+  ) -> [AnyHashable: Any]! {
+    lineRect?.pointee = NSRect(x: 20, y: 20, width: 1, height: 18)
+    return [:]
+  }
+
+  func validAttributesForMarkedText() -> [Any]! { [] }
+  func overrideKeyboard(withKeyboardNamed keyboardUniqueName: String!) {}
+  func selectMode(_ modeIdentifier: String!) {}
+  func supportsUnicode() -> Bool { true }
+  func bundleIdentifier() -> String! { "com.lekh.behavior-probe" }
+  func windowLevel() -> CGWindowLevel { 0 }
+  func supportsProperty(_ property: TSMDocumentPropertyTag) -> Bool { true }
+  func uniqueClientIdentifierString() -> String! { "probe-\(ObjectIdentifier(self).hashValue)" }
+
+  func string(from range: NSRange, actualRange: NSRangePointer!) -> String! {
+    guard let swiftRange = Range(range, in: text) else { return nil }
+    actualRange?.pointee = range
+    return String(text[swiftRange])
+  }
+
+  func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer!) -> NSRect {
+    actualRange?.pointee = range
+    return NSRect(x: 20, y: 20, width: 1, height: 18)
+  }
+
+  private static func string(from value: Any?) -> String {
+    if let attributed = value as? NSAttributedString { return attributed.string }
+    return value as? String ?? ""
+  }
+
+  private func resolvedRange(_ requested: NSRange) -> NSRange {
+    if requested.location != NSNotFound,
+       requested.location <= text.utf16.count,
+       requested.length <= text.utf16.count - requested.location {
+      return requested
+    }
+    if activeMarkedRange.location != NSNotFound {
+      return activeMarkedRange
+    }
+    return selection
+  }
+
+  private func replace(_ range: NSRange, with inserted: String) {
+    guard let swiftRange = Range(range, in: text) else { return }
+    text.replaceSubrange(swiftRange, with: inserted)
+    selection = NSRange(location: range.location + inserted.utf16.count, length: 0)
+  }
+}
 
 @discardableResult
 private func require(_ condition: @autoclosure () -> Bool, _ message: String) -> Bool {
@@ -594,6 +701,122 @@ private func assertEscapeCancelsAndBackspaceEditsComposition() {
   require(!engine.hasComposition(sessionId: sessionId), "Escape must reset composition")
 }
 
+private func assertCompositionOwnershipAndHostPassThroughSafety() {
+  let previousInlineComposition = ProcessInfo.processInfo.environment["LEKH_IMK_INLINE_COMPOSITION"]
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "1", 1)
+  defer {
+    if let previousInlineComposition {
+      setenv("LEKH_IMK_INLINE_COMPOSITION", previousInlineComposition, 1)
+    } else {
+      unsetenv("LEKH_IMK_INLINE_COMPOSITION")
+    }
+  }
+
+  let ownerEngine = LekhNativeEngineClient()
+  let ownerController = LekhInputController(engineClient: ownerEngine)
+  let originalClient = ProbeTextInputClient()
+  let newlyFocusedClient = ProbeTextInputClient()
+
+  require(
+    ownerController.inputText("ab", client: originalClient),
+    "The controller probe must establish an inline composition"
+  )
+  let originalMutationCount = originalClient.markedTextMutations.count
+  let delayedBackspaceHandled = ownerController.didCommand(
+    by: #selector(NSResponder.deleteBackward(_:)),
+    client: newlyFocusedClient
+  )
+  require(!delayedBackspaceHandled, "A command from a different client must pass through")
+  require(
+    newlyFocusedClient.markedTextMutations.isEmpty && newlyFocusedClient.committedTextMutations.isEmpty,
+    "A delayed Backspace must never rebind an old composition into the newly focused client"
+  )
+  require(
+    originalClient.markedTextMutations.count == originalMutationCount,
+    "A client transition must not mutate the old document through a delayed command"
+  )
+  require(
+    (ownerController.composedString(newlyFocusedClient) as? String) == "",
+    "A client transition must clear the abandoned in-memory composition"
+  )
+
+  let shortcutEngine = LekhNativeEngineClient()
+  let shortcutController = LekhInputController(engineClient: shortcutEngine)
+  let shortcutClient = ProbeTextInputClient()
+  require(
+    shortcutController.inputText("ab", client: shortcutClient),
+    "The shortcut probe must establish an inline composition"
+  )
+  let shortcutHandled = shortcutController.inputText(
+    "c",
+    key: 8,
+    modifiers: Int(NSEvent.ModifierFlags.command.rawValue),
+    client: shortcutClient
+  )
+  require(!shortcutHandled, "A Command shortcut must remain owned by the host")
+  require(
+    shortcutClient.committedTextMutations.last == "ab",
+    "A Command shortcut must first finalize exactly the user's raw composition"
+  )
+  require(
+    (shortcutController.composedString(shortcutClient) as? String) == "",
+    "A host shortcut must not leave a stale engine buffer behind"
+  )
+
+  let safeRange = LekhFailOpenReplacementPolicy.replacementRange(
+    rawUTF16Length: 3,
+    selection: NSRange(location: 7, length: 0)
+  )
+  require(
+    safeRange == NSRange(location: 4, length: 3),
+    "Fail-open replacement may target only the raw token immediately before a collapsed caret"
+  )
+  require(
+    LekhFailOpenReplacementPolicy.replacementRange(
+      rawUTF16Length: 3,
+      selection: NSRange(location: 7, length: 2)
+    ) == nil,
+    "Fail-open replacement must not erase a live host selection"
+  )
+  require(
+    LekhFailOpenReplacementPolicy.replacementRange(
+      rawUTF16Length: 3,
+      selection: NSRange(location: NSNotFound, length: NSNotFound)
+    ) == nil,
+    "A host without document-range access must fail open without replacement"
+  )
+
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "0", 1)
+  let failOpenController = LekhInputController(engineClient: LekhNativeEngineClient())
+  let failOpenClient = ProbeTextInputClient()
+  require(
+    failOpenController.inputText("ab", client: failOpenClient),
+    "The unmarked fallback must insert raw typing immediately"
+  )
+  failOpenClient.setHostSelection(NSRange(location: 0, length: 1))
+  let unsafeDelimiterHandled = failOpenController.inputText(
+    " ",
+    key: 49,
+    modifiers: 0,
+    client: failOpenClient
+  )
+  require(
+    !unsafeDelimiterHandled,
+    "A fail-open delimiter must return to the host when selection-safe replacement is impossible"
+  )
+  require(
+    failOpenClient.text == "ab",
+    "Fail-open conversion must not erase or replace a host-owned selection"
+  )
+  require(
+    failOpenController.candidates(failOpenClient).isEmpty,
+    "An ended fail-open composition must not leave stale candidates actionable"
+  )
+  ownerController.resetSession()
+  shortcutController.resetSession()
+  failOpenController.resetSession()
+}
+
 private func assertPersonalizationResetClearsLiveRankingState() {
   let engine = behaviorEngine
   let raw = "lekhresettoken"
@@ -828,6 +1051,7 @@ assertTokenCompletionArtifactIsVerifiedAndExplicitOnly()
 assertTraditionalRomanizedModeShowsRomanizedTargetPreview()
 assertPassiveSpaceAutoCommitPolicyIsEvidenceBounded()
 assertEscapeCancelsAndBackspaceEditsComposition()
+assertCompositionOwnershipAndHostPassThroughSafety()
 assertPersonalizationResetClearsLiveRankingState()
 assertRepositoryCuratedTokenQualityContract()
 assertSharedTokenPackNativeConformance()
