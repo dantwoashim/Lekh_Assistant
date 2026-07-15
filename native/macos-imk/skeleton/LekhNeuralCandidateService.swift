@@ -13,13 +13,13 @@ public final class LekhNeuralCandidateService {
   private static let verifiedContextRescorerContractVersion: Int? = nil
 
   private let queue = DispatchQueue(label: "com.lekh.inputmethod.neural-candidate-tail", qos: .userInitiated)
-  private let model: MLModel?
-  private let vocab: LekhNeuralVocabMetadata?
-  private let deterministicTokenInputs: Set<String>
   private let requestLock = NSLock()
   private var requestGeneration: UInt64 = 0
   private let runtimeStateLock = NSLock()
-  private var runtimeState: LekhNeuralRuntimeState
+  private var runtimeState: LekhNeuralRuntimeState = .loading
+  private var model: MLModel?
+  private var vocab: LekhNeuralVocabMetadata?
+  private var deterministicTokenInputs: Set<String> = []
 
   public var status: String {
     runtimeStateLock.lock()
@@ -29,51 +29,12 @@ public final class LekhNeuralCandidateService {
   }
 
   public init(bundle: Bundle = .main) {
-    let experimentalEnabled = Self.experimentalOverrideEnabled(bundle: bundle)
-    let deterministicTokenInputs = Self.loadDeterministicTokenInputs(bundle: bundle)
-    self.deterministicTokenInputs = deterministicTokenInputs
-
-    var verifiedArtifact: LekhVerifiedNeuralArtifact?
-    var initialState: LekhNeuralRuntimeState = .gated(.resourceMissing)
-    var requiresKnownAnswerAttestation = false
-    do {
-      let artifact = try Self.loadVerifiedArtifact(bundle: bundle)
-      verifiedArtifact = artifact
-      if experimentalEnabled {
-        // The override is deliberately labeled experimental even if the same
-        // bytes later become production-qualified. A development bundle must
-        // never emit a production-ready claim.
-        initialState = .experimentalReady
-      } else if artifact.manifest.productionEligible {
-        try Self.validateProductionContract(artifact)
-        initialState = .productionAttestationPending
-        requiresKnownAnswerAttestation = true
-      } else {
-        initialState = .gated(.manifestNotProductionEligible)
-      }
-    } catch let failure as LekhNeuralGateFailure {
-      initialState = .gated(failure)
-    } catch {
-      initialState = .gated(.artifactVerificationFailed)
-    }
-
-    self.model = verifiedArtifact?.model
-    self.vocab = verifiedArtifact?.vocab
-    self.runtimeState = initialState
-
-    if requiresKnownAnswerAttestation, let artifact = verifiedArtifact {
-      // Semantic attestation is intentionally off the IMK startup/hot path.
-      // Until it completes, deterministic typing remains fully available and
-      // neural requests fail open with no candidates.
-      queue.async { [weak self, artifact] in
-        guard let self else { return }
-        let passed = Self.verifyKnownAnswers(
-          model: artifact.model,
-          vocab: artifact.vocab,
-          cases: artifact.manifest.requiredCases
-        )
-        self.finishProductionAttestation(passed: passed)
-      }
+    // Controller construction and the first deterministic keystroke must not
+    // hash resources, instantiate Core ML, or build neural indexes. While this
+    // worker verifies the optional artifact, requests fail open with no neural
+    // tail and the in-process deterministic engine remains fully available.
+    queue.async { [weak self, bundle] in
+      self?.loadVerifiedRuntime(bundle: bundle)
     }
   }
 
@@ -92,20 +53,18 @@ public final class LekhNeuralCandidateService {
       return
     }
     let normalized = Self.normalize(rawInput)
-    guard canInfer,
-          let model,
-          let vocab,
+    guard let runtime = inferenceSnapshot(),
           LekhMixedScriptPolicy.preserveCandidate(for: rawInput) == nil,
           Self.isSafeToken(normalized),
-          normalized.count < vocab.input.maxLength,
-          Self.isRepresentableInput(normalized, vocab: vocab),
-          !deterministicTokenInputs.contains(normalized),
+          normalized.count < runtime.vocab.input.maxLength,
+          Self.isRepresentableInput(normalized, vocab: runtime.vocab),
+          !runtime.deterministicTokenInputs.contains(normalized),
           normalized.count >= 3 else {
       completion([])
       return
     }
 
-    queue.async { [weak self, model, vocab] in
+    queue.async { [weak self, model = runtime.model, vocab = runtime.vocab] in
       guard let self, self.isCurrentRequest(generation) else { return }
       let started = DispatchTime.now().uptimeNanoseconds
       let budgetNanoseconds: UInt64 = 45_000_000
@@ -134,11 +93,62 @@ public final class LekhNeuralCandidateService {
     _ = beginRequest()
   }
 
-  private var canInfer: Bool {
+  private func inferenceSnapshot() -> (
+    model: MLModel,
+    vocab: LekhNeuralVocabMetadata,
+    deterministicTokenInputs: Set<String>
+  )? {
     runtimeStateLock.lock()
-    let result = runtimeState.canInfer
+    defer { runtimeStateLock.unlock() }
+    guard runtimeState.canInfer, let model, let vocab else { return nil }
+    return (model, vocab, deterministicTokenInputs)
+  }
+
+  private func loadVerifiedRuntime(bundle: Bundle) {
+    let deterministicInputs = Self.loadDeterministicTokenInputs(bundle: bundle)
+    let experimentalEnabled = Self.experimentalOverrideEnabled(bundle: bundle)
+    var verifiedArtifact: LekhVerifiedNeuralArtifact?
+    var loadedState: LekhNeuralRuntimeState = .gated(.resourceMissing)
+    var requiresKnownAnswerAttestation = false
+    do {
+      let artifact = try Self.loadVerifiedArtifact(bundle: bundle)
+      verifiedArtifact = artifact
+      if experimentalEnabled {
+        // The override is deliberately labeled experimental even if the same
+        // bytes later become production-qualified. A development bundle must
+        // never emit a production-ready claim.
+        loadedState = .experimentalReady
+      } else if artifact.manifest.productionEligible {
+        try Self.validateProductionContract(artifact)
+        loadedState = .productionAttestationPending
+        requiresKnownAnswerAttestation = true
+      } else {
+        loadedState = .gated(.manifestNotProductionEligible)
+      }
+    } catch let failure as LekhNeuralGateFailure {
+      loadedState = .gated(failure)
+    } catch {
+      loadedState = .gated(.artifactVerificationFailed)
+    }
+
+    runtimeStateLock.lock()
+    deterministicTokenInputs = deterministicInputs
+    model = verifiedArtifact?.model
+    vocab = verifiedArtifact?.vocab
+    runtimeState = loadedState
     runtimeStateLock.unlock()
-    return result
+
+    if requiresKnownAnswerAttestation, let artifact = verifiedArtifact {
+      // This method already runs on the neural worker. Until semantic
+      // attestation completes, deterministic typing remains available and
+      // neural requests continue to fail open with no candidates.
+      let passed = Self.verifyKnownAnswers(
+        model: artifact.model,
+        vocab: artifact.vocab,
+        cases: artifact.manifest.requiredCases
+      )
+      finishProductionAttestation(passed: passed)
+    }
   }
 
   private func finishProductionAttestation(passed: Bool) {
@@ -815,6 +825,7 @@ public final class LekhNeuralCandidateService {
 }
 
 private enum LekhNeuralRuntimeState {
+  case loading
   case gated(LekhNeuralGateFailure)
   case experimentalReady
   case productionAttestationPending
@@ -823,12 +834,14 @@ private enum LekhNeuralRuntimeState {
   var canInfer: Bool {
     switch self {
     case .experimentalReady, .productionReady: return true
-    case .gated, .productionAttestationPending: return false
+    case .loading, .gated, .productionAttestationPending: return false
     }
   }
 
   var status: String {
     switch self {
+    case .loading:
+      return "async-coreml-tail-loading"
     case .gated(let failure):
       return "async-coreml-tail-gated-\(failure.rawValue)"
     case .experimentalReady:

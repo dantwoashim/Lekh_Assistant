@@ -188,7 +188,19 @@ private func benchmarkNeuralServiceIfRequested() {
         let bundle = Bundle(path: bundlePath) else {
     return
   }
+  let initializationStarted = DispatchTime.now().uptimeNanoseconds
   let service = LekhNeuralCandidateService(bundle: bundle)
+  let initializationMilliseconds = Double(
+    DispatchTime.now().uptimeNanoseconds - initializationStarted
+  ) / 1_000_000
+  require(
+    initializationMilliseconds < 10,
+    "Neural service construction must not verify or load Core ML synchronously; observed=\(initializationMilliseconds) ms"
+  )
+  let loadingDeadline = Date().addingTimeInterval(15)
+  while service.status == "async-coreml-tail-loading", Date() < loadingDeadline {
+    RunLoop.current.run(until: Date().addingTimeInterval(0.005))
+  }
   require(
     service.status.contains("ready"),
     "Packaged neural service must be enabled for end-to-end measurement; status=\(service.status)"
@@ -295,6 +307,7 @@ private func benchmarkNeuralServiceIfRequested() {
       "status": "passed-experimental",
       "bundle": bundlePath,
       "serviceStatus": service.status,
+      "serviceInitializationMs": initializationMilliseconds,
       "singleForwardBenchmarkIsConsumerLatency": false,
       "warmupRequests": tokens.count,
       "steadyStateSamples": steadyState.count,

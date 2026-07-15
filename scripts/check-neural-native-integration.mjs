@@ -34,6 +34,8 @@ requireContains(controller, "requestAsyncNeuralCandidates", "Controller must req
 requireContains(controller, "processFailOpenKey", "Controller must keep fail-open raw typing path.");
 requireContains(controller, "candidateSelectionExplicit", "Candidate acceptance must remain explicit.");
 requireContains(neuralService, "DispatchQueue(label: \"com.lekh.inputmethod.neural-candidate-tail\"", "Neural service must run inference off the IMK keystroke hot path.");
+requireContains(neuralService, "case loading", "Neural service must expose a fail-open loading state while the optional artifact is prepared.");
+requireContains(neuralService, "queue.async { [weak self, bundle]", "Neural artifact verification and Core ML loading must run off the IMK controller-construction path.");
 requireContains(neuralService, "MLModel(contentsOf:", "Neural service must invoke a real Core ML model when production-gated resources are present.");
 requireContains(neuralService, "LekhExperimentalNeuralTypingEnabled", "Neural service must support an explicitly labeled experimental override without changing production eligibility.");
 requireContains(neuralService, "LEKH_EXPERIMENTAL_NEURAL_TYPING", "Neural service must support a local test override for experimental neural typing.");
@@ -45,6 +47,13 @@ requireContains(packageScript, "neuralPackagingRequested", "Dev IMK packaging mu
 requireContains(packageScript, "package:macos:imk:dev", "Package report command identity must remain explicit.");
 requireContains(packageSwift, "LekhNeuralCandidateService.swift", "Swift package must compile the async neural candidate service.");
 requireContains(packageSwift, ".linkedFramework(\"CoreML\")", "Swift package must link CoreML for the async neural service.");
+const initializer = neuralService.slice(
+  neuralService.indexOf("public init(bundle:"),
+  neuralService.indexOf("public func candidates(")
+);
+if (initializer.includes("loadVerifiedArtifact") || initializer.includes("MLModel(contentsOf:")) {
+  failures.push("Neural service initialization must not synchronously verify or load the Core ML artifact.");
+}
 if (packageScript.includes("LekhNeuralTransliterator.mlmodelc") && !packageScript.includes("LEKH_PACKAGE_NEURAL_MODEL")) {
   failures.push("Packaging script must not copy the neural model without an explicit neural packaging gate.");
 }
@@ -78,6 +87,7 @@ finish(status, failures.length === 0 ? 0 : 1, {
   modelExists,
   manifestExists,
   neuralPackagedByDevBuild: false,
+  controllerStartupNeuralLoadingIsAsynchronous: true,
   failOpenRawTyping: true,
   secureFieldInferenceBlocked: true,
   failures,
