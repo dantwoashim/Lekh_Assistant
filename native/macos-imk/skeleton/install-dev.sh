@@ -75,6 +75,10 @@ stop_lekh_input_method_for_replacement() {
 archive_stale_lekh_bundles() {
   /bin/mkdir -p "$ARCHIVE_BACKUP_ROOT"
   /usr/bin/touch "$ARCHIVE_BACKUP_ROOT/.metadata_never_index"
+  # A fresh installation has no legacy backup directory. With `pipefail`,
+  # allowing `find` to probe that missing path would abort the whole install
+  # before the atomic bundle swap and produce no user-facing explanation.
+  [[ -d "$LEGACY_BACKUP_ROOT" ]] || return 0
   /usr/bin/find "$LEGACY_BACKUP_ROOT" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print0 2>/dev/null |
     while IFS= read -r -d '' backup; do
       "$LSREGISTER" -u "$backup" >/dev/null 2>&1 || true

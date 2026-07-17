@@ -883,6 +883,7 @@ describe("macOS IMK proof target source", () => {
     expect(installScript).toContain("verify_bundle \"$DEST\"");
     expect(installScript).toContain("restoring the prior input method");
     expect(installScript).toContain("stop_lekh_input_method_for_replacement");
+    expect(installScript).toContain('[[ -d "$LEGACY_BACKUP_ROOT" ]] || return 0');
     expect(installScript).toContain("verify-macos-imk-dev-artifact.mjs");
     expect(installScript).toContain("macos-imk-dev-package-report.json");
     expect(installScript).toContain("terminate-exact-processes.swift");
