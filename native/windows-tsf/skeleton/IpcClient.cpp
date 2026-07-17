@@ -127,13 +127,9 @@ bool pipeServerRunsAsCurrentUser(HANDLE pipe) {
   return EqualSid(current->User.Sid, server->User.Sid) == TRUE;
 }
 
-std::wstring configuredPipeName() {
-  wchar_t overrideName[256] = {};
-  const DWORD length = GetEnvironmentVariableW(L"LEKH_KEYBOARD_PIPE_NAME", overrideName, static_cast<DWORD>(std::size(overrideName)));
-  if (length > 0 && length < std::size(overrideName)) return overrideName;
-
+std::optional<std::wstring> configuredPipeName() {
   const std::optional<std::wstring> sid = currentUserSid();
-  if (!sid || sid->empty()) return kLekhPipeNameFallback;
+  if (!sid || sid->empty()) return std::nullopt;
   return std::wstring(kLekhPipeNamePrefix) + *sid;
 }
 
@@ -236,9 +232,15 @@ std::optional<std::string> readLineWithDeadline(
 } // namespace
 
 LekhIpcClient::LekhIpcClient(std::wstring pipeName)
-  : pipeName_(pipeName.empty() ? configuredPipeName() : std::move(pipeName)) {}
+  : pipeName_(std::move(pipeName)) {
+  if (pipeName_.empty()) {
+    const std::optional<std::wstring> configured = configuredPipeName();
+    if (configured) pipeName_ = *configured;
+  }
+}
 
 std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine, DWORD timeoutMs) const {
+  if (pipeName_.empty()) return std::nullopt;
   const ULONGLONG startedAt = GetTickCount64();
   if (!WaitNamedPipeW(pipeName_.c_str(), timeoutMs)) return std::nullopt;
 

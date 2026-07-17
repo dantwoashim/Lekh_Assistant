@@ -7,7 +7,6 @@ import {
 import { MAX_IPC_LINE_BYTES, createDaemonLineHandler } from "./lineProtocol";
 import { defaultWindowsPipeName } from "./windowsPipeName";
 
-export const WINDOWS_PIPE_NAME = defaultWindowsPipeName();
 export const SOCKET_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 export interface NamedPipeDaemon {
@@ -15,24 +14,25 @@ export interface NamedPipeDaemon {
   close(): Promise<void>;
 }
 
-export async function startWindowsNamedPipeDaemon(pipeName = defaultWindowsPipeName()): Promise<NamedPipeDaemon> {
+export async function startWindowsNamedPipeDaemon(pipeName?: string): Promise<NamedPipeDaemon> {
   if (process.platform !== "win32") {
     throw new Error("Windows named-pipe daemon mode requires process.platform === 'win32'.");
   }
+  const resolvedPipeName = pipeName ?? defaultWindowsPipeName();
 
   const handler = createDaemonLineHandler();
   const server = createServer((socket) => wireSocket(socket, handler));
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(pipeName, () => {
+    server.listen(resolvedPipeName, () => {
       server.off("error", reject);
       resolve();
     });
   });
 
   return {
-    pipeName,
+    pipeName: resolvedPipeName,
     async close() {
       await handler.shutdown();
       await closeServer(server);

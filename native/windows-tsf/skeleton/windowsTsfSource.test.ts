@@ -114,7 +114,10 @@ describe("Windows TSF source safety contract", () => {
     expect(ipc).toContain("GetNamedPipeServerProcessId");
     expect(ipc).toContain("EqualSid");
     expect(ipc).toContain("pipeServerRunsAsCurrentUser(pipe)");
-    expect(ipc).toContain("LEKH_KEYBOARD_PIPE_NAME");
+    expect(ipc).toContain("if (!sid || sid->empty()) return std::nullopt");
+    expect(ipc).toContain("if (pipeName_.empty()) return std::nullopt");
+    expect(ipc).not.toContain("LEKH_KEYBOARD_PIPE_NAME");
+    expect(guids).not.toContain("kLekhPipeNameFallback");
     expect(guids).toContain("kLekhPipeNamePrefix");
     expect(ipc).toContain("FILE_FLAG_OVERLAPPED");
     expect(ipc).toContain("WaitForSingleObject");

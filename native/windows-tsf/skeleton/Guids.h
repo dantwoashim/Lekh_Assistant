@@ -16,7 +16,6 @@ inline constexpr GUID GUID_LekhTextServiceProfile = {
 };
 
 inline constexpr wchar_t kLekhTextServiceDescription[] = L"Lekh Keyboard Nepali";
-inline constexpr wchar_t kLekhPipeNameFallback[] = L"\\\\.\\pipe\\LekhKeyboard";
 inline constexpr wchar_t kLekhPipeNamePrefix[] = L"\\\\.\\pipe\\LekhKeyboard-";
 inline constexpr DWORD kLekhHotPathTimeoutMs = static_cast<DWORD>(lekh::ipc::kHotPathDeadlineMilliseconds);
 

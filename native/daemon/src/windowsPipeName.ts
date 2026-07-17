@@ -1,36 +1,64 @@
 import { spawnSync } from "node:child_process";
+import { win32 } from "node:path";
 
-const FALLBACK_PIPE_NAME = "\\\\.\\pipe\\LekhKeyboard";
 const PIPE_PREFIX = "\\\\.\\pipe\\LekhKeyboard-";
+const WINDOWS_SID_PATTERN = /^S-[1-9]\d*-(?:\d+-)*\d+$/u;
+const MAXIMUM_SID_STRING_LENGTH = 184;
+const WHOAMI_TIMEOUT_MS = 2_000;
+const WHOAMI_MAX_BUFFER_BYTES = 16 * 1024;
 
-export function defaultWindowsPipeName(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.LEKH_KEYBOARD_PIPE_NAME) return env.LEKH_KEYBOARD_PIPE_NAME;
-  const sid = process.platform === "win32" ? currentUserSid() : undefined;
-  return sid ? windowsPipeNameForSid(sid) : FALLBACK_PIPE_NAME;
+export interface WindowsPipeNameOptions {
+  platform?: NodeJS.Platform;
+  resolveUserSid?: () => string | undefined;
+}
+
+export function defaultWindowsPipeName(options: WindowsPipeNameOptions = {}): string {
+  const platform = options.platform ?? process.platform;
+  if (platform !== "win32") {
+    throw new Error("The default Lekh named pipe can only be resolved on Windows.");
+  }
+  const sid = (options.resolveUserSid ?? currentUserSid)();
+  if (!sid) {
+    throw new Error("Lekh refused to start without a verified current-user Windows SID.");
+  }
+  return windowsPipeNameForSid(sid);
 }
 
 export function windowsPipeNameForSid(sid: string): string {
-  return `${PIPE_PREFIX}${sanitizePipeSegment(sid)}`;
+  if (!isWindowsSid(sid)) {
+    throw new Error("Invalid current-user Windows SID for the Lekh named pipe.");
+  }
+  return `${PIPE_PREFIX}${sid}`;
 }
 
 export function parseWhoamiUserSid(output: string): string | undefined {
   const lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (const line of lines) {
     const fields = parseCsvLine(line);
-    const sid = fields.find((field) => /^S-\d-\d+-(?:\d+-?)+$/.test(field));
+    const sid = fields.find(isWindowsSid);
     if (sid) return sid;
   }
   return undefined;
 }
 
-function currentUserSid(): string | undefined {
-  const result = spawnSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8", stdio: "pipe" });
-  if (result.status !== 0) return undefined;
-  return parseWhoamiUserSid(result.stdout);
+function isWindowsSid(value: string): boolean {
+  return value.length <= MAXIMUM_SID_STRING_LENGTH && WINDOWS_SID_PATTERN.test(value);
 }
 
-function sanitizePipeSegment(value: string): string {
-  return value.replace(/[^A-Za-z0-9.-]/g, "_").slice(0, 180);
+function currentUserSid(): string | undefined {
+  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
+  if (!systemRoot || systemRoot.includes("\0") || !win32.isAbsolute(systemRoot)) return undefined;
+  const executable = win32.join(win32.normalize(systemRoot), "System32", "whoami.exe");
+  const result = spawnSync(executable, ["/user", "/fo", "csv", "/nh"], {
+    encoding: "utf8",
+    maxBuffer: WHOAMI_MAX_BUFFER_BYTES,
+    shell: false,
+    stdio: "pipe",
+    timeout: WHOAMI_TIMEOUT_MS,
+    windowsHide: true
+  });
+  if (result.status !== 0) return undefined;
+  return parseWhoamiUserSid(result.stdout);
 }
 
 function parseCsvLine(line: string): string[] {

@@ -37,7 +37,7 @@ Result on 2026-06-08: blocked in this environment because `cmake` is not install
   - `ITfKeyEventSink`
 - Per-user COM registration under `HKCU\Software\Classes`.
 - TSF language profile registration for Nepali.
-- Named-pipe IPC client for the local daemon, using `LEKH_KEYBOARD_PIPE_NAME` when set and otherwise deriving a per-user default such as `\\.\pipe\LekhKeyboard-{SID}`.
+- Named-pipe IPC client for the local daemon, deriving a per-user name such as `\\.\pipe\LekhKeyboard-{SID}` and failing open if the current-user SID cannot be resolved. Production code accepts neither an environment-selected pipe nor a shared fallback name; controlled tests inject an explicit pipe through the client/server constructors.
 - 50 ms hot-path timeout and pass-through fallback when the daemon is unavailable.
 - Key-eating is disabled by default and must be explicitly enabled with `LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING` after daemon/commit behavior is validated on Windows.
 - Dev daemon dispatcher and JSONL CLI in `native/daemon/src`.
