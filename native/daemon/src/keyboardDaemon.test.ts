@@ -243,14 +243,15 @@ describe("KeyboardDaemon IPC dispatcher", () => {
     ))).resolves.toEqual(expect.objectContaining({ ok: true, payload: { learned: false } }));
 
     const daemon = new KeyboardDaemon();
+    const unclassifiedContext = { ...defaultTypingContext("romanized") };
+    delete unclassifiedContext.fieldType;
     const begin = await daemon.handle(createIpcRequest("session.begin", {
-      context: defaultTypingContext("romanized")
+      context: unclassifiedContext
     }, "begin-unclassified", 1));
     const sessionId = (begin.payload as { sessionId: string }).sessionId;
-    const commitEpoch = await commitCandidate(daemon, sessionId, "ramro");
     const response = await daemon.handle(createIpcRequest(
       "memory.learn",
-      { sessionId, commitEpoch },
+      { sessionId, commitEpoch: 1 },
       "memory-unclassified",
       1
     ));
@@ -262,8 +263,11 @@ describe("KeyboardDaemon IPC dispatcher", () => {
       "retry-unclassified",
       1
     ));
-    expect((retry.payload as { candidates: Array<{ type: string }> }).candidates)
-      .not.toEqual(expect.arrayContaining([expect.objectContaining({ type: "personal" })]));
+    expect(retry.payload).toEqual(expect.objectContaining({
+      action: "passThrough",
+      compositionText: "",
+      candidates: []
+    }));
   });
 
   it("returns a grapheme-boundary caret through session.updateComposition IPC", async () => {

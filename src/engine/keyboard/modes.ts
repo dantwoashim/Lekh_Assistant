@@ -58,9 +58,7 @@ export function surfaceForMode(mode: KeyboardMode): SuggestionSurface {
 
 export function isSecureContext(context: TypingContext): boolean {
   return context.secureInput ||
-    context.fieldType === "password" ||
-    context.fieldType === "code" ||
-    context.fieldType === "unknown";
+    (context.fieldType !== "normal" && context.fieldType !== "search");
 }
 
 export function isLearningAllowedContext(context: TypingContext): boolean {

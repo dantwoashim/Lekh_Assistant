@@ -19,4 +19,12 @@ describe("keyboard context policy", () => {
       expect(isLearningAllowedContext(context)).toBe(false);
     }
   );
+
+  it("fails closed when a host does not classify the field", () => {
+    const context = { ...defaultTypingContext() };
+    delete context.fieldType;
+
+    expect(isSecureContext(context)).toBe(true);
+    expect(isLearningAllowedContext(context)).toBe(false);
+  });
 });
