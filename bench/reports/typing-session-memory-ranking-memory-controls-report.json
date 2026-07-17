@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-13T04:38:32.042Z",
+  "generatedAt": "2026-07-17T09:51:50.968Z",
   "command": "npm run benchmark:typing-session -- memory-ranking,memory-controls",
   "suite": "typing-session:memory-ranking,memory-controls",
   "mode": "full",
-  "durationMs": 2825,
+  "durationMs": 1155,
   "fixtureCount": 4,
   "romanized": {
     "totalSessions": 4,
@@ -36,12 +36,12 @@
     }
   },
   "latency": {
-    "candidateP50Ms": 35,
-    "candidateP95Ms": 36,
-    "updateP95Ms": 36,
+    "candidateP50Ms": 17,
+    "candidateP95Ms": 18,
+    "updateP95Ms": 18,
     "commitP95Ms": 0
   },
-  "keystrokeSavingsRatioMean": 0.0625,
+  "keystrokeSavingsRatioMean": 0.08333333333333333,
   "proofHintHitRate": 0,
   "dictionaryHitRate": 0,
   "memoryBoostSuccessRate": 1,
@@ -51,8 +51,8 @@
   "shortcutSequenceValidityRate": 1,
   "failedSessions": 0,
   "warnings": [
-    "Secure/code field: suggestions and memory are disabled.",
-    "Secure/code field: raw pass-through only."
+    "Secure/uncertain field: suggestions and memory are disabled.",
+    "Secure/uncertain field: raw pass-through only."
   ],
   "failures": [],
   "results": [
@@ -68,15 +68,15 @@
       "candidateTexts": [
         "प्रबिनको",
         "प्रबिन",
+        "प्रविन",
         "प्रवीण",
         "प्रबिनका",
-        "प्रबिनकी",
         "prashasan",
         "praman",
         "pradesh"
       ],
       "latencyMs": [
-        37
+        19
       ],
       "commitLatencyMs": 1,
       "keystrokeSavingsRatio": 0.25,
@@ -102,15 +102,15 @@
       "candidateTexts": [
         "प्रवीण",
         "प्रबिन",
+        "प्रविन",
         "प्रबिनको",
         "प्रबिनका",
-        "प्रबिनकी",
         "prashasan",
         "praman",
         "pradesh"
       ],
       "latencyMs": [
-        35
+        17
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -135,16 +135,16 @@
       "finalDisplayText": "प्रबिन",
       "candidateTexts": [
         "प्रबिन",
+        "प्रविन",
         "प्रबिनको",
         "प्रबिनका",
         "प्रबिनकी",
-        "प्रबिनमा",
         "prashasan",
         "praman",
         "pradesh"
       ],
       "latencyMs": [
-        36
+        18
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -166,16 +166,16 @@
       "top1Hit": true,
       "top3Hit": true,
       "primaryPrefixHit": true,
-      "finalDisplayText": "prabin",
+      "finalDisplayText": "",
       "candidateTexts": [],
       "latencyMs": [
         0
       ],
       "commitLatencyMs": 0,
-      "keystrokeSavingsRatio": 0,
+      "keystrokeSavingsRatio": null,
       "warnings": [
-        "Secure/code field: suggestions and memory are disabled.",
-        "Secure/code field: raw pass-through only."
+        "Secure/uncertain field: suggestions and memory are disabled.",
+        "Secure/uncertain field: raw pass-through only."
       ],
       "proofHintHit": false,
       "dictionaryHit": false,
