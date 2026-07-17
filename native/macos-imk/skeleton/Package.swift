@@ -10,7 +10,8 @@ let package = Package(
     .executable(name: "LekhInputMethodApp", targets: ["LekhInputMethodApp"]),
     .executable(name: "LekhInputMethodBehaviorProbe", targets: ["LekhInputMethodBehaviorProbe"]),
     .executable(name: "LekhInputMethodUnitProbe", targets: ["LekhInputMethodUnitProbe"]),
-    .executable(name: "LekhBehaviorContractRunner", targets: ["LekhBehaviorContractRunner"])
+    .executable(name: "LekhBehaviorContractRunner", targets: ["LekhBehaviorContractRunner"]),
+    .executable(name: "LekhNeuralComputePlanProbe", targets: ["LekhNeuralComputePlanProbe"])
   ],
   dependencies: [],
   targets: [
@@ -92,6 +93,14 @@ let package = Package(
       ],
       path: "Tests/LekhBehaviorContractRunner",
       sources: ["main.swift"]
+    ),
+    .executableTarget(
+      name: "LekhNeuralComputePlanProbe",
+      path: "Tests/LekhNeuralComputePlanProbe",
+      sources: ["LekhNeuralComputePlanProbe.swift"],
+      linkerSettings: [
+        .linkedFramework("CoreML")
+      ]
     )
   ]
 )

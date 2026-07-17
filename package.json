@@ -78,6 +78,8 @@
     "neural:open-vocab:benchmark": "node scripts/benchmark-neural-coreml-device.mjs --measurements data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/coreml-device-measurements.json",
     "neural:open-vocab:benchmark:packaged": "node scripts/benchmark-neural-packaged-app.mjs",
     "neural:native-service:benchmark": "node scripts/benchmark-neural-native-service.mjs",
+    "neural:compute-plan:probe": "swift run --package-path native/macos-imk/skeleton LekhNeuralComputePlanProbe models/macos/LekhNeuralTransliterator.mlmodelc",
+    "check:neural-compute-plan": "node scripts/check-neural-compute-plan-evidence.mjs",
     "neural:dataset": "node scripts/build-neural-transliteration-dataset.mjs",
     "neural:open-vocab:dataset": "node scripts/build-neural-open-vocab-dataset.mjs",
     "neural:phase3:distillation": "node scripts/check-neural-distillation-plan.mjs",

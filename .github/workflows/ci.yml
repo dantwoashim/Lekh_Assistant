@@ -97,6 +97,17 @@ jobs:
       - name: Build Swift input method
         run: npm run build:macos
 
+      - name: Inspect Core ML compute placement
+        shell: bash
+        run: |
+          swift run --package-path native/macos-imk/skeleton \
+            LekhNeuralComputePlanProbe \
+            models/macos/LekhNeuralTransliterator.mlmodelc \
+            > "$RUNNER_TEMP/neural-compute-plan.json"
+          node scripts/check-neural-compute-plan-evidence.mjs \
+            --evidence "$RUNNER_TEMP/neural-compute-plan.json" \
+            --report "$RUNNER_TEMP/neural-compute-plan-validation.json"
+
       - name: Exercise native typing behavior
         run: swift run --package-path native/macos-imk/skeleton LekhInputMethodBehaviorProbe
 
