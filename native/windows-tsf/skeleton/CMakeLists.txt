@@ -9,8 +9,22 @@ add_library(LekhTsfProtocol STATIC
   TsfProtocol.cpp
 )
 
+add_library(LekhPipeSecurity STATIC
+  LekhPipeSecurity.cpp
+)
+
 target_compile_features(LekhTsfProtocol PUBLIC cxx_std_20)
 target_include_directories(LekhTsfProtocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(LekhPipeSecurity PUBLIC cxx_std_20)
+target_compile_definitions(LekhPipeSecurity PRIVATE
+  UNICODE
+  _UNICODE
+  WIN32_LEAN_AND_MEAN
+  NOMINMAX
+  _WIN32_WINNT=0x0A00
+)
+target_include_directories(LekhPipeSecurity PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(LekhPipeSecurity PRIVATE advapi32)
 
 add_library(LekhTextService SHARED
   ClassFactory.cpp
@@ -42,6 +56,7 @@ target_link_libraries(LekhTextService PRIVATE
 
 if(MSVC)
   target_compile_options(LekhTsfProtocol PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  target_compile_options(LekhPipeSecurity PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhTextService PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
 endif()
 
@@ -60,4 +75,18 @@ if(BUILD_TESTING)
     target_compile_options(LekhTsfProtocolTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   endif()
   add_test(NAME LekhTsfProtocolTests COMMAND LekhTsfProtocolTests)
+
+  add_executable(LekhPipeSecurityTests LekhPipeSecurityTests.cpp)
+  target_compile_definitions(LekhPipeSecurityTests PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _WIN32_WINNT=0x0A00
+  )
+  target_link_libraries(LekhPipeSecurityTests PRIVATE LekhPipeSecurity advapi32)
+  if(MSVC)
+    target_compile_options(LekhPipeSecurityTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  endif()
+  add_test(NAME LekhPipeSecurityTests COMMAND LekhPipeSecurityTests)
 endif()

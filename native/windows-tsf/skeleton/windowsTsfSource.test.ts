@@ -130,6 +130,25 @@ describe("Windows TSF source safety contract", () => {
     expect(ipc).not.toContain("PIPE_READMODE_MESSAGE");
   });
 
+  it("builds and verifies a protected logon-session pipe DACL", () => {
+    const security = read("LekhPipeSecurity.cpp");
+    const securityTest = read("LekhPipeSecurityTests.cpp");
+    const cmake = read("CMakeLists.txt");
+    expect(security).toContain("TokenGroups");
+    expect(security).toContain("SE_GROUP_LOGON_ID");
+    expect(security).toContain('L"D:P(A;;GA;;;SY)(A;;GA;;;"');
+    expect(security).toContain("ConvertStringSecurityDescriptorToSecurityDescriptorW");
+    expect(security).toContain("GetSecurityInfo");
+    expect(security).toContain("SE_DACL_PROTECTED");
+    expect(security).toContain("dacl->AceCount != 2");
+    expect(securityTest).toContain("FILE_FLAG_FIRST_PIPE_INSTANCE");
+    expect(securityTest).toContain("PIPE_REJECT_REMOTE_CLIENTS");
+    expect(securityTest).toContain("validatePipeHandle(pipe)");
+    expect(cmake).toContain("add_library(LekhPipeSecurity STATIC");
+    expect(cmake).toContain("add_executable(LekhPipeSecurityTests");
+    expect(cmake).toContain("add_test(NAME LekhPipeSecurityTests");
+  });
+
   it.skipIf(process.platform === "win32")("compiles and runs the portable native protocol tests", () => {
     const temporaryDirectory = mkdtempSync(join(tmpdir(), "lekh-tsf-protocol-"));
     temporaryDirectories.push(temporaryDirectory);
