@@ -116,8 +116,15 @@ public final class LekhNeuralCandidateService {
       if experimentalEnabled {
         // The override is deliberately labeled experimental even if the same
         // bytes later become production-qualified. A development bundle must
-        // never emit a production-ready claim.
-        loadedState = .experimentalReady
+        // never emit a production-ready claim. Experimental inference is also
+        // fail-closed until the packaged Core ML model passes the same bounded
+        // semantic known-answer attestation as a production artifact; hashes
+        // and model I/O shape alone do not prove that inference is usable.
+        loadedState = Self.verifyKnownAnswers(
+          model: artifact.model,
+          vocab: artifact.vocab,
+          cases: artifact.manifest.requiredCases
+        ) ? .experimentalReady : .gated(.knownAnswerAttestationFailed)
       } else if artifact.manifest.productionEligible {
         try Self.validateProductionContract(artifact)
         loadedState = .productionAttestationPending

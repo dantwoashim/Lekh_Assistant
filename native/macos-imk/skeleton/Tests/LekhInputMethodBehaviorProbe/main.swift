@@ -1284,6 +1284,73 @@ private func assertEveryControllerCallbackFailsOpenUnderSecureInput() {
   print("native-secure-controller-callbacks=4/4 fail-open")
 }
 
+private func assertInputTextBatchesAndOptionLayerAreLossless() {
+  let modeKey = LekhNativePreferences.Keys.nativeTypingMode
+  let previousMode = UserDefaults.standard.object(forKey: modeKey)
+  defer {
+    if let previousMode {
+      UserDefaults.standard.set(previousMode, forKey: modeKey)
+    } else {
+      UserDefaults.standard.removeObject(forKey: modeKey)
+    }
+    UserDefaults.standard.synchronize()
+  }
+
+  UserDefaults.standard.set(LekhNativeTypingMode.romanizedTraditional.rawValue, forKey: modeKey)
+  UserDefaults.standard.synchronize()
+  let batchController = LekhInputController(engineClient: LekhNativeEngineClient())
+  let batchClient = ProbeTextInputClient()
+  require(
+    !batchController.inputText("ab🙂", client: batchClient),
+    "A mixed multi-grapheme callback must pass through atomically"
+  )
+  require(
+    batchClient.markedTextMutations.isEmpty && batchClient.committedTextMutations.isEmpty &&
+      (batchController.composedString(batchClient) as? String) == "",
+    "An unhandled batch must not consume a prefix or mutate composition before pass-through"
+  )
+  require(
+    batchController.inputText("ab", client: batchClient),
+    "A composition-safe multi-grapheme callback must remain supported"
+  )
+  let markedBeforeMixedBatch = batchClient.markedTextMutations.count
+  require(
+    !batchController.inputText("c🙂", client: batchClient),
+    "A mixed batch following composition must return the entire new callback to the host"
+  )
+  require(
+    batchClient.markedTextMutations.count == markedBeforeMixedBatch &&
+      batchClient.committedTextMutations.last == "ab" &&
+      (batchController.composedString(batchClient) as? String) == "",
+    "A mixed batch must finalize only the prior raw composition and consume none of the new callback"
+  )
+
+  UserDefaults.standard.set(LekhNativeTypingMode.traditionalTraditional.rawValue, forKey: modeKey)
+  UserDefaults.standard.synchronize()
+  let optionController = LekhInputController(engineClient: LekhNativeEngineClient())
+  let optionClient = ProbeTextInputClient()
+  let optionFlags = Int(NSEvent.ModifierFlags.option.rawValue)
+  require(
+    !optionController.inputText("å", key: 0, modifiers: optionFlags, client: optionClient),
+    "An unmapped Option shortcut must remain owned by the host"
+  )
+  require(
+    optionClient.markedTextMutations.isEmpty && optionClient.committedTextMutations.isEmpty &&
+      (optionController.composedString(optionClient) as? String) == "",
+    "An unmapped Option shortcut must not mutate Lekh composition"
+  )
+  require(
+    optionController.inputText("˙", key: 4, modifiers: optionFlags, client: optionClient),
+    "A documented traditional Option-H mapping must remain available"
+  )
+  require(
+    (optionController.composedString(optionClient) as? String) == "्",
+    "Option-H must produce exactly the explicit halanta mapping"
+  )
+  batchController.resetSession()
+  optionController.resetSession()
+}
+
 private func assertDeterministicHotPathP99() {
   var samples: [UInt64] = []
   samples.reserveCapacity(2_000)
@@ -1324,6 +1391,7 @@ assertRepositoryCuratedTokenQualityContract()
 assertSharedTokenPackNativeConformance()
 assertCandidateInteractionStartsPassiveAndPagesSafely()
 assertEveryControllerCallbackFailsOpenUnderSecureInput()
+assertInputTextBatchesAndOptionLayerAreLossless()
 assertDeterministicHotPathP99()
 dumpCandidateDiagnosticsIfRequested()
 benchmarkNeuralServiceIfRequested()

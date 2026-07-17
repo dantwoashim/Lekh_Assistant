@@ -850,7 +850,7 @@ function validateEmbeddedInstallerChecksums(extractionRoot, extractedEntries, is
   const expectedFiles = extractedEntries
     .filter((entry) => !entry.directory && entry.relative.startsWith(`${installerFolderName}/`))
     .map((entry) => entry.relative.slice(`${installerFolderName}/`.length))
-    .filter((path) => path !== "SHA256SUMS.txt")
+    .filter((path) => !["RELEASE-MANIFEST.json", "RELEASE-MANIFEST.json.minisig", "SHA256SUMS.txt"].includes(path))
     .sort((left, right) => left.localeCompare(right, "en"));
   let lines = [];
   try {

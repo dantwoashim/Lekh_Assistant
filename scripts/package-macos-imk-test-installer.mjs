@@ -19,6 +19,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { verifyMacOSIMKDevArtifact } from "./lib/macos-imk-dev-release-integrity.mjs";
 import { readProductionReleasePolicy } from "./lib/macos-production-release-attestation.mjs";
+import { buildMacOSReleaseVerifierScript } from "./lib/macos-release-verifier-script.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -487,6 +488,7 @@ BACKUP_DEST=""
 OLD_DEST=""
 DEST_REPLACED=0
 SWAPPED_DEST=0
+ROLLBACK_COMPLETED=0
 
 mkdir -p "$LOG_DIR" "$BACKUP_ROOT" || exit 1
 /usr/bin/touch "$BACKUP_ROOT/.metadata_never_index"
@@ -504,6 +506,10 @@ display dialog (system attribute "LEKH_DIALOG_MESSAGE") buttons {"OK"} default b
 APPLESCRIPT
 }
 rollback() {
+  if [[ "$ROLLBACK_COMPLETED" == "1" ]]; then
+    return
+  fi
+  ROLLBACK_COMPLETED=1
   if [[ "$SWAPPED_DEST" == "1" && -n "$OLD_DEST" && -d "$OLD_DEST" && -d "$DEST" ]]; then
     log "rollback atomically swapping previous bundle back into place"
     "$RESOURCE_DIR/atomic-install-swap" "$OLD_DEST" "$DEST" >/dev/null 2>&1 || true
@@ -538,7 +544,7 @@ fail() {
   dialog "Lekh Keyboard installation failed. Nothing was left half-installed. Details were written to ~/Library/Logs/LekhKeyboard/install.log.\n\nलेख किबोर्ड स्थापना असफल भयो। आधा-स्थापित अवस्थामा केही छोडिएको छैन। विवरण ~/Library/Logs/LekhKeyboard/install.log मा लेखिएको छ।"
   exit 1
 }
-	cleanup() {
+cleanup() {
 	  /bin/rm -rf "$TMP_DEST" "$BACKUP_EXTRACT_ROOT"
 	}
 	migrate_legacy_backup_bundles() {
@@ -576,7 +582,14 @@ rotate_backups() {
 	      [[ -n "$old_backup" ]] && /bin/rm -f "$old_backup"
     done
 }
-trap 'rollback; cleanup' EXIT
+on_exit() {
+  local status="$?"
+  if [[ "$status" != "0" ]]; then
+    rollback
+  fi
+  cleanup
+}
+trap on_exit EXIT
 trap 'fail "installation interrupted"' INT TERM HUP
 
 APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PAYLOAD/Contents/Info.plist" 2>/dev/null || printf 'unknown')"
@@ -790,6 +803,7 @@ set -euo pipefail
 cd "$(dirname "$0")" || exit 1
 SOURCE_INSTALLER_APP="$PWD/Lekh Keyboard Test Installer.app"
 SOURCE_INSTALLER_BIN="$SOURCE_INSTALLER_APP/Contents/MacOS/install-lekh-keyboard"
+RELEASE_VERIFIER="$PWD/Verify Lekh Release.command"
 LOCAL_TMP_ROOT="\${TMPDIR:-/tmp}"
 LOCAL_TMP_ROOT="\${LOCAL_TMP_ROOT%/}"
 STAGING_DIR=""
@@ -804,8 +818,19 @@ trap 'exit 130' INT TERM HUP
 
 echo "Lekh Keyboard terminal installer"
 echo "This unsigned QA build cannot pass Finder/Gatekeeper without Developer ID notarization."
-echo "This script removes only the known Finder metadata that blocks code-signature verification, verifies the packaged app signature, then runs the same installer."
+echo "This script authenticates the complete release, stages the packaged app, verifies its code signature, then runs the same installer."
 echo
+
+if [[ ! -x "$RELEASE_VERIFIER" ]]; then
+  echo "Missing release verifier: $RELEASE_VERIFIER" >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+fi
+LEKH_RELEASE_VERIFY_NONINTERACTIVE=1 "$RELEASE_VERIFIER" || {
+  echo "Release authentication failed; installation was not started." >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+}
 
 if [[ ! -x "$SOURCE_INSTALLER_BIN" ]]; then
   echo "Missing installer executable: $SOURCE_INSTALLER_BIN" >&2
@@ -826,11 +851,6 @@ INSTALLER_BIN="$INSTALLER_APP/Contents/MacOS/install-lekh-keyboard"
   read -r -p "Press Return to close this window..."
   exit 1
 }
-/usr/bin/dot_clean -m "$INSTALLER_APP" >/dev/null 2>&1 || true
-for attribute in com.apple.quarantine com.apple.FinderInfo com.apple.ResourceFork 'com.apple.fileprovider.fpfs#P' com.apple.provenance; do
-  /usr/bin/xattr -r -d "$attribute" "$INSTALLER_APP" 2>/dev/null || true
-done
-
 if ! verify_output="$(/usr/bin/codesign --verify --deep --strict --verbose=4 "$INSTALLER_APP" 2>&1)"; then
   echo "The metadata-free staged installer failed code-signature verification." >&2
   printf '%s\n' "$verify_output" >&2
@@ -858,6 +878,7 @@ set -euo pipefail
 cd "$(dirname "$0")" || exit 1
 SOURCE_UNINSTALLER_APP="$PWD/Lekh Keyboard Uninstaller.app"
 SOURCE_UNINSTALLER_BIN="$SOURCE_UNINSTALLER_APP/Contents/MacOS/uninstall-lekh-keyboard"
+RELEASE_VERIFIER="$PWD/Verify Lekh Release.command"
 LOCAL_TMP_ROOT="\${TMPDIR:-/tmp}"
 LOCAL_TMP_ROOT="\${LOCAL_TMP_ROOT%/}"
 STAGING_DIR=""
@@ -871,8 +892,19 @@ trap cleanup_staging EXIT
 trap 'exit 130' INT TERM HUP
 
 echo "Lekh Keyboard terminal uninstaller"
-echo "This script removes only the known Finder metadata that blocks code-signature verification, verifies the uninstaller, then runs it."
+echo "This script authenticates the complete release, stages the packaged app, verifies its code signature, then runs it."
 echo
+
+if [[ ! -x "$RELEASE_VERIFIER" ]]; then
+  echo "Missing release verifier: $RELEASE_VERIFIER" >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+fi
+LEKH_RELEASE_VERIFY_NONINTERACTIVE=1 "$RELEASE_VERIFIER" || {
+  echo "Release authentication failed; uninstall was not started." >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+}
 
 if [[ ! -x "$SOURCE_UNINSTALLER_BIN" ]]; then
   echo "Missing uninstaller executable: $SOURCE_UNINSTALLER_BIN" >&2
@@ -893,11 +925,6 @@ UNINSTALLER_BIN="$UNINSTALLER_APP/Contents/MacOS/uninstall-lekh-keyboard"
   read -r -p "Press Return to close this window..."
   exit 1
 }
-/usr/bin/dot_clean -m "$UNINSTALLER_APP" >/dev/null 2>&1 || true
-for attribute in com.apple.quarantine com.apple.FinderInfo com.apple.ResourceFork 'com.apple.fileprovider.fpfs#P' com.apple.provenance; do
-  /usr/bin/xattr -r -d "$attribute" "$UNINSTALLER_APP" 2>/dev/null || true
-done
-
 if ! verify_output="$(/usr/bin/codesign --verify --deep --strict --verbose=4 "$UNINSTALLER_APP" 2>&1)"; then
   echo "The metadata-free staged uninstaller failed code-signature verification." >&2
   printf '%s\n' "$verify_output" >&2
@@ -934,16 +961,15 @@ writeFileSync(
     "Signature: ad-hoc unless this package was built with LEKH_MAC_DEVELOPER_ID.",
     "",
     "Install:",
-    "1. Open Lekh Keyboard Test Installer.app.",
-    "2. If macOS blocks the app because it is an unsigned test build, open System Settings > Privacy & Security and choose Open Anyway for Lekh Keyboard Test Installer.",
-    "3. If macOS only shows Move to Trash or Done and no Open Anyway option appears, open Install Lekh Keyboard from Terminal.command instead.",
-    "4. If the .command file is also blocked, open Terminal and run:",
-    "   cd ~/Downloads/'Lekh Keyboard Test Installer'",
-    "   xattr -dr com.apple.quarantine .",
-    "   ./Install\\ Lekh\\ Keyboard\\ from\\ Terminal.command",
-    "5. After it finishes, use the macOS input menu in the menu bar to choose Lekh Keyboard.",
-    "6. If Lekh Keyboard does not appear immediately, log out and back in, then open Keyboard Settings > Text Input > Edit and add it under Nepali.",
-    "7. Installer rollback backups are compressed under ~/Library/Application Support/Lekh Keyboard/InstallBackups.noindex and rotated to the newest 3 copies so macOS cannot rediscover them as duplicate input methods.",
+    "1. Install minisign with: brew install minisign",
+    "2. Run Verify Lekh Release.command. Do not install if it does not report that release verification passed.",
+    "3. Open Lekh Keyboard Test Installer.app.",
+    "4. If macOS blocks the app because it is an unnotarized test build, open System Settings > Privacy & Security and choose Open Anyway for Lekh Keyboard Test Installer.",
+    "   Do not recursively remove quarantine attributes from the download folder.",
+    "5. If macOS only shows Move to Trash or Done and no Open Anyway option appears, open Install Lekh Keyboard from Terminal.command instead; it repeats full release verification before installation.",
+    "6. After it finishes, use the macOS input menu in the menu bar to choose Lekh Keyboard.",
+    "7. If Lekh Keyboard does not appear immediately, log out and back in, then open Keyboard Settings > Text Input > Edit and add it under Nepali.",
+    "8. Installer rollback backups are compressed under ~/Library/Application Support/Lekh Keyboard/InstallBackups.noindex and rotated to the newest 3 copies so macOS cannot rediscover them as duplicate input methods.",
     "",
     "Uninstall:",
     "Open Lekh Keyboard Uninstaller.app. If Finder blocks it, use Uninstall Lekh Keyboard from Terminal.command. It asks for confirmation, restores the previous keyboard when possible, deletes packs, models, backups, caches, and logs, and can optionally delete local learned words.",
@@ -955,14 +981,12 @@ writeFileSync(
     "This test build is local-first and does not send typing data to a server.",
     "Production distribution still requires Developer ID signing and notarization if this zip is built without LEKH_MAC_DEVELOPER_ID.",
     "Release manifest:",
-    "RELEASE-MANIFEST.json is signed by RELEASE-MANIFEST.json.minisig. Verify with:",
-    "minisign -Vm RELEASE-MANIFEST.json -x RELEASE-MANIFEST.json.minisig -P $(tail -n 1 lekh-release-manifest-minisign.pub)",
-    "Or run Verify Lekh Release.command after installing minisign.",
+    "Verify Lekh Release.command pins the expected Minisign key, authenticates RELEASE-MANIFEST.json first, then verifies the exact closed-world file set and every file digest.",
     "",
     "नेपाली:",
-    "१. Lekh Keyboard Test Installer.app खोल्नुहोस्।",
-    "२. macOS ले unsigned test build भनेर block गरेमा System Settings > Privacy & Security मा Open Anyway छान्नुहोस्।",
-    "३. Move to Trash वा Done मात्र देखिए Install Lekh Keyboard from Terminal.command चलाउनुहोस्।",
+    "१. पहिले minisign install गरेर Verify Lekh Release.command चलाउनुहोस्। verification pass नभए install नगर्नुहोस्।",
+    "२. Lekh Keyboard Test Installer.app खोल्नुहोस्।",
+    "३. macOS ले unnotarized test build भनेर block गरेमा System Settings > Privacy & Security मा Open Anyway छान्नुहोस्।",
     "४. स्थापना भएपछि menu bar को input menu बाट Lekh Keyboard छान्नुहोस्।",
     "५. तुरुन्त नदेखिए log out गरेर फेरि log in गर्नुहोस्, अनि Keyboard Settings > Text Input > Edit > Nepali बाट थप्नुहोस्।",
     "६. Uninstaller ले confirmation माग्छ र local learned words, packs, models, backups, caches, logs हटाउँछ।",
@@ -975,29 +999,7 @@ if (existsSync(join(root, "LICENSE"))) {
 if (existsSync(minisignPublicKey)) {
   copyFileSync(minisignPublicKey, join(distFolder, "lekh-release-manifest-minisign.pub"));
 }
-const verifyReleaseScript = `#!/usr/bin/env bash
-set -euo pipefail
-
-cd "$(dirname "$0")" || exit 1
-
-if ! command -v minisign >/dev/null 2>&1; then
-  echo "minisign is required to verify RELEASE-MANIFEST.json." >&2
-  echo "Install it with: brew install minisign" >&2
-  read -r -p "Press Return to close this window..."
-  exit 127
-fi
-
-echo "Verifying SHA256SUMS.txt..."
-/usr/bin/shasum -a 256 -c SHA256SUMS.txt
-
-echo
-echo "Verifying signed release manifest..."
-minisign -Vm RELEASE-MANIFEST.json -x RELEASE-MANIFEST.json.minisig -P "$(tail -n 1 lekh-release-manifest-minisign.pub)"
-
-echo
-echo "Lekh release verification passed."
-read -r -p "Press Return to close this window..."
-`;
+const verifyReleaseScript = buildMacOSReleaseVerifierScript({ publicKey: minisignPublicKeyValue() });
 const verifyReleasePath = join(distFolder, "Verify Lekh Release.command");
 writeFileSync(verifyReleasePath, verifyReleaseScript);
 chmodSync(verifyReleasePath, 0o755);
@@ -1046,14 +1048,7 @@ if (!existsSync(manifestSignaturePath)) {
 }
 verifyMinisignSignature(releaseManifestPath, manifestSignaturePath, "verify-dist-manifest-minisign");
 
-const checksumTargets = walkPaths(distFolder)
-  .filter((target) => lstatSync(target).isFile())
-  .filter((target) => basename(target) !== "SHA256SUMS.txt")
-  .sort((a, b) => relative(distFolder, a).localeCompare(relative(distFolder, b), "en"));
-const checksumLines = checksumTargets.map((target) => {
-  const output = run(`checksum-${basename(target)}`, "shasum", ["-a", "256", target]).stdout.trim();
-  return output.replace(target, relative(distFolder, target));
-});
+const checksumLines = releaseManifest.files.map(({ path, sha256 }) => `${sha256}  ${path}`);
 writeFileSync(join(distFolder, "SHA256SUMS.txt"), `${checksumLines.join("\n")}\n`);
 const releaseManifestSidecarPath = join(releaseDir, "RELEASE-MANIFEST.json");
 const manifestSignatureSidecarPath = join(releaseDir, "RELEASE-MANIFEST.json.minisig");

@@ -422,7 +422,20 @@ open class LekhInputController: IMKInputController {
     }
     lekhNativeLog("event.inputText units=\(string.count)")
 
-    var handledAny = false
+    // IMK may deliver more than one grapheme in a single callback. Returning
+    // true after consuming only a prefix makes the host suppress the complete
+    // callback and loses every unhandled suffix. Preflight multi-unit input so
+    // the callback is all-or-nothing: composition-safe letters/digits may be
+    // processed together; mixed paste, punctuation, whitespace, emoji, and
+    // other host-owned text are passed through byte-for-byte without first
+    // mutating the engine.
+    if string.count > 1, !canConsumeInputTextBatch(string) {
+      finishCompositionBeforeModifierPassThrough(client: sender as? IMKTextInput)
+      lekhNativeLog("event.passThrough route=inputText reason=nonAtomicBatch")
+      return false
+    }
+
+    var handledAll = true
     for character in string {
       let handled = processKeyInput(
         String(character),
@@ -431,9 +444,9 @@ open class LekhInputController: IMKInputController {
         client: sender,
         route: "inputText"
       )
-      handledAny = handledAny || handled
+      handledAll = handledAll && handled
     }
-    return handledAny
+    return handledAll
   }
 
   open override func inputText(_ string: String!, key keyCode: Int, modifiers flags: Int, client sender: Any!) -> Bool {
@@ -519,14 +532,14 @@ open class LekhInputController: IMKInputController {
       return true
     }
 
+    if let optionText = traditionalOptionText(key: key, keyCode: keyCode, modifiers: modifiers) {
+      return processKey(optionText, client: sender, route: "traditional.optionLayer")
+    }
+
     if shouldPassThrough(modifiers: modifiers) {
       finishCompositionBeforeModifierPassThrough(client: sender as? IMKTextInput)
       lekhNativeLog("event.passThrough route=\(route) reason=modifier")
       return false
-    }
-
-    if let optionText = traditionalOptionText(key: key, keyCode: keyCode, modifiers: modifiers) {
-      return processKey(optionText, client: sender, route: "traditional.optionLayer")
     }
 
     if shouldPassThroughWithoutComposition(key: key) {
@@ -1492,14 +1505,16 @@ open class LekhInputController: IMKInputController {
   }
 
   private func shouldPassThrough(modifiers: NSEvent.ModifierFlags) -> Bool {
-    if nativeMode.usesTraditionalKeyboardLayout,
-       LekhNativePreferences.traditionalOptionLayerEnabled,
-       modifiers.contains(.option),
-       !modifiers.contains(.command),
-       !modifiers.contains(.control) {
-      return false
-    }
     return modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.option)
+  }
+
+  private func canConsumeInputTextBatch(_ string: String) -> Bool {
+    string.allSatisfy { character in
+      let key = String(character)
+      guard key.count == 1, let scalar = key.unicodeScalars.first else { return false }
+      return CharacterSet.alphanumerics.contains(scalar) ||
+        (scalar.value >= 0x0900 && scalar.value <= 0x097F)
+    }
   }
 
   private func traditionalOptionText(key: String, keyCode: Int, modifiers: NSEvent.ModifierFlags) -> String? {
