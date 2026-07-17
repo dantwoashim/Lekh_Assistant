@@ -520,7 +520,8 @@ describe("macOS IMK proof target source", () => {
     const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhEngineCore.swift"), "utf8");
     const probe = readFileSync(join(root, "native/macos-imk/skeleton/Tests/LekhInputMethodBehaviorProbe/main.swift"), "utf8");
 
-    expect(source).toContain('ProcessInfo.processInfo.processName == "LekhInputMethodBehaviorProbe"');
+    expect(source).toContain("private func lekhUsesNativeFixtureEnvironment() -> Bool");
+    expect(source).toContain('case "LekhInputMethodBehaviorProbe", "LekhBehaviorContractRunner": return true');
     expect(source).toContain('environment["LEKH_TEST_RUNTIME_SUGGESTIONS_PATH"]');
     expect(probe).toContain("decision.inlineSuggestion != nil");
     expect(probe).toContain("assertPrimaryModeEmitsSafeTargetScriptGhostCompletion");

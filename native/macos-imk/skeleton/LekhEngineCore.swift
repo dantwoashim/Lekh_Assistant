@@ -1,6 +1,13 @@
 import Foundation
 import SQLite3
 
+private func lekhUsesNativeFixtureEnvironment() -> Bool {
+  switch ProcessInfo.processInfo.processName {
+  case "LekhInputMethodBehaviorProbe", "LekhBehaviorContractRunner": return true
+  default: return false
+  }
+}
+
 public enum LekhNativeTypingMode: String, CaseIterable {
   case romanizedRomanized = "romanized-romanized"
   case romanizedTraditional = "romanized-traditional"
@@ -1391,6 +1398,10 @@ public final class LekhNativeEngineClient: LekhEngineClient {
     } else {
       output.append(normalized)
     }
+    output.append(contentsOf: LekhRomanizedComposer.canonicalTraditionalCandidates(
+      for: normalized,
+      romanizedOutput: romanizedOutput
+    ))
     if LekhNativePreferences.proofreadAsYouTypeEnabled {
       output.append(contentsOf: proofreadCandidates(for: normalized, romanizedOutput: romanizedOutput, reverseCandidates: reverseCandidates))
     }
@@ -1678,7 +1689,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
     if let bundled = Bundle.main.url(forResource: "runtime-suggestions", withExtension: "json") {
       return bundled
     }
-    if ProcessInfo.processInfo.processName == "LekhInputMethodBehaviorProbe",
+    if lekhUsesNativeFixtureEnvironment(),
        let testPath = ProcessInfo.processInfo.environment["LEKH_TEST_RUNTIME_SUGGESTIONS_PATH"],
        FileManager.default.isReadableFile(atPath: testPath) {
       return URL(fileURLWithPath: testPath)
@@ -1837,7 +1848,7 @@ private final class LekhUserLexiconStore {
   )
 
   init(fileManager: FileManager = .default) {
-    if ProcessInfo.processInfo.processName == "LekhInputMethodBehaviorProbe",
+    if lekhUsesNativeFixtureEnvironment(),
        let testPath = ProcessInfo.processInfo.environment["LEKH_TEST_PERSONALIZATION_DB_PATH"],
        !testPath.isEmpty {
       self.databasePath = testPath
@@ -2120,7 +2131,7 @@ private final class LekhUserLexiconStore {
   }
 
   private func currentResetEpoch() -> Double {
-    if ProcessInfo.processInfo.processName == "LekhInputMethodBehaviorProbe",
+    if lekhUsesNativeFixtureEnvironment(),
        let value = ProcessInfo.processInfo.environment["LEKH_TEST_PERSONALIZATION_RESET_EPOCH"],
        let epoch = Double(value) {
       return epoch
@@ -2205,11 +2216,24 @@ private enum LekhRomanizedComposer {
     canonicalTokenOverrides[token.lowercased()] ?? []
   }
 
+  static func canonicalTraditionalCandidates(
+    for unicodePrefix: String,
+    romanizedOutput: Bool
+  ) -> [String] {
+    var candidates: [String] = []
+    for input in canonicalTokenOverrides.keys.sorted() {
+      for output in canonicalTokenOverrides[input] ?? [] where output.hasPrefix(unicodePrefix) {
+        candidates.append(romanizedOutput ? input : output)
+      }
+    }
+    return LekhNativeEngineClient.unique(candidates, limit: 8)
+  }
+
   private static func loadCanonicalTokenOverrides() -> [String: [String]] {
     let url: URL?
     if let bundled = Bundle.main.url(forResource: "lekh-token-candidates.v1", withExtension: "json") {
       url = bundled
-    } else if ProcessInfo.processInfo.processName == "LekhInputMethodBehaviorProbe",
+    } else if lekhUsesNativeFixtureEnvironment(),
               let testPath = ProcessInfo.processInfo.environment["LEKH_TEST_CANONICAL_TOKEN_PACK_PATH"],
               FileManager.default.isReadableFile(atPath: testPath) {
       url = URL(fileURLWithPath: testPath)

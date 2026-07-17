@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekh.local/contracts/keyboard-behavior/v1/case.schema.json",
+  "title": "Lekh keyboard behavior case v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "contractVersion", "id", "kind", "input", "expected"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "contractVersion": { "const": "1.0.0" },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "minLength": 3, "maxLength": 96 },
+    "kind": {
+      "enum": [
+        "edit",
+        "key",
+        "candidate",
+        "protected-span",
+        "context-transition",
+        "mode-transition",
+        "commit",
+        "cancel",
+        "failure"
+      ]
+    },
+    "input": { "type": "object" },
+    "expected": { "type": "object" }
+  }
+}

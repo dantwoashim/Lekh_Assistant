@@ -9,7 +9,8 @@ let package = Package(
     .library(name: "LekhInputMethod", targets: ["LekhInputMethod"]),
     .executable(name: "LekhInputMethodApp", targets: ["LekhInputMethodApp"]),
     .executable(name: "LekhInputMethodBehaviorProbe", targets: ["LekhInputMethodBehaviorProbe"]),
-    .executable(name: "LekhInputMethodUnitProbe", targets: ["LekhInputMethodUnitProbe"])
+    .executable(name: "LekhInputMethodUnitProbe", targets: ["LekhInputMethodUnitProbe"]),
+    .executable(name: "LekhBehaviorContractRunner", targets: ["LekhBehaviorContractRunner"])
   ],
   dependencies: [],
   targets: [
@@ -81,6 +82,14 @@ let package = Package(
         "LekhInputMethod"
       ],
       path: "Tests/LekhInputMethodUnitProbe",
+      sources: ["main.swift"]
+    ),
+    .executableTarget(
+      name: "LekhBehaviorContractRunner",
+      dependencies: [
+        "LekhInputMethod"
+      ],
+      path: "Tests/LekhBehaviorContractRunner",
       sources: ["main.swift"]
     )
   ]

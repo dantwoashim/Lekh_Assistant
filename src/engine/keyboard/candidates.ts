@@ -238,7 +238,14 @@ export function romanizedCandidates(
 }
 
 function traditionalUpdate(session: KeyboardSession, start: number): CandidateUpdate {
-  const baseCandidates = traditionalUnicodeCandidates(session.compositionText, session.context);
+  // Romanized helper output is carried through the internal candidate label.
+  // It is semantic data in this mode, not an optional presentation preference.
+  // Without this adapter-level override the default `showRomanizedLabels=false`
+  // context produced an empty Traditional -> Romanized candidate list.
+  const candidateContext = session.mode === "traditional-romanized"
+    ? { ...session.context, showRomanizedLabels: true }
+    : session.context;
+  const baseCandidates = traditionalUnicodeCandidates(session.compositionText, candidateContext);
   const unicodeCandidates = session.mode === "traditional-romanized"
     ? traditionalRomanizedTargetCandidates(baseCandidates)
     : baseCandidates;
