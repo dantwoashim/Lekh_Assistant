@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultTypingContext } from "../../../src/engine/keyboard";
 import {
   IPC_MESSAGE_TYPES,
+  IPC_PROTOCOL_LIMITS,
   IPC_SCHEMA_VERSION,
   createIpcRequest
 } from "./messages";
@@ -90,5 +91,21 @@ describe("native IPC request validation", () => {
     const roundTripped = JSON.parse(JSON.stringify(request));
     expect(roundTripped).toHaveProperty("payload", null);
     expect(validateIpcRequest(roundTripped)).toEqual(expect.objectContaining({ ok: true, errors: [] }));
+  });
+
+  it("rejects identifiers and time metadata outside the cross-runtime wire bounds", () => {
+    const valid = createIpcRequest("health.check", { client: "daemon-test" }, "metadata-bounds", 1);
+    const invalidRequests = [
+      { ...valid, id: "x".repeat(IPC_PROTOCOL_LIMITS.maximumIdentifierLength + 1) },
+      { ...valid, sentAt: -1 },
+      { ...valid, sentAt: 1.5 },
+      { ...valid, sentAt: Number.MAX_SAFE_INTEGER + 1, deadlineAt: Number.MAX_SAFE_INTEGER + 1 },
+      { ...valid, sentAt: 1e308, deadlineAt: 1e308 },
+      { ...valid, deadlineAt: 1.5 }
+    ];
+
+    for (const request of invalidRequests) {
+      expect(validateIpcRequest(request).ok).toBe(false);
+    }
   });
 });

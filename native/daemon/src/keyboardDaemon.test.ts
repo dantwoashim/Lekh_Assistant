@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createKeyboardEngine, defaultTypingContext } from "../../../src/engine/keyboard";
-import { createIpcRequest } from "../../shared/ipc/messages";
+import { IPC_PROTOCOL_LIMITS, createIpcRequest } from "../../shared/ipc/messages";
 import { KeyboardDaemon } from "./keyboardDaemon";
 
 const negotiatedDaemons = new WeakSet<KeyboardDaemon>();
@@ -329,6 +329,41 @@ describe("KeyboardDaemon IPC dispatcher", () => {
       ok: false,
       error: expect.objectContaining({ code: "IPC_SCHEMA_INVALID", recoverable: true })
     }));
+    expect(processKeyStroke).not.toHaveBeenCalled();
+    expect(daemon.metrics().counters.processedKeystrokes).toBe(0);
+  });
+
+  it("does not reflect hostile schema content or amplify an invalid request", async () => {
+    const engine = createKeyboardEngine();
+    const processKeyStroke = vi.spyOn(engine, "processKeyStroke");
+    const daemon = new KeyboardDaemon({ engine });
+    const secret = "private-typed-fragment";
+    const request = {
+      ...createIpcRequest("session.processKeyStroke", {
+        sessionId: "missing",
+        sessionEpoch: 1,
+        key: key("r")
+      }, secret.repeat(1_000)),
+      payload: {
+        sessionId: "missing",
+        sessionEpoch: 1,
+        key: key("r"),
+        [secret]: secret
+      }
+    };
+
+    const response = await daemon.handle(request);
+    const wire = JSON.stringify(response);
+    expect(response).toEqual(expect.objectContaining({
+      id: "invalid",
+      ok: false,
+      error: expect.objectContaining({
+        code: "IPC_SCHEMA_INVALID",
+        message: "The IPC request did not match the required schema."
+      })
+    }));
+    expect(wire).not.toContain(secret);
+    expect(Buffer.byteLength(wire, "utf8")).toBeLessThan(IPC_PROTOCOL_LIMITS.maximumFrameBytes);
     expect(processKeyStroke).not.toHaveBeenCalled();
     expect(daemon.metrics().counters.processedKeystrokes).toBe(0);
   });

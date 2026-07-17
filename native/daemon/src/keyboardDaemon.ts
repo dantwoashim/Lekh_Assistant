@@ -109,7 +109,7 @@ export class KeyboardDaemon {
         identity,
         {
           code: "IPC_SCHEMA_INVALID",
-          message: validation.errors.join(" ")
+          message: "The IPC request did not match the required schema."
         },
         this.now() - startedAt,
         { serverInstanceId: this.protocol.serverInstanceId }
@@ -375,7 +375,8 @@ function requestIdentity(value: unknown): Pick<AnyTypedIpcRequest, "id" | "type"
     return { id: "invalid", type: "health.check" };
   }
   return {
-    id: typeof value.id === "string" && value.id ? value.id : "invalid",
+    id: typeof value.id === "string" && value.id &&
+      value.id.length <= IPC_PROTOCOL_LIMITS.maximumIdentifierLength ? value.id : "invalid",
     type: isIpcMessageType(value.type) ? value.type : "health.check",
     ...(Number.isSafeInteger(value.requestSequence) && (value.requestSequence as number) >= 0
       ? { requestSequence: value.requestSequence as number }

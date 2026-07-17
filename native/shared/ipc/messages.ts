@@ -318,7 +318,10 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
   if (!isRecord(value)) {
     return { ok: false, errors: ["Envelope must be an object."] };
   }
-  if (typeof value.id !== "string" || value.id.length === 0) errors.push("id must be a non-empty string.");
+  if (typeof value.id !== "string" || value.id.length === 0 ||
+      value.id.length > IPC_PROTOCOL_LIMITS.maximumIdentifierLength) {
+    errors.push("id must be a bounded non-empty string.");
+  }
   if (!isIpcMessageType(value.type)) errors.push("type must be a known IPC message type.");
   if (value.version !== IPC_SCHEMA_VERSION) errors.push(`version must be ${IPC_SCHEMA_VERSION}.`);
 
@@ -329,12 +332,12 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
   }
 
   if (hasSentAt) {
-    if (typeof value.sentAt !== "number" || !Number.isFinite(value.sentAt)) errors.push("sentAt must be a finite number.");
-    if (typeof value.deadlineAt !== "number" || !Number.isFinite(value.deadlineAt)) {
-      errors.push("deadlineAt must be a finite number.");
+    if (!isNonNegativeSafeInteger(value.sentAt)) errors.push("sentAt must be a non-negative safe integer.");
+    if (!isNonNegativeSafeInteger(value.deadlineAt)) {
+      errors.push("deadlineAt must be a non-negative safe integer.");
     }
-    if (typeof value.sentAt === "number" && Number.isFinite(value.sentAt) &&
-        typeof value.deadlineAt === "number" && Number.isFinite(value.deadlineAt) && isIpcMessageType(value.type)) {
+    if (isNonNegativeSafeInteger(value.sentAt) && isNonNegativeSafeInteger(value.deadlineAt) &&
+        isIpcMessageType(value.type)) {
       const maximumBudget = IPC_MESSAGE_DESCRIPTORS[value.type].deadlineClass === "hotPath"
         ? IPC_PROTOCOL_LIMITS.hotPathDeadlineMs
         : IPC_PROTOCOL_LIMITS.controlDeadlineMs;
@@ -375,6 +378,10 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
       if (!isRecord(value.error)) {
         errors.push("error response must include an error object.");
       } else {
+        const allowedErrorKeys = new Set(["code", "message", "recoverable", "action"]);
+        for (const key of Object.keys(value.error)) {
+          if (!allowedErrorKeys.has(key)) errors.push(`error.${key} is not allowed.`);
+        }
         if (!isIpcErrorCode(value.error.code)) {
           errors.push("error.code must be a known IPC error code.");
         } else {
@@ -382,7 +389,10 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
           if (value.error.recoverable !== definition.recoverable) errors.push("error.recoverable must match the protocol definition.");
           if (value.error.action !== definition.action) errors.push("error.action must match the protocol definition.");
         }
-        if (typeof value.error.message !== "string" || !value.error.message) errors.push("error.message must be a non-empty string.");
+        if (typeof value.error.message !== "string" || !value.error.message ||
+            value.error.message.length > IPC_PROTOCOL_LIMITS.maximumTextLength) {
+          errors.push("error.message must be a bounded non-empty string.");
+        }
       }
     } else {
       if (!("payload" in value)) errors.push("success response must include payload.");
@@ -398,8 +408,9 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
         }
       }
     }
-    if ("latencyMs" in value && (typeof value.latencyMs !== "number" || value.latencyMs < 0)) {
-      errors.push("latencyMs must be a non-negative number when present.");
+    if ("latencyMs" in value && (typeof value.latencyMs !== "number" || !Number.isFinite(value.latencyMs) ||
+        value.latencyMs < 0)) {
+      errors.push("latencyMs must be a finite non-negative number when present.");
     }
   }
 
@@ -414,6 +425,10 @@ function cryptoSafeId(): string {
 
 function isIpcErrorCode(value: unknown): value is IpcErrorCode {
   return typeof value === "string" && Object.hasOwn(IPC_ERROR_DEFINITIONS, value);
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function sessionEpochFrom(value: unknown): number | undefined {

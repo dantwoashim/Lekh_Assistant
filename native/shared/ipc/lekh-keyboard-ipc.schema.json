@@ -205,7 +205,8 @@
         },
         "sessionEpoch": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       }
     },
@@ -290,10 +291,14 @@
           "const": 2
         },
         "sentAt": {
-          "type": "number"
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "deadlineAt": {
-          "type": "number"
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "clientInstanceId": {
           "type": "string",
@@ -302,7 +307,8 @@
         },
         "requestSequence": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 9007199254740991
         },
         "payload": true
       },
@@ -344,7 +350,8 @@
                     "uniqueItems": true,
                     "items": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "maximum": 9007199254740991
                     }
                   }
                 }
@@ -478,7 +485,8 @@
                   },
                   "sessionEpoch": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   }
                 }
               }
@@ -522,7 +530,8 @@
                   },
                   "sessionEpoch": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   }
                 }
               }
@@ -561,7 +570,8 @@
                   },
                   "sessionEpoch": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   }
                 }
               }
@@ -655,7 +665,8 @@
                   },
                   "sessionEpoch": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   }
                 }
               }
@@ -694,7 +705,8 @@
                   },
                   "sessionEpoch": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   }
                 }
               }
@@ -821,11 +833,13 @@
                   },
                   "commitEpoch": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "sessionEpoch": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   }
                 }
               }
@@ -905,11 +919,13 @@
         },
         "requestSequence": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "sessionEpoch": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 9007199254740991
         },
         "payload": true,
         "error": {
@@ -1004,7 +1020,8 @@
                 "properties": {
                   "selectedVersion": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "serverInstanceId": {
                     "type": "string",
@@ -1024,23 +1041,28 @@
                     "properties": {
                       "maximumFrameBytes": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "maximum": 9007199254740991
                       },
                       "hotPathDeadlineMs": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "maximum": 9007199254740991
                       },
                       "maximumPendingRequestsPerConnection": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "maximum": 9007199254740991
                       },
                       "maximumClientInstances": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "maximum": 9007199254740991
                       },
                       "clientIdleTtlMs": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "maximum": 9007199254740991
                       }
                     }
                   }

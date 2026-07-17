@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  IPC_PROTOCOL_LIMITS,
   createIpcErrorResponse,
   createIpcRequest,
   createIpcResponse,
@@ -36,11 +37,28 @@ describe("native IPC message contract", () => {
     expect(result.ok).toBe(false);
     expect(result.errors).toEqual(
       expect.arrayContaining([
-        "id must be a non-empty string.",
+        "id must be a bounded non-empty string.",
         "type must be a known IPC message type.",
         "version must be 2."
       ])
     );
+  });
+
+  it("rejects oversized identities and ambiguous error metadata", () => {
+    const request = createIpcRequest("health.check", { client: "daemon-test" }, "bounded-response", 1);
+    const response = createIpcErrorResponse(request, {
+      code: "IPC_SCHEMA_INVALID",
+      message: "invalid"
+    });
+    expect(validateIpcEnvelope({
+      ...response,
+      id: "x".repeat(IPC_PROTOCOL_LIMITS.maximumIdentifierLength + 1)
+    }).ok).toBe(false);
+    expect(validateIpcEnvelope({
+      ...response,
+      error: { ...response.error, typedFragment: "must-not-be-accepted" }
+    }).ok).toBe(false);
+    expect(validateIpcEnvelope({ ...response, latencyMs: Number.POSITIVE_INFINITY }).ok).toBe(false);
   });
 
   it("binds negotiated server identity and session epochs without response ambiguity", () => {

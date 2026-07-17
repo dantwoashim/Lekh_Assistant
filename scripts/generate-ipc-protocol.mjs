@@ -96,7 +96,7 @@ function generateSchema(value) {
     }
     return conditions;
   });
-  return {
+  return addSafeIntegerBounds({
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://lekh.local/schemas/lekh-keyboard-ipc.schema.json",
     title: value.protocolName,
@@ -124,8 +124,8 @@ function generateSchema(value) {
           id: { type: "string", minLength: 1, maxLength: value.limits.maximumIdentifierLength },
           type: { $ref: "#/$defs/MessageType" },
           version: { const: value.currentVersion },
-          sentAt: { type: "number" },
-          deadlineAt: { type: "number" },
+          sentAt: { type: "integer", minimum: 0 },
+          deadlineAt: { type: "integer", minimum: 0 },
           clientInstanceId: { type: "string", minLength: 1, maxLength: value.limits.maximumIdentifierLength },
           requestSequence: { type: "integer", minimum: 1 },
           payload: true
@@ -168,7 +168,19 @@ function generateSchema(value) {
         ]
       }
     }
-  };
+  });
+}
+
+function addSafeIntegerBounds(value) {
+  if (Array.isArray(value)) return value.map(addSafeIntegerBounds);
+  if (!value || typeof value !== "object") return value;
+  const bounded = Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [key, addSafeIntegerBounds(nested)])
+  );
+  if (bounded.type === "integer" && bounded.maximum === undefined) {
+    bounded.maximum = Number.MAX_SAFE_INTEGER;
+  }
+  return bounded;
 }
 
 function requestPayloadSchema(message) {
