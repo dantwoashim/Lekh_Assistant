@@ -10,6 +10,7 @@ The current desktop companion packages the existing React UI through Electron:
 - Packager config: `electron-builder.config.cjs`
 - Windows NSIS hooks: `build/installer/windows/installer.nsh`
 - Bundled daemon artifact: `native/daemon/dist/lekh-keyboard-daemon.mjs`
+- Native Windows IPC owner: `native/windows-tsf/skeleton/LekhPipeBroker.cpp`
 
 The companion does not globally hook keys and does not read foreground text. Native keystrokes must go through Windows TSF or macOS IMK.
 
@@ -33,6 +34,6 @@ npm run build:companion
 npm run package:windows:unsigned
 ```
 
-On Windows, the companion starts the bundled per-user daemon as a separate background process. The daemon exposes the named pipe expected by the TSF text service. If the daemon is unavailable, TSF must pass keystrokes through rather than freezing the host app.
+On Windows, the companion starts the native pipe broker and never exposes the Node daemon directly. The broker launches the bundled daemon with an inherited-handle allowlist, removes Node injection variables, contains it in a kill-on-close job, verifies protocol readiness, and owns the protected per-logon-session named pipe expected by TSF. A bounded crash loop restarts the broker outside the key path. If either process is unavailable, TSF passes keystrokes through rather than freezing the host app.
 
 Signed Windows release requires `CSC_LINK` and `CSC_KEY_PASSWORD`.

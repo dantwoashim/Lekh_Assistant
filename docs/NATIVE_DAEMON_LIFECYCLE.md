@@ -1,33 +1,32 @@
 # Native Daemon Lifecycle
 
-The daemon hosts the shared keyboard engine outside the native IME shell. Native shells stay thin and fail open.
+On Windows, the daemon hosts the shared keyboard engine outside the native TSF shell. Native shells stay thin and fail open. The current macOS IMK uses its in-process Swift engine and does not depend on this daemon.
 
 ## Role
 
 - Host `KeyboardEngine`.
 - Maintain warm state.
 - Own local memory, dictionary, and settings storage adapters.
-- Serve Windows TSF and macOS IMK/XPC over local IPC.
+- Serve Windows TSF over local IPC.
 - Serve companion app settings and diagnostics.
 - Never send typed text to the network.
 - Expose redacted `diagnostics.getMetrics` counters without typed text.
 
 ## Windows
 
-- Preferred start: installer-registered user-login startup task or companion-managed daemon.
+- The per-user companion starts `LekhPipeBroker.exe` at login and applies a bounded restart policy outside the key path.
+- The broker launches the daemon through private inherited standard-I/O handles, strips Node/Electron injection variables, and assigns it to a kill-on-close job.
 - TSF DLL reconnects non-blockingly on activation.
-- TSF DLL may request lazy start only outside the hot path.
-- IPC uses a per-user named pipe.
+- The TSF DLL never launches either process on the hot path.
+- The broker owns a per-user-named, current-logon-authorized pipe and verifies daemon protocol readiness before opening it.
 - If daemon is unavailable, TSF passes through raw keystrokes and records a local diagnostic.
 - If daemon crashes mid-session, TSF times out, invalidates sessions, passes through, and requests restart outside the hot path.
 
 ## macOS
 
-- Input method communicates through XPC.
-- XPC service hosts the engine or bridges to the daemon.
-- If XPC is unavailable, the input method passes through and does not freeze the host app.
-- Local data uses App Group/shared container paths where needed.
-- Sandboxing and input method restrictions must be validated on real macOS builds.
+- The current IMK hot path uses `LekhEngineCore` in process.
+- It performs no per-keystroke XPC, daemon launch, network request, or synchronous file decoding.
+- Signing, notarization, and the host-application validation matrix remain release gates; they do not change this hot-path architecture.
 
 ## Daemon API
 
@@ -51,7 +50,4 @@ Prompt 3 adds a repo-executable TypeScript development daemon dispatcher:
 - records redacted counters for processed keystrokes, timeouts, pass-through fallbacks, and committed candidates;
 - exposes `withHotPathTimeout` so native shells have a tested pass-through fallback model.
 
-Production OS service packaging remains blocked on native integration work:
-
-- Windows: user-login daemon registration plus named pipe security on a real Windows environment.
-- macOS: XPC service/bundle validation and signing/notarization.
+Windows now has a source-complete native broker, explicit pipe authorization, exact server-image verification, companion launch wiring, package fail-closed checks, and Windows-native security/backend tests. Release still requires the host-application matrix, latency evidence, recovery testing, and Authenticode for a public production installer. macOS still requires host validation plus signing/notarization for a public release.

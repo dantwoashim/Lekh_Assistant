@@ -52,8 +52,10 @@ Required controls:
 
 Windows:
 
-- per-user named pipe;
-- ACL restricted to the current user;
+- per-user-named pipe owned only by the native broker;
+- protected DACL restricted to the current logon SID plus LocalSystem (or the current user SID for a non-interactive token without a logon SID), with remote clients rejected;
+- TSF verification of the server user token and exact installed broker file identity;
+- private inherited-handle transport between the broker and daemon;
 - no remote TCP listener;
 - no arbitrary command execution through IPC;
 - fail-open pass-through on timeout or daemon failure.

@@ -38,7 +38,7 @@ npm run build:daemon
 npm run daemon:dev
 ```
 
-Windows named-pipe development:
+Standalone Node named-pipe diagnostics (not the installed trust boundary):
 
 ```powershell
 npm run build:daemon
@@ -58,8 +58,9 @@ The unsigned `.exe` is a dev artifact. Public release requires Authenticode sign
 ## Signed Release Build Requirements
 
 - Windows TSF DLL builds, registers, and unregisters cleanly.
-- Per-user daemon starts at login or through companion.
-- Named pipe is per-user ACL scoped.
+- Companion starts the native broker at login; the broker contains and supervises the daemon.
+- The named pipe uses the explicit protected logon-session DACL and the TSF verifies the exact installed broker image.
+- The package and NSIS installer fail closed if either the TSF DLL or broker is absent.
 - Companion app installs with the daemon.
 - Secure input passes through or disables memory/proofread/suggestions.
 - Crash logs are local and redacted.

@@ -18,13 +18,13 @@ public:
   bool initialize();
   SECURITY_ATTRIBUTES* attributes();
   bool validatePipeHandle(HANDLE pipe) const;
-  const std::wstring& logonSidString() const;
+  const std::wstring& authorizationSidString() const;
 
 private:
   PSECURITY_DESCRIPTOR descriptor_ = nullptr;
   SECURITY_ATTRIBUTES attributes_ = {};
-  lekh::windows::Sid logonSid_;
-  std::wstring logonSidString_;
+  lekh::windows::Sid authorizationSid_;
+  std::wstring authorizationSidString_;
 };
 
 } // namespace lekh::pipe

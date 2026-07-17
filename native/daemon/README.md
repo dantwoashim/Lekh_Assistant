@@ -11,7 +11,7 @@ Prompt 3 adds a repo-executable TypeScript daemon:
 - `native/daemon/src/namedPipeServer.ts`
 - `native/daemon/dist/lekh-keyboard-daemon.mjs`
 
-It handles every IPC message, validates envelopes, tracks diagnostics, exercises timeout fallback, and is covered by `npm run test:native-scaffold`. On Windows, named-pipe development mode derives `\\.\pipe\LekhKeyboard-{current-user-SID}` and refuses to start if the SID cannot be resolved.
+It handles every IPC message, validates envelopes, tracks diagnostics, exercises timeout fallback, and is covered by `npm run test:native-scaffold`. The standalone Node named-pipe mode remains a development diagnostic. The installed Windows path runs the daemon over private inherited standard-I/O handles behind `LekhPipeBroker.exe`.
 
 ## Responsibilities
 
@@ -26,7 +26,7 @@ It handles every IPC message, validates envelopes, tracks diagnostics, exercises
 
 If daemon IPC is unavailable, native input methods must pass through raw keystrokes and surface diagnostics later through the companion app. Host applications must never freeze while waiting for the daemon.
 
-The Node listener does not yet prove an explicit user-only Windows DACL. Production authorization remains blocked until the native pipe owner creates every instance with a verified security descriptor and the TSF client verifies that server's installed identity.
+The native Windows broker owns every public pipe instance. It derives the endpoint name from the current user SID, protects the DACL to the current logon SID plus LocalSystem (falling back to the current user SID for non-interactive tokens without a logon SID), rejects remote clients, verifies the live ACL, and uses first-instance creation. The TSF client also requires the server process to run as the current user and to be the exact `LekhPipeBroker.exe` installed beside the DLL. The daemon never owns the public production pipe.
 
 ## Local Commands
 
@@ -34,4 +34,4 @@ The Node listener does not yet prove an explicit user-only Windows DACL. Product
 - `npm run test:native-scaffold`
 - `npm run build:daemon`
 - `npm run daemon:dev`
-- `npm run daemon:named-pipe` on Windows
+- `npm run daemon:named-pipe` on Windows for transport diagnostics only

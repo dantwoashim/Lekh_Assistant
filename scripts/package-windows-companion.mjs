@@ -10,6 +10,7 @@ const signed = process.argv.includes("--signed");
 const unsigned = process.argv.includes("--unsigned") || !signed;
 const reportPath = join(root, "reports", signed ? "windows-signed-package-report.json" : "windows-unsigned-package-report.json");
 const tsfDll = join(root, "native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhTextService.dll");
+const pipeBroker = join(root, "native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhPipeBroker.exe");
 
 function finish(status, details, exitCode) {
   mkdirSync(join(root, "reports"), { recursive: true });
@@ -83,6 +84,14 @@ if (!existsSync(tsfDll)) {
     step: "windows-tsf-artifact",
     reason: "The required TSF DLL is missing. A companion-only installer is forbidden.",
     expectedArtifact: tsfDll,
+    buildCommand: "npm run build:windows"
+  }, 1);
+}
+if (!existsSync(pipeBroker)) {
+  finish("failed", {
+    step: "windows-pipe-broker-artifact",
+    reason: "The required native named-pipe broker is missing. An unprotected daemon endpoint is forbidden.",
+    expectedArtifact: pipeBroker,
     buildCommand: "npm run build:windows"
   }, 1);
 }

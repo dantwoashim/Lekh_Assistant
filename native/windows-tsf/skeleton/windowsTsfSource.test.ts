@@ -110,14 +110,18 @@ describe("Windows TSF source safety contract", () => {
   it("uses a per-user pipe and cancellation-safe bounded overlapped IO", () => {
     const ipc = read("IpcClient.cpp");
     const identity = read("LekhWindowsIdentity.cpp");
+    const serverIdentity = read("LekhPipeServerIdentity.cpp");
     const guids = read("Guids.h");
     expect(identity).toContain("ConvertSidToStringSidW");
     expect(identity).toContain("std::vector<DWORD>");
     expect(identity).not.toContain("std::vector<BYTE>");
-    expect(ipc).toContain("GetNamedPipeServerProcessId");
+    expect(serverIdentity).toContain("GetNamedPipeServerProcessId");
     expect(identity).toContain("EqualSid");
-    expect(ipc).toContain("processRunsAsCurrentUser(serverProcess)");
-    expect(ipc).toContain("pipeServerRunsAsCurrentUser(pipe)");
+    expect(serverIdentity).toContain("processRunsAsCurrentUser(process)");
+    expect(serverIdentity).toContain('L"LekhPipeBroker.exe"');
+    expect(serverIdentity).toContain("QueryFullProcessImageNameW");
+    expect(serverIdentity).toContain("GetFileInformationByHandle");
+    expect(ipc).toContain("serverIsTrustedBroker(pipe, g_module)");
     expect(ipc).toContain("if (!sid || sid->empty()) return std::nullopt");
     expect(ipc).toContain("if (pipeName_.empty()) return std::nullopt");
     expect(ipc).not.toContain("LEKH_KEYBOARD_PIPE_NAME");
@@ -141,6 +145,7 @@ describe("Windows TSF source safety contract", () => {
     const cmake = read("CMakeLists.txt");
     expect(identity).toContain("TokenGroups");
     expect(identity).toContain("SE_GROUP_LOGON_ID");
+    expect(security).toContain("currentUserSid()");
     expect(security).toContain('L"D:P(A;;GA;;;SY)(A;;GA;;;"');
     expect(security).toContain("ConvertStringSecurityDescriptorToSecurityDescriptorW");
     expect(security).toContain("GetSecurityInfo");
@@ -152,6 +157,31 @@ describe("Windows TSF source safety contract", () => {
     expect(cmake).toContain("add_library(LekhPipeSecurity STATIC");
     expect(cmake).toContain("add_executable(LekhPipeSecurityTests");
     expect(cmake).toContain("add_test(NAME LekhPipeSecurityTests");
+  });
+
+  it("routes the public endpoint through the contained native broker", () => {
+    const broker = read("LekhPipeBroker.cpp");
+    const backend = read("LekhDaemonBackend.cpp");
+    const cmake = read("CMakeLists.txt");
+    const companion = readFileSync(join(root, "electron/main.cjs"), "utf8");
+    expect(broker).toContain("CreateNamedPipeW");
+    expect(broker).toContain("FILE_FLAG_FIRST_PIPE_INSTANCE");
+    expect(broker).toContain("PIPE_REJECT_REMOTE_CLIENTS");
+    expect(broker).toContain("security.validatePipeHandle(pipe.get())");
+    expect(broker).toContain("lekh::ipc::kMaximumActiveConnections");
+    expect(broker).toContain("verifyBackendReadiness(backend)");
+    expect(broker).toContain("kMaximumConnections - kWorkerCount - 1");
+    expect(backend).toContain("PROC_THREAD_ATTRIBUTE_HANDLE_LIST");
+    expect(backend).toContain("JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE");
+    expect(backend).toContain('L"NODE_OPTIONS"');
+    expect(backend).toContain('L"NODE_PATH"');
+    expect(backend).toContain("GetOverlappedResultEx");
+    expect(backend).toContain("CREATE_SUSPENDED | CREATE_NO_WINDOW");
+    expect(cmake).toContain("add_executable(LekhPipeBroker WIN32");
+    expect(cmake).toContain("add_executable(LekhDaemonBackendTests");
+    expect(companion).toContain("startWindowsPipeBrokerIfAvailable()");
+    expect(companion).toContain('spawn(brokerPath, []');
+    expect(companion).not.toContain('[daemonPath, "--named-pipe"]');
   });
 
   it.skipIf(process.platform === "win32")("compiles and runs the portable native protocol tests", () => {

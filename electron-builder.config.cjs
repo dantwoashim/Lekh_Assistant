@@ -23,7 +23,10 @@ module.exports = {
     {
       from: "native/windows-tsf/skeleton",
       to: "native/windows-tsf",
-      filter: ["**/*"]
+      filter: [
+        "build/bin/Release/LekhTextService.dll",
+        "build/bin/Release/LekhPipeBroker.exe"
+      ]
     },
     {
       from: "docs/WINDOWS_RELEASE_BUILD.md",

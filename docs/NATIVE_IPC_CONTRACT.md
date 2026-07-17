@@ -82,8 +82,9 @@ interface IpcResponse<T = unknown> {
 
 - IPC is local-only.
 - Windows derives a per-user named-pipe name from the current token SID and has no shared or environment-selected fallback.
-- The TSF client rejects a server running under another user token.
-- The Node development listener does not yet prove an explicit user-only DACL or installed executable identity; production remains blocked on the native pipe owner.
+- `LekhPipeBroker.exe` owns every installed Windows pipe instance with a protected DACL containing only the current logon SID and LocalSystem, `PIPE_REJECT_REMOTE_CLIENTS`, and a first-instance anti-squatting guard. Non-interactive tokens without a logon SID fall back to the current user SID. The broker re-reads and validates the live DACL before accepting clients.
+- The TSF client rejects a server unless it runs under the current user token and its process image is the exact broker binary installed beside `LekhTextService.dll`; path aliases are compared by volume and file identity.
+- The Node named-pipe listener is a development diagnostic only. The installed daemon is reachable solely through private inherited handles owned by the broker.
 - The current macOS IMK hot path uses its in-process native engine and does not expose this named-pipe transport.
 - No remote TCP listener is allowed.
 - No typed text telemetry is sent to network services.

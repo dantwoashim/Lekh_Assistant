@@ -19,8 +19,10 @@ bool grantsFullPipeControl(ACCESS_MASK mask) {
   return (mask & GENERIC_ALL) == GENERIC_ALL || (mask & FILE_ALL_ACCESS) == FILE_ALL_ACCESS;
 }
 
-bool validatesRestrictedDacl(PSECURITY_DESCRIPTOR descriptor, PSID logonSid) {
-  if (!descriptor || !logonSid || !IsValidSecurityDescriptor(descriptor) || !IsValidSid(logonSid)) return false;
+bool validatesRestrictedDacl(PSECURITY_DESCRIPTOR descriptor, PSID authorizationSid) {
+  if (!descriptor || !authorizationSid || !IsValidSecurityDescriptor(descriptor) || !IsValidSid(authorizationSid)) {
+    return false;
+  }
 
   SECURITY_DESCRIPTOR_CONTROL control = 0;
   DWORD revision = 0;
@@ -36,7 +38,7 @@ bool validatesRestrictedDacl(PSECURITY_DESCRIPTOR descriptor, PSID logonSid) {
   const std::vector<DWORD> systemSidStorage = localSystemSid();
   if (systemSidStorage.empty()) return false;
   PSID systemSid = const_cast<DWORD*>(systemSidStorage.data());
-  bool foundLogonSid = false;
+  bool foundAuthorizationSid = false;
   bool foundSystemSid = false;
 
   for (DWORD index = 0; index < dacl->AceCount; ++index) {
@@ -48,9 +50,9 @@ bool validatesRestrictedDacl(PSECURITY_DESCRIPTOR descriptor, PSID logonSid) {
     PSID trustee = const_cast<DWORD*>(&ace->SidStart);
     if (!IsValidSid(trustee) || !grantsFullPipeControl(ace->Mask)) return false;
 
-    if (EqualSid(trustee, logonSid)) {
-      if (foundLogonSid) return false;
-      foundLogonSid = true;
+    if (EqualSid(trustee, authorizationSid)) {
+      if (foundAuthorizationSid) return false;
+      foundAuthorizationSid = true;
     } else if (EqualSid(trustee, systemSid)) {
       if (foundSystemSid) return false;
       foundSystemSid = true;
@@ -59,7 +61,7 @@ bool validatesRestrictedDacl(PSECURITY_DESCRIPTOR descriptor, PSID logonSid) {
     }
   }
 
-  return foundLogonSid && foundSystemSid;
+  return foundAuthorizationSid && foundSystemSid;
 }
 
 } // namespace
@@ -72,14 +74,15 @@ SecurityContext::~SecurityContext() {
 
 bool SecurityContext::initialize() {
   if (descriptor_) return false;
-  const std::optional<lekh::windows::Sid> logonSid = lekh::windows::currentLogonSid();
-  if (!logonSid || !logonSid->valid()) return false;
-  logonSid_ = *logonSid;
+  std::optional<lekh::windows::Sid> authorizationSid = lekh::windows::currentLogonSid();
+  if (!authorizationSid) authorizationSid = lekh::windows::currentUserSid();
+  if (!authorizationSid || !authorizationSid->valid()) return false;
+  authorizationSid_ = *authorizationSid;
 
-  const std::optional<std::wstring> logonSidString = logonSid_.string();
-  if (!logonSidString) return false;
+  const std::optional<std::wstring> authorizationSidString = authorizationSid_.string();
+  if (!authorizationSidString) return false;
 
-  const std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;" + *logonSidString + L")";
+  const std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;" + *authorizationSidString + L")";
   PSECURITY_DESCRIPTOR descriptor = nullptr;
   if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
     sddl.c_str(),
@@ -87,18 +90,18 @@ bool SecurityContext::initialize() {
     &descriptor,
     nullptr
   )) {
-    logonSid_ = {};
+    authorizationSid_ = {};
     return false;
   }
 
-  if (!validatesRestrictedDacl(descriptor, logonSid_.get())) {
+  if (!validatesRestrictedDacl(descriptor, authorizationSid_.get())) {
     LocalFree(descriptor);
-    logonSid_ = {};
+    authorizationSid_ = {};
     return false;
   }
 
   descriptor_ = descriptor;
-  logonSidString_ = *logonSidString;
+  authorizationSidString_ = *authorizationSidString;
   attributes_.nLength = sizeof(attributes_);
   attributes_.lpSecurityDescriptor = descriptor_;
   attributes_.bInheritHandle = FALSE;
@@ -110,7 +113,7 @@ SECURITY_ATTRIBUTES* SecurityContext::attributes() {
 }
 
 bool SecurityContext::validatePipeHandle(HANDLE pipe) const {
-  if (!descriptor_ || pipe == nullptr || pipe == INVALID_HANDLE_VALUE || !logonSid_.valid()) return false;
+  if (!descriptor_ || pipe == nullptr || pipe == INVALID_HANDLE_VALUE || !authorizationSid_.valid()) return false;
   PSECURITY_DESCRIPTOR descriptor = nullptr;
   const DWORD result = GetSecurityInfo(
     pipe,
@@ -123,13 +126,13 @@ bool SecurityContext::validatePipeHandle(HANDLE pipe) const {
     &descriptor
   );
   if (result != ERROR_SUCCESS || !descriptor) return false;
-  const bool valid = validatesRestrictedDacl(descriptor, logonSid_.get());
+  const bool valid = validatesRestrictedDacl(descriptor, authorizationSid_.get());
   LocalFree(descriptor);
   return valid;
 }
 
-const std::wstring& SecurityContext::logonSidString() const {
-  return logonSidString_;
+const std::wstring& SecurityContext::authorizationSidString() const {
+  return authorizationSidString_;
 }
 
 } // namespace lekh::pipe

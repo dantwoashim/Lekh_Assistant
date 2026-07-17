@@ -6,6 +6,12 @@
     Abort
 
   lekh_tsf_dll_found:
+    IfFileExists "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhPipeBroker.exe" lekh_pipe_broker_found
+      DetailPrint "Required Lekh named-pipe broker is missing; refusing an unprotected keyboard install."
+      MessageBox MB_OK|MB_ICONSTOP "Lekh Keyboard could not be installed because its secure native IPC broker is missing. Rebuild the installer and try again."
+      Abort
+
+  lekh_pipe_broker_found:
     DetailPrint "Registering Lekh TSF text service."
     ClearErrors
     ExecWait 'regsvr32.exe /s "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll"' $0

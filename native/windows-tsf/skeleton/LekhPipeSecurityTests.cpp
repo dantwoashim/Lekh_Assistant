@@ -21,7 +21,7 @@ int main() {
   lekh::pipe::SecurityContext security;
   require(security.initialize(), "failed to create explicit named-pipe security descriptor");
   require(security.attributes() != nullptr, "security attributes were not exposed");
-  require(!security.logonSidString().empty(), "logon SID was not retained");
+  require(!security.authorizationSidString().empty(), "authorization SID was not retained");
 
   const std::wstring pipeName =
     L"\\\\.\\pipe\\LekhKeyboard-SecurityTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" +

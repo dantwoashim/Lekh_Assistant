@@ -31,7 +31,11 @@ const nativeModes = new Set([
   "traditional-traditional",
   "traditional-romanized"
 ]);
-let daemonProcess = null;
+let pipeBrokerProcess = null;
+let pipeBrokerRestartTimer = null;
+let pipeBrokerStableTimer = null;
+let pipeBrokerRestartAttempts = 0;
+let applicationIsQuitting = false;
 let verifiedUpdate = null;
 
 function createWindow() {
@@ -100,7 +104,7 @@ app.setName("Lekh Keyboard Companion");
 app.whenReady().then(() => {
   installApplicationMenu();
   registerCompanionIpc();
-  startDaemonIfAvailable();
+  startWindowsPipeBrokerIfAvailable();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -557,30 +561,55 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  if (daemonProcess && !daemonProcess.killed) {
-    daemonProcess.kill();
-    daemonProcess = null;
-  }
+  applicationIsQuitting = true;
+  if (pipeBrokerRestartTimer) clearTimeout(pipeBrokerRestartTimer);
+  if (pipeBrokerStableTimer) clearTimeout(pipeBrokerStableTimer);
+  pipeBrokerRestartTimer = null;
+  pipeBrokerStableTimer = null;
+  if (pipeBrokerProcess && !pipeBrokerProcess.killed) pipeBrokerProcess.kill();
+  pipeBrokerProcess = null;
 });
 
-function startDaemonIfAvailable() {
-  if (process.platform !== "win32") return;
+function startWindowsPipeBrokerIfAvailable() {
+  if (process.platform !== "win32" || applicationIsQuitting || pipeBrokerProcess) return;
+  const nativeBuildDirectory = process.arch === "arm64" ? "build-ARM64" : "build";
   const daemonPath = app.isPackaged
     ? path.join(process.resourcesPath, "native", "daemon", "lekh-keyboard-daemon.mjs")
     : path.join(__dirname, "..", "native", "daemon", "dist", "lekh-keyboard-daemon.mjs");
+  const brokerPath = app.isPackaged
+    ? path.join(process.resourcesPath, "native", "windows-tsf", "build", "bin", "Release", "LekhPipeBroker.exe")
+    : path.join(__dirname, "..", "native", "windows-tsf", "skeleton", nativeBuildDirectory, "bin", "Release", "LekhPipeBroker.exe");
+  if (!existsSync(daemonPath) || !existsSync(brokerPath)) return;
 
-  if (!existsSync(daemonPath)) return;
-
-  daemonProcess = spawn(process.execPath, [daemonPath, "--named-pipe"], {
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: "1"
-    },
+  const broker = spawn(brokerPath, [], {
     stdio: "ignore",
     detached: false,
     windowsHide: true
   });
-  daemonProcess.once("exit", () => {
-    daemonProcess = null;
-  });
+  pipeBrokerProcess = broker;
+  pipeBrokerStableTimer = setTimeout(() => {
+    pipeBrokerRestartAttempts = 0;
+    pipeBrokerStableTimer = null;
+  }, 30_000);
+  pipeBrokerStableTimer.unref();
+
+  let stopped = false;
+  const handleStoppedBroker = () => {
+    if (stopped) return;
+    stopped = true;
+    if (pipeBrokerStableTimer) clearTimeout(pipeBrokerStableTimer);
+    pipeBrokerStableTimer = null;
+    if (pipeBrokerProcess === broker) pipeBrokerProcess = null;
+    if (applicationIsQuitting || pipeBrokerRestartAttempts >= 3) return;
+    const retryDelays = [250, 1000, 4000];
+    const delay = retryDelays[pipeBrokerRestartAttempts];
+    pipeBrokerRestartAttempts += 1;
+    pipeBrokerRestartTimer = setTimeout(() => {
+      pipeBrokerRestartTimer = null;
+      startWindowsPipeBrokerIfAvailable();
+    }, delay);
+    pipeBrokerRestartTimer.unref();
+  };
+  broker.once("error", handleStoppedBroker);
+  broker.once("exit", handleStoppedBroker);
 }

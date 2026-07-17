@@ -74,9 +74,13 @@ const dll = join(buildDir, "bin", "Release", "LekhTextService.dll");
 if (!existsSync(dll)) {
   finish("failed", { step: "artifact", reason: `Expected DLL was not found at ${dll}` }, 1);
 }
+const broker = join(buildDir, "bin", "Release", "LekhPipeBroker.exe");
+if (!existsSync(broker)) {
+  finish("failed", { step: "artifact", reason: `Expected named-pipe broker was not found at ${broker}` }, 1);
+}
 
 finish("passed", {
-  artifact: dll,
+  artifacts: [dll, broker],
   cmake: cmakeVersion.stdout.split("\n")[0],
   nativeTests: "passed"
 }, 0);

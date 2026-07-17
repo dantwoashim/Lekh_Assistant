@@ -26,5 +26,9 @@ $Dll = Join-Path $BuildDir "bin\Release\LekhTextService.dll"
 if (!(Test-Path -LiteralPath $Dll -PathType Leaf)) {
   throw "Expected TSF DLL not found: $Dll"
 }
+$Broker = Join-Path $BuildDir "bin\Release\LekhPipeBroker.exe"
+if (!(Test-Path -LiteralPath $Broker -PathType Leaf)) {
+  throw "Expected named-pipe broker not found: $Broker"
+}
 
-Write-Host "Built and verified $Dll"
+Write-Host "Built and verified $Dll and $Broker"

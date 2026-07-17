@@ -1,6 +1,7 @@
 #include "IpcClient.h"
 
 #include "Guids.h"
+#include "LekhPipeServerIdentity.h"
 #include "LekhWindowsIdentity.h"
 #include "../../shared/ipc/generated/LekhIPCProtocol.generated.h"
 
@@ -10,6 +11,8 @@
 #include <iterator>
 #include <string>
 #include <utility>
+
+extern HMODULE g_module;
 
 namespace {
 
@@ -62,18 +65,6 @@ std::wstring fromUtf8(const char* value, DWORD bytes) {
     return L"";
   }
   return output;
-}
-
-bool pipeServerRunsAsCurrentUser(HANDLE pipe) {
-  ULONG serverProcessId = 0;
-  if (!GetNamedPipeServerProcessId(pipe, &serverProcessId) || serverProcessId == 0) return false;
-
-  HANDLE serverProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, serverProcessId);
-  if (!serverProcess) return false;
-
-  const bool matches = lekh::windows::processRunsAsCurrentUser(serverProcess);
-  CloseHandle(serverProcess);
-  return matches;
 }
 
 std::optional<std::wstring> configuredPipeName() {
@@ -204,7 +195,7 @@ std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine,
     nullptr
   );
   if (pipe == INVALID_HANDLE_VALUE) return std::nullopt;
-  if (!pipeServerRunsAsCurrentUser(pipe)) {
+  if (!lekh::pipe::serverIsTrustedBroker(pipe, g_module)) {
     CloseHandle(pipe);
     return std::nullopt;
   }
