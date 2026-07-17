@@ -36,7 +36,6 @@ target_link_libraries(LekhTextService PRIVATE
   oleaut32
   uuid
   advapi32
-  msctf
   shlwapi
 )
 
