@@ -1,6 +1,6 @@
 cask "lekh-keyboard-test" do
-  version "0.1.0,172"
-  sha256 "f969229e4790d77cca59d8d49b88fd083c66dc47dcbd31a34a2b8c63f70429ad"
+  version "0.1.0,177"
+  sha256 "7763e82e9d33a96d925c647f35d16b528d7784fc984c38f40e86049e2387bfbf"
 
   url "https://lekh-assistant.pages.dev/updates/macos/Lekh-Keyboard-Test-Installer.zip"
   name "Lekh Keyboard"

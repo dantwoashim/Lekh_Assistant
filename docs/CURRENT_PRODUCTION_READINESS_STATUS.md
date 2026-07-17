@@ -2,7 +2,7 @@
 
 Updated: 2026-07-17
 
-Evidence basis: the current reviewed source revision and the hardening changes described below. These changes have passed tests but are not present in the previously shared build 176 archive until a new archive is built and verified.
+Evidence basis: reviewed source revision `12af2d686479f61fb50b147e4995842516e47b83` and the locally generated build 177 archive. Build 176 is superseded and does not contain these fixes.
 
 ## Current decision
 
@@ -18,7 +18,7 @@ Machine-readable product markers retained for automated truth checks:
 
 The native completion target remains a production macOS IMK input method with host-app matrix evidence. Under the current no-Developer-ID constraint, the project can ship only a transparently unsigned community preview, not that production-equivalent channel.
 
-- **Community Unsigned macOS Preview:** source is approaching a new QA candidate, but the old build 176 archive must not be represented as containing the latest fixes. Rebuild it, verify it, and perform clean-account install/use/uninstall testing before redistribution.
+- **Community Unsigned macOS Preview:** build 177 is a verified local QA candidate. It is universal, contains the explicitly experimental Core ML model, and passed its self-contained extracted-archive verification path. Clean-account install/use/uninstall and representative host testing remain required before redistribution.
 - **Apple-trusted macOS production channel:** unavailable under the explicit no-Developer-ID constraint. The project will not pretend that ad-hoc signing, Minisign, Homebrew, or manual approval equals Apple notarization.
 - **Windows keyboard:** blocked on implementation. The current TSF code is a fail-open feasibility skeleton; it does not begin a real engine session, own a TSF composition, apply marked or committed text, or render candidates.
 - **Original product request:** incomplete. Romanized and internal Traditional modes exist on macOS, but authoritative Traditional physical-layout validation, working Windows support, cross-host suggestions/proofreading, and a dictionary with dependable meanings remain unfinished.
@@ -33,7 +33,7 @@ The native completion target remains a production macOS IMK input method with ho
 | auto-suggestions | Local candidate, completion, and ranking code exists | useful prototype; cross-engine conformance and host acceptance incomplete |
 | proofreading while typing | Proof-hint code and macOS UI paths exist | not certified across target host applications |
 | dictionary while typing | Lookup returns words, aliases, domains, and some metadata | meanings/definitions and product UX are incomplete |
-| neural acceleration | Build 176 contains an experimental local Core ML model | `productionEligible` is false; `.all` compute units do not prove Neural Engine execution |
+| neural acceleration | Build 177 contains an explicitly experimental local Core ML model | `productionEligible` is false; `.all` compute units do not prove Neural Engine execution |
 | trusted macOS installation | Project-owned signed manifest and ad-hoc code signature exist | cryptographic integrity is possible; Apple identity/notarization is not |
 
 ## Verified on 2026-07-17
@@ -49,10 +49,13 @@ The native completion target remains a production macOS IMK input method with ho
 | Neural runtime manifest | `passed-experimental`; production provenance/context-rescorer warnings remain |
 | Production dependency audit | zero known npm vulnerabilities reported |
 | Generated terminal shell syntax | install and uninstall scripts passed `bash -n` |
+| Build 177 archive | 6,142,575 bytes; SHA-256 `7763e82e9d33a96d925c647f35d16b528d7784fc984c38f40e86049e2387bfbf` |
+| Build 177 payload | build `177`, source `12af2d6`, clean provenance, `arm64` + `x86_64`, ad-hoc signed |
+| Extracted release verification | signed closed-world inventory, checksum sidecar, installer/uninstaller/payload code signatures, and quarantined self-staging path passed |
 
 This evidence disproves the supplied masterplan's current headline claim that TypeScript typechecking is un-runnable. Large embedded data, overlapping project graphs, and inflated bundles remain architectural debt; a stale OOM observation is not a present stop-ship fact.
 
-## Hardening implemented in the current working tree
+## Hardening included in build 177
 
 1. TypeScript range operations now respect extended grapheme boundaries for Devanagari combining sequences, virama conjuncts, emoji modifiers, and ZWJ sequences.
 2. A transition into a secure or uncertain field atomically clears surrounding text windows, active composition, candidates, proof hints, last committed text, and committed history.
@@ -66,7 +69,7 @@ This evidence disproves the supplied masterplan's current headline claim that Ty
 10. The supported development runtime is explicit (`node >=22.5`, `.nvmrc` 24, npm 11.8.0), matching the first Node release that provides `node:sqlite` and the CI matrix.
 11. The experimental neural tail now bypasses exact deterministic tokens, fails closed if the deterministic pack is unavailable, reserves an EOS slot, and rejects any input token that the verified vocabulary cannot represent. These are admission-safety fixes, not proof of Neural Engine execution or production quality.
 
-These are source changes, not retroactive repairs to build 176.
+These changes are present in build 177. They are not retroactive repairs to build 176.
 
 ## Highest-priority remaining work
 
@@ -100,13 +103,16 @@ The first two channels remain valid without paying Apple. They are not renamed s
 - Documentation distinguishes implemented, tested, experimentally packaged, human-validated, and production-eligible states.
 - A release gate must be executable and evidence-producing; a source-string assertion is not runtime proof.
 
-## Next release gate
+## Remaining release gate before sending build 177
 
-Do not send another archive until all of the following are true:
+Completed locally:
 
-1. Current source changes are committed to a stable revision.
-2. A fresh universal macOS archive is built from that clean revision.
-3. The archive passes its bundled verifier after normal Finder extraction.
-4. Install, logout/login, System Settings approval, selection, typing, and uninstall are tested from a clean user account.
-5. TextEdit and at least one browser/editor host pass Romanized typing, deletion, commit, candidate selection, protected-token, and secure-field smoke tests.
-6. The message to the tester states that the build is unsigned, unnotarized, experimental, manually approved, and not the completed Windows/Traditional product.
+1. Source changes are committed at `12af2d6`.
+2. A fresh universal build 177 archive was generated from that clean revision.
+3. The extracted archive passed its bundled dependency-free verifier, exact inventory, shell syntax, code-sign integrity, architecture, model-presence, and provenance checks.
+
+Still required before redistribution:
+
+1. Test install, logout/login, System Settings approval, selection, typing, and uninstall from a clean user account.
+2. Test Romanized typing, deletion, commit, candidate selection, protected tokens, and secure-field behavior in TextEdit and at least one browser/editor host.
+3. Tell the tester that the build is unsigned, unnotarized, experimental, manually approved, and not the completed Windows/Traditional product.
