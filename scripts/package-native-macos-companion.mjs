@@ -24,6 +24,7 @@ import {
   parseCodeSignInspection,
   resolveCompanionBundleVersions
 } from "./lib/macos-companion-package-metadata.mjs";
+import { macOSSourceStatusArguments } from "./lib/macos-imk-dev-release-integrity.mjs";
 import { readProductionReleasePolicy } from "./lib/macos-production-release-attestation.mjs";
 
 const root = process.cwd();
@@ -179,7 +180,7 @@ function gitObjectAtRevision(revision, relativePath, { binary = false } = {}) {
 function assertSignedSourceProvenance(step) {
   if (!signed) return;
   const revision = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8", stdio: "pipe" });
-  const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=normal"], {
+  const status = spawnSync("git", macOSSourceStatusArguments({ untrackedFiles: "normal" }), {
     cwd: root,
     encoding: "utf8",
     stdio: "pipe"
@@ -942,7 +943,7 @@ if (dmgSwapFault && !signed) {
 
 try {
   const revisionResult = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8", stdio: "pipe" });
-  const statusResult = spawnSync("git", ["status", "--porcelain", "--untracked-files=normal"], {
+  const statusResult = spawnSync("git", macOSSourceStatusArguments({ untrackedFiles: "normal" }), {
     cwd: root,
     encoding: "utf8",
     stdio: "pipe"

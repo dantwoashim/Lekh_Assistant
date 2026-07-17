@@ -18,7 +18,10 @@ import { homedir } from "node:os";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { classifyMacOSCodeSigning } from "./lib/macos-imk-dev-release-integrity.mjs";
+import {
+  classifyMacOSCodeSigning,
+  macOSSourceStatusArguments
+} from "./lib/macos-imk-dev-release-integrity.mjs";
 import { readProductionReleasePolicy } from "./lib/macos-production-release-attestation.mjs";
 
 const root = process.cwd();
@@ -73,7 +76,7 @@ const gitRevisionProbe = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, en
 const gitTreeProbe = spawnSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" });
 const gitStatusProbe = spawnSync(
   "git",
-  ["status", "--porcelain=v1", "--untracked-files=all"],
+  macOSSourceStatusArguments(),
   { cwd: root, encoding: "utf8" }
 );
 const sourceRevision = gitRevisionProbe.status === 0 ? gitRevisionProbe.stdout.trim() : null;
@@ -362,7 +365,7 @@ const packagingScriptSha256 = createHash("sha256")
   .digest("hex");
 const finalGitStatusProbe = spawnSync(
   "git",
-  ["status", "--porcelain=v1", "--untracked-files=all"],
+  macOSSourceStatusArguments(),
   { cwd: root, encoding: "utf8" }
 );
 // Generators run before provenance is sealed. A clean start is insufficient:

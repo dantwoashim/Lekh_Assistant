@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyMacOSCodeSigning,
+  MACOS_GENERATED_RELEASE_PATHS,
+  macOSSourceStatusArguments,
   validateClosedBuildProvenance,
   validateMacOSIMKDevArtifactEvidence
 } from "./macos-imk-dev-release-integrity.mjs";
@@ -62,6 +64,24 @@ function validEvidence(overrides = {}) {
 }
 
 describe("macOS IMK dev release integrity", () => {
+  it("excludes only generated macOS distribution outputs from source cleanliness", () => {
+    expect(MACOS_GENERATED_RELEASE_PATHS).toEqual([
+      "release/native/macos/**",
+      "public/updates/macos/**"
+    ]);
+    expect(macOSSourceStatusArguments()).toEqual([
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+      "--",
+      ".",
+      ":(exclude)release/native/macos/**",
+      ":(exclude)public/updates/macos/**"
+    ]);
+    expect(() => macOSSourceStatusArguments({ untrackedFiles: "unsafe" }))
+      .toThrow(/Unsupported Git untracked-files policy/u);
+  });
+
   it("accepts only the closed build provenance schema and current source identity", () => {
     expect(validateClosedBuildProvenance(manifest, {
       gitRevision: revision,

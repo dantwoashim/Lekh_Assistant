@@ -20,6 +20,31 @@ export const BUILD_PROVENANCE_KEYS = Object.freeze([
   "sourceFilesClean"
 ]);
 
+// These directories contain generated distribution bytes, not compiler or
+// product source. Packaging the test installer refreshes them after the IMK
+// has already sealed its clean-source provenance, so treating those expected
+// outputs as source mutations creates a self-referential build that can never
+// be verified. They remain covered by their own SHA-256, signature, package,
+// and update-feed checks.
+export const MACOS_GENERATED_RELEASE_PATHS = Object.freeze([
+  "release/native/macos/**",
+  "public/updates/macos/**"
+]);
+
+export function macOSSourceStatusArguments({ untrackedFiles = "all" } = {}) {
+  if (!new Set(["all", "normal", "no"]).has(untrackedFiles)) {
+    throw new Error("Unsupported Git untracked-files policy.");
+  }
+  return [
+    "status",
+    "--porcelain=v1",
+    `--untracked-files=${untrackedFiles}`,
+    "--",
+    ".",
+    ...MACOS_GENERATED_RELEASE_PATHS.map((path) => `:(exclude)${path}`)
+  ];
+}
+
 const GIT_OBJECT_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const CODE_DIRECTORY_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u;
@@ -290,7 +315,7 @@ export function verifyMacOSIMKDevArtifact({
   const gitTree = run("/usr/bin/git", ["rev-parse", "HEAD^{tree}"], canonicalRoot);
   const gitStatus = run(
     "/usr/bin/git",
-    ["status", "--porcelain=v1", "--untracked-files=all"],
+    macOSSourceStatusArguments(),
     canonicalRoot
   );
   if (gitRevision.status !== 0 || gitTree.status !== 0 || gitStatus.status !== 0) {
