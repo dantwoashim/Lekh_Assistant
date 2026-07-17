@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve, sep } from "node:path";
 
 export const HUMAN_AUTHORITY_POLICY_PATH = "config/human-authority-policy.v1.json";
 
-const APPROVAL_PATH = "data/language-review/v1/human-authority-approval.json";
+const APPROVAL_PATH = "reports/qa/human-authority/approval.v1.json";
 const REQUIRED_ARTIFACTS = Object.freeze({
   "accessibility-language": [
     "data/language-review/v1/accessibility-language.jsonl"

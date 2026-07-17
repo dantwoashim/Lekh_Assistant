@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "recordType": "lekh-human-authority-policy",
-  "approvalPath": "data/language-review/v1/human-authority-approval.json",
+  "approvalPath": "reports/qa/human-authority/approval.v1.json",
   "maximumOpenDefects": {
     "P0": 0,
     "P1": 0
