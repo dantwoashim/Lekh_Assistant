@@ -118,6 +118,7 @@
     "check:macos-imk-qa-matrix": "node scripts/check-macos-imk-qa-matrix.mjs",
     "check:macos-imk-qa-matrix:production": "node scripts/check-macos-imk-qa-matrix.mjs --production",
     "check:native-host-risk-matrix": "node scripts/check-native-host-risk-matrix.mjs",
+    "check:native-host-risk-matrix:production": "node scripts/check-native-host-risk-matrix.mjs --production",
     "probe:macos-imk-host:textedit": "node scripts/check-macos-imk-host-textedit.mjs",
     "probe:macos-imk-host:textedit:cgevent": "node scripts/check-macos-imk-host-textedit-cgevent.mjs",
     "probe:macos-imk-host:ghost": "node scripts/check-macos-imk-host-ghost.mjs",
