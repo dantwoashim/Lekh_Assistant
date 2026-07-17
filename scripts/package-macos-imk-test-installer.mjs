@@ -676,11 +676,21 @@ unregister_backup_bundles() {
   return 0
 }
 dialog() {
+  if [[ "\${LEKH_UNINSTALLER_NO_DIALOG:-0}" == "1" ]]; then
+    return 0
+  fi
   LEKH_DIALOG_MESSAGE="$1" /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1
 display dialog (system attribute "LEKH_DIALOG_MESSAGE") buttons {"OK"} default button "OK" with title "Lekh Keyboard" with icon note
 APPLESCRIPT
 }
 confirm_uninstall() {
+  if [[ "\${LEKH_UNINSTALLER_NO_DIALOG:-0}" == "1" ]]; then
+    case "\${LEKH_REMOVE_PERSONAL_DICTIONARY:-1}" in
+      0|1) printf '%s\n' "\${LEKH_REMOVE_PERSONAL_DICTIONARY:-1}" ;;
+      *) return 64 ;;
+    esac
+    return 0
+  fi
   /usr/bin/osascript <<'APPLESCRIPT'
 use framework "AppKit"
 use scripting additions

@@ -938,6 +938,8 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).toContain("LEKH_DIALOG_MESSAGE");
     expect(installerPackager).toContain("confirm_uninstall");
     expect(installerPackager).toContain("Also remove my personal dictionary");
+    expect(installerPackager).toContain("LEKH_UNINSTALLER_NO_DIALOG");
+    expect(installerPackager).toContain("LEKH_REMOVE_PERSONAL_DICTIONARY");
     expect(installerPackager).toContain("RELEASE-MANIFEST.json");
     expect(installerPackager).toContain("minisign");
     expect(installerPackager).toContain("checksumEntries");
