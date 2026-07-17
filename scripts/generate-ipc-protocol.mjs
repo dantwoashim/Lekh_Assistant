@@ -50,6 +50,10 @@ function validateSpec(value) {
     fail("compatibleVersions must include currentVersion");
   }
   if (!Array.isArray(value.messages) || value.messages.length === 0) fail("messages must be non-empty");
+  if (!value.limits || typeof value.limits !== "object" || Array.isArray(value.limits)) fail("limits must be an object");
+  for (const [name, limit] of Object.entries(value.limits)) {
+    if (!Number.isSafeInteger(limit) || limit < 1) fail(`limits.${name} must be a positive safe integer`);
+  }
   const types = value.messages.map((message) => message.type);
   if (types.some((type) => typeof type !== "string" || !type)) fail("every message needs a type");
   if (new Set(types).size !== types.length) fail("message types must be unique");
@@ -211,6 +215,8 @@ function generateSwift(value) {
     `  public static let hotPathDeadlineMilliseconds = ${value.limits.hotPathDeadlineMs}\n` +
     `  public static let maximumActiveConnections = ${value.limits.maximumActiveConnections}\n` +
     `  public static let maximumPendingRequestsPerConnection = ${value.limits.maximumPendingRequestsPerConnection}\n` +
+    `  public static let maximumClientInstances = ${value.limits.maximumClientInstances}\n` +
+    `  public static let clientIdleTtlMilliseconds = ${value.limits.clientIdleTtlMs}\n` +
     `}\n\npublic enum LekhIPCMessageType: String, CaseIterable, Sendable {\n${cases}\n}\n\n` +
     `public enum LekhIPCErrorCode: String, CaseIterable, Sendable {\n${errors}\n}\n`;
 }
@@ -224,6 +230,8 @@ function generateCpp(value) {
     `inline constexpr std::uint32_t kHotPathDeadlineMilliseconds = ${value.limits.hotPathDeadlineMs};\n` +
     `inline constexpr std::size_t kMaximumActiveConnections = ${value.limits.maximumActiveConnections};\n` +
     `inline constexpr std::size_t kMaximumPendingRequestsPerConnection = ${value.limits.maximumPendingRequestsPerConnection};\n` +
+    `inline constexpr std::size_t kMaximumClientInstances = ${value.limits.maximumClientInstances};\n` +
+    `inline constexpr std::uint64_t kClientIdleTtlMilliseconds = ${value.limits.clientIdleTtlMs};\n` +
     `inline constexpr std::array<std::string_view, ${value.messages.length}> kMessageTypes = {\n${messages}\n};\n` +
     `inline constexpr std::array<std::string_view, ${value.errors.length}> kErrorCodes = {\n${errors}\n};\n` +
     `} // namespace lekh::ipc\n`;

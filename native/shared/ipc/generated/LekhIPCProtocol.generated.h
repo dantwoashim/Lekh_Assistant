@@ -12,6 +12,8 @@ inline constexpr std::size_t kMaximumFrameBytes = 65536;
 inline constexpr std::uint32_t kHotPathDeadlineMilliseconds = 50;
 inline constexpr std::size_t kMaximumActiveConnections = 16;
 inline constexpr std::size_t kMaximumPendingRequestsPerConnection = 32;
+inline constexpr std::size_t kMaximumClientInstances = 64;
+inline constexpr std::uint64_t kClientIdleTtlMilliseconds = 1800000;
 inline constexpr std::array<std::string_view, 18> kMessageTypes = {
   "protocol.negotiate",
   "health.check",

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createKeyboardEngine, defaultTypingContext } from "../../../src/engine/keyboard";
-import { createIpcRequest } from "../../shared/ipc/messages";
+import { IPC_PROTOCOL_LIMITS, createIpcRequest } from "../../shared/ipc/messages";
 import type { IpcMessageType, IpcPayloadByType, TypedIpcRequest } from "../../shared/ipc/messages";
 import { KeyboardDaemon } from "./keyboardDaemon";
 
@@ -42,11 +42,11 @@ class ProtocolTestClient {
   }
 }
 
-async function negotiate(daemon: KeyboardDaemon, client: ProtocolTestClient) {
+async function negotiate(daemon: KeyboardDaemon, client: ProtocolTestClient, now = NOW) {
   return daemon.handle(client.request("protocol.negotiate", {
     client: "daemon-test",
     supportedVersions: [2]
-  }, `${client.id}_negotiate`));
+  }, `${client.id}_negotiate`, now + IPC_PROTOCOL_LIMITS.controlDeadlineMs, now));
 }
 
 describe("IPC protocol v2 security state", () => {
@@ -73,7 +73,14 @@ describe("IPC protocol v2 security state", () => {
     const client = new ProtocolTestClient("client-a");
     await expect(negotiate(daemon, client)).resolves.toEqual(expect.objectContaining({
       ok: true,
-      payload: expect.objectContaining({ selectedVersion: 2, serverInstanceId: "server-a" })
+      payload: expect.objectContaining({
+        selectedVersion: 2,
+        serverInstanceId: "server-a",
+        limits: expect.objectContaining({
+          maximumClientInstances: IPC_PROTOCOL_LIMITS.maximumClientInstances,
+          clientIdleTtlMs: IPC_PROTOCOL_LIMITS.clientIdleTtlMs
+        })
+      })
     }));
 
     const beginRequest = client.request("session.begin", { context: defaultTypingContext("romanized") }, "begin-once");
@@ -173,5 +180,78 @@ describe("IPC protocol v2 security state", () => {
       ok: false,
       error: expect.objectContaining({ code: "IPC_VERSION_UNSUPPORTED", action: "restartDaemon" })
     }));
+  });
+
+  it("expires idle client identities and retires every session they owned", async () => {
+    let now = NOW;
+    const engine = createKeyboardEngine();
+    const endSession = vi.spyOn(engine, "endSession");
+    const daemon = new KeyboardDaemon({ engine, now: () => now, serverInstanceId: "server-a" });
+    const client = new ProtocolTestClient("idle-client");
+    await negotiate(daemon, client, now);
+    const begin = await daemon.handle(client.request(
+      "session.begin",
+      { context: defaultTypingContext("romanized") },
+      "idle-session",
+      now + 50,
+      now
+    ));
+    const sessionId = (begin.payload as { sessionId: string }).sessionId;
+    expect(daemon.metrics().activeSessions).toBe(1);
+
+    now += IPC_PROTOCOL_LIMITS.clientIdleTtlMs;
+    const expired = await daemon.handle(client.request(
+      "health.check",
+      { client: "daemon-test" },
+      "after-idle-expiry",
+      now + 50,
+      now
+    ));
+    expect(expired).toEqual(expect.objectContaining({
+      ok: false,
+      error: expect.objectContaining({ code: "IPC_NEGOTIATION_REQUIRED" })
+    }));
+    expect(daemon.metrics().activeSessions).toBe(0);
+    expect(endSession).toHaveBeenCalledWith(sessionId);
+    await expect(negotiate(daemon, client, now)).resolves.toEqual(expect.objectContaining({ ok: true }));
+  });
+
+  it("reclaims abandoned identities before admitting a new client at capacity", async () => {
+    let now = NOW;
+    const daemon = new KeyboardDaemon({ now: () => now, serverInstanceId: "server-a" });
+    for (let index = 0; index < IPC_PROTOCOL_LIMITS.maximumClientInstances; index += 1) {
+      await expect(negotiate(daemon, new ProtocolTestClient(`capacity-${index}`), now))
+        .resolves.toEqual(expect.objectContaining({ ok: true }));
+    }
+    await expect(negotiate(daemon, new ProtocolTestClient("overflow"), now)).resolves.toEqual(expect.objectContaining({
+      ok: false,
+      error: expect.objectContaining({ code: "IPC_QUEUE_FULL" })
+    }));
+
+    now += IPC_PROTOCOL_LIMITS.clientIdleTtlMs;
+    await expect(negotiate(daemon, new ProtocolTestClient("replacement"), now))
+      .resolves.toEqual(expect.objectContaining({ ok: true }));
+  });
+
+  it("does not expose thrown engine details through IPC or diagnostics", async () => {
+    const engine = createKeyboardEngine();
+    vi.spyOn(engine, "getSuggestions").mockImplementation(() => {
+      throw new Error("private typed fragment and local filesystem path");
+    });
+    const daemon = new KeyboardDaemon({ engine, now: () => NOW, serverInstanceId: "server-a" });
+    const client = new ProtocolTestClient("failing-client");
+    await negotiate(daemon, client);
+    const response = await daemon.handle(client.request("suggestions.get", {
+      context: defaultTypingContext("romanized")
+    }));
+    expect(response).toEqual(expect.objectContaining({
+      ok: false,
+      error: expect.objectContaining({
+        code: "DAEMON_DISPATCH_FAILED",
+        message: "The daemon request could not be completed."
+      })
+    }));
+    expect(JSON.stringify(response)).not.toContain("private typed fragment");
+    expect(daemon.metrics().lastError?.message).toBe("The daemon request could not be completed.");
   });
 });

@@ -44,6 +44,7 @@ export class KeyboardDaemon {
   private warmReady = false;
   private pendingRequests = 0;
   private dispatchTail: Promise<void> = Promise.resolve();
+  private shutdownPromise?: Promise<void>;
   private lastError: DiagnosticsMetricsResult["lastError"];
   private readonly counters = {
     processedKeystrokes: 0,
@@ -56,7 +57,17 @@ export class KeyboardDaemon {
     this.engine = options.engine ?? createKeyboardEngine();
     this.now = options.now ?? Date.now;
     this.startedAt = this.now();
-    this.protocol = new IpcProtocolState({ now: this.now, serverInstanceId: options.serverInstanceId });
+    this.protocol = new IpcProtocolState({
+      now: this.now,
+      serverInstanceId: options.serverInstanceId,
+      onSessionExpired: (sessionId) => {
+        try {
+          this.engine.endSession(sessionId);
+        } catch {
+          // The protocol identity is already retired; engine cleanup is best effort.
+        }
+      }
+    });
   }
 
   handle(value: unknown): Promise<IpcResponse> {
@@ -75,6 +86,18 @@ export class KeyboardDaemon {
     return response.finally(() => {
       this.pendingRequests = Math.max(0, this.pendingRequests - 1);
     });
+  }
+
+  shutdown(): Promise<void> {
+    if (!this.shutdownPromise) {
+      const scheduled = this.dispatchTail.then(() => this.shutdownSerial());
+      this.shutdownPromise = scheduled.catch((error) => {
+        this.shutdownPromise = undefined;
+        throw error;
+      });
+      this.dispatchTail = this.shutdownPromise.then(() => undefined, () => undefined);
+    }
+    return this.shutdownPromise;
   }
 
   private async handleSerial(value: unknown): Promise<IpcResponse> {
@@ -102,8 +125,8 @@ export class KeyboardDaemon {
       response.latencyMs = this.now() - startedAt;
       this.protocol.remember(request, response);
       return response;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    } catch {
+      const message = "The daemon request could not be completed.";
       this.lastError = {
         code: "DAEMON_DISPATCH_FAILED",
         message,
@@ -163,7 +186,9 @@ export class KeyboardDaemon {
           limits: {
             maximumFrameBytes: IPC_PROTOCOL_LIMITS.maximumFrameBytes,
             hotPathDeadlineMs: IPC_PROTOCOL_LIMITS.hotPathDeadlineMs,
-            maximumPendingRequestsPerConnection: IPC_PROTOCOL_LIMITS.maximumPendingRequestsPerConnection
+            maximumPendingRequestsPerConnection: IPC_PROTOCOL_LIMITS.maximumPendingRequestsPerConnection,
+            maximumClientInstances: IPC_PROTOCOL_LIMITS.maximumClientInstances,
+            clientIdleTtlMs: IPC_PROTOCOL_LIMITS.clientIdleTtlMs
           }
         });
       }
@@ -277,10 +302,8 @@ export class KeyboardDaemon {
         return this.success(request, this.metrics());
       }
       case "engine.shutdown": {
-        await this.engine.shutdown();
-        this.warmReady = false;
+        await this.shutdownSerial();
         const response = this.success(request, { shutdown: true });
-        this.protocol.reset();
         return response;
       }
     }
@@ -306,6 +329,12 @@ export class KeyboardDaemon {
     } catch {
       // The protocol epoch is already retired; engine cleanup is best effort.
     }
+  }
+
+  private async shutdownSerial(): Promise<void> {
+    await this.engine.shutdown();
+    this.warmReady = false;
+    this.protocol.reset();
   }
 }
 

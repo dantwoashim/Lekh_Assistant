@@ -8,6 +8,8 @@ public enum LekhIPCProtocolContract {
   public static let hotPathDeadlineMilliseconds = 50
   public static let maximumActiveConnections = 16
   public static let maximumPendingRequestsPerConnection = 32
+  public static let maximumClientInstances = 64
+  public static let clientIdleTtlMilliseconds = 1800000
 }
 
 public enum LekhIPCMessageType: String, CaseIterable, Sendable {

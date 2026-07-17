@@ -1017,7 +1017,9 @@
                     "required": [
                       "maximumFrameBytes",
                       "hotPathDeadlineMs",
-                      "maximumPendingRequestsPerConnection"
+                      "maximumPendingRequestsPerConnection",
+                      "maximumClientInstances",
+                      "clientIdleTtlMs"
                     ],
                     "properties": {
                       "maximumFrameBytes": {
@@ -1029,6 +1031,14 @@
                         "minimum": 1
                       },
                       "maximumPendingRequestsPerConnection": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "maximumClientInstances": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "clientIdleTtlMs": {
                         "type": "integer",
                         "minimum": 1
                       }

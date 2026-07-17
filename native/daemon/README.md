@@ -21,10 +21,14 @@ It handles every IPC message, validates envelopes, tracks diagnostics, exercises
 - Own crash-safe local memory and dictionary storage.
 - Return partial warm state when heavy modules are unavailable.
 - Never send typed text to the network.
+- Expire abandoned negotiated clients and retire their owned engine sessions after the generated 30-minute idle TTL.
+- Shut the engine down directly and idempotently after transport queues drain; shutdown does not consume a client slot or depend on protocol negotiation.
 
 ## Failure Policy
 
 If daemon IPC is unavailable, native input methods must pass through raw keystrokes and surface diagnostics later through the companion app. Host applications must never freeze while waiting for the daemon.
+
+Malformed JSON and engine exceptions receive stable generic wire messages. Raw exception text is not echoed into IPC responses or retained in exported diagnostics.
 
 The native Windows broker owns every public pipe instance. It derives the endpoint name from the current user SID, protects the DACL to the current logon SID plus LocalSystem (falling back to the current user SID for non-interactive tokens without a logon SID), rejects remote clients, verifies the live ACL, and uses first-instance creation. The TSF client also requires the server process to run as the current user and to be the exact `LekhPipeBroker.exe` installed beside the DLL. The daemon never owns the public production pipe.
 

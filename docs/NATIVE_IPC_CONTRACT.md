@@ -75,6 +75,7 @@ interface IpcResponse<T = unknown> {
 - The current local transport is strict UTF-8 JSON with newline framing.
 - The complete frame, including its newline delimiter, is limited to 65,536 bytes.
 - At most 16 named-pipe connections and 32 queued requests per connection are admitted.
+- At most 64 negotiated client identities are retained. An identity idle for 30 minutes is evicted before admission checks, and every protocol/engine session it owned is retired in the same serial dispatch boundary.
 - The schema is versioned as `version: 2`; negotiation, request sequence, deadline, client instance, server instance, and session epoch are mandatory where applicable.
 - `memory.learn` payload is exactly `{sessionId, sessionEpoch, commitEpoch}`. It cannot transport a correction entry or surrounding text, and returns `learned: false` for missing, stale, replayed, ended, secure, uncertain, or unclassified sessions.
 
@@ -88,6 +89,7 @@ interface IpcResponse<T = unknown> {
 - The current macOS IMK hot path uses its in-process native engine and does not expose this named-pipe transport.
 - No remote TCP listener is allowed.
 - No typed text telemetry is sent to network services.
+- JSON parser and daemon-dispatch failures return stable public messages; raw parser exceptions, engine exceptions, typed fragments, and local paths are not reflected through IPC diagnostics.
 
 ## Diagnostics
 

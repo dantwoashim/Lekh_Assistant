@@ -78,6 +78,8 @@ export interface ProtocolNegotiateResult {
     maximumFrameBytes: number;
     hotPathDeadlineMs: number;
     maximumPendingRequestsPerConnection: number;
+    maximumClientInstances: number;
+    clientIdleTtlMs: number;
   };
 }
 

@@ -40,13 +40,13 @@ async function runDaemonCli(): Promise<void> {
   for await (const line of io) {
     try {
       process.stdout.write(`${await handler.handleLine(line)}\n`);
-    } catch (error) {
+    } catch {
       const response: IpcResponse = createIpcErrorResponse({
         id: "daemon_cli_failed",
         type: "health.check"
       }, {
         code: "DAEMON_CLI_FAILED",
-        message: error instanceof Error ? error.message : String(error),
+        message: "The daemon line could not be processed.",
         recoverable: true
       });
       process.stdout.write(`${JSON.stringify(response)}\n`);
@@ -57,8 +57,8 @@ async function runDaemonCli(): Promise<void> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runDaemonCli().catch((error) => {
-    process.stderr.write(`Lekh daemon failed: ${error instanceof Error ? error.message : String(error)}\n`);
+  runDaemonCli().catch(() => {
+    process.stderr.write("Lekh daemon failed during startup or shutdown.\n");
     process.exit(1);
   });
 }

@@ -54,7 +54,9 @@ describe("native IPC message contract", () => {
       limits: {
         maximumFrameBytes: 65536,
         hotPathDeadlineMs: 50,
-        maximumPendingRequestsPerConnection: 32
+        maximumPendingRequestsPerConnection: 32,
+        maximumClientInstances: 64,
+        clientIdleTtlMs: 1_800_000
       }
     }, undefined, { serverInstanceId: "envelope-server" });
     expect(validateIpcEnvelope(splitIdentity)).toEqual(expect.objectContaining({

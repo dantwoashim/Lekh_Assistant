@@ -1,7 +1,6 @@
 import {
   IPC_PROTOCOL_LIMITS,
-  createIpcErrorResponse,
-  createIpcRequest
+  createIpcErrorResponse
 } from "../../shared/ipc/messages";
 import { KeyboardDaemon } from "./keyboardDaemon";
 
@@ -45,14 +44,14 @@ export function createDaemonLineHandler(daemon = new KeyboardDaemon()): DaemonLi
       let parsed: unknown;
       try {
         parsed = JSON.parse(trimmed);
-      } catch (error) {
+      } catch {
         return JSON.stringify(
           createIpcErrorResponse({
             id: "parse_error",
             type: "health.check"
           }, {
             code: "IPC_JSON_PARSE_FAILED",
-            message: error instanceof Error ? error.message : String(error),
+            message: "IPC input was not valid JSON.",
             recoverable: true
           })
         );
@@ -62,13 +61,7 @@ export function createDaemonLineHandler(daemon = new KeyboardDaemon()): DaemonLi
       return JSON.stringify(response);
     },
     async shutdown(): Promise<void> {
-      const negotiationRequest = createIpcRequest("protocol.negotiate", {
-        client: "daemon-test",
-        supportedVersions: [2]
-      }, "daemon_cli_negotiate_shutdown");
-      await daemon.handle(negotiationRequest);
-      const shutdownRequest = createIpcRequest("engine.shutdown", null, "daemon_cli_shutdown");
-      await daemon.handle(shutdownRequest);
+      await daemon.shutdown();
     }
   };
 }

@@ -36,21 +36,31 @@ export type ProtocolPreflight =
 export interface IpcProtocolStateOptions {
   now?: () => number;
   serverInstanceId?: string;
+  clientIdleTtlMs?: number;
+  onSessionExpired?: (sessionId: string) => void;
 }
 
 export class IpcProtocolState {
   readonly serverInstanceId: string;
   private readonly now: () => number;
+  private readonly clientIdleTtlMs: number;
+  private readonly onSessionExpired?: (sessionId: string) => void;
   private readonly clients = new Map<string, ClientState>();
   private readonly sessions = new Map<string, SessionState>();
   private nextSessionEpoch = 1;
 
   constructor(options: IpcProtocolStateOptions = {}) {
     this.now = options.now ?? Date.now;
+    this.clientIdleTtlMs = options.clientIdleTtlMs ?? IPC_PROTOCOL_LIMITS.clientIdleTtlMs;
+    if (!Number.isSafeInteger(this.clientIdleTtlMs) || this.clientIdleTtlMs < 1) {
+      throw new Error("IPC client idle TTL must be a positive safe integer.");
+    }
+    this.onSessionExpired = options.onSessionExpired;
     this.serverInstanceId = options.serverInstanceId ?? `daemon_${randomUUID()}`;
   }
 
   preflight(request: AnyTypedIpcRequest): ProtocolPreflight {
+    this.cleanupExpiredClients();
     if (this.now() > request.deadlineAt) {
       return this.reject(request, "IPC_DEADLINE_EXCEEDED", "The request deadline elapsed before dispatch.");
     }
@@ -146,6 +156,27 @@ export class IpcProtocolState {
 
   get activeSessionCount(): number {
     return this.sessions.size;
+  }
+
+  private cleanupExpiredClients(): void {
+    const now = this.now();
+    const expiredClients = new Set<string>();
+    for (const [clientInstanceId, client] of this.clients) {
+      if (now - client.lastSeenAt >= this.clientIdleTtlMs) {
+        this.clients.delete(clientInstanceId);
+        expiredClients.add(clientInstanceId);
+      }
+    }
+    if (expiredClients.size === 0) return;
+    for (const [sessionId, session] of this.sessions) {
+      if (!expiredClients.has(session.clientInstanceId)) continue;
+      this.sessions.delete(sessionId);
+      try {
+        this.onSessionExpired?.(sessionId);
+      } catch {
+        // Protocol state is already retired; engine cleanup cannot restore it.
+      }
+    }
   }
 
   private hasRequestId(client: ClientState, requestId: string): boolean {

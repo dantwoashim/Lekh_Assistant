@@ -15,7 +15,8 @@
     "maximumActiveConnections": 16,
     "maximumPendingRequestsPerConnection": 32,
     "maximumReplayEntriesPerClient": 256,
-    "maximumClientInstances": 64
+    "maximumClientInstances": 64,
+    "clientIdleTtlMs": 1800000
   },
   "recoveryActions": ["none", "retry", "passThrough", "restartSession", "restartDaemon"],
   "errors": [
@@ -140,11 +141,13 @@
           "limits": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["maximumFrameBytes", "hotPathDeadlineMs", "maximumPendingRequestsPerConnection"],
+            "required": ["maximumFrameBytes", "hotPathDeadlineMs", "maximumPendingRequestsPerConnection", "maximumClientInstances", "clientIdleTtlMs"],
             "properties": {
               "maximumFrameBytes": { "type": "integer", "minimum": 1 },
               "hotPathDeadlineMs": { "type": "integer", "minimum": 1 },
-              "maximumPendingRequestsPerConnection": { "type": "integer", "minimum": 1 }
+              "maximumPendingRequestsPerConnection": { "type": "integer", "minimum": 1 },
+              "maximumClientInstances": { "type": "integer", "minimum": 1 },
+              "clientIdleTtlMs": { "type": "integer", "minimum": 1 }
             }
           }
         }
