@@ -121,7 +121,7 @@ Output constraints:
 - candidate text must not contain Latin text;
 - `spanKind` must be `token`;
 - `autoCommitEligible` must always be `false`;
-- maximum candidate count is 8;
+- maximum neural-tail candidate count is 2 for the latency-bounded v1 decoder;
 - stale generations must be ignored.
 
 ## 6. Required model family
@@ -153,9 +153,9 @@ Hard limits:
 | Parameters | 1,000,000 to 5,000,000 |
 | Compiled model bytes | <= 16,777,216 |
 | Warm neural p99 | <= 3 ms |
-| Context window | >= 2 previous tokens |
-| Beam width | 2 to 8 |
-| Output candidates | <= 8 |
+| Context window | Candidate: 0 while rescoring is disabled; production: 2 to 4 |
+| Beam width | 2 (the evidence and native runtime use the same latency-bounded decoder) |
+| Output candidates | 2 |
 
 The deterministic native path must still remain below the existing 5 ms p99 release gate with the model present.
 
@@ -211,7 +211,8 @@ xaina -> छैन
 
 The manifest must include:
 
-- schema version;
+- schema version 2 plus distinct 32-character lowercase hexadecimal
+  `trainingRunId` and `exportRunId` identities;
 - artifact identity;
 - model family and architecture;
 - tokenizer/sequence contract;
@@ -349,7 +350,9 @@ The production command must fail until required large licensed/public and human-
 
 ## 15. Phase 3 distillation plan proof
 
-Phase 3 is complete when the repo can prove the offline teacher and distillation boundary without downloading or packaging a fake production model:
+Phase 3 development readiness means the repo can prove the offline teacher
+boundary without presenting an unexecuted distillation design as a trained
+production model:
 
 ```txt
 data/neural/training/open-vocab-seq2seq-v1.config.json
@@ -368,8 +371,24 @@ The Phase 3 gate must:
 - read the Phase 2 generated dataset manifest;
 - verify `ai4bharat-indicxlit` is teacher-only and not a training row source;
 - verify the production-required source ids are represented in the source registry;
-- allow the teacher checkpoint to be absent in dev while warning clearly;
-- fail production until the teacher manifest exists and required production sources are imported.
+- consume only `training.distillation` as the distillation configuration;
+- allow `enabled: false` and `status: not-implemented` in development while
+  reporting `distillationImplemented: false` and warning clearly;
+- allow the teacher checkpoint to be absent in development while warning clearly;
+- never treat a downloaded teacher manifest as evidence that distillation ran.
+
+The current repository has no approved distillation runner. A draft run writes
+`reports/neural-distillation-run-report.json`. That report must bind the exact
+training-config digest, dataset-manifest digest, stable dataset content identity,
+all three rehashed dataset split artifacts, teacher-manifest digest, actual teacher artifact digest,
+generated teacher-supervision artifact and positive row count, and resulting
+student-checkpoint digest. Every referenced artifact must remain inside the repo
+workspace and be rehashed by the gate. Those checks prove artifact coexistence,
+not that distillation occurred. Production remains blocked until an approved
+runner additionally validates supervision rows against train-only identities,
+proves dev/test/gold disjointness, binds the extracted teacher files actually
+loaded, and embeds the complete provenance in a safely loadable student
+checkpoint. A teacher manifest or hand-authored report is never sufficient.
 
 Production proof is intentionally separate:
 
@@ -379,7 +398,9 @@ node scripts/check-neural-distillation-plan.mjs --production
 
 ## 16. Phase 4 training and Core ML export contract proof
 
-Phase 4 is complete when the production student architecture, export paths, and manifest/digest checks are executable:
+Phase 4 development readiness means the candidate's implemented architecture,
+optimization loop, export paths, and evidence bindings are executable and
+truthfully described:
 
 ```txt
 data/neural/training/open-vocab-seq2seq-v1.config.json
@@ -397,16 +418,73 @@ The Phase 4 gate must:
 
 - require `lekh-open-vocab-seq2seq-v1`;
 - require Core ML, local-only, neural-tail-only output;
-- require open-vocabulary GRU/Transformer seq2seq configuration;
+- require the implemented two-layer GRU encoder-decoder with 96-dimensional
+  embeddings, 256 hidden units, and no attention mechanism;
 - require beam search, no whitespace output, no Latin output, and no auto-commit eligibility;
 - require a 1M-5M parameter budget and a <= 16 MB compiled model budget;
+- load row caps, epochs, batch size, learning rate, label smoothing, gradient
+  clipping, seed, dimensions, decoder limits, and early-stopping policy from
+  the versioned config, with any effective override recorded explicitly;
+- optimize one weighted label-smoothed token-cross-entropy definition for both
+  train and dev, stop on dev loss, and restore the best finite checkpoint before
+  diagnostic evaluation or export;
+- execute the offline training publication step on CPU for deterministic,
+  portable behavior and to avoid process-level PyTorch MPS GRU failures; this
+  does not restrict the published Core ML model's inference compute units;
+- use each dataset row's versioned `weight` exactly once; source-stratified
+  sampling has no hidden source multiplier, pins a row when any provenance
+  source is reviewed, and reports per-source selected counts and weight mass;
 - reject normalized-input overlap across train, dev, and test inside the trainer,
   even if an earlier dataset check was bypassed;
 - build tokenizer vocabularies from train only and never inject frozen required
   evaluation answers into train or dev;
+- reject overlength rows instead of silently truncating them, reserve an
+  end-of-sequence slot, restrict input vocabulary to native `[a-z]` tokens, and
+  restrict outputs to the Devanagari block plus ZWNJ/ZWJ;
+- initialize every decoder layer from that encoder layer's state at EOS, not a
+  state mutated by trailing padding;
+- bind the raw config digest, configured and effective config snapshots,
+  effective-config digest, override provenance, exact sampled-row digests,
+  stable dataset identity, trainer and vocabulary digests, checkpoint digest,
+  and actual training-source counts;
+- hold an exclusive whole-run publication lock, generate a stable training run
+  identity and a separate export run identity, and reject mixed-run artifacts;
 - make missing historical checkpoint provenance fail closed instead of filling it
   from the current dataset;
+- load checkpoints with tensor-only deserialization and semantically verify
+  checkpoint dimensions, parameter count, vocabularies, decoder limits, and
+  dataset bindings before any export;
+- derive manifest decoder, context, and training-source claims from the effective
+  run and actual checkpoint rather than hard-coded aspirational values;
+- encode unmeasured candidate safety and secure-field metrics as the fail-closed
+  sentinel `-1`, never as fabricated zero-event evidence;
+- confine writable paths to approved repository artifact subtrees, publish model
+  directories through recoverable staged replacement, and write checkpoint,
+  JSON, and prediction files atomically;
+- publish no runtime manifest unless conversion succeeds, the exact compiled
+  directory declares the exact native input/output names, shapes, and data
+  types, loads and predicts finite logits numerically equivalent to the bound
+  checkpoint, all native size,
+  length, and parameter bounds hold, and every checkpoint/trainer/vocabulary/
+  dataset/model/manifest/export-report digest forms one current artifact graph;
+- prove two-layer PyTorch-to-Core-ML input shape, `int32` type, exact `logits`
+  output shape and FLOAT16 specification, and known-answer parity in the macOS
+  trainer smoke test;
+- generate promotion predictions only through the exact published compiled
+  `.mlmodelc`, bind the frozen gold manifest/corpus/suite paths, row counts, and
+  SHA-256 identities, and reject any mutation before the export report is
+  published;
+- use the shared `contracts/neural-decoder/v1/lekh-neural-decoder.v1.json`
+  corpus so Python evidence and Swift runtime agree on log-softmax scoring,
+  beam width, invalid-token filtering, tie breaks, length normalization, and
+  the input-length-bounded maximum step count;
 - flag the existing closed-vocabulary model directory as disconnected until a matching production manifest and digest exist.
+
+Implementation-contract version 1 deliberately has `attention: none`, zero
+context words, and a disabled `not-implemented` language-model rescorer. Those
+are candidate limitations, not hidden production claims. Development reports
+them as readiness warnings. Production fails until an implemented, native-bound
+context rescorer and a newly trained artifact satisfy the production contract.
 
 Production proof is intentionally separate:
 

@@ -78,6 +78,12 @@ describe("macOS IMK proof target source", () => {
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("guard !secureInputActive else");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("LekhExperimentalNeuralTypingEnabled");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("LEKH_EXPERIMENTAL_NEURAL_TYPING");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("LekhNeuralManifestIdentityPolicy.permits(");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("schemaVersion == LekhNeuralManifestIdentityPolicy.currentSchemaVersion");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("legacyManifestKeys.union([\"trainingRunId\", \"exportRunId\"])");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("let logProbabilities = logSoftmax(logits)");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("let beamWidth = vocab.decoder.beamWidth");
+    expect(readFileSync(join(root, "contracts/neural-decoder/v1/lekh-neural-decoder.v1.json"), "utf8")).toContain("prefix-normalization-changes-the-winner");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8")).toContain("requestAsyncNeuralCandidates");
     expect(controller).toContain("neuralTailEligible: decision.neuralTailEligible");
     expect(controller).toContain("if neuralTailEligible {");

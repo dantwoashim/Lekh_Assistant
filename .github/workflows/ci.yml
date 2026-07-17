@@ -70,7 +70,7 @@ jobs:
   native-macos:
     name: Native macOS (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -82,6 +82,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Set up Python
+        if: matrix.runner == 'macos-15'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -90,6 +96,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify neural trainer and Core ML export contract
+        if: matrix.runner == 'macos-15'
+        run: npm run neural:open-vocab:test
 
       - name: Verify native source contracts
         run: npm run check:ipc-schema && npm run test:native-scaffold

@@ -83,7 +83,10 @@ if (schema) {
   assert(schema.$schema === "https://json-schema.org/draft/2020-12/schema", "schema must use JSON Schema draft 2020-12");
   assert(schema.$id === "https://lekh.local/schemas/lekh-neural-manifest.schema.json", "schema $id must be stable");
   assert(schema.additionalProperties === false, "schema must reject unexpected top-level production manifest fields");
-  assert(propertyConst(schema, "schemaVersion") === 1, "schema must require schemaVersion=1");
+  assert(propertyConst(schema, "schemaVersion") === 2, "schema must require schemaVersion=2");
+  assert(property(schema, "trainingRunId")?.$ref === "#/$defs/runIdentifier", "schema must require a training run identity");
+  assert(property(schema, "exportRunId")?.$ref === "#/$defs/runIdentifier", "schema must require an export run identity");
+  assert(schema.$defs?.runIdentifier?.pattern === "^[a-f0-9]{32}$", "schema run identities must be lowercase 32-hex values");
   assert(propertyConst(schema, "selectedArtifact") === "lekh-open-vocab-seq2seq-v1", "schema must require production artifact id");
   assert(propertyConst(schema, "runtime") === "CoreML", "schema must require CoreML runtime");
   assert(propertyConst(schema, "localOnly") === true, "schema must require localOnly=true");
@@ -112,6 +115,8 @@ if (schema) {
   const required = new Set(schema.required ?? []);
   for (const field of [
     "schemaVersion",
+    "trainingRunId",
+    "exportRunId",
     "selectedArtifact",
     "runtime",
     "localOnly",

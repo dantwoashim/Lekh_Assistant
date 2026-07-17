@@ -253,10 +253,164 @@ private func verifyNeuralInputAdmissionPolicy() {
   require(!policy.accepts(""), "An empty token must not enter neural inference")
 }
 
+private struct NeuralDecoderFixture: Decodable {
+  let schemaVersion: Int
+  let score: String
+  let lengthNormalization: String
+  let maxSteps: String
+  let cases: [DecoderCase]
+
+  struct DecoderCase: Decodable {
+    let id: String
+    let vocabularySize: Int
+    let sosTokenId: Int
+    let eosTokenId: Int
+    let invalidTokenIds: [Int]
+    let beamWidth: Int
+    let inputGraphemeCount: Int
+    let maxOutputLength: Int
+    let logitsByPrefix: [String: [Double]]
+    let expectedTokenIds: [[Int]]
+  }
+}
+
+private func verifyNeuralDecoderContract() {
+  let fixtureURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    .appendingPathComponent("contracts/neural-decoder/v1/lekh-neural-decoder.v1.json")
+  guard let data = try? Data(contentsOf: fixtureURL),
+        let fixture = try? JSONDecoder().decode(NeuralDecoderFixture.self, from: data) else {
+    require(false, "Shared neural decoder fixture must be readable from \(fixtureURL.path)")
+    return
+  }
+  require(fixture.schemaVersion == 1, "Shared neural decoder fixture schema must remain v1")
+  require(fixture.score == "accumulated-log-softmax", "Decoder fixture must freeze log-softmax scoring")
+  require(
+    fixture.lengthNormalization == "score-divided-by-token-count-including-sos",
+    "Decoder fixture must freeze length normalization"
+  )
+  require(
+    fixture.maxSteps == "min(maxOutputLength-minus-1,inputGraphemeCount-plus-8)",
+    "Decoder fixture must freeze the native latency bound"
+  )
+
+  for item in fixture.cases {
+    let maxSteps = max(0, min(item.maxOutputLength - 1, item.inputGraphemeCount + 8))
+    do {
+      let hypotheses = try LekhNeuralBeamSearch.rank(
+        vocabularySize: item.vocabularySize,
+        sosTokenId: item.sosTokenId,
+        eosTokenId: item.eosTokenId,
+        invalidTokenIds: Set(item.invalidTokenIds),
+        beamWidth: item.beamWidth,
+        maxSteps: maxSteps
+      ) { prefix, _ in
+        let key = prefix.map(String.init).joined(separator: ",")
+        guard let logits = item.logitsByPrefix[key] else {
+          throw LekhNeuralBeamSearchFailure.invalidConfiguration
+        }
+        return logits
+      }
+      require(
+        hypotheses.map(\.tokenIds) == item.expectedTokenIds,
+        "Swift decoder diverged from shared fixture \(item.id): \(hypotheses.map(\.tokenIds))"
+      )
+    } catch {
+      require(false, "Swift decoder fixture \(item.id) failed: \(error)")
+    }
+  }
+
+  do {
+    _ = try LekhNeuralBeamSearch.rank(
+      vocabularySize: 5,
+      sosTokenId: 1,
+      eosTokenId: 2,
+      invalidTokenIds: [0, 1, 3],
+      beamWidth: 1,
+      maxSteps: 1
+    ) { _, _ in [0, 0, 0, 0, .nan] }
+    require(false, "Non-finite neural logits must fail closed")
+  } catch LekhNeuralBeamSearchFailure.nonFiniteLogit {
+    // Expected fail-closed behavior.
+  } catch {
+    require(false, "Non-finite neural logits raised the wrong error: \(error)")
+  }
+}
+
+private func verifyNeuralManifestIdentityPolicy() {
+  let trainingRunId = "0123456789abcdef0123456789abcdef"
+  let exportRunId = "fedcba9876543210fedcba9876543210"
+
+  require(
+    LekhNeuralManifestIdentityPolicy.permits(
+      schemaVersion: 1,
+      trainingRunId: nil,
+      exportRunId: nil,
+      productionEligible: false
+    ),
+    "The existing schema-v1 candidate may remain available only for development"
+  )
+  require(
+    !LekhNeuralManifestIdentityPolicy.permits(
+      schemaVersion: 1,
+      trainingRunId: nil,
+      exportRunId: nil,
+      productionEligible: true
+    ),
+    "A schema-v1 manifest must never claim production eligibility"
+  )
+  require(
+    LekhNeuralManifestIdentityPolicy.permits(
+      schemaVersion: 2,
+      trainingRunId: trainingRunId,
+      exportRunId: exportRunId,
+      productionEligible: true
+    ),
+    "Schema v2 must accept two valid run identities"
+  )
+  require(
+    !LekhNeuralManifestIdentityPolicy.permits(
+      schemaVersion: 2,
+      trainingRunId: trainingRunId.uppercased(),
+      exportRunId: exportRunId,
+      productionEligible: false
+    ),
+    "Schema-v2 run identities must use lowercase hexadecimal"
+  )
+  require(
+    !LekhNeuralManifestIdentityPolicy.permits(
+      schemaVersion: 2,
+      trainingRunId: trainingRunId,
+      exportRunId: nil,
+      productionEligible: false
+    ),
+    "Schema v2 must fail closed when either run identity is absent"
+  )
+  require(
+    !LekhNeuralManifestIdentityPolicy.permits(
+      schemaVersion: 2,
+      trainingRunId: trainingRunId,
+      exportRunId: trainingRunId,
+      productionEligible: false
+    ),
+    "Schema v2 must not reuse one identity for training and export"
+  )
+  require(
+    !LekhNeuralManifestIdentityPolicy.permits(
+      schemaVersion: 3,
+      trainingRunId: trainingRunId,
+      exportRunId: exportRunId,
+      productionEligible: false
+    ),
+    "Unknown future manifest schemas must fail closed"
+  )
+}
+
 verifyCandidateStateMachine()
 verifyAutoCommitPolicy()
 verifyFourModeContract()
 verifyRuntimeActivationGate()
 verifyCandidatePointerGate()
 verifyNeuralInputAdmissionPolicy()
-print("PASS: native candidate, delimiter, four-mode, and neural input-admission unit contracts")
+verifyNeuralDecoderContract()
+verifyNeuralManifestIdentityPolicy()
+print("PASS: native candidate, delimiter, four-mode, neural admission, decoder, and manifest identity contracts")

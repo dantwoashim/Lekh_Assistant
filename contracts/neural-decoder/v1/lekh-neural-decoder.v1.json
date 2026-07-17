@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "score": "accumulated-log-softmax",
+  "lengthNormalization": "score-divided-by-token-count-including-sos",
+  "maxSteps": "min(maxOutputLength-minus-1,inputGraphemeCount-plus-8)",
+  "cases": [
+    {
+      "id": "prefix-normalization-changes-the-winner",
+      "vocabularySize": 6,
+      "sosTokenId": 1,
+      "eosTokenId": 2,
+      "invalidTokenIds": [0, 1, 3],
+      "beamWidth": 2,
+      "inputGraphemeCount": 1,
+      "maxOutputLength": 3,
+      "logitsByPrefix": {
+        "1": [0, 0, -50, -50, 10, 9],
+        "1,4": [100, 100, 100, 100, 100, 100],
+        "1,5": [-100, -100, 1, -100, -100, -100]
+      },
+      "expectedTokenIds": [[1, 5, 2], [1, 4, 2]]
+    },
+    {
+      "id": "invalid-tokens-are-filtered-before-width-and-ties-use-token-id",
+      "vocabularySize": 6,
+      "sosTokenId": 1,
+      "eosTokenId": 2,
+      "invalidTokenIds": [0, 1, 3],
+      "beamWidth": 2,
+      "inputGraphemeCount": 1,
+      "maxOutputLength": 2,
+      "logitsByPrefix": {
+        "1": [100, 99, 3, 98, 2, 2]
+      },
+      "expectedTokenIds": [[1, 2], [1, 4]]
+    }
+  ]
+}

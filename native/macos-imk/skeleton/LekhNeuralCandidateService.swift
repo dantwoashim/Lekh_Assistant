@@ -35,6 +35,146 @@ public struct LekhNeuralInputAdmissionPolicy {
   }
 }
 
+public struct LekhNeuralBeamHypothesis: Equatable {
+  public let tokenIds: [Int]
+  public let accumulatedLogProbability: Double
+
+  public init(tokenIds: [Int], accumulatedLogProbability: Double) {
+    self.tokenIds = tokenIds
+    self.accumulatedLogProbability = accumulatedLogProbability
+  }
+
+  /// Length normalization includes the leading SOS identifier. This mirrors
+  /// the training-side decoder contract and prevents a hidden native-only
+  /// preference for shorter prefixes.
+  public var normalizedScore: Double {
+    guard !tokenIds.isEmpty else { return -.infinity }
+    return accumulatedLogProbability / Double(tokenIds.count)
+  }
+}
+
+public enum LekhNeuralBeamSearchFailure: Error, Equatable {
+  case cancelled
+  case invalidConfiguration
+  case invalidLogitCount(expected: Int, actual: Int)
+  case nonFiniteLogit
+}
+
+/// Pure beam search shared by the Core ML runtime and its cross-language
+/// contract probe. The logit provider is the only model-specific boundary.
+public enum LekhNeuralBeamSearch {
+  public static func rank(
+    vocabularySize: Int,
+    sosTokenId: Int,
+    eosTokenId: Int,
+    invalidTokenIds: Set<Int>,
+    beamWidth: Int,
+    maxSteps: Int,
+    shouldCancel: () -> Bool = { false },
+    logitsForPrefix: (_ tokenIds: [Int], _ step: Int) throws -> [Double]
+  ) throws -> [LekhNeuralBeamHypothesis] {
+    guard vocabularySize > 0,
+          (0..<vocabularySize).contains(sosTokenId),
+          (0..<vocabularySize).contains(eosTokenId),
+          sosTokenId != eosTokenId,
+          !invalidTokenIds.contains(eosTokenId),
+          invalidTokenIds.allSatisfy({ (0..<vocabularySize).contains($0) }),
+          beamWidth > 0,
+          maxSteps >= 0 else {
+      throw LekhNeuralBeamSearchFailure.invalidConfiguration
+    }
+
+    var active = [LekhNeuralBeamHypothesis(
+      tokenIds: [sosTokenId],
+      accumulatedLogProbability: 0
+    )]
+    var completed: [LekhNeuralBeamHypothesis] = []
+
+    for step in 0..<maxSteps {
+      guard !shouldCancel() else { throw LekhNeuralBeamSearchFailure.cancelled }
+      var next: [LekhNeuralBeamHypothesis] = []
+
+      for hypothesis in active {
+        guard !shouldCancel() else { throw LekhNeuralBeamSearchFailure.cancelled }
+        if hypothesis.tokenIds.last == eosTokenId {
+          completed.append(hypothesis)
+          continue
+        }
+
+        let logits = try logitsForPrefix(hypothesis.tokenIds, step)
+        guard logits.count == vocabularySize else {
+          throw LekhNeuralBeamSearchFailure.invalidLogitCount(
+            expected: vocabularySize,
+            actual: logits.count
+          )
+        }
+        guard logits.allSatisfy(\.isFinite) else {
+          throw LekhNeuralBeamSearchFailure.nonFiniteLogit
+        }
+        let logProbabilities = logSoftmax(logits)
+        let selectedTokenIds = (0..<vocabularySize)
+          .filter { !invalidTokenIds.contains($0) && logProbabilities[$0].isFinite }
+          .sorted { left, right in
+            if logProbabilities[left] != logProbabilities[right] {
+              return logProbabilities[left] > logProbabilities[right]
+            }
+            return left < right
+          }
+          .prefix(beamWidth)
+
+        for tokenId in selectedTokenIds {
+          next.append(LekhNeuralBeamHypothesis(
+            tokenIds: hypothesis.tokenIds + [tokenId],
+            accumulatedLogProbability: hypothesis.accumulatedLogProbability + logProbabilities[tokenId]
+          ))
+        }
+      }
+
+      guard !next.isEmpty else {
+        active = []
+        break
+      }
+      active = Array(next.sorted(by: ranksBefore).prefix(beamWidth))
+      // Completed beams are intentionally not an early-stop signal. A live
+      // prefix may still outrank them once its conditional probabilities are
+      // normalized, so every configured step remains available.
+    }
+
+    guard !shouldCancel() else { throw LekhNeuralBeamSearchFailure.cancelled }
+    completed.append(contentsOf: active)
+    var seen = Set<[Int]>()
+    return completed
+      .sorted(by: ranksBefore)
+      .filter { seen.insert($0.tokenIds).inserted }
+      .prefix(beamWidth)
+      .map { $0 }
+  }
+
+  private static func logSoftmax(_ logits: [Double]) -> [Double] {
+    guard let maximum = logits.max() else {
+      return Array(repeating: -.infinity, count: logits.count)
+    }
+    let exponentialSum = logits.reduce(0) { partial, value in
+      partial + Foundation.exp(value - maximum)
+    }
+    guard exponentialSum.isFinite, exponentialSum > 0 else {
+      return Array(repeating: -.infinity, count: logits.count)
+    }
+    let normalizer = maximum + Foundation.log(exponentialSum)
+    return logits.map { $0 - normalizer }
+  }
+
+  private static func ranksBefore(
+    _ left: LekhNeuralBeamHypothesis,
+    _ right: LekhNeuralBeamHypothesis
+  ) -> Bool {
+    if left.normalizedScore != right.normalizedScore {
+      return left.normalizedScore > right.normalizedScore
+    }
+    return left.tokenIds.lexicographicallyPrecedes(right.tokenIds)
+  }
+}
+
 public final class LekhNeuralCandidateService {
   public static let shared = LekhNeuralCandidateService()
 
@@ -227,49 +367,38 @@ public final class LekhNeuralCandidateService {
     shouldCancel: () -> Bool
   ) throws -> [String] {
     let inputIds = try encodedInput(input, vocab: vocab)
-    var beams: [(ids: [Int], score: Double)] = [([vocab.output.sosId], 0)]
-    var completed: [(ids: [Int], score: Double)] = []
-    // The exported model performs a full sequence forward for every live beam
-    // at every output step. The old width-4/max-31 loop measured 26 ms p50 and
-    // 80 ms p95 end to end despite a 1.2 ms single-forward benchmark. A width
-    // of two supplies a useful async tail without flooding the candidate UI;
-    // the deterministic engine remains responsible for the primary/top-3 set.
-    let maxSteps = max(1, min(vocab.output.maxLength - 1, input.count + 8))
-    let beamWidth = max(1, min(2, vocab.decoder.beamWidth))
-
-    for step in 0..<maxSteps {
-      guard !shouldCancel() else { return [] }
-      var next: [(ids: [Int], score: Double)] = []
-      for beam in beams {
-        guard !shouldCancel() else { return [] }
-        if beam.ids.last == vocab.output.eosId {
-          completed.append(beam)
-          continue
-        }
-        let decoderIds = try encodedDecoder(beam.ids, vocab: vocab)
+    let maxSteps = min(vocab.output.maxLength - 1, input.count + 8)
+    let beamWidth = vocab.decoder.beamWidth
+    let hypotheses = try LekhNeuralBeamSearch.rank(
+      vocabularySize: vocab.output.tokensById.count,
+      sosTokenId: vocab.output.sosId,
+      eosTokenId: vocab.output.eosId,
+      invalidTokenIds: [vocab.output.padId, vocab.output.unkId, vocab.output.sosId],
+      beamWidth: beamWidth,
+      maxSteps: maxSteps,
+      shouldCancel: shouldCancel
+    ) { prefixTokenIds, step in
+        let decoderIds = try encodedDecoder(prefixTokenIds, vocab: vocab)
         let provider = try MLDictionaryFeatureProvider(dictionary: [
           "inputIds": MLFeatureValue(multiArray: inputIds),
           "decoderInputIds": MLFeatureValue(multiArray: decoderIds)
         ])
         let prediction = try model.prediction(from: provider)
-        guard !shouldCancel() else { return [] }
-        guard let logits = multiArrayOutput(from: prediction) else { continue }
-        let topIds = topTokenIds(logits: logits, step: step, vocabSize: vocab.output.tokensById.count, limit: beamWidth)
-        for tokenId in topIds where tokenId != vocab.output.padId && tokenId != vocab.output.unkId && tokenId != vocab.output.sosId {
-          let score = beam.score + logitValue(logits: logits, step: step, vocabSize: vocab.output.tokensById.count, tokenId: tokenId)
-          next.append((beam.ids + [tokenId], score))
+        guard !shouldCancel() else { throw LekhNeuralBeamSearchFailure.cancelled }
+        guard let logits = multiArrayOutput(from: prediction) else {
+          throw LekhNeuralInferenceFailure.modelOutputInvalid
         }
-      }
-      if next.isEmpty { break }
-      beams = next.sorted { normalizedScore($0) > normalizedScore($1) }.prefix(beamWidth).map { $0 }
-      if completed.count >= beamWidth { break }
+        return try logitsRow(
+          logits,
+          step: step,
+          vocabularySize: vocab.output.tokensById.count
+        )
     }
 
     guard !shouldCancel() else { return [] }
-    completed.append(contentsOf: beams)
     var output: [String] = []
-    for beam in completed.sorted(by: { normalizedScore($0) > normalizedScore($1) }) {
-      let candidate = decode(ids: beam.ids, vocab: vocab)
+    for hypothesis in hypotheses {
+      let candidate = decode(ids: hypothesis.tokenIds, vocab: vocab)
       guard isSafeCandidate(candidate),
             !output.contains(candidate) else { continue }
       output.append(candidate)
@@ -311,31 +440,19 @@ public final class LekhNeuralCandidateService {
     return array
   }
 
-  private static func topTokenIds(logits: MLMultiArray, step: Int, vocabSize: Int, limit: Int) -> [Int] {
-    guard vocabSize > 0, limit > 0 else { return [] }
-    var best: [(id: Int, score: Double)] = []
-    best.reserveCapacity(limit)
-    for tokenId in 0..<vocabSize {
-      let item = (
-        id: tokenId,
-        score: logitValue(logits: logits, step: step, vocabSize: vocabSize, tokenId: tokenId)
-      )
-      let insertion = best.firstIndex(where: { item.score > $0.score }) ?? best.endIndex
-      if insertion < limit {
-        best.insert(item, at: insertion)
-        if best.count > limit { best.removeLast() }
-      } else if best.count < limit {
-        best.append(item)
-      }
+  private static func logitsRow(
+    _ logits: MLMultiArray,
+    step: Int,
+    vocabularySize: Int
+  ) throws -> [Double] {
+    guard vocabularySize > 0,
+          step >= 0,
+          logits.count.isMultiple(of: vocabularySize),
+          step < logits.count / vocabularySize else {
+      throw LekhNeuralInferenceFailure.modelOutputInvalid
     }
-    return best.map(\.id)
-  }
-
-  private static func logitValue(logits: MLMultiArray, step: Int, vocabSize: Int, tokenId: Int) -> Double {
-    let index = min(max(step, 0), max(0, (logits.count / max(vocabSize, 1)) - 1)) * vocabSize + tokenId
-    guard index >= 0, index < logits.count else { return -.infinity }
-    let value = logits[index].doubleValue
-    return value.isFinite ? value : -.infinity
+    let offset = step * vocabularySize
+    return (0..<vocabularySize).map { logits[offset + $0].doubleValue }
   }
 
   private static func decode(ids: [Int], vocab: LekhNeuralVocabMetadata) -> String {
@@ -349,10 +466,6 @@ public final class LekhNeuralCandidateService {
       output += vocab.output.tokensById[tokenId]
     }
     return output
-  }
-
-  private static func normalizedScore(_ beam: (ids: [Int], score: Double)) -> Double {
-    beam.score / Double(max(beam.ids.count, 1))
   }
 
   private static func normalize(_ value: String) -> String {
@@ -473,8 +586,15 @@ public final class LekhNeuralCandidateService {
       "xa": "छ",
       "xaina": "छैन"
     ]
-    guard manifest.schemaVersion == 1,
-          manifest.selectedArtifact == "lekh-open-vocab-seq2seq-v1",
+    guard LekhNeuralManifestIdentityPolicy.permits(
+      schemaVersion: manifest.schemaVersion,
+      trainingRunId: manifest.trainingRunId,
+      exportRunId: manifest.exportRunId,
+      productionEligible: manifest.productionEligible
+    ) else {
+      throw LekhNeuralGateFailure.manifestIdentityInvalid
+    }
+    guard manifest.selectedArtifact == "lekh-open-vocab-seq2seq-v1",
           manifest.runtime == "CoreML",
           manifest.localOnly,
           manifest.neuralTailOnly,
@@ -570,7 +690,10 @@ public final class LekhNeuralCandidateService {
       "lekh-chat-conventions-v1",
       "lekh-name-lexicon-v1"
     ]
-    guard manifest.productionEligible,
+    guard manifest.schemaVersion == LekhNeuralManifestIdentityPolicy.currentSchemaVersion,
+          LekhNeuralManifestIdentityPolicy.isValidRunIdentifier(manifest.trainingRunId),
+          LekhNeuralManifestIdentityPolicy.isValidRunIdentifier(manifest.exportRunId),
+          manifest.productionEligible,
           requiredSources.isSubset(of: Set(manifest.trainingSources)),
           validReportPaths(manifest.datasetReports),
           validReportPaths(manifest.evaluationReports),
@@ -709,27 +832,37 @@ public final class LekhNeuralCandidateService {
   }
 
   private static func sha256Directory(_ root: URL) throws -> (digest: String, bytes: Int) {
+    let maximumFiles = 10_000
+    let maximumBytes = 16_777_216
     let rootValues = try root.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
     guard rootValues.isDirectory == true, rootValues.isSymbolicLink != true else {
       throw LekhNeuralGateFailure.resourceTypeInvalid
     }
     let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+    var enumerationFailed = false
     guard let enumerator = FileManager.default.enumerator(
       at: root,
       includingPropertiesForKeys: Array(keys),
       options: [],
-      errorHandler: { _, _ in false }
+      errorHandler: { _, _ in
+        enumerationFailed = true
+        return false
+      }
     ) else {
       throw LekhNeuralGateFailure.resourceUnreadable
     }
     let rootPath = root.standardizedFileURL.path
     var files: [(relativePath: String, url: URL, bytes: Int)] = []
+    var declaredBytes = 0
     for case let url as URL in enumerator {
       let values = try url.resourceValues(forKeys: keys)
       guard values.isSymbolicLink != true else { throw LekhNeuralGateFailure.resourceTypeInvalid }
       if values.isDirectory == true { continue }
       guard values.isRegularFile == true,
             let size = values.fileSize,
+            size >= 0,
+            files.count < maximumFiles,
+            declaredBytes <= maximumBytes - size,
             url.standardizedFileURL.path.hasPrefix(rootPath + "/") else {
         throw LekhNeuralGateFailure.resourceTypeInvalid
       }
@@ -738,8 +871,11 @@ public final class LekhNeuralCandidateService {
         throw LekhNeuralGateFailure.resourceTypeInvalid
       }
       files.append((relativePath, url, size))
+      declaredBytes += size
     }
-    guard !files.isEmpty else { throw LekhNeuralGateFailure.resourceUnreadable }
+    guard !enumerationFailed, !files.isEmpty else {
+      throw LekhNeuralGateFailure.resourceUnreadable
+    }
     var hasher = SHA256()
     var totalBytes = 0
     let zero = Data([0])
@@ -752,6 +888,9 @@ public final class LekhNeuralCandidateService {
       hasher.update(data: data)
       hasher.update(data: zero)
     }
+    guard totalBytes == declaredBytes else {
+      throw LekhNeuralGateFailure.resourceUnreadable
+    }
     return (hasher.finalize().map { String(format: "%02x", $0) }.joined(), totalBytes)
   }
 
@@ -763,13 +902,24 @@ public final class LekhNeuralCandidateService {
 
   private static func validateResourceJSONShape(manifestData: Data, vocabData: Data) throws {
     let manifest = try jsonObject(manifestData)
-    try requireExactKeys(manifest, [
+    let legacyManifestKeys: Set<String> = [
       "schemaVersion", "selectedArtifact", "runtime", "localOnly", "neuralTailOnly",
       "productionEligible", "architecture", "openVocabulary", "tokenization", "decoder",
       "beamSearch", "languageModelRescorer", "contextWindowWords", "parameterCount",
       "modelBytes", "trainingSources", "datasetReports", "evaluationReports",
       "benchmarkReports", "metrics", "performance", "requiredCases", "sha256", "limitations"
-    ])
+    ]
+    guard let schemaVersion = manifest["schemaVersion"] as? Int else {
+      throw LekhNeuralGateFailure.manifestSchemaInvalid
+    }
+    switch schemaVersion {
+    case 1:
+      try requireExactKeys(manifest, legacyManifestKeys)
+    case LekhNeuralManifestIdentityPolicy.currentSchemaVersion:
+      try requireExactKeys(manifest, legacyManifestKeys.union(["trainingRunId", "exportRunId"]))
+    default:
+      throw LekhNeuralGateFailure.manifestSchemaInvalid
+    }
     try requireExactKeys(try childObject(manifest, "beamSearch"), [
       "enabled", "beamWidth", "maxOutputGraphemes"
     ])
@@ -926,6 +1076,7 @@ private enum LekhNeuralGateFailure: String, Error {
   case resourceTypeInvalid = "resource-type-invalid"
   case manifestOrVocabMalformed = "manifest-vocab-malformed"
   case manifestSchemaInvalid = "manifest-schema-invalid"
+  case manifestIdentityInvalid = "manifest-identity-invalid"
   case artifactContractInvalid = "artifact-contract-invalid"
   case runtimePolicyInvalid = "runtime-policy-invalid"
   case vocabContractInvalid = "vocab-contract-invalid"
@@ -946,6 +1097,7 @@ private enum LekhNeuralGateFailure: String, Error {
 
 private enum LekhNeuralInferenceFailure: Error {
   case inputNotRepresentable
+  case modelOutputInvalid
 }
 
 private struct LekhVerifiedNeuralArtifact {
@@ -954,8 +1106,39 @@ private struct LekhVerifiedNeuralArtifact {
   let model: MLModel
 }
 
+public enum LekhNeuralManifestIdentityPolicy {
+  public static let currentSchemaVersion = 2
+
+  public static func isValidRunIdentifier(_ value: String?) -> Bool {
+    guard let value, value.count == 32 else { return false }
+    return value.unicodeScalars.allSatisfy { scalar in
+      (48...57).contains(scalar.value) || (97...102).contains(scalar.value)
+    }
+  }
+
+  public static func permits(
+    schemaVersion: Int,
+    trainingRunId: String?,
+    exportRunId: String?,
+    productionEligible: Bool
+  ) -> Bool {
+    switch schemaVersion {
+    case 1:
+      return !productionEligible && trainingRunId == nil && exportRunId == nil
+    case currentSchemaVersion:
+      return isValidRunIdentifier(trainingRunId) &&
+        isValidRunIdentifier(exportRunId) &&
+        trainingRunId != exportRunId
+    default:
+      return false
+    }
+  }
+}
+
 private struct LekhNeuralManifest: Decodable {
   let schemaVersion: Int
+  let trainingRunId: String?
+  let exportRunId: String?
   let selectedArtifact: String
   let runtime: String
   let localOnly: Bool

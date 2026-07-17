@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+import {
+  inspectContainedDirectoryTree,
+  inspectContainedRegularFile
+} from "./lib/neural-artifact-filesystem.mjs";
+import { validateNeuralRuntimeManifestVersion } from "./lib/neural-runtime-manifest-version.mjs";
 
 const root = process.cwd();
 const production = process.argv.includes("--production");
@@ -11,26 +16,42 @@ const modelPath = join(root, "models", "macos", "LekhNeuralTransliterator.mlmode
 const checkpointPath = join(root, "data", "generated", "neural-open-vocab-model", "lekh-open-vocab-seq2seq-v1", "checkpoint.pt");
 const datasetManifestPath = join(root, "data", "generated", "neural-open-vocab", "manifest.json");
 const servicePath = join(root, "native", "macos-imk", "skeleton", "LekhNeuralCandidateService.swift");
+const decoderContractPath = join(root, "contracts", "neural-decoder", "v1", "lekh-neural-decoder.v1.json");
 const e2ePath = join(root, "reports", "neural-native-service-e2e-report.json");
 const reportPath = join(root, "reports", "neural-runtime-manifest-conformance-report.json");
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-const vocabSource = readFileSync(vocabPath, "utf8");
+const manifestEvidence = inspectContainedRegularFile(root, manifestPath, { label: "Neural runtime manifest", includeContents: true, maxBytes: 1024 * 1024 });
+const vocabEvidence = inspectContainedRegularFile(root, vocabPath, { label: "Neural vocabulary", includeContents: true, maxBytes: 8 * 1024 * 1024 });
+const serviceEvidence = inspectContainedRegularFile(root, servicePath, { label: "Native neural service", includeContents: true, maxBytes: 2 * 1024 * 1024 });
+const decoderContractEvidence = inspectContainedRegularFile(root, decoderContractPath, { label: "Shared neural decoder contract", includeContents: true, maxBytes: 1024 * 1024 });
+const manifest = JSON.parse(manifestEvidence.contents.toString("utf8"));
+const vocabSource = vocabEvidence.contents.toString("utf8");
 const vocab = JSON.parse(vocabSource);
-const service = readFileSync(servicePath, "utf8");
-const modelDigest = directoryDigest(modelPath);
-const modelBytes = directoryBytes(modelPath);
-const checkpointDigest = existsSync(checkpointPath) ? fileDigest(checkpointPath) : null;
-const datasetManifestDigest = existsSync(datasetManifestPath) ? fileDigest(datasetManifestPath) : null;
-const e2e = existsSync(e2ePath) ? JSON.parse(readFileSync(e2ePath, "utf8")) : undefined;
+const service = serviceEvidence.contents.toString("utf8");
+const decoderContract = JSON.parse(decoderContractEvidence.contents.toString("utf8"));
+const modelEvidence = inspectContainedDirectoryTree(root, modelPath, { label: "Compiled Core ML model" });
+const modelDigest = modelEvidence.sha256;
+const modelBytes = modelEvidence.bytes;
+const checkpointDigest = existsSync(checkpointPath)
+  ? inspectContainedRegularFile(root, checkpointPath, { label: "Neural checkpoint" }).sha256
+  : null;
+const datasetManifestDigest = existsSync(datasetManifestPath)
+  ? inspectContainedRegularFile(root, datasetManifestPath, { label: "Neural dataset manifest" }).sha256
+  : null;
+const e2e = existsSync(e2ePath)
+  ? JSON.parse(inspectContainedRegularFile(root, e2ePath, { label: "Neural service report", includeContents: true }).contents.toString("utf8"))
+  : undefined;
 const failures = [];
 const warnings = [];
+
+const manifestVersion = validateNeuralRuntimeManifestVersion(manifest, { production });
+failures.push(...manifestVersion.failures);
+warnings.push(...manifestVersion.warnings);
 
 function require(condition, message) {
   if (!condition) failures.push(message);
 }
 
 require(manifest.runtime === "CoreML", "Manifest runtime must be CoreML.");
-require(manifest.schemaVersion === 1, "Runtime supports only neural manifest schemaVersion=1.");
 require(manifest.selectedArtifact === "lekh-open-vocab-seq2seq-v1", "Runtime manifest artifact id is unsupported.");
 require(manifest.architecture === "gru-encoder-decoder-seq2seq", "Runtime manifest architecture is unsupported.");
 require(manifest.tokenization === "unicode-grapheme-character", "Runtime manifest tokenization is unsupported.");
@@ -65,6 +86,11 @@ if (production) {
 }
 require(service.includes("loadVerifiedArtifact(bundle: bundle)"), "Runtime must verify the complete artifact before selecting a mode.");
 require(service.includes("validateProductionContract(artifact)"), "productionEligible alone must not enable inference.");
+require(
+  service.includes("LekhNeuralManifestIdentityPolicy.permits(") &&
+    service.includes("schemaVersion == LekhNeuralManifestIdentityPolicy.currentSchemaVersion"),
+  "Native runtime must keep v1 development-only and require schema v2 run identities for production."
+);
 require(service.includes("sha256Directory(modelURL)"), "Runtime must verify the compiled Core ML directory digest.");
 require(service.includes("sha256(vocabData) == manifest.sha256.vocabMetadata"), "Runtime must verify exact vocabulary bytes.");
 require(service.includes("validateModelContract(model: model, vocab: vocab)"), "Runtime must validate exact Core ML feature names, shapes, and types.");
@@ -98,9 +124,21 @@ require(
     service.includes("return tokenId != vocab.input.unkId"),
   "Runtime must reject unknown-token-heavy inputs."
 );
-const nativeBeamCap = Number(service.match(/min\((\d+), vocab\.decoder\.beamWidth\)/u)?.[1]);
-require(Number.isInteger(nativeBeamCap) && nativeBeamCap >= 1, "Native runtime beam cap could not be proven from source.");
-require(nativeBeamCap <= manifest.beamSearch?.beamWidth, "Native beam cap must not exceed the evaluated manifest beam width.");
+const nativeUsesBoundDecoder =
+  service.includes("let beamWidth = vocab.decoder.beamWidth") &&
+  service.includes("let maxSteps = min(vocab.output.maxLength - 1, input.count + 8)") &&
+  service.includes("LekhNeuralBeamSearch.rank(") &&
+  service.includes("let logProbabilities = logSoftmax(logits)") &&
+  service.includes("invalidTokenIds:");
+require(nativeUsesBoundDecoder, "Native runtime does not implement the frozen shared beam-decoder contract.");
+require(decoderContract.schemaVersion === 1, "Shared neural decoder contract schemaVersion must be 1.");
+require(decoderContract.score === "accumulated-log-softmax", "Shared neural decoder contract must require log-softmax scoring.");
+require(
+  decoderContract.lengthNormalization === "score-divided-by-token-count-including-sos",
+  "Shared neural decoder contract has the wrong length normalization."
+);
+const nativeBeamWidth = nativeUsesBoundDecoder ? vocab.decoder?.beamWidth : null;
+require(nativeBeamWidth === manifest.beamSearch?.beamWidth, "Native runtime beam width must equal the evaluated manifest beam width.");
 require(
   !(manifest.limitations ?? []).some((item) => /replaces disabled neural diagnostics/iu.test(item)),
   "Manifest still claims the implemented native async service is missing."
@@ -136,13 +174,18 @@ const report = {
   status: failures.length === 0 ? "passed-experimental" : "failed",
   production,
   manifest: relative(root, manifestPath),
+  manifestSchemaVersion: manifest.schemaVersion,
+  trainingRunId: manifest.trainingRunId ?? null,
+  exportRunId: manifest.exportRunId ?? null,
   productionEligible: manifest.productionEligible,
   compiledModelSha256: modelDigest,
   compiledModelBytes: modelBytes,
   sourceCheckpointSha256: checkpointDigest,
   trainingDatasetManifestSha256: datasetManifestDigest,
   evaluationBeamWidth: manifest.beamSearch?.beamWidth,
-  nativeRuntimeBeamWidthCap: nativeBeamCap,
+  nativeRuntimeBeamWidth: nativeBeamWidth,
+  decoderContract: relative(root, decoderContractPath),
+  decoderContractSha256: decoderContractEvidence.sha256,
   iterativeServiceLatency: e2e?.performance,
   singleForwardBenchmarkIsConsumerLatency: false,
   failures,
@@ -152,30 +195,3 @@ mkdirSync(dirname(reportPath), { recursive: true });
 writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report, null, 2));
 process.exit(failures.length === 0 ? 0 : 1);
-
-function directoryBytes(path) {
-  const stat = statSync(path);
-  if (!stat.isDirectory()) return stat.size;
-  return readdirSync(path).reduce((total, entry) => total + directoryBytes(join(path, entry)), 0);
-}
-
-function directoryDigest(dir) {
-  const hash = createHash("sha256");
-  for (const path of walkFiles(dir).sort()) {
-    hash.update(relative(dir, path));
-    hash.update("\0");
-    hash.update(readFileSync(path));
-    hash.update("\0");
-  }
-  return hash.digest("hex");
-}
-
-function fileDigest(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
-}
-
-function walkFiles(path) {
-  const stat = statSync(path);
-  if (!stat.isDirectory()) return [path];
-  return readdirSync(path).flatMap((entry) => walkFiles(join(path, entry)));
-}

@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "implementationContractVersion": 1,
   "phase": "phase4-training-export-contract",
   "modelId": "lekh-open-vocab-seq2seq-v1",
   "artifact": {
@@ -16,29 +17,30 @@
     "encoderLayers": 2,
     "decoderLayers": 2,
     "embeddingDim": 96,
-    "hiddenDim": 192,
-    "attention": "additive",
+    "hiddenDim": 256,
+    "attention": "none",
     "dropout": 0.12,
-    "estimatedParameterCount": 2480000,
     "minimumParameterCount": 1000000,
     "maximumParameterCount": 5000000,
     "maximumCompiledBytes": 16777216
   },
   "decoder": {
     "type": "beam-search",
-    "beamWidth": 4,
+    "beamWidth": 2,
+    "maxInputGraphemes": 32,
     "maxOutputGraphemes": 32,
-    "maximumCandidates": 8,
+    "maximumCandidates": 2,
     "rejectWhitespaceOutput": true,
     "rejectLatinOutput": true,
     "autoCommitEligible": false
   },
   "context": {
-    "previousWords": 2,
+    "previousWords": 0,
     "languageModelRescorer": {
-      "enabled": true,
+      "enabled": false,
+      "status": "not-implemented",
       "source": "runtime-next-context-pack",
-      "weight": 0.12
+      "weight": 0
     }
   },
   "training": {
@@ -49,20 +51,52 @@
       "lekh-chat-conventions-v1",
       "lekh-name-lexicon-v1"
     ],
-    "teacherSources": [
-      "ai4bharat-indicxlit"
-    ],
-    "teacherPolicy": "offline-distillation-only-never-packaged",
+    "distillation": {
+      "enabled": false,
+      "status": "not-implemented",
+      "teacherSources": [
+        "ai4bharat-indicxlit"
+      ],
+      "teacherPolicy": "offline-teacher-only-never-packaged"
+    },
     "normalization": "NFC",
     "splitPolicy": "stable-hash-by-normalized-input",
-    "loss": "label-smoothed-sequence-cross-entropy",
+    "samplingPolicy": {
+      "type": "deterministic-source-stratified-sampling",
+      "version": 1,
+      "sourceQuotaWeight": "square-root-of-source-row-count",
+      "sourceMultipliers": {},
+      "pinnedSources": [
+        "lekh-phase1-contract-seed-v1",
+        "human-reviewed-lekh-gold-v1",
+        "lekh-chat-conventions-v1",
+        "lekh-name-lexicon-v1"
+      ]
+    },
+    "loss": "weighted-label-smoothed-sequence-cross-entropy",
     "optimizer": "adamw",
-    "earlyStoppingMetric": "dev-tail-top3-acceptable-accuracy",
-    "safetyNegatives": [
+    "admissionSafetyEvaluationSuites": [
       "protected-token-gold",
       "non-nepali-pass-through-gold",
       "adversarial-neural-tail-gold"
     ]
+  },
+  "trainingRun": {
+    "seed": 42,
+    "maximumTrainRows": 1000000,
+    "maximumDevRows": 50000,
+    "maximumEpochs": 8,
+    "batchSize": 256,
+    "learningRate": 0.002,
+    "labelSmoothing": 0.05,
+    "gradientClipNorm": 1,
+    "earlyStopping": {
+      "enabled": true,
+      "metric": "dev-weighted-token-cross-entropy",
+      "patienceEpochs": 2,
+      "minimumDelta": 0.0001,
+      "restoreBestWeights": true
+    }
   },
   "export": {
     "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/checkpoint.pt",

@@ -74,6 +74,7 @@
     "neural:student:build": "test -x .tmp/coreml-student-venv/bin/python || npm run neural:student:setup; .tmp/coreml-student-venv/bin/python scripts/train-coreml-student-transliterator.py",
     "neural:open-vocab:setup": "python3.11 -m venv .tmp/neural-seq2seq-venv && .tmp/neural-seq2seq-venv/bin/python -m pip install --upgrade pip setuptools wheel && .tmp/neural-seq2seq-venv/bin/python -m pip install torch==2.3.1 numpy==1.26.4 coremltools==8.3.0",
     "neural:open-vocab:train": "test -x .tmp/neural-seq2seq-venv/bin/python || npm run neural:open-vocab:setup; .tmp/neural-seq2seq-venv/bin/python scripts/train-open-vocab-seq2seq-transliterator.py",
+    "neural:open-vocab:test": "(test -x .tmp/neural-seq2seq-venv/bin/python || npm run neural:open-vocab:setup) && .tmp/neural-seq2seq-venv/bin/python scripts/train-open-vocab-seq2seq-transliterator.test.py",
     "neural:open-vocab:evaluate": "node scripts/evaluate-neural-open-vocab-model.mjs --predictions data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/gold-predictions.jsonl",
     "neural:open-vocab:benchmark": "node scripts/benchmark-neural-coreml-device.mjs --measurements data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/coreml-device-measurements.json",
     "neural:open-vocab:benchmark:packaged": "node scripts/benchmark-neural-packaged-app.mjs",
