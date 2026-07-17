@@ -65,10 +65,11 @@ export function validateNeuralComputePlanEvidence(evidence, context) {
   const warnings = [];
   const production = context.production === true;
   const now = context.now ?? new Date();
+  let environmentCapabilityLimited = false;
 
   if (!exactKeys(evidence, evidenceKeys)) {
     issues.push("neural-compute-plan.schema-invalid");
-    return result(false, false);
+    return result(false, false, false);
   }
   if (evidence.schemaVersion !== 1 ||
       evidence.recordType !== "lekh-neural-compute-plan-evidence" ||
@@ -123,8 +124,21 @@ export function validateNeuralComputePlanEvidence(evidence, context) {
   let neuralEngineClaimAllowed = false;
   let deterministicFallbackProven = false;
   if (evidence.architecture === "arm64") {
-    if (!neuralAvailable || supportedNeural < 1) {
-      issues.push("neural-compute-plan.neural-engine-unavailable-or-unsupported");
+    if (!neuralAvailable) {
+      const preferredFallback = (evidence.preferredComputeDeviceCounts?.cpu ?? 0) +
+        (evidence.preferredComputeDeviceCounts?.gpu ?? 0);
+      if (preferredNeural !== 0 || supportedNeural !== 0 || preferredFallback < 1) {
+        issues.push("neural-compute-plan.capability-limited-fallback-invalid");
+      } else if (production) {
+        issues.push("neural-compute-plan.neural-engine-unavailable");
+      } else {
+        environmentCapabilityLimited = true;
+        warnings.push(
+          "This Apple Silicon environment exposes no Neural Engine; the Core ML plan is structurally valid, but it cannot support a Neural Engine claim."
+        );
+      }
+    } else if (supportedNeural < 1) {
+      issues.push("neural-compute-plan.model-neural-engine-unsupported");
     } else if (preferredNeural < 1) {
       if (production) issues.push("neural-compute-plan.neural-engine-not-preferred");
       else warnings.push("Core ML supports Neural Engine execution for some operations but currently prefers another device.");
@@ -141,15 +155,16 @@ export function validateNeuralComputePlanEvidence(evidence, context) {
     }
   }
 
-  return result(neuralEngineClaimAllowed, deterministicFallbackProven);
+  return result(neuralEngineClaimAllowed, deterministicFallbackProven, environmentCapabilityLimited);
 
-  function result(neuralClaim, fallbackProven) {
+  function result(neuralClaim, fallbackProven, capabilityLimited) {
     return Object.freeze({
       valid: issues.length === 0,
       issueCodes: Object.freeze([...new Set(issues)].sort()),
       warnings: Object.freeze([...warnings]),
       neuralEngineClaimAllowed: neuralClaim,
       deterministicFallbackProven: fallbackProven,
+      environmentCapabilityLimited: capabilityLimited,
       production
     });
   }

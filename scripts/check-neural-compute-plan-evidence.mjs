@@ -35,6 +35,8 @@ const status = validation.valid
     ? "passed-neural-engine-compute-plan"
     : validation.deterministicFallbackProven
       ? "passed-intel-neural-fallback-compute-plan"
+      : validation.environmentCapabilityLimited
+        ? "passed-experimental-compute-plan-environment-lacks-neural-engine"
       : "passed-experimental-compute-plan-neural-engine-not-preferred"
   : production
     ? "failed-production-neural-compute-plan"
@@ -50,6 +52,7 @@ const report = {
   expectedArchitecture,
   neuralEngineClaimAllowed: validation.neuralEngineClaimAllowed,
   deterministicFallbackProven: validation.deterministicFallbackProven,
+  environmentCapabilityLimited: validation.environmentCapabilityLimited,
   issueCodes: validation.issueCodes,
   warnings: validation.warnings
 };

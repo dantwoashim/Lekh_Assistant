@@ -78,6 +78,44 @@ describe("neural compute-plan evidence", () => {
     expect(production.issueCodes).toContain("neural-compute-plan.neural-engine-not-preferred");
   });
 
+  it("accepts a structurally valid development probe when the host exposes no Neural Engine", () => {
+    const value = evidence("arm64");
+    value.availableComputeDevices = ["cpu", "gpu"];
+    value.preferredComputeDeviceCounts.cpu += value.preferredComputeDeviceCounts["neural-engine"];
+    value.preferredComputeDeviceCounts["neural-engine"] = 0;
+    value.supportedComputeDeviceCounts["neural-engine"] = 0;
+    value.neuralEngineAvailable = false;
+    value.neuralEnginePreferredOperationCount = 0;
+    value.neuralEngineSupportedOperationCount = 0;
+    value.neuralEnginePlanEvidence = false;
+
+    const development = validate(value);
+    expect(development.valid).toBe(true);
+    expect(development.environmentCapabilityLimited).toBe(true);
+    expect(development.neuralEngineClaimAllowed).toBe(false);
+    expect(development.deterministicFallbackProven).toBe(false);
+    expect(development.warnings).toHaveLength(1);
+
+    const production = validate(value, true);
+    expect(production.valid).toBe(false);
+    expect(production.environmentCapabilityLimited).toBe(false);
+    expect(production.issueCodes).toContain("neural-compute-plan.neural-engine-unavailable");
+  });
+
+  it("rejects a model that cannot use an exposed Neural Engine", () => {
+    const value = evidence("arm64");
+    value.preferredComputeDeviceCounts.cpu += value.preferredComputeDeviceCounts["neural-engine"];
+    value.preferredComputeDeviceCounts["neural-engine"] = 0;
+    value.supportedComputeDeviceCounts["neural-engine"] = 0;
+    value.neuralEnginePreferredOperationCount = 0;
+    value.neuralEngineSupportedOperationCount = 0;
+    value.neuralEnginePlanEvidence = false;
+
+    const result = validate(value);
+    expect(result.valid).toBe(false);
+    expect(result.issueCodes).toContain("neural-compute-plan.model-neural-engine-unsupported");
+  });
+
   it("accepts explicit Intel CPU/GPU fallback and rejects identity or accounting drift", () => {
     const fallback = validate(evidence("x86_64"), true);
     expect(fallback.valid).toBe(true);

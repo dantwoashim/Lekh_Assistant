@@ -15,6 +15,7 @@ target_include_directories(LekhTsfProtocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(LekhTextService SHARED
   ClassFactory.cpp
   DllMain.cpp
+  InputScopeGuids.cpp
   IpcClient.cpp
   LekhTextService.cpp
   Register.cpp

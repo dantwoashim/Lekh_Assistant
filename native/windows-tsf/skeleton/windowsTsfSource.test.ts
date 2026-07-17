@@ -75,6 +75,7 @@ describe("Windows TSF source safety contract", () => {
   it("suppresses secure, private, PIN, and unclassified contexts", () => {
     const source = read("LekhTextService.cpp");
     const editSession = read("TsfEditSession.cpp");
+    const inputScopeGuids = read("InputScopeGuids.cpp");
     expect(source).toContain("TF_TMAE_SECUREMODE");
     expect(source).toContain("privacy != lekh::tsf::ContextPrivacy::Safe");
     expect(editSession).toContain("GUID_PROP_INPUTSCOPE");
@@ -86,6 +87,9 @@ describe("Windows TSF source safety contract", () => {
     expect(editSession).toContain("ContextPrivacy::Unknown");
     expect(editSession).toContain("isKnownInputScope");
     expect(editSession).toContain("!isKnownInputScope(scopes[index])");
+    expect(inputScopeGuids).toContain("<initguid.h>");
+    expect(inputScopeGuids).toContain("<inputscope.h>");
+    expect(read("CMakeLists.txt")).toContain("InputScopeGuids.cpp");
   });
 
   it("does not consume unsupported candidate or navigation keys without a native UI", () => {
