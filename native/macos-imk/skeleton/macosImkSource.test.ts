@@ -583,6 +583,7 @@ describe("macOS IMK proof target source", () => {
     expect(plist).toContain("tsInputMethodIconFileKey");
     expect(plist).toContain("tsInputMethodCharacterRepertoireKey");
     expect(plist).toContain("ComponentInputModeDict");
+    expect(plist).toContain("LSBackgroundOnly");
     expect(plist).toContain("tsInputModeListKey");
     expect(plist).toContain("smUnicodeScript");
     expect(plist).not.toContain("smDevanagari");
