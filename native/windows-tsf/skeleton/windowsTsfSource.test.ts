@@ -146,11 +146,12 @@ describe("Windows TSF source safety contract", () => {
     expect(identity).toContain("TokenGroups");
     expect(identity).toContain("SE_GROUP_LOGON_ID");
     expect(security).toContain("currentUserSid()");
+    expect(security).toContain('L"D:P(A;;GA;;;SY)"');
     expect(security).toContain('L"D:P(A;;GA;;;SY)(A;;GA;;;"');
     expect(security).toContain("ConvertStringSecurityDescriptorToSecurityDescriptorW");
     expect(security).toContain("GetSecurityInfo");
     expect(security).toContain("SE_DACL_PROTECTED");
-    expect(security).toContain("dacl->AceCount != 2");
+    expect(security).toContain("dacl->AceCount != expectedAceCount");
     expect(securityTest).toContain("FILE_FLAG_FIRST_PIPE_INSTANCE");
     expect(securityTest).toContain("PIPE_REJECT_REMOTE_CLIENTS");
     expect(securityTest).toContain("validatePipeHandle(pipe)");

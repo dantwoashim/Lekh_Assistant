@@ -33,11 +33,14 @@ bool validatesRestrictedDacl(PSECURITY_DESCRIPTOR descriptor, PSID authorization
   BOOL daclDefaulted = FALSE;
   PACL dacl = nullptr;
   if (!GetSecurityDescriptorDacl(descriptor, &daclPresent, &dacl, &daclDefaulted)) return false;
-  if (!daclPresent || !dacl || daclDefaulted || dacl->AceCount != 2) return false;
+  if (!daclPresent || !dacl || daclDefaulted) return false;
 
   const std::vector<DWORD> systemSidStorage = localSystemSid();
   if (systemSidStorage.empty()) return false;
   PSID systemSid = const_cast<DWORD*>(systemSidStorage.data());
+  const bool authorizationIsSystem = EqualSid(authorizationSid, systemSid) == TRUE;
+  const DWORD expectedAceCount = authorizationIsSystem ? 1 : 2;
+  if (dacl->AceCount != expectedAceCount) return false;
   bool foundAuthorizationSid = false;
   bool foundSystemSid = false;
 
@@ -50,7 +53,11 @@ bool validatesRestrictedDacl(PSECURITY_DESCRIPTOR descriptor, PSID authorization
     PSID trustee = const_cast<DWORD*>(&ace->SidStart);
     if (!IsValidSid(trustee) || !grantsFullPipeControl(ace->Mask)) return false;
 
-    if (EqualSid(trustee, authorizationSid)) {
+    if (authorizationIsSystem && EqualSid(trustee, systemSid)) {
+      if (foundAuthorizationSid || foundSystemSid) return false;
+      foundAuthorizationSid = true;
+      foundSystemSid = true;
+    } else if (EqualSid(trustee, authorizationSid)) {
       if (foundAuthorizationSid) return false;
       foundAuthorizationSid = true;
     } else if (EqualSid(trustee, systemSid)) {
@@ -82,7 +89,12 @@ bool SecurityContext::initialize() {
   const std::optional<std::wstring> authorizationSidString = authorizationSid_.string();
   if (!authorizationSidString) return false;
 
-  const std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;" + *authorizationSidString + L")";
+  const std::vector<DWORD> systemSidStorage = localSystemSid();
+  if (systemSidStorage.empty()) return false;
+  const bool authorizationIsSystem = EqualSid(authorizationSid_.get(), systemSidStorage.data()) == TRUE;
+  const std::wstring sddl = authorizationIsSystem
+    ? L"D:P(A;;GA;;;SY)"
+    : L"D:P(A;;GA;;;SY)(A;;GA;;;" + *authorizationSidString + L")";
   PSECURITY_DESCRIPTOR descriptor = nullptr;
   if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
     sddl.c_str(),

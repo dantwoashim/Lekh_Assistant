@@ -12,9 +12,8 @@ std::vector<DWORD> tokenInformation(HANDLE process, TOKEN_INFORMATION_CLASS info
   if (!OpenProcessToken(process, TOKEN_QUERY, &token)) return {};
 
   DWORD requiredBytes = 0;
-  SetLastError(ERROR_SUCCESS);
   GetTokenInformation(token, informationClass, nullptr, 0, &requiredBytes);
-  if (requiredBytes == 0 || GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+  if (requiredBytes == 0) {
     CloseHandle(token);
     return {};
   }
