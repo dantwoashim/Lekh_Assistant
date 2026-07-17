@@ -1,6 +1,6 @@
 # Lekh Keyboard Daemon
 
-The daemon will host the shared `KeyboardEngine`, maintain warm state, own local storage adapters, and serve Windows TSF, macOS IMK/XPC, and the companion app over local-only IPC.
+The daemon hosts the shared TypeScript `KeyboardEngine` for the Windows TSF development path, maintains warm/session state, and owns the local IPC protocol boundary. The current macOS IMK hot path uses its in-process Swift engine rather than this daemon.
 
 Prompt 3 adds a repo-executable TypeScript daemon:
 
@@ -11,7 +11,7 @@ Prompt 3 adds a repo-executable TypeScript daemon:
 - `native/daemon/src/namedPipeServer.ts`
 - `native/daemon/dist/lekh-keyboard-daemon.mjs`
 
-It handles every IPC message, validates envelopes, tracks diagnostics, exercises timeout fallback, and is covered by `npm run test:native-scaffold`. On Windows, the packaged companion can start it as a separate background process exposing `\\.\pipe\LekhKeyboard` for the TSF service.
+It handles every IPC message, validates envelopes, tracks diagnostics, exercises timeout fallback, and is covered by `npm run test:native-scaffold`. On Windows, named-pipe development mode derives `\\.\pipe\LekhKeyboard-{current-user-SID}` and refuses to start if the SID cannot be resolved.
 
 ## Responsibilities
 
@@ -25,6 +25,8 @@ It handles every IPC message, validates envelopes, tracks diagnostics, exercises
 ## Failure Policy
 
 If daemon IPC is unavailable, native input methods must pass through raw keystrokes and surface diagnostics later through the companion app. Host applications must never freeze while waiting for the daemon.
+
+The Node listener does not yet prove an explicit user-only Windows DACL. Production authorization remains blocked until the native pipe owner creates every instance with a verified security descriptor and the TSF client verifies that server's installed identity.
 
 ## Local Commands
 

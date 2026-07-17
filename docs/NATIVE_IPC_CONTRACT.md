@@ -13,21 +13,28 @@ Schema and TypeScript definitions:
 interface IpcRequest<T = unknown> {
   id: string;
   type: string;
-  version: 1;
+  version: 2;
   sentAt: number;
+  deadlineAt: number;
+  clientInstanceId: string;
+  requestSequence: number;
   payload: T;
 }
 
 interface IpcResponse<T = unknown> {
   id: string;
   type: string;
-  version: 1;
+  version: 2;
   ok: boolean;
+  serverInstanceId: string;
+  requestSequence: number;
+  sessionEpoch?: number;
   payload?: T;
   error?: {
     code: string;
     message: string;
     recoverable: boolean;
+    action: "none" | "retry" | "passThrough" | "restartSession" | "restartDaemon";
   };
   latencyMs?: number;
 }
@@ -37,6 +44,7 @@ interface IpcResponse<T = unknown> {
 
 | IPC type | KeyboardEngine method |
 | --- | --- |
+| `protocol.negotiate` | bind protocol and daemon instance |
 | `health.check` | daemon health wrapper |
 | `engine.warm` | `warm` |
 | `session.begin` | `beginSession` |
@@ -64,17 +72,19 @@ interface IpcResponse<T = unknown> {
 
 ## Encoding
 
-- Production preference: length-prefixed CBOR or MessagePack.
-- Debug mode: JSON.
-- The schema is versioned as `version: 1`.
-- `memory.learn` payload is exactly `{sessionId, commitEpoch}`. It cannot transport a correction entry or surrounding text, and returns `learned: false` for missing, stale, replayed, ended, secure, uncertain, or unclassified sessions.
+- The current local transport is strict UTF-8 JSON with newline framing.
+- The complete frame, including its newline delimiter, is limited to 65,536 bytes.
+- At most 16 named-pipe connections and 32 queued requests per connection are admitted.
+- The schema is versioned as `version: 2`; negotiation, request sequence, deadline, client instance, server instance, and session epoch are mandatory where applicable.
+- `memory.learn` payload is exactly `{sessionId, sessionEpoch, commitEpoch}`. It cannot transport a correction entry or surrounding text, and returns `learned: false` for missing, stale, replayed, ended, secure, uncertain, or unclassified sessions.
 
 ## Security
 
 - IPC is local-only.
-- Windows uses a per-user named pipe.
-- macOS uses app-group scoped XPC.
-- Cross-user connections are rejected.
+- Windows derives a per-user named-pipe name from the current token SID and has no shared or environment-selected fallback.
+- The TSF client rejects a server running under another user token.
+- The Node development listener does not yet prove an explicit user-only DACL or installed executable identity; production remains blocked on the native pipe owner.
+- The current macOS IMK hot path uses its in-process native engine and does not expose this named-pipe transport.
 - No remote TCP listener is allowed.
 - No typed text telemetry is sent to network services.
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { SOCKET_IDLE_TIMEOUT_MS, createOrderedResponseQueue } from "./namedPipeServer";
+import {
+  MAXIMUM_ACTIVE_PIPE_CONNECTIONS,
+  SOCKET_IDLE_TIMEOUT_MS,
+  createNamedPipeFrameDecoder,
+  createOrderedResponseQueue,
+  namedPipeErrorResponse
+} from "./namedPipeServer";
 
 describe("Windows named-pipe response ordering", () => {
   it("keeps requests and responses in exact arrival order despite uneven work", async () => {
@@ -73,5 +79,88 @@ describe("Windows named-pipe response ordering", () => {
     release?.();
     await queue.drain();
     expect(queue.pending()).toBe(0);
+  });
+
+  it("cancels queued state mutations when the connection disappears", async () => {
+    let release: (() => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const blocker = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const handled: string[] = [];
+    const written: string[] = [];
+    const queue = createOrderedResponseQueue(
+      async (line) => {
+        handled.push(line);
+        markStarted?.();
+        await blocker;
+        return `response:${line}`;
+      },
+      (response) => { written.push(response); },
+      () => "error"
+    );
+
+    expect(queue.enqueue("active")).toBe(true);
+    expect(queue.enqueue("must-not-run")).toBe(true);
+    await started;
+    queue.cancel();
+    release?.();
+    await queue.drain();
+    expect(handled).toEqual(["active"]);
+    expect(written).toEqual([]);
+  });
+
+  it("drops queued work and writes one ordered terminal failure", async () => {
+    let release: (() => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const blocker = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const handled: string[] = [];
+    const written: string[] = [];
+    const queue = createOrderedResponseQueue(
+      async (line) => {
+        handled.push(line);
+        markStarted?.();
+        await blocker;
+        return `response:${line}`;
+      },
+      (response) => { written.push(response); },
+      () => "error"
+    );
+
+    expect(queue.enqueue("active")).toBe(true);
+    expect(queue.enqueue("must-not-run")).toBe(true);
+    await started;
+    const terminated = queue.terminate("terminal");
+    release?.();
+    await terminated;
+    expect(handled).toEqual(["active"]);
+    expect(written).toEqual(["terminal"]);
+  });
+
+  it("frames fragmented UTF-8 strictly and includes the newline in the byte ceiling", () => {
+    const decoder = createNamedPipeFrameDecoder(16);
+    const encoded = Buffer.from("ने\r\nnext\n", "utf8");
+    expect(decoder.push(encoded.subarray(0, 2))).toEqual({ lines: [] });
+    expect(decoder.push(encoded.subarray(2))).toEqual({ lines: ["ने", "next"] });
+
+    expect(createNamedPipeFrameDecoder(8).push(Buffer.from("1234567\n"))).toEqual({ lines: ["1234567"] });
+    expect(createNamedPipeFrameDecoder(8).push(Buffer.from("12345678\n"))).toEqual({
+      lines: [],
+      failure: "payload-too-large"
+    });
+    expect(createNamedPipeFrameDecoder().push(Buffer.from([0xc3, 0x28, 0x0a]))).toEqual({
+      lines: [],
+      failure: "invalid-utf8"
+    });
+  });
+
+  it("bounds active connections and never returns internal exception text", () => {
+    expect(MAXIMUM_ACTIVE_PIPE_CONNECTIONS).toBe(16);
+    const response = namedPipeErrorResponse();
+    expect(response).not.toContain("sensitive-internal-detail");
+    expect(JSON.parse(response).error).toEqual(expect.objectContaining({
+      code: "NAMED_PIPE_REQUEST_FAILED",
+      message: "The named-pipe request could not be completed."
+    }));
   });
 });

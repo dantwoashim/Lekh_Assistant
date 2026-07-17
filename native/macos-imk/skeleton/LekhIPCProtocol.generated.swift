@@ -6,6 +6,7 @@ public enum LekhIPCProtocolContract {
   public static let compatibleVersions = [2]
   public static let maximumFrameBytes = 65536
   public static let hotPathDeadlineMilliseconds = 50
+  public static let maximumActiveConnections = 16
   public static let maximumPendingRequestsPerConnection = 32
 }
 

@@ -1,10 +1,15 @@
-# Daemon Source Placeholder
+# Daemon Source
 
-This directory is reserved for the future native daemon implementation.
+This directory contains the executable local TypeScript daemon used by the Windows TSF development slice. It owns the engine, protocol negotiation, epoch-scoped sessions, request ordering, deadlines, diagnostics, and the JSONL/named-pipe transports.
 
-The current repository is TypeScript/web-lab verified. A production daemon should be added only after choosing the runtime, storage adapter, and packaging route. Candidate runtime choices:
+The Windows transport currently enforces:
 
-- TypeScript/Node bundle for fastest integration.
-- Rust only if profiling proves the JS daemon cannot meet latency targets.
+- a SID-derived pipe name with no shared fallback or environment-selected endpoint;
+- strict UTF-8 newline framing with a 64 KiB frame ceiling;
+- at most 16 active connections and 32 queued requests per connection;
+- ordered writes with cancellation of work that has not started after disconnect;
+- bounded idle time and sanitized transport failures.
 
-Do not put hot path engine logic inside the TSF DLL or IMK bundle; they should marshal IPC and fail open.
+An explicit user-only Windows security descriptor still requires the planned native pipe owner. Until that owner creates the pipe and the client verifies its installed binary identity, this transport remains a development boundary rather than production authorization evidence.
+
+Do not move language-engine logic into the TSF DLL or IMK adapter. Native adapters marshal typed protocol messages, mutate host text only through the host API, and fail open.

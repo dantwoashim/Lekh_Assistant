@@ -209,6 +209,7 @@ function generateSwift(value) {
     `  public static let compatibleVersions = ${JSON.stringify(value.compatibleVersions)}\n` +
     `  public static let maximumFrameBytes = ${value.limits.maximumFrameBytes}\n` +
     `  public static let hotPathDeadlineMilliseconds = ${value.limits.hotPathDeadlineMs}\n` +
+    `  public static let maximumActiveConnections = ${value.limits.maximumActiveConnections}\n` +
     `  public static let maximumPendingRequestsPerConnection = ${value.limits.maximumPendingRequestsPerConnection}\n` +
     `}\n\npublic enum LekhIPCMessageType: String, CaseIterable, Sendable {\n${cases}\n}\n\n` +
     `public enum LekhIPCErrorCode: String, CaseIterable, Sendable {\n${errors}\n}\n`;
@@ -221,6 +222,7 @@ function generateCpp(value) {
     `inline constexpr std::uint32_t kSchemaVersion = ${value.currentVersion};\n` +
     `inline constexpr std::size_t kMaximumFrameBytes = ${value.limits.maximumFrameBytes};\n` +
     `inline constexpr std::uint32_t kHotPathDeadlineMilliseconds = ${value.limits.hotPathDeadlineMs};\n` +
+    `inline constexpr std::size_t kMaximumActiveConnections = ${value.limits.maximumActiveConnections};\n` +
     `inline constexpr std::size_t kMaximumPendingRequestsPerConnection = ${value.limits.maximumPendingRequestsPerConnection};\n` +
     `inline constexpr std::array<std::string_view, ${value.messages.length}> kMessageTypes = {\n${messages}\n};\n` +
     `inline constexpr std::array<std::string_view, ${value.errors.length}> kErrorCodes = {\n${errors}\n};\n` +

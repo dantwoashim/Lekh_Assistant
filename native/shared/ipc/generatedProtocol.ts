@@ -10,6 +10,7 @@ export const IPC_PROTOCOL_LIMITS = {
   "maximumContextDomains": 32,
   "hotPathDeadlineMs": 50,
   "controlDeadlineMs": 5000,
+  "maximumActiveConnections": 16,
   "maximumPendingRequestsPerConnection": 32,
   "maximumReplayEntriesPerClient": 256,
   "maximumClientInstances": 64
