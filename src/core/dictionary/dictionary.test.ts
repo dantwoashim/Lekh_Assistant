@@ -2,7 +2,7 @@ import hunspellFixtures from "../../data/fixtures/hunspell-fixtures.json";
 import suggestionFixtures from "../../data/fixtures/suggestion-fixtures.json";
 import { normalizeNepaliText } from "../normalize/normalizeNepaliText";
 import { getSpellHints, getSpellHintsWithHunspell, levenshtein } from "./spellHints";
-import { parseSeedWords, validateWordlist, wordEntries } from "./loadSeedWords";
+import { parseRomanizedAliases, parseSeedWords, validateWordlist, wordEntries } from "./loadSeedWords";
 import { isKnownNepaliHunspellWord, suggestNepaliHunspellWords } from "./nepaliHunspell";
 import { replaceCurrentRomanizedToken, suggestWords } from "./suggestWords";
 
@@ -15,6 +15,19 @@ describe("seed dictionary", () => {
     for (const entry of parseSeedWords()) {
       expect(entry.normalizedWord).toBe(normalizeNepaliText(entry.word));
     }
+  });
+
+  it("parses BOM-prefixed CRLF wordlist and alias input", () => {
+    expect(parseSeedWords(
+      "\uFEFFword\tromanized\tfrequency\tdomain\tsource\r\nनेपाल\tnepal\t10\tcommon\ttest\r\n"
+    )).toEqual([
+      expect.objectContaining({ word: "नेपाल", romanized: "nepal", frequency: 10, source: "test" })
+    ]);
+    expect(parseRomanizedAliases(
+      "\uFEFFword\tromanized\tfrequencyBoost\tdomain\tsource\r\nनेपाल\tnepaal\t2\tcommon\ttest\r\n"
+    )).toEqual([
+      expect.objectContaining({ word: "नेपाल", romanized: "nepaal", frequencyBoost: 2, source: "test" })
+    ]);
   });
 
   it("contains practical seed coverage", () => {

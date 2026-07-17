@@ -19,7 +19,7 @@ interface RomanizedAlias {
 }
 
 export function parseSeedWords(raw = seedWordsRaw): WordEntry[] {
-  const [header, ...rows] = raw.trim().split(/\n/);
+  const [header = "", ...rows] = tsvLines(raw);
   const columns = header.split("\t");
   if (columns.join("|") !== "word|romanized|frequency|domain|source") {
     throw new Error("Seed wordlist header must be word, romanized, frequency, domain, source.");
@@ -73,7 +73,7 @@ export function validateWordlist(entries = parseSeedWords()): WordlistValidation
 
 const seedWords = parseSeedWords();
 export function parseRomanizedAliases(raw = aliasesRaw): RomanizedAlias[] {
-  const [header, ...rows] = raw.trim().split(/\n/);
+  const [header = "", ...rows] = tsvLines(raw);
   if (header.split("\t").join("|") !== "word|romanized|frequencyBoost|domain|source") {
     throw new Error("Romanized alias header must be word, romanized, frequencyBoost, domain, source.");
   }
@@ -89,6 +89,11 @@ export function parseRomanizedAliases(raw = aliasesRaw): RomanizedAlias[] {
       source
     };
   });
+}
+
+function tsvLines(raw: string): string[] {
+  const normalized = raw.replace(/^\uFEFF/u, "").trim();
+  return normalized ? normalized.split(/\r?\n/u) : [];
 }
 
 const aliasEntries = parseRomanizedAliases().flatMap((alias) => {

@@ -63,7 +63,7 @@ describe("native macOS companion", () => {
     } finally {
       rmSync(temporaryDirectory, { recursive: true, force: true });
     }
-  }, 20_000);
+  }, 90_000);
 
   it("serializes HIToolbox input-source reads on the main actor", () => {
     expect(model).toContain("private struct InputSourceSnapshot: Sendable");

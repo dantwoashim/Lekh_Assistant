@@ -45,7 +45,8 @@ export function phraseCandidatesForInput(input: string): Candidate[] {
 }
 
 export function parsePhraseOverrides(raw = phrasesRaw): PhraseOverride[] {
-  const [header, ...rows] = raw.trim().split(/\n/);
+  const normalized = raw.replace(/^\uFEFF/u, "").trim();
+  const [header = "", ...rows] = normalized ? normalized.split(/\r?\n/u) : [];
   if (header.split("\t").join("|") !== "input|output|domain|frequency|source") {
     throw new Error("Phrase pack header must be input, output, domain, frequency, source.");
   }

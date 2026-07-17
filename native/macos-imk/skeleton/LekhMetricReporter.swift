@@ -30,10 +30,6 @@ private final class LekhMetricReporter: NSObject, MXMetricManagerSubscriber {
     started = true
   }
 
-  func didReceive(_ payloads: [MXMetricPayload]) {
-    writePayloads(payloads.map { $0.jsonRepresentation() }, kind: "metric")
-  }
-
   func didReceive(_ payloads: [MXDiagnosticPayload]) {
     writePayloads(payloads.map { $0.jsonRepresentation() }, kind: "diagnostic")
   }
