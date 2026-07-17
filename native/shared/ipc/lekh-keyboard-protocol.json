@@ -1,8 +1,8 @@
 {
   "specificationVersion": 1,
   "protocolName": "Lekh Keyboard IPC",
-  "currentVersion": 1,
-  "compatibleVersions": [1],
+  "currentVersion": 2,
+  "compatibleVersions": [2],
   "clients": ["windows-tsf", "macos-imk", "companion", "daemon-test"],
   "limits": {
     "maximumFrameBytes": 65536,
@@ -11,8 +11,10 @@
     "maximumQueryLength": 1024,
     "maximumContextDomains": 32,
     "hotPathDeadlineMs": 50,
+    "controlDeadlineMs": 5000,
     "maximumPendingRequestsPerConnection": 32,
-    "maximumReplayEntriesPerClient": 256
+    "maximumReplayEntriesPerClient": 256,
+    "maximumClientInstances": 64
   },
   "recoveryActions": ["none", "retry", "passThrough", "restartSession", "restartDaemon"],
   "errors": [
@@ -108,6 +110,45 @@
     }
   },
   "messages": [
+    {
+      "type": "protocol.negotiate",
+      "sessionBound": false,
+      "deadlineClass": "control",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["client", "supportedVersions"],
+        "properties": {
+          "client": { "type": "string", "enum": ["windows-tsf", "macos-imk", "companion", "daemon-test"] },
+          "supportedVersions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": { "type": "integer", "minimum": 1 }
+          }
+        }
+      },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["selectedVersion", "serverInstanceId", "limits"],
+        "properties": {
+          "selectedVersion": { "type": "integer", "minimum": 1 },
+          "serverInstanceId": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["maximumFrameBytes", "hotPathDeadlineMs", "maximumPendingRequestsPerConnection"],
+            "properties": {
+              "maximumFrameBytes": { "type": "integer", "minimum": 1 },
+              "hotPathDeadlineMs": { "type": "integer", "minimum": 1 },
+              "maximumPendingRequestsPerConnection": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
     {
       "type": "health.check",
       "sessionBound": false,

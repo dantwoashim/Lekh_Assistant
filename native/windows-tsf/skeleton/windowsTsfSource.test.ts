@@ -44,6 +44,8 @@ describe("Windows TSF source safety contract", () => {
     const source = read("LekhTextService.cpp");
     const protocol = read("TsfProtocol.cpp");
     expect(source).toContain("makeBeginSessionRequest");
+    expect(source).toContain("makeProtocolNegotiationRequest");
+    expect(source).toContain("parseProtocolNegotiationResponse");
     expect(source).toContain("parseBeginSessionResponse");
     expect(source).toContain("makeProcessKeyRequest");
     expect(source).toContain("parseProcessKeyResponse");
@@ -51,7 +53,8 @@ describe("Windows TSF source safety contract", () => {
     expect(source).toContain("if (!lekh::tsf::finishActiveComposition(activeContext_, clientId_, &activeComposition_))");
     expect(protocol).toContain('L"session.begin"');
     expect(protocol).toContain('L"session.processKeyStroke"');
-    expect(protocol).toContain("sessionId->string != expectedSessionId");
+    expect(protocol).toContain("sessionId->string != expectedSession.sessionId");
+    expect(protocol).toContain("hasSessionEpoch");
     expect(protocol).not.toContain('find(L"\\\"ok\\\":true")');
     expect(source).not.toContain("windows-tsf-dev");
   });
@@ -104,13 +107,17 @@ describe("Windows TSF source safety contract", () => {
     const ipc = read("IpcClient.cpp");
     const guids = read("Guids.h");
     expect(ipc).toContain("ConvertSidToStringSidW");
+    expect(ipc).toContain("GetNamedPipeServerProcessId");
+    expect(ipc).toContain("EqualSid");
+    expect(ipc).toContain("pipeServerRunsAsCurrentUser(pipe)");
     expect(ipc).toContain("LEKH_KEYBOARD_PIPE_NAME");
     expect(guids).toContain("kLekhPipeNamePrefix");
     expect(ipc).toContain("FILE_FLAG_OVERLAPPED");
     expect(ipc).toContain("WaitForSingleObject");
     expect(ipc).toContain("CancelIoEx(handle, &overlapped)");
     expect(ipc).toContain("GetOverlappedResult(handle, &overlapped, &ignoredBytes, TRUE)");
-    expect(ipc).toContain("64 * 1024");
+    expect(ipc).toContain("lekh::ipc::kMaximumFrameBytes");
+    expect(guids).toContain("lekh::ipc::kHotPathDeadlineMilliseconds");
     expect(ipc).toContain("readLineWithDeadline");
     expect(ipc).toContain("remainingTimeout(startedAt, timeoutMs)");
     expect(ipc).not.toContain("PIPE_READMODE_MESSAGE");
@@ -135,7 +142,7 @@ describe("Windows TSF source safety contract", () => {
 
     const run = spawnSync(executable, [], { encoding: "utf8" });
     expect(run.status, `${run.stdout}\n${run.stderr}`).toBe(0);
-    expect(run.stdout).toContain("TSF protocol tests passed");
+    expect(run.stdout).toContain("TSF protocol v2 tests passed");
   });
 });
 

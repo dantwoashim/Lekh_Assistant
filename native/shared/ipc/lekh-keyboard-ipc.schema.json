@@ -196,17 +196,23 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "sessionId"
+        "sessionId",
+        "sessionEpoch"
       ],
       "properties": {
         "sessionId": {
           "$ref": "#/$defs/SessionId"
+        },
+        "sessionEpoch": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
     "MessageType": {
       "type": "string",
       "enum": [
+        "protocol.negotiate",
         "health.check",
         "engine.warm",
         "session.begin",
@@ -266,6 +272,9 @@
         "type",
         "version",
         "sentAt",
+        "deadlineAt",
+        "clientInstanceId",
+        "requestSequence",
         "payload"
       ],
       "properties": {
@@ -278,14 +287,71 @@
           "$ref": "#/$defs/MessageType"
         },
         "version": {
-          "const": 1
+          "const": 2
         },
         "sentAt": {
           "type": "number"
         },
+        "deadlineAt": {
+          "type": "number"
+        },
+        "clientInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "requestSequence": {
+          "type": "integer",
+          "minimum": 1
+        },
         "payload": true
       },
       "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "protocol.negotiate"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "client",
+                  "supportedVersions"
+                ],
+                "properties": {
+                  "client": {
+                    "type": "string",
+                    "enum": [
+                      "windows-tsf",
+                      "macos-imk",
+                      "companion",
+                      "daemon-test"
+                    ]
+                  },
+                  "supportedVersions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         {
           "if": {
             "properties": {
@@ -400,7 +466,8 @@
                 "additionalProperties": false,
                 "required": [
                   "sessionId",
-                  "key"
+                  "key",
+                  "sessionEpoch"
                 ],
                 "properties": {
                   "sessionId": {
@@ -408,6 +475,10 @@
                   },
                   "key": {
                     "$ref": "#/$defs/KeyboardKeyEvent"
+                  },
+                  "sessionEpoch": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 }
               }
@@ -433,7 +504,8 @@
                 "required": [
                   "sessionId",
                   "input",
-                  "cursor"
+                  "cursor",
+                  "sessionEpoch"
                 ],
                 "properties": {
                   "sessionId": {
@@ -447,6 +519,10 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 16384
+                  },
+                  "sessionEpoch": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 }
               }
@@ -471,7 +547,8 @@
                 "additionalProperties": false,
                 "required": [
                   "sessionId",
-                  "candidateId"
+                  "candidateId",
+                  "sessionEpoch"
                 ],
                 "properties": {
                   "sessionId": {
@@ -481,6 +558,10 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256
+                  },
+                  "sessionEpoch": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 }
               }
@@ -562,7 +643,8 @@
                 "additionalProperties": false,
                 "required": [
                   "sessionId",
-                  "mode"
+                  "mode",
+                  "sessionEpoch"
                 ],
                 "properties": {
                   "sessionId": {
@@ -570,6 +652,10 @@
                   },
                   "mode": {
                     "$ref": "#/$defs/KeyboardMode"
+                  },
+                  "sessionEpoch": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 }
               }
@@ -594,7 +680,8 @@
                 "additionalProperties": false,
                 "required": [
                   "sessionId",
-                  "layoutId"
+                  "layoutId",
+                  "sessionEpoch"
                 ],
                 "properties": {
                   "sessionId": {
@@ -604,6 +691,10 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256
+                  },
+                  "sessionEpoch": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 }
               }
@@ -721,13 +812,18 @@
                 "additionalProperties": false,
                 "required": [
                   "sessionId",
-                  "commitEpoch"
+                  "commitEpoch",
+                  "sessionEpoch"
                 ],
                 "properties": {
                   "sessionId": {
                     "$ref": "#/$defs/SessionId"
                   },
                   "commitEpoch": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sessionEpoch": {
                     "type": "integer",
                     "minimum": 1
                   }
@@ -783,7 +879,9 @@
         "id",
         "type",
         "version",
-        "ok"
+        "ok",
+        "serverInstanceId",
+        "requestSequence"
       ],
       "properties": {
         "id": {
@@ -795,10 +893,23 @@
           "$ref": "#/$defs/MessageType"
         },
         "version": {
-          "const": 1
+          "const": 2
         },
         "ok": {
           "type": "boolean"
+        },
+        "serverInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "requestSequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionEpoch": {
+          "type": "integer",
+          "minimum": 1
         },
         "payload": true,
         "error": {
@@ -807,7 +918,8 @@
           "required": [
             "code",
             "message",
-            "recoverable"
+            "recoverable",
+            "action"
           ],
           "properties": {
             "code": {
@@ -862,6 +974,258 @@
                 "payload"
               ]
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "protocol.negotiate"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "selectedVersion",
+                  "serverInstanceId",
+                  "limits"
+                ],
+                "properties": {
+                  "selectedVersion": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "serverInstanceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "limits": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "maximumFrameBytes",
+                      "hotPathDeadlineMs",
+                      "maximumPendingRequestsPerConnection"
+                    ],
+                    "properties": {
+                      "maximumFrameBytes": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "hotPathDeadlineMs": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "maximumPendingRequestsPerConnection": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.processKeyStroke"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.updateComposition"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.commitCandidate"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.commitRaw"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.cancel"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.end"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.setMode"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.setLayout"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "memory.learn"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
           }
         }
       ]

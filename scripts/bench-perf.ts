@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { convertPreeti, convertRomanized, createKeyboardEngine, defaultTypingContext } from "../src/engine";
 import { keyboardMemoryCandidates } from "../src/engine/keyboard/memory";
-import { createIpcRequest } from "../native/shared/ipc/messages";
+import { IPC_SCHEMA_VERSION, createIpcRequest } from "../native/shared/ipc/messages";
 import type { CorrectionMemoryEntry } from "../src/engine/memory";
 import type { KeyboardSession } from "../src/engine/keyboard";
 
@@ -191,12 +191,13 @@ const cases: PerfCase[] = [
     run: () => {
       const request = createIpcRequest("session.updateComposition", {
         sessionId: romanizedSession,
+        sessionEpoch: 1,
         input: "swasthya",
         cursor: "swasthya".length
       }, "perf-ipc");
       const serialized = JSON.stringify(request);
       const parsed = JSON.parse(serialized) as typeof request;
-      if (parsed.type !== "session.updateComposition" || parsed.version !== 1) {
+      if (parsed.type !== "session.updateComposition" || parsed.version !== IPC_SCHEMA_VERSION) {
         throw new Error("IPC envelope did not roundtrip");
       }
     }

@@ -276,19 +276,57 @@ const JsonValue* member(const JsonValue& value, const wchar_t* key, JsonType typ
   return &found->second;
 }
 
+constexpr double kMaximumSafeJsonInteger = 9007199254740991.0;
+
+bool matchesSafeInteger(const JsonValue* value, std::uint64_t expected) {
+  return value && value->type == JsonType::Number && value->number >= 0 &&
+    value->number <= kMaximumSafeJsonInteger && std::floor(value->number) == value->number &&
+    value->number == static_cast<double>(expected);
+}
+
+bool validRequestMetadata(const RequestMetadata& metadata) {
+  return !metadata.requestId.empty() && metadata.requestId.size() <= 256 &&
+    !metadata.clientInstanceId.empty() && metadata.clientInstanceId.size() <= 256 &&
+    metadata.requestSequence > 0 && metadata.requestSequence <= static_cast<std::uint64_t>(kMaximumSafeJsonInteger) &&
+    metadata.sentAt <= static_cast<std::uint64_t>(kMaximumSafeJsonInteger) &&
+    metadata.deadlineAt >= metadata.sentAt &&
+    metadata.deadlineAt <= static_cast<std::uint64_t>(kMaximumSafeJsonInteger);
+}
+
+std::wstring requestPrefix(const RequestMetadata& metadata, const wchar_t* type) {
+  if (!validRequestMetadata(metadata)) return L"";
+  return L"{\"id\":\"" + escapeJson(metadata.requestId) +
+    L"\",\"type\":\"" + type +
+    L"\",\"version\":" + std::to_wstring(lekh::ipc::kSchemaVersion) +
+    L",\"sentAt\":" + std::to_wstring(metadata.sentAt) +
+    L",\"deadlineAt\":" + std::to_wstring(metadata.deadlineAt) +
+    L",\"clientInstanceId\":\"" + escapeJson(metadata.clientInstanceId) +
+    L"\",\"requestSequence\":" + std::to_wstring(metadata.requestSequence) +
+    L",\"payload\":";
+}
+
 bool hasExactEnvelope(
   const JsonValue& root,
-  const std::wstring& expectedId,
-  const wchar_t* expectedType
+  const RequestMetadata& request,
+  const wchar_t* expectedType,
+  const std::wstring& expectedServerInstanceId
 ) {
   const JsonValue* id = member(root, L"id", JsonType::String);
   const JsonValue* type = member(root, L"type", JsonType::String);
   const JsonValue* version = member(root, L"version", JsonType::Number);
   const JsonValue* ok = member(root, L"ok", JsonType::Boolean);
-  return id && id->string == expectedId &&
+  const JsonValue* serverInstanceId = member(root, L"serverInstanceId", JsonType::String);
+  const JsonValue* requestSequence = member(root, L"requestSequence", JsonType::Number);
+  const bool serverMatches = serverInstanceId && !serverInstanceId->string.empty() && serverInstanceId->string.size() <= 256 &&
+    (expectedServerInstanceId.empty() || serverInstanceId->string == expectedServerInstanceId);
+  return id && id->string == request.requestId &&
     type && type->string == expectedType &&
     version && version->number == lekh::ipc::kSchemaVersion &&
-    ok && ok->boolean;
+    ok && ok->boolean && serverMatches && matchesSafeInteger(requestSequence, request.requestSequence);
+}
+
+bool hasSessionEpoch(const JsonValue& root, std::uint64_t expectedEpoch) {
+  return expectedEpoch > 0 && matchesSafeInteger(member(root, L"sessionEpoch", JsonType::Number), expectedEpoch);
 }
 
 const wchar_t* commandType(SessionCommand command) {
@@ -296,17 +334,23 @@ const wchar_t* commandType(SessionCommand command) {
 }
 
 std::optional<JsonValue> parseResponse(const std::wstring& response) {
-  if (response.empty() || response.size() > 64 * 1024) return std::nullopt;
+  if (response.empty() || response.size() > lekh::ipc::kMaximumFrameBytes) return std::nullopt;
   return JsonParser(response).parse();
 }
 
 } // namespace
 
-std::wstring makeBeginSessionRequest(const std::wstring& requestId, std::uint64_t sentAt) {
-  return L"{\"id\":\"" + escapeJson(requestId) +
-    L"\",\"type\":\"session.begin\",\"version\":" + std::to_wstring(lekh::ipc::kSchemaVersion) +
-    L",\"sentAt\":" + std::to_wstring(sentAt) +
-    L",\"payload\":{\"context\":{\"fieldType\":\"normal\",\"leftTextWindow\":\"\",\"rightTextWindow\":\"\"," +
+std::wstring makeProtocolNegotiationRequest(const RequestMetadata& metadata) {
+  const std::wstring prefix = requestPrefix(metadata, L"protocol.negotiate");
+  if (prefix.empty()) return L"";
+  return prefix + L"{\"client\":\"windows-tsf\",\"supportedVersions\":[" +
+    std::to_wstring(lekh::ipc::kSchemaVersion) + L"]}}";
+}
+
+std::wstring makeBeginSessionRequest(const RequestMetadata& metadata) {
+  const std::wstring prefix = requestPrefix(metadata, L"session.begin");
+  if (prefix.empty()) return L"";
+  return prefix + L"{\"context\":{\"fieldType\":\"normal\",\"leftTextWindow\":\"\",\"rightTextWindow\":\"\"," +
     L"\"locale\":\"ne-NP\",\"activeDomains\":[],\"preserveEnglish\":true,\"secureInput\":false," +
     L"\"mode\":\"romanized-traditional\",\"layoutId\":\"lekh-romanized\"," +
     L"\"enabledSurfaces\":[\"romanized-to-unicode\"],\"showRomanizedLabels\":true," +
@@ -314,16 +358,15 @@ std::wstring makeBeginSessionRequest(const std::wstring& requestId, std::uint64_
 }
 
 std::wstring makeProcessKeyRequest(
-  const std::wstring& requestId,
-  const std::wstring& sessionId,
-  const KeyEvent& key,
-  std::uint64_t sentAt
+  const RequestMetadata& metadata,
+  const SessionHandle& session,
+  const KeyEvent& key
 ) {
-  return L"{\"id\":\"" + escapeJson(requestId) +
-    L"\",\"type\":\"session.processKeyStroke\",\"version\":" + std::to_wstring(lekh::ipc::kSchemaVersion) +
-    L",\"sentAt\":" + std::to_wstring(sentAt) +
-    L",\"payload\":{\"sessionId\":\"" + escapeJson(sessionId) +
-    L"\",\"key\":{\"key\":\"" + escapeJson(key.key) +
+  const std::wstring prefix = requestPrefix(metadata, L"session.processKeyStroke");
+  if (prefix.empty() || session.sessionId.empty() || session.sessionEpoch == 0) return L"";
+  return prefix + L"{\"sessionId\":\"" + escapeJson(session.sessionId) +
+    L"\",\"sessionEpoch\":" + std::to_wstring(session.sessionEpoch) +
+    L",\"key\":{\"key\":\"" + escapeJson(key.key) +
     L"\",\"code\":\"" + escapeJson(key.code) +
     L"\",\"modifiers\":{\"shift\":" + boolJson(key.shift) +
     L",\"ctrl\":" + boolJson(key.ctrl) +
@@ -336,44 +379,67 @@ std::wstring makeProcessKeyRequest(
 }
 
 std::wstring makeSessionRequest(
-  const std::wstring& requestId,
-  const std::wstring& sessionId,
-  SessionCommand command,
-  std::uint64_t sentAt
+  const RequestMetadata& metadata,
+  const SessionHandle& session,
+  SessionCommand command
 ) {
-  return L"{\"id\":\"" + escapeJson(requestId) +
-    L"\",\"type\":\"" + commandType(command) +
-    L"\",\"version\":" + std::to_wstring(lekh::ipc::kSchemaVersion) +
-    L",\"sentAt\":" + std::to_wstring(sentAt) +
-    L",\"payload\":{\"sessionId\":\"" + escapeJson(sessionId) + L"\"}}";
+  const std::wstring prefix = requestPrefix(metadata, commandType(command));
+  if (prefix.empty() || session.sessionId.empty() || session.sessionEpoch == 0) return L"";
+  return prefix + L"{\"sessionId\":\"" + escapeJson(session.sessionId) +
+    L"\",\"sessionEpoch\":" + std::to_wstring(session.sessionEpoch) + L"}}";
 }
 
-std::optional<std::wstring> parseBeginSessionResponse(
+std::optional<NegotiatedProtocol> parseProtocolNegotiationResponse(
   const std::wstring& response,
-  const std::wstring& expectedRequestId
+  const RequestMetadata& request
 ) {
   const std::optional<JsonValue> root = parseResponse(response);
-  if (!root || !hasExactEnvelope(*root, expectedRequestId, L"session.begin")) return std::nullopt;
+  if (!root || !hasExactEnvelope(*root, request, L"protocol.negotiate", L"")) return std::nullopt;
+  const JsonValue* payload = member(*root, L"payload", JsonType::Object);
+  const JsonValue* selectedVersion = payload ? member(*payload, L"selectedVersion", JsonType::Number) : nullptr;
+  const JsonValue* payloadServer = payload ? member(*payload, L"serverInstanceId", JsonType::String) : nullptr;
+  const JsonValue* envelopeServer = member(*root, L"serverInstanceId", JsonType::String);
+  if (!matchesSafeInteger(selectedVersion, lekh::ipc::kSchemaVersion) || !payloadServer || !envelopeServer ||
+      payloadServer->string != envelopeServer->string) {
+    return std::nullopt;
+  }
+  return NegotiatedProtocol{payloadServer->string, lekh::ipc::kSchemaVersion};
+}
+
+std::optional<SessionHandle> parseBeginSessionResponse(
+  const std::wstring& response,
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId
+) {
+  const std::optional<JsonValue> root = parseResponse(response);
+  if (!root || !hasExactEnvelope(*root, request, L"session.begin", expectedServerInstanceId)) return std::nullopt;
   const JsonValue* payload = member(*root, L"payload", JsonType::Object);
   const JsonValue* sessionId = payload ? member(*payload, L"sessionId", JsonType::String) : nullptr;
-  if (!sessionId || sessionId->string.empty() || sessionId->string.size() > 256) return std::nullopt;
-  return sessionId->string;
+  const JsonValue* sessionEpoch = payload ? member(*payload, L"sessionEpoch", JsonType::Number) : nullptr;
+  if (!sessionId || sessionId->string.empty() || sessionId->string.size() > 256 || !sessionEpoch ||
+      sessionEpoch->number < 1 || sessionEpoch->number > kMaximumSafeJsonInteger ||
+      std::floor(sessionEpoch->number) != sessionEpoch->number) {
+    return std::nullopt;
+  }
+  return SessionHandle{sessionId->string, static_cast<std::uint64_t>(sessionEpoch->number)};
 }
 
 std::optional<EngineDecision> parseProcessKeyResponse(
   const std::wstring& response,
-  const std::wstring& expectedRequestId,
-  const std::wstring& expectedSessionId
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId,
+  const SessionHandle& expectedSession
 ) {
   const std::optional<JsonValue> root = parseResponse(response);
-  if (!root || !hasExactEnvelope(*root, expectedRequestId, L"session.processKeyStroke")) return std::nullopt;
+  if (!root || !hasExactEnvelope(*root, request, L"session.processKeyStroke", expectedServerInstanceId) ||
+      !hasSessionEpoch(*root, expectedSession.sessionEpoch)) return std::nullopt;
   const JsonValue* payload = member(*root, L"payload", JsonType::Object);
   const JsonValue* sessionId = payload ? member(*payload, L"sessionId", JsonType::String) : nullptr;
   const JsonValue* action = payload ? member(*payload, L"action", JsonType::String) : nullptr;
   const JsonValue* composition = payload ? member(*payload, L"compositionText", JsonType::String) : nullptr;
   const JsonValue* display = payload ? member(*payload, L"displayText", JsonType::String) : nullptr;
   const JsonValue* caret = payload ? member(*payload, L"caret", JsonType::Number) : nullptr;
-  if (!sessionId || sessionId->string != expectedSessionId || !action || !composition || !display || !caret ||
+  if (!sessionId || sessionId->string != expectedSession.sessionId || !action || !composition || !display || !caret ||
       caret->number < 0 || caret->number > static_cast<double>(std::numeric_limits<std::size_t>::max()) ||
       std::floor(caret->number) != caret->number || caret->number > static_cast<double>(composition->string.size())) {
     return std::nullopt;
@@ -402,11 +468,23 @@ std::optional<EngineDecision> parseProcessKeyResponse(
 
 bool parseSessionResponse(
   const std::wstring& response,
-  const std::wstring& expectedRequestId,
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId,
+  const SessionHandle& expectedSession,
   SessionCommand command
 ) {
   const std::optional<JsonValue> root = parseResponse(response);
-  return root && hasExactEnvelope(*root, expectedRequestId, commandType(command));
+  if (!root || !hasExactEnvelope(*root, request, commandType(command), expectedServerInstanceId) ||
+      !hasSessionEpoch(*root, expectedSession.sessionEpoch)) {
+    return false;
+  }
+  const JsonValue* payload = member(*root, L"payload", JsonType::Object);
+  const JsonValue* acknowledged = payload ? member(
+    *payload,
+    command == SessionCommand::Cancel ? L"cancelled" : L"ended",
+    JsonType::Boolean
+  ) : nullptr;
+  return acknowledged && acknowledged->boolean;
 }
 
 } // namespace lekh::tsf

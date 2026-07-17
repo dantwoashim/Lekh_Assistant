@@ -77,9 +77,29 @@ lekh::tsf::KeyEvent makeKeyEvent(WPARAM wParam, LPARAM lParam) {
   return event;
 }
 
+std::wstring makeClientInstanceId() {
+  GUID guid = {};
+  wchar_t value[64] = {};
+  if (SUCCEEDED(CoCreateGuid(&guid)) && StringFromGUID2(guid, value, static_cast<int>(std::size(value))) > 0) {
+    return L"windows_tsf_" + std::wstring(value);
+  }
+  return L"windows_tsf_" + std::to_wstring(GetCurrentProcessId()) + L"_" + std::to_wstring(GetTickCount64());
+}
+
+std::uint64_t unixEpochMilliseconds() {
+  FILETIME fileTime = {};
+  GetSystemTimeAsFileTime(&fileTime);
+  ULARGE_INTEGER ticks = {};
+  ticks.LowPart = fileTime.dwLowDateTime;
+  ticks.HighPart = fileTime.dwHighDateTime;
+  constexpr std::uint64_t kWindowsToUnixEpochTicks = 116444736000000000ULL;
+  return ticks.QuadPart < kWindowsToUnixEpochTicks ? 0 :
+    (ticks.QuadPart - kWindowsToUnixEpochTicks) / 10000ULL;
+}
+
 } // namespace
 
-LekhTextService::LekhTextService() {
+LekhTextService::LekhTextService() : clientInstanceId_(makeClientInstanceId()) {
   InterlockedIncrement(&g_objectCount);
 }
 
@@ -253,32 +273,54 @@ bool LekhTextService::prepareSafeContext(ITfContext* context) {
     activeContext_->AddRef();
     contextSuppressed_ = false;
   }
-  return !sessionId_.empty() || beginDaemonSession();
+  return !session_.sessionId.empty() || beginDaemonSession();
 }
 
-bool LekhTextService::beginDaemonSession() {
-  if (!sessionId_.empty()) return true;
-  const std::wstring requestId = nextRequestId(L"begin");
+bool LekhTextService::negotiateDaemon() {
+  if (!serverInstanceId_.empty()) return true;
+  const lekh::tsf::RequestMetadata request = nextRequestMetadata(L"negotiate", kLekhHotPathTimeoutMs);
   const std::optional<std::wstring> response = ipc_.request(
-    lekh::tsf::makeBeginSessionRequest(requestId, GetTickCount64()),
+    lekh::tsf::makeProtocolNegotiationRequest(request),
     kLekhHotPathTimeoutMs
   );
   if (!response) return false;
-  const std::optional<std::wstring> sessionId = lekh::tsf::parseBeginSessionResponse(*response, requestId);
-  if (!sessionId) return false;
-  sessionId_ = *sessionId;
+  const std::optional<lekh::tsf::NegotiatedProtocol> negotiated =
+    lekh::tsf::parseProtocolNegotiationResponse(*response, request);
+  if (!negotiated) return false;
+  serverInstanceId_ = negotiated->serverInstanceId;
+  return true;
+}
+
+bool LekhTextService::beginDaemonSession() {
+  if (!session_.sessionId.empty()) return true;
+  if (!negotiateDaemon()) return false;
+  const lekh::tsf::RequestMetadata request = nextRequestMetadata(L"begin", kLekhHotPathTimeoutMs);
+  const std::optional<std::wstring> response = ipc_.request(
+    lekh::tsf::makeBeginSessionRequest(request),
+    kLekhHotPathTimeoutMs
+  );
+  if (!response) {
+    serverInstanceId_.clear();
+    return false;
+  }
+  const std::optional<lekh::tsf::SessionHandle> session =
+    lekh::tsf::parseBeginSessionResponse(*response, request, serverInstanceId_);
+  if (!session) {
+    serverInstanceId_.clear();
+    return false;
+  }
+  session_ = *session;
   return true;
 }
 
 bool LekhTextService::processKey(ITfContext* context, WPARAM wParam, LPARAM lParam) {
-  if (sessionId_.empty() || context != activeContext_) return false;
-  const std::wstring requestId = nextRequestId(L"key");
+  if (session_.sessionId.empty() || serverInstanceId_.empty() || context != activeContext_) return false;
+  const lekh::tsf::RequestMetadata request = nextRequestMetadata(L"key", kLekhHotPathTimeoutMs);
   const std::optional<std::wstring> response = ipc_.request(
     lekh::tsf::makeProcessKeyRequest(
-      requestId,
-      sessionId_,
-      makeKeyEvent(wParam, lParam),
-      GetTickCount64()
+      request,
+      session_,
+      makeKeyEvent(wParam, lParam)
     ),
     kLekhHotPathTimeoutMs
   );
@@ -289,8 +331,9 @@ bool LekhTextService::processKey(ITfContext* context, WPARAM wParam, LPARAM lPar
 
   const std::optional<lekh::tsf::EngineDecision> decision = lekh::tsf::parseProcessKeyResponse(
     *response,
-    requestId,
-    sessionId_
+    request,
+    serverInstanceId_,
+    session_
   );
   if (!decision || decision->action == lekh::tsf::EngineAction::PassThrough) {
     abandonDaemonSession();
@@ -322,21 +365,27 @@ bool LekhTextService::processKey(ITfContext* context, WPARAM wParam, LPARAM lPar
 }
 
 void LekhTextService::endDaemonSession() {
-  if (sessionId_.empty()) return;
-  const std::wstring endingSession = sessionId_;
-  sessionId_.clear();
-  const std::wstring requestId = nextRequestId(L"end");
+  if (session_.sessionId.empty()) return;
+  const lekh::tsf::SessionHandle endingSession = session_;
+  session_ = {};
+  if (serverInstanceId_.empty()) return;
+  const lekh::tsf::RequestMetadata request = nextRequestMetadata(L"end", kLekhHotPathTimeoutMs);
   const std::optional<std::wstring> response = ipc_.request(
     lekh::tsf::makeSessionRequest(
-      requestId,
+      request,
       endingSession,
-      lekh::tsf::SessionCommand::End,
-      GetTickCount64()
+      lekh::tsf::SessionCommand::End
     ),
     kLekhHotPathTimeoutMs
   );
-  if (response) {
-    lekh::tsf::parseSessionResponse(*response, requestId, lekh::tsf::SessionCommand::End);
+  if (!response || !lekh::tsf::parseSessionResponse(
+    *response,
+    request,
+    serverInstanceId_,
+    endingSession,
+    lekh::tsf::SessionCommand::End
+  )) {
+    serverInstanceId_.clear();
   }
 }
 
@@ -347,18 +396,14 @@ void LekhTextService::abandonDaemonSession() {
       lekh::tsf::releaseActiveComposition(&activeComposition_);
     }
   }
-  if (sessionId_.empty()) return;
-  const std::wstring abandonedSession = sessionId_;
-  const std::wstring requestId = nextRequestId(L"cancel");
-  ipc_.request(
-    lekh::tsf::makeSessionRequest(
-      requestId,
-      abandonedSession,
-      lekh::tsf::SessionCommand::Cancel,
-      GetTickCount64()
-    ),
-    kLekhHotPathTimeoutMs
-  );
+  if (session_.sessionId.empty()) return;
+  if (!serverInstanceId_.empty()) {
+    const lekh::tsf::RequestMetadata request = nextRequestMetadata(L"cancel", kLekhHotPathTimeoutMs);
+    ipc_.request(
+      lekh::tsf::makeSessionRequest(request, session_, lekh::tsf::SessionCommand::Cancel),
+      kLekhHotPathTimeoutMs
+    );
+  }
   endDaemonSession();
 }
 
@@ -374,10 +419,16 @@ void LekhTextService::closeActiveContext(bool finishComposition) {
   }
 }
 
-std::wstring LekhTextService::nextRequestId(const wchar_t* operation) const {
-  static LONGLONG counter = 0;
-  return L"windows_tsf_" + std::to_wstring(GetCurrentProcessId()) + L"_" + operation + L"_" +
-    std::to_wstring(InterlockedIncrement64(&counter));
+lekh::tsf::RequestMetadata LekhTextService::nextRequestMetadata(const wchar_t* operation, DWORD timeoutMs) {
+  const std::uint64_t sentAt = unixEpochMilliseconds();
+  const auto sequence = static_cast<std::uint64_t>(InterlockedIncrement64(&requestSequence_));
+  return {
+    clientInstanceId_ + L"_" + operation + L"_" + std::to_wstring(sequence),
+    clientInstanceId_,
+    sequence,
+    sentAt,
+    sentAt + timeoutMs
+  };
 }
 
 HRESULT LekhTextService::adviseSinks() {

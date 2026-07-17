@@ -1,10 +1,11 @@
 import {
+  IPC_PROTOCOL_LIMITS,
   createIpcErrorResponse,
   createIpcRequest
 } from "../../shared/ipc/messages";
 import { KeyboardDaemon } from "./keyboardDaemon";
 
-export const MAX_IPC_LINE_BYTES = 64 * 1024;
+export const MAX_IPC_LINE_BYTES = IPC_PROTOCOL_LIMITS.maximumFrameBytes;
 
 export interface DaemonLineHandler {
   handleLine(line: string): Promise<string>;
@@ -61,6 +62,11 @@ export function createDaemonLineHandler(daemon = new KeyboardDaemon()): DaemonLi
       return JSON.stringify(response);
     },
     async shutdown(): Promise<void> {
+      const negotiationRequest = createIpcRequest("protocol.negotiate", {
+        client: "daemon-test",
+        supportedVersions: [2]
+      }, "daemon_cli_negotiate_shutdown");
+      await daemon.handle(negotiationRequest);
       const shutdownRequest = createIpcRequest("engine.shutdown", null, "daemon_cli_shutdown");
       await daemon.handle(shutdownRequest);
     }

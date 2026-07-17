@@ -28,7 +28,7 @@ describe("native IPC message contract", () => {
     const malformed = {
       id: "",
       type: "session.fake",
-      version: 2,
+      version: 1,
       ok: false,
       error: { code: "", message: "", recoverable: "yes" }
     };
@@ -38,8 +38,58 @@ describe("native IPC message contract", () => {
       expect.arrayContaining([
         "id must be a non-empty string.",
         "type must be a known IPC message type.",
-        "version must be 1."
+        "version must be 2."
       ])
     );
+  });
+
+  it("binds negotiated server identity and session epochs without response ambiguity", () => {
+    const negotiation = createIpcRequest("protocol.negotiate", {
+      client: "daemon-test",
+      supportedVersions: [2]
+    });
+    const splitIdentity = createIpcResponse(negotiation, {
+      selectedVersion: 2,
+      serverInstanceId: "payload-server",
+      limits: {
+        maximumFrameBytes: 65536,
+        hotPathDeadlineMs: 50,
+        maximumPendingRequestsPerConnection: 32
+      }
+    }, undefined, { serverInstanceId: "envelope-server" });
+    expect(validateIpcEnvelope(splitIdentity)).toEqual(expect.objectContaining({
+      ok: false,
+      errors: expect.arrayContaining([
+        "protocol negotiation payload must bind the selected version and server instance."
+      ])
+    }));
+
+    const sessionSuccessWithoutEpoch = {
+      id: "key-1",
+      type: "session.processKeyStroke",
+      version: 2,
+      ok: true,
+      serverInstanceId: "server-1",
+      requestSequence: 1,
+      payload: {}
+    };
+    expect(validateIpcEnvelope(sessionSuccessWithoutEpoch)).toEqual(expect.objectContaining({
+      ok: false,
+      errors: expect.arrayContaining([
+        "session-bound success response must include a positive sessionEpoch."
+      ])
+    }));
+
+    const ambiguousError = {
+      ...createIpcErrorResponse(negotiation, {
+        code: "IPC_TIMEOUT",
+        message: "deadline"
+      }),
+      payload: {}
+    };
+    expect(validateIpcEnvelope(ambiguousError)).toEqual(expect.objectContaining({
+      ok: false,
+      errors: expect.arrayContaining(["error response must not include payload."])
+    }));
   });
 });

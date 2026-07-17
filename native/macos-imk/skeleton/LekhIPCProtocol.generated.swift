@@ -2,14 +2,15 @@
 import Foundation
 
 public enum LekhIPCProtocolContract {
-  public static let schemaVersion = 1
-  public static let compatibleVersions = [1]
+  public static let schemaVersion = 2
+  public static let compatibleVersions = [2]
   public static let maximumFrameBytes = 65536
   public static let hotPathDeadlineMilliseconds = 50
   public static let maximumPendingRequestsPerConnection = 32
 }
 
 public enum LekhIPCMessageType: String, CaseIterable, Sendable {
+  case protocolNegotiate = "protocol.negotiate"
   case healthCheck = "health.check"
   case engineWarm = "engine.warm"
   case sessionBegin = "session.begin"

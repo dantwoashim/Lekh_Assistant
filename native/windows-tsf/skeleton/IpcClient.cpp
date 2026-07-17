@@ -1,6 +1,7 @@
 #include "IpcClient.h"
 
 #include "Guids.h"
+#include "../../shared/ipc/generated/LekhIPCProtocol.generated.h"
 
 #include <algorithm>
 #include <array>
@@ -13,7 +14,7 @@
 
 namespace {
 
-constexpr std::size_t kMaximumFrameBytes = 64 * 1024;
+constexpr std::size_t kMaximumFrameBytes = lekh::ipc::kMaximumFrameBytes;
 
 std::string toUtf8(const std::wstring& value) {
   if (value.empty()) return "";
@@ -88,6 +89,42 @@ std::optional<std::wstring> currentUserSid() {
   std::wstring output(sidString);
   LocalFree(sidString);
   return output;
+}
+
+bool readProcessTokenUser(HANDLE process, std::vector<BYTE>& buffer) {
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(process, TOKEN_QUERY, &token)) return false;
+
+  DWORD requiredBytes = 0;
+  GetTokenInformation(token, TokenUser, nullptr, 0, &requiredBytes);
+  if (requiredBytes == 0) {
+    CloseHandle(token);
+    return false;
+  }
+
+  buffer.resize(requiredBytes);
+  const BOOL read = GetTokenInformation(token, TokenUser, buffer.data(), requiredBytes, &requiredBytes);
+  CloseHandle(token);
+  return read == TRUE;
+}
+
+bool pipeServerRunsAsCurrentUser(HANDLE pipe) {
+  ULONG serverProcessId = 0;
+  if (!GetNamedPipeServerProcessId(pipe, &serverProcessId) || serverProcessId == 0) return false;
+
+  HANDLE serverProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, serverProcessId);
+  if (!serverProcess) return false;
+
+  std::vector<BYTE> currentUser;
+  std::vector<BYTE> serverUser;
+  const bool readCurrent = readProcessTokenUser(GetCurrentProcess(), currentUser);
+  const bool readServer = readProcessTokenUser(serverProcess, serverUser);
+  CloseHandle(serverProcess);
+  if (!readCurrent || !readServer) return false;
+
+  const auto* current = reinterpret_cast<const TOKEN_USER*>(currentUser.data());
+  const auto* server = reinterpret_cast<const TOKEN_USER*>(serverUser.data());
+  return EqualSid(current->User.Sid, server->User.Sid) == TRUE;
 }
 
 std::wstring configuredPipeName() {
@@ -215,6 +252,10 @@ std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine,
     nullptr
   );
   if (pipe == INVALID_HANDLE_VALUE) return std::nullopt;
+  if (!pipeServerRunsAsCurrentUser(pipe)) {
+    CloseHandle(pipe);
+    return std::nullopt;
+  }
 
   std::string payload = toUtf8(jsonLine);
   if (!jsonLine.empty() && payload.empty()) {

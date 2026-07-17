@@ -6,14 +6,22 @@ import { MAX_IPC_LINE_BYTES, createDaemonLineHandler } from "./lineProtocol";
 describe("daemon CLI line protocol", () => {
   it("handles JSONL IPC requests and returns JSON responses", async () => {
     const handler = createDaemonLineHandler();
+    const negotiation = JSON.parse(
+      await handler.handleLine(JSON.stringify(createIpcRequest("protocol.negotiate", {
+        client: "daemon-test",
+        supportedVersions: [2]
+      }, "negotiate_1")))
+    );
+    expect(negotiation).toEqual(expect.objectContaining({ id: "negotiate_1", ok: true, type: "protocol.negotiate" }));
+
     const health = JSON.parse(
-      await handler.handleLine(JSON.stringify(createIpcRequest("health.check", { client: "daemon-test" }, "health_1", 1)))
+      await handler.handleLine(JSON.stringify(createIpcRequest("health.check", { client: "daemon-test" }, "health_1")))
     );
     expect(health).toEqual(expect.objectContaining({ id: "health_1", ok: true, type: "health.check" }));
 
     const begin = JSON.parse(
       await handler.handleLine(
-        JSON.stringify(createIpcRequest("session.begin", { context: defaultTypingContext("romanized") }, "begin_cli_1", 1))
+        JSON.stringify(createIpcRequest("session.begin", { context: defaultTypingContext("romanized") }, "begin_cli_1"))
       )
     );
     expect(begin).toEqual(expect.objectContaining({ ok: true, type: "session.begin" }));

@@ -3,6 +3,31 @@ import { createKeyboardEngine, defaultTypingContext } from "../../../src/engine/
 import { createIpcRequest } from "../../shared/ipc/messages";
 import { KeyboardDaemon } from "./keyboardDaemon";
 
+const negotiatedDaemons = new WeakSet<KeyboardDaemon>();
+const sessionEpochs = new Map<string, number>();
+
+async function ensureNegotiated(daemon: KeyboardDaemon): Promise<void> {
+  if (negotiatedDaemons.has(daemon)) return;
+  const response = await daemon.handle(createIpcRequest("protocol.negotiate", {
+    client: "daemon-test",
+    supportedVersions: [2]
+  }));
+  expect(response).toEqual(expect.objectContaining({ ok: true }));
+  negotiatedDaemons.add(daemon);
+}
+
+function trackSession(response: { payload?: unknown }): string {
+  const payload = response.payload as { sessionId: string; sessionEpoch: number };
+  sessionEpochs.set(payload.sessionId, payload.sessionEpoch);
+  return payload.sessionId;
+}
+
+function sessionReference(sessionId: string): { sessionId: string; sessionEpoch: number } {
+  const sessionEpoch = sessionEpochs.get(sessionId);
+  if (!sessionEpoch) throw new Error(`Missing test session epoch for ${sessionId}`);
+  return { sessionId, sessionEpoch };
+}
+
 function key(value: string) {
   return {
     key: value,
@@ -14,30 +39,29 @@ function key(value: string) {
 }
 
 async function beginSession(daemon: KeyboardDaemon, fieldType: "normal" | "password" | "code" | "unknown" = "normal"): Promise<string> {
+  await ensureNegotiated(daemon);
   const response = await daemon.handle(createIpcRequest("session.begin", {
     context: {
       ...defaultTypingContext("romanized"),
       fieldType,
       leftTextWindow: "private surrounding context"
     }
-  }, `begin-${fieldType}`, 1));
-  return (response.payload as { sessionId: string }).sessionId;
+  }, `begin-${fieldType}`));
+  return trackSession(response);
 }
 
 async function commitCandidate(daemon: KeyboardDaemon, sessionId: string, input: string): Promise<number> {
   const update = await daemon.handle(createIpcRequest(
     "session.updateComposition",
-    { sessionId, input, cursor: input.length },
-    `update-${input}`,
-    1
+    { ...sessionReference(sessionId), input, cursor: input.length },
+    `update-${input}`
   ));
   const candidateId = (update.payload as { primary?: { id: string } }).primary?.id;
   expect(candidateId).toEqual(expect.any(String));
   const commit = await daemon.handle(createIpcRequest(
     "session.commitCandidate",
-    { sessionId, candidateId: candidateId! },
-    `commit-${input}`,
-    1
+    { ...sessionReference(sessionId), candidateId: candidateId! },
+    `commit-${input}`
   ));
   expect(commit).toEqual(expect.objectContaining({ ok: true }));
   return (commit.payload as { commitEpoch: number }).commitEpoch;
@@ -46,24 +70,25 @@ async function commitCandidate(daemon: KeyboardDaemon, sessionId: string, input:
 describe("KeyboardDaemon IPC dispatcher", () => {
   it("warms the engine, begins a session, processes keys, and returns diagnostics", async () => {
     const daemon = new KeyboardDaemon({ now: () => 10 });
-    const warm = await daemon.handle(createIpcRequest("engine.warm", { timeoutMs: 50 }, "warm_1", 1));
+    await ensureNegotiated(daemon);
+    const warm = await daemon.handle(createIpcRequest("engine.warm", { timeoutMs: 50 }, "warm_1"));
     expect(warm.ok).toBe(true);
     expect(warm.payload).toEqual(expect.objectContaining({ ready: true }));
 
     const begin = await daemon.handle(
-      createIpcRequest("session.begin", { context: defaultTypingContext("romanized") }, "begin_1", 1)
+      createIpcRequest("session.begin", { context: defaultTypingContext("romanized") }, "begin_1")
     );
     expect(begin.ok).toBe(true);
-    const sessionId = (begin.payload as { sessionId: string }).sessionId;
+    const sessionId = trackSession(begin);
 
-    for (const char of "swas") {
+    for (const [index, char] of [..."swas"].entries()) {
       const update = await daemon.handle(
-        createIpcRequest("session.processKeyStroke", { sessionId, key: key(char) }, `key_${char}`, 1)
+        createIpcRequest("session.processKeyStroke", { ...sessionReference(sessionId), key: key(char) }, `key_${index}_${char}`)
       );
       expect(update.ok).toBe(true);
     }
 
-    const metrics = await daemon.handle(createIpcRequest("diagnostics.getMetrics", null, "metrics_1", 1));
+    const metrics = await daemon.handle(createIpcRequest("diagnostics.getMetrics", null, "metrics_1"));
     expect(metrics.ok).toBe(true);
     expect(metrics.payload).toEqual(
       expect.objectContaining({
@@ -76,31 +101,28 @@ describe("KeyboardDaemon IPC dispatcher", () => {
 
   it("dispatches dictionary, proofread, mode, layout, cancel, end, and shutdown messages", async () => {
     const daemon = new KeyboardDaemon();
-    const begin = await daemon.handle(
-      createIpcRequest("session.begin", { context: defaultTypingContext("romanized") }, "begin_2", 1)
-    );
-    const sessionId = (begin.payload as { sessionId: string }).sessionId;
+    const sessionId = await beginSession(daemon);
 
     await expect(
-      daemon.handle(createIpcRequest("session.setMode", { sessionId, mode: "traditional" }, "mode_1", 1))
+      daemon.handle(createIpcRequest("session.setMode", { ...sessionReference(sessionId), mode: "traditional" }, "mode_1"))
     ).resolves.toEqual(expect.objectContaining({ ok: true, payload: { mode: "traditional" } }));
     await expect(
-      daemon.handle(createIpcRequest("session.setLayout", { sessionId, layoutId: "traditional-ltk-compatible.pending" }, "layout_1", 1))
+      daemon.handle(createIpcRequest("session.setLayout", { ...sessionReference(sessionId), layoutId: "traditional-ltk-compatible.pending" }, "layout_1"))
     ).resolves.toEqual(expect.objectContaining({ ok: true, payload: { layoutId: "traditional-ltk-compatible.pending" } }));
     await expect(
-      daemon.handle(createIpcRequest("dictionary.lookup", { query: "swasthya" }, "dict_1", 1))
+      daemon.handle(createIpcRequest("dictionary.lookup", { query: "swasthya" }, "dict_1"))
     ).resolves.toEqual(expect.objectContaining({ ok: true }));
     await expect(
-      daemon.handle(createIpcRequest("proofHints.get", { textWindow: "सवस्थ्य" }, "proof_1", 1))
+      daemon.handle(createIpcRequest("proofHints.get", { textWindow: "सवस्थ्य" }, "proof_1"))
     ).resolves.toEqual(expect.objectContaining({ ok: true }));
     await expect(
-      daemon.handle(createIpcRequest("session.cancel", { sessionId }, "cancel_1", 1))
+      daemon.handle(createIpcRequest("session.cancel", sessionReference(sessionId), "cancel_1"))
     ).resolves.toEqual(expect.objectContaining({ ok: true, payload: { cancelled: true } }));
     await expect(
-      daemon.handle(createIpcRequest("session.end", { sessionId }, "end_1", 1))
+      daemon.handle(createIpcRequest("session.end", sessionReference(sessionId), "end_1"))
     ).resolves.toEqual(expect.objectContaining({ ok: true, payload: { ended: true } }));
     await expect(
-      daemon.handle(createIpcRequest("engine.shutdown", null, "shutdown_1", 1))
+      daemon.handle(createIpcRequest("engine.shutdown", null, "shutdown_1"))
     ).resolves.toEqual(expect.objectContaining({ ok: true, payload: { shutdown: true } }));
   });
 
@@ -124,15 +146,16 @@ describe("KeyboardDaemon IPC dispatcher", () => {
         setTimeout(() => resolve({ action: "compose" }), 75);
       }) as never;
     const daemon = new KeyboardDaemon({ engine });
+    const sessionId = await beginSession(daemon);
     const response = await daemon.handle(
-      createIpcRequest("session.processKeyStroke", { sessionId: "slow-session", key: key("s") }, "slow_key_1", 1)
+      createIpcRequest("session.processKeyStroke", { ...sessionReference(sessionId), key: key("s") }, "slow_key_1")
     );
 
     expect(response.ok).toBe(true);
     expect(response.payload).toEqual(
       expect.objectContaining({
         action: "passThrough",
-        warnings: ["Native hot path exceeded 50ms; passing key through."]
+        warnings: ["Native hot path exceeded its deadline; passing key through."]
       })
     );
     expect(daemon.metrics().counters).toEqual(expect.objectContaining({ ipcTimeouts: 1, passThroughFallbacks: 1 }));
@@ -145,27 +168,22 @@ describe("KeyboardDaemon IPC dispatcher", () => {
 
     const accepted = await daemon.handle(createIpcRequest(
       "memory.learn",
-      { sessionId, commitEpoch },
-      "memory-valid",
-      1
+      { ...sessionReference(sessionId), commitEpoch },
+      "memory-valid"
     ));
     expect(accepted).toEqual(expect.objectContaining({ ok: true, payload: { learned: true } }));
 
     const replayed = await daemon.handle(createIpcRequest(
       "memory.learn",
-      { sessionId, commitEpoch },
-      "memory-replayed",
-      1
+      { ...sessionReference(sessionId), commitEpoch },
+      "memory-replayed"
     ));
     expect(replayed).toEqual(expect.objectContaining({ ok: true, payload: { learned: false } }));
 
     const injected = await daemon.handle({
-      id: "memory-injected-context",
-      type: "memory.learn",
-      version: 1,
-      sentAt: 1,
+      ...createIpcRequest("memory.learn", { ...sessionReference(sessionId), commitEpoch }, "memory-injected-context"),
       payload: {
-        sessionId,
+        ...sessionReference(sessionId),
         commitEpoch,
         context: { leftWindow: "attacker supplied", rightWindow: "attacker supplied" }
       }
@@ -184,23 +202,21 @@ describe("KeyboardDaemon IPC dispatcher", () => {
 
     await expect(daemon.handle(createIpcRequest(
       "memory.learn",
-      { sessionId, commitEpoch: staleEpoch },
-      "memory-stale",
-      1
+      { ...sessionReference(sessionId), commitEpoch: staleEpoch },
+      "memory-stale"
     ))).resolves.toEqual(expect.objectContaining({ ok: true, payload: { learned: false } }));
 
     await expect(daemon.handle(createIpcRequest(
       "memory.learn",
-      { sessionId: "missing-session", commitEpoch: 1 },
-      "memory-unknown",
-      1
-    ))).resolves.toEqual(expect.objectContaining({ ok: true, payload: { learned: false } }));
+      { sessionId: "missing-session", sessionEpoch: 1, commitEpoch: 1 },
+      "memory-unknown"
+    ))).resolves.toEqual(expect.objectContaining({
+      ok: false,
+      error: expect.objectContaining({ code: "IPC_SESSION_UNKNOWN", action: "restartSession" })
+    }));
 
     const malformed = await daemon.handle({
-      id: "memory-missing-session-id",
-      type: "memory.learn",
-      version: 1,
-      sentAt: 1,
+      ...createIpcRequest("memory.learn", { ...sessionReference(sessionId), commitEpoch: currentEpoch }, "memory-missing-session-id"),
       payload: { commitEpoch: currentEpoch }
     });
     expect(malformed).toEqual(expect.objectContaining({
@@ -208,13 +224,15 @@ describe("KeyboardDaemon IPC dispatcher", () => {
       error: expect.objectContaining({ code: "IPC_SCHEMA_INVALID" })
     }));
 
-    await daemon.handle(createIpcRequest("session.end", { sessionId }, "end-memory-session", 1));
+    await daemon.handle(createIpcRequest("session.end", sessionReference(sessionId), "end-memory-session"));
     await expect(daemon.handle(createIpcRequest(
       "memory.learn",
-      { sessionId, commitEpoch: currentEpoch },
-      "memory-ended",
-      1
-    ))).resolves.toEqual(expect.objectContaining({ ok: true, payload: { learned: false } }));
+      { ...sessionReference(sessionId), commitEpoch: currentEpoch },
+      "memory-ended"
+    ))).resolves.toEqual(expect.objectContaining({
+      ok: false,
+      error: expect.objectContaining({ code: "IPC_SESSION_UNKNOWN", action: "restartSession" })
+    }));
   });
 
   it("rejects memory learning for secure, unknown, and unclassified fields", async () => {
@@ -223,45 +241,43 @@ describe("KeyboardDaemon IPC dispatcher", () => {
       const sessionId = await beginSession(daemon, fieldType);
       const response = await daemon.handle(createIpcRequest(
         "memory.learn",
-        { sessionId, commitEpoch: 1 },
-        `memory-${fieldType}`,
-        1
+        { ...sessionReference(sessionId), commitEpoch: 1 },
+        `memory-${fieldType}`
       ));
       expect(response, fieldType).toEqual(expect.objectContaining({ ok: true, payload: { learned: false } }));
     }
 
     const secureInputDaemon = new KeyboardDaemon();
+    await ensureNegotiated(secureInputDaemon);
     const secureInputBegin = await secureInputDaemon.handle(createIpcRequest("session.begin", {
       context: { ...defaultTypingContext("romanized"), fieldType: "normal", secureInput: true }
-    }, "begin-secure-input", 1));
-    const secureInputSessionId = (secureInputBegin.payload as { sessionId: string }).sessionId;
+    }, "begin-secure-input"));
+    const secureInputSessionId = trackSession(secureInputBegin);
     await expect(secureInputDaemon.handle(createIpcRequest(
       "memory.learn",
-      { sessionId: secureInputSessionId, commitEpoch: 1 },
-      "memory-secure-input",
-      1
+      { ...sessionReference(secureInputSessionId), commitEpoch: 1 },
+      "memory-secure-input"
     ))).resolves.toEqual(expect.objectContaining({ ok: true, payload: { learned: false } }));
 
     const daemon = new KeyboardDaemon();
+    await ensureNegotiated(daemon);
     const unclassifiedContext = { ...defaultTypingContext("romanized") };
     delete unclassifiedContext.fieldType;
     const begin = await daemon.handle(createIpcRequest("session.begin", {
       context: unclassifiedContext
-    }, "begin-unclassified", 1));
-    const sessionId = (begin.payload as { sessionId: string }).sessionId;
+    }, "begin-unclassified"));
+    const sessionId = trackSession(begin);
     const response = await daemon.handle(createIpcRequest(
       "memory.learn",
-      { sessionId, commitEpoch: 1 },
-      "memory-unclassified",
-      1
+      { ...sessionReference(sessionId), commitEpoch: 1 },
+      "memory-unclassified"
     ));
     expect(response).toEqual(expect.objectContaining({ ok: true, payload: { learned: false } }));
 
     const retry = await daemon.handle(createIpcRequest(
       "session.updateComposition",
-      { sessionId, input: "ramro", cursor: 5 },
-      "retry-unclassified",
-      1
+      { ...sessionReference(sessionId), input: "ramro", cursor: 5 },
+      "retry-unclassified"
     ));
     expect(retry.payload).toEqual(expect.objectContaining({
       action: "passThrough",
@@ -272,16 +288,16 @@ describe("KeyboardDaemon IPC dispatcher", () => {
 
   it("returns a grapheme-boundary caret through session.updateComposition IPC", async () => {
     const daemon = new KeyboardDaemon();
+    await ensureNegotiated(daemon);
     const begin = await daemon.handle(createIpcRequest("session.begin", {
       context: { ...defaultTypingContext("traditional"), fieldType: "normal" }
-    }, "begin-grapheme", 1));
-    const sessionId = (begin.payload as { sessionId: string }).sessionId;
+    }, "begin-grapheme"));
+    const sessionId = trackSession(begin);
 
     const response = await daemon.handle(createIpcRequest(
       "session.updateComposition",
-      { sessionId, input: "कि", cursor: 1 },
-      "update-grapheme",
-      1
+      { ...sessionReference(sessionId), input: "कि", cursor: 1 },
+      "update-grapheme"
     ));
 
     expect(response).toEqual(expect.objectContaining({
@@ -294,14 +310,17 @@ describe("KeyboardDaemon IPC dispatcher", () => {
     const engine = createKeyboardEngine();
     const processKeyStroke = vi.spyOn(engine, "processKeyStroke");
     const daemon = new KeyboardDaemon({ engine });
+    await ensureNegotiated(daemon);
 
     const response = await daemon.handle({
-      id: "malformed-key",
-      type: "session.processKeyStroke",
-      version: 1,
-      sentAt: 1,
+      ...createIpcRequest("session.processKeyStroke", {
+        sessionId: "session-1",
+        sessionEpoch: 1,
+        key: key("r")
+      }, "malformed-key"),
       payload: {
         sessionId: "session-1",
+        sessionEpoch: 1,
         key: { key: "r", code: "KeyR", modifiers: { shift: false }, timestamp: 1 }
       }
     });

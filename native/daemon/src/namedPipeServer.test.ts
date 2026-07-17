@@ -20,7 +20,10 @@ describe("Windows named-pipe response ordering", () => {
       (error) => `error:${String(error)}`
     );
 
-    await Promise.all([queue.enqueue("first"), queue.enqueue("second"), queue.enqueue("third")]);
+    expect(queue.enqueue("first")).toBe(true);
+    expect(queue.enqueue("second")).toBe(true);
+    expect(queue.enqueue("third")).toBe(true);
+    await queue.drain();
     expect(written).toEqual(["response:first", "response:second", "response:third"]);
   });
 
@@ -37,11 +40,38 @@ describe("Windows named-pipe response ordering", () => {
       (error) => `error:${error instanceof Error ? error.message : String(error)}`
     );
 
-    await Promise.all([queue.enqueue("bad"), queue.enqueue("good")]);
+    expect(queue.enqueue("bad")).toBe(true);
+    expect(queue.enqueue("good")).toBe(true);
+    await queue.drain();
     expect(written).toEqual(["error:invalid frame", "response:good"]);
   });
 
   it("does not disconnect a live keyboard client during an ordinary thinking pause", () => {
     expect(SOCKET_IDLE_TIMEOUT_MS).toBeGreaterThanOrEqual(10 * 60 * 1000);
+  });
+
+  it("rejects overflow without extending the ordered work chain", async () => {
+    let release: (() => void) | undefined;
+    const blocker = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queue = createOrderedResponseQueue(
+      async (line) => {
+        await blocker;
+        return line;
+      },
+      () => undefined,
+      () => "error",
+      2
+    );
+
+    expect(queue.enqueue("first")).toBe(true);
+    expect(queue.enqueue("second")).toBe(true);
+    expect(queue.pending()).toBe(2);
+    expect(queue.enqueue("overflow")).toBe(false);
+    expect(queue.pending()).toBe(2);
+    release?.();
+    await queue.drain();
+    expect(queue.pending()).toBe(0);
   });
 });

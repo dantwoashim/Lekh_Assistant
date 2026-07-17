@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <msctf.h>
+#include "../../shared/ipc/generated/LekhIPCProtocol.generated.h"
 
 // Stable Lekh Keyboard Windows TSF identifiers. These must not change after pilot installation.
 // {3F04E1EA-7D90-47E1-865B-11D6F13D0301}
@@ -17,7 +18,7 @@ inline constexpr GUID GUID_LekhTextServiceProfile = {
 inline constexpr wchar_t kLekhTextServiceDescription[] = L"Lekh Keyboard Nepali";
 inline constexpr wchar_t kLekhPipeNameFallback[] = L"\\\\.\\pipe\\LekhKeyboard";
 inline constexpr wchar_t kLekhPipeNamePrefix[] = L"\\\\.\\pipe\\LekhKeyboard-";
-inline constexpr DWORD kLekhHotPathTimeoutMs = 50;
+inline constexpr DWORD kLekhHotPathTimeoutMs = static_cast<DWORD>(lekh::ipc::kHotPathDeadlineMilliseconds);
 
 #ifndef LANG_NEPALI
 #define LANG_NEPALI 0x61

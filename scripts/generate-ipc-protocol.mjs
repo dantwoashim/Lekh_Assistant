@@ -68,8 +68,30 @@ function generateSchema(value) {
   const messageTypes = value.messages.map((message) => message.type);
   const requestConditions = value.messages.map((message) => ({
     if: { properties: { type: { const: message.type } }, required: ["type"] },
-    then: { properties: { payload: message.requestPayload } }
+    then: { properties: { payload: requestPayloadSchema(message) } }
   }));
+  const responseConditions = value.messages.flatMap((message) => {
+    const conditions = [];
+    if (message.responsePayload) {
+      conditions.push({
+        if: {
+          properties: { type: { const: message.type }, ok: { const: true } },
+          required: ["type", "ok"]
+        },
+        then: { properties: { payload: message.responsePayload } }
+      });
+    }
+    if (message.sessionBound) {
+      conditions.push({
+        if: {
+          properties: { type: { const: message.type }, ok: { const: true } },
+          required: ["type", "ok"]
+        },
+        then: { required: ["sessionEpoch"] }
+      });
+    }
+    return conditions;
+  });
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://lekh.local/schemas/lekh-keyboard-ipc.schema.json",
@@ -81,8 +103,11 @@ function generateSchema(value) {
       SessionPayload: {
         type: "object",
         additionalProperties: false,
-        required: ["sessionId"],
-        properties: { sessionId: { $ref: "#/$defs/SessionId" } }
+        required: ["sessionId", "sessionEpoch"],
+        properties: {
+          sessionId: { $ref: "#/$defs/SessionId" },
+          sessionEpoch: { type: "integer", minimum: 1 }
+        }
       },
       MessageType: { type: "string", enum: messageTypes },
       ErrorCode: { type: "string", enum: value.errors.map((error) => error.code) },
@@ -90,12 +115,15 @@ function generateSchema(value) {
       IpcRequest: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "type", "version", "sentAt", "payload"],
+        required: ["id", "type", "version", "sentAt", "deadlineAt", "clientInstanceId", "requestSequence", "payload"],
         properties: {
           id: { type: "string", minLength: 1, maxLength: value.limits.maximumIdentifierLength },
           type: { $ref: "#/$defs/MessageType" },
           version: { const: value.currentVersion },
           sentAt: { type: "number" },
+          deadlineAt: { type: "number" },
+          clientInstanceId: { type: "string", minLength: 1, maxLength: value.limits.maximumIdentifierLength },
+          requestSequence: { type: "integer", minimum: 1 },
           payload: true
         },
         allOf: requestConditions
@@ -103,17 +131,20 @@ function generateSchema(value) {
       IpcResponse: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "type", "version", "ok"],
+        required: ["id", "type", "version", "ok", "serverInstanceId", "requestSequence"],
         properties: {
           id: { type: "string", minLength: 1, maxLength: value.limits.maximumIdentifierLength },
           type: { $ref: "#/$defs/MessageType" },
           version: { const: value.currentVersion },
           ok: { type: "boolean" },
+          serverInstanceId: { type: "string", minLength: 1, maxLength: value.limits.maximumIdentifierLength },
+          requestSequence: { type: "integer", minimum: 0 },
+          sessionEpoch: { type: "integer", minimum: 1 },
           payload: true,
           error: {
             type: "object",
             additionalProperties: false,
-            required: ["code", "message", "recoverable"],
+            required: ["code", "message", "recoverable", "action"],
             properties: {
               code: { $ref: "#/$defs/ErrorCode" },
               message: { type: "string", minLength: 1, maxLength: value.limits.maximumTextLength },
@@ -128,9 +159,22 @@ function generateSchema(value) {
             if: { properties: { ok: { const: true } }, required: ["ok"] },
             then: { required: ["payload"], not: { required: ["error"] } },
             else: { required: ["error"], not: { required: ["payload"] } }
-          }
+          },
+          ...responseConditions
         ]
       }
+    }
+  };
+}
+
+function requestPayloadSchema(message) {
+  if (!message.sessionBound || "$ref" in message.requestPayload) return message.requestPayload;
+  return {
+    ...message.requestPayload,
+    required: [...(message.requestPayload.required ?? []), "sessionEpoch"],
+    properties: {
+      ...(message.requestPayload.properties ?? {}),
+      sessionEpoch: { type: "integer", minimum: 1 }
     }
   };
 }

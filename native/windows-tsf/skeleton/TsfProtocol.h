@@ -30,6 +30,24 @@ struct KeyEvent {
   std::uint32_t nativeCode = 0;
 };
 
+struct RequestMetadata {
+  std::wstring requestId;
+  std::wstring clientInstanceId;
+  std::uint64_t requestSequence = 0;
+  std::uint64_t sentAt = 0;
+  std::uint64_t deadlineAt = 0;
+};
+
+struct NegotiatedProtocol {
+  std::wstring serverInstanceId;
+  std::uint32_t selectedVersion = 0;
+};
+
+struct SessionHandle {
+  std::wstring sessionId;
+  std::uint64_t sessionEpoch = 0;
+};
+
 struct EngineDecision {
   EngineAction action = EngineAction::PassThrough;
   std::wstring compositionText;
@@ -38,39 +56,45 @@ struct EngineDecision {
   std::size_t caret = 0;
 };
 
-std::wstring makeBeginSessionRequest(
-  const std::wstring& requestId,
-  std::uint64_t sentAt
-);
+std::wstring makeProtocolNegotiationRequest(const RequestMetadata& metadata);
+
+std::wstring makeBeginSessionRequest(const RequestMetadata& metadata);
 
 std::wstring makeProcessKeyRequest(
-  const std::wstring& requestId,
-  const std::wstring& sessionId,
-  const KeyEvent& key,
-  std::uint64_t sentAt
+  const RequestMetadata& metadata,
+  const SessionHandle& session,
+  const KeyEvent& key
 );
 
 std::wstring makeSessionRequest(
-  const std::wstring& requestId,
-  const std::wstring& sessionId,
-  SessionCommand command,
-  std::uint64_t sentAt
+  const RequestMetadata& metadata,
+  const SessionHandle& session,
+  SessionCommand command
 );
 
-std::optional<std::wstring> parseBeginSessionResponse(
+std::optional<NegotiatedProtocol> parseProtocolNegotiationResponse(
   const std::wstring& response,
-  const std::wstring& expectedRequestId
+  const RequestMetadata& request
+);
+
+std::optional<SessionHandle> parseBeginSessionResponse(
+  const std::wstring& response,
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId
 );
 
 std::optional<EngineDecision> parseProcessKeyResponse(
   const std::wstring& response,
-  const std::wstring& expectedRequestId,
-  const std::wstring& expectedSessionId
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId,
+  const SessionHandle& expectedSession
 );
 
 bool parseSessionResponse(
   const std::wstring& response,
-  const std::wstring& expectedRequestId,
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId,
+  const SessionHandle& expectedSession,
   SessionCommand command
 );
 

@@ -7,11 +7,12 @@
 #include <string_view>
 
 namespace lekh::ipc {
-inline constexpr std::uint32_t kSchemaVersion = 1;
+inline constexpr std::uint32_t kSchemaVersion = 2;
 inline constexpr std::size_t kMaximumFrameBytes = 65536;
 inline constexpr std::uint32_t kHotPathDeadlineMilliseconds = 50;
 inline constexpr std::size_t kMaximumPendingRequestsPerConnection = 32;
-inline constexpr std::array<std::string_view, 17> kMessageTypes = {
+inline constexpr std::array<std::string_view, 18> kMessageTypes = {
+  "protocol.negotiate",
   "health.check",
   "engine.warm",
   "session.begin",

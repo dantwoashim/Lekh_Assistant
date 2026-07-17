@@ -1,5 +1,9 @@
 import { createServer } from "node:net";
 import type { Server, Socket } from "node:net";
+import {
+  IPC_PROTOCOL_LIMITS,
+  createIpcErrorResponse
+} from "../../shared/ipc/messages";
 import { MAX_IPC_LINE_BYTES, createDaemonLineHandler } from "./lineProtocol";
 import { defaultWindowsPipeName } from "./windowsPipeName";
 
@@ -55,17 +59,7 @@ function wireSocket(socket: Socket, handler: ReturnType<typeof createDaemonLineH
     buffer += chunk;
     if (Buffer.byteLength(buffer, "utf8") > MAX_IPC_LINE_BYTES) {
       socket.write(
-        `${JSON.stringify({
-          id: "payload_too_large",
-          type: "health.check",
-          version: 1,
-          ok: false,
-          error: {
-            code: "IPC_PAYLOAD_TOO_LARGE",
-            message: `IPC input line exceeded ${MAX_IPC_LINE_BYTES} bytes.`,
-            recoverable: true
-          }
-        })}\n`,
+        `${namedPipePayloadTooLargeResponse()}\n`,
         () => socket.destroy()
       );
       return;
@@ -73,54 +67,80 @@ function wireSocket(socket: Socket, handler: ReturnType<typeof createDaemonLineH
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
     for (const line of lines) {
-      void responses.enqueue(line);
+      if (!responses.enqueue(line)) {
+        socket.write(`${namedPipeQueueFullResponse()}\n`, () => socket.destroy());
+        break;
+      }
     }
   });
 }
 
 export interface OrderedResponseQueue {
-  enqueue(line: string): Promise<void>;
+  enqueue(line: string): boolean;
   drain(): Promise<void>;
+  pending(): number;
 }
 
 export function createOrderedResponseQueue(
   handleLine: (line: string) => Promise<string>,
   writeLine: (response: string) => void | Promise<void>,
-  errorResponse: (error: unknown) => string
+  errorResponse: (error: unknown) => string,
+  maximumPending: number = IPC_PROTOCOL_LIMITS.maximumPendingRequestsPerConnection
 ): OrderedResponseQueue {
   let tail = Promise.resolve();
+  let pending = 0;
   return {
     enqueue(line) {
+      if (pending >= maximumPending) return false;
+      pending += 1;
       const current = tail.then(async () => {
         try {
           await writeLine(await handleLine(line));
         } catch (error) {
           await writeLine(errorResponse(error));
         }
+      }).finally(() => {
+        pending = Math.max(0, pending - 1);
       });
       // A failed transport write must not allow a later request to overtake it
       // or permanently poison the queue. Socket errors are handled separately.
       tail = current.catch(() => undefined);
-      return current;
+      return true;
     },
     drain() {
       return tail;
+    },
+    pending() {
+      return pending;
     }
   };
 }
 
 function namedPipeErrorResponse(error: unknown): string {
-  return JSON.stringify({
-    id: "named_pipe_failed",
-    type: "health.check",
-    version: 1,
-    ok: false,
-    error: {
+  return JSON.stringify(createIpcErrorResponse(
+    { id: "named_pipe_failed", type: "health.check" },
+    {
       code: "NAMED_PIPE_REQUEST_FAILED",
-      message: error instanceof Error ? error.message : String(error),
-      recoverable: true
+      message: error instanceof Error ? error.message : String(error)
     }
-  });
+  ));
+}
+
+function namedPipeQueueFullResponse(): string {
+  return JSON.stringify(createIpcErrorResponse(
+    { id: "named_pipe_queue_full", type: "health.check" },
+    { code: "IPC_QUEUE_FULL", message: "The named-pipe request queue is full." }
+  ));
+}
+
+function namedPipePayloadTooLargeResponse(): string {
+  return JSON.stringify(createIpcErrorResponse(
+    { id: "payload_too_large", type: "health.check" },
+    {
+      code: "IPC_PAYLOAD_TOO_LARGE",
+      message: `IPC input line exceeded ${MAX_IPC_LINE_BYTES} bytes.`
+    }
+  ));
 }
 
 function closeServer(server: Server): Promise<void> {

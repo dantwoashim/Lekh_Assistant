@@ -20,7 +20,12 @@ export function validateIpcRequest(value: unknown): IpcRequestValidationResult {
   if (!("sentAt" in value) || "ok" in value) {
     errors.push("Envelope must be an IPC request.");
   }
-  rejectUnexpectedKeys(value, ["id", "type", "version", "sentAt", "payload"], "request", errors);
+  rejectUnexpectedKeys(
+    value,
+    ["id", "type", "version", "sentAt", "deadlineAt", "clientInstanceId", "requestSequence", "payload"],
+    "request",
+    errors
+  );
 
   if (isIpcMessageType(value.type) && "payload" in value) {
     errors.push(...validateIpcPayload(value.type, value.payload));
@@ -32,6 +37,8 @@ export function validateIpcRequest(value: unknown): IpcRequestValidationResult {
 
 export function validateIpcPayload(type: IpcMessageType, payload: unknown): string[] {
   switch (type) {
+    case "protocol.negotiate":
+      return validateProtocolNegotiatePayload(payload);
     case "health.check":
       return validateHealthCheckPayload(payload);
     case "engine.warm":
@@ -91,6 +98,22 @@ const MAX_TEXT_LENGTH = 16 * 1024;
 const MAX_QUERY_LENGTH = 1_024;
 const MAX_CONTEXT_DOMAINS = 32;
 
+function validateProtocolNegotiatePayload(value: unknown): string[] {
+  const errors: string[] = [];
+  const record = requireRecord(value, "payload", errors);
+  if (!record) return errors;
+  rejectUnexpectedKeys(record, ["client", "supportedVersions"], "payload", errors);
+  if (!isOneOf(record.client, ["windows-tsf", "macos-imk", "companion", "daemon-test"])) {
+    errors.push("payload.client must be a known IPC client.");
+  }
+  if (!Array.isArray(record.supportedVersions) || record.supportedVersions.length < 1 ||
+      record.supportedVersions.length > 8 || new Set(record.supportedVersions).size !== record.supportedVersions.length ||
+      record.supportedVersions.some((version) => !Number.isSafeInteger(version) || version < 1)) {
+    errors.push("payload.supportedVersions must contain 1 through 8 unique positive safe integers.");
+  }
+  return errors;
+}
+
 function validateHealthCheckPayload(value: unknown): string[] {
   const errors: string[] = [];
   const record = requireRecord(value, "payload", errors);
@@ -127,8 +150,8 @@ function validateProcessKeyStrokePayload(value: unknown): string[] {
   const errors: string[] = [];
   const record = requireRecord(value, "payload", errors);
   if (!record) return errors;
-  rejectUnexpectedKeys(record, ["sessionId", "key"], "payload", errors);
-  requireNonEmptyString(record.sessionId, "payload.sessionId", MAX_IDENTIFIER_LENGTH, errors);
+  rejectUnexpectedKeys(record, ["sessionId", "sessionEpoch", "key"], "payload", errors);
+  validateSessionReference(record, errors);
   validateKeyboardKeyEvent(record.key, "payload.key", errors);
   return errors;
 }
@@ -137,8 +160,8 @@ function validateUpdateCompositionPayload(value: unknown): string[] {
   const errors: string[] = [];
   const record = requireRecord(value, "payload", errors);
   if (!record) return errors;
-  rejectUnexpectedKeys(record, ["sessionId", "input", "cursor"], "payload", errors);
-  requireNonEmptyString(record.sessionId, "payload.sessionId", MAX_IDENTIFIER_LENGTH, errors);
+  rejectUnexpectedKeys(record, ["sessionId", "sessionEpoch", "input", "cursor"], "payload", errors);
+  validateSessionReference(record, errors);
   requireString(record.input, "payload.input", MAX_TEXT_LENGTH, errors);
   if (!Number.isSafeInteger(record.cursor) || (record.cursor as number) < 0 ||
       (typeof record.input === "string" && (record.cursor as number) > record.input.length)) {
@@ -151,8 +174,8 @@ function validateCommitCandidatePayload(value: unknown): string[] {
   const errors: string[] = [];
   const record = requireRecord(value, "payload", errors);
   if (!record) return errors;
-  rejectUnexpectedKeys(record, ["sessionId", "candidateId"], "payload", errors);
-  requireNonEmptyString(record.sessionId, "payload.sessionId", MAX_IDENTIFIER_LENGTH, errors);
+  rejectUnexpectedKeys(record, ["sessionId", "sessionEpoch", "candidateId"], "payload", errors);
+  validateSessionReference(record, errors);
   requireNonEmptyString(record.candidateId, "payload.candidateId", MAX_IDENTIFIER_LENGTH, errors);
   return errors;
 }
@@ -161,13 +184,13 @@ function validateSessionPayload(value: unknown): string[] {
   const errors: string[] = [];
   const record = requireRecord(value, "payload", errors);
   if (!record) return errors;
-  rejectUnexpectedKeys(record, ["sessionId"], "payload", errors);
-  requireNonEmptyString(record.sessionId, "payload.sessionId", MAX_IDENTIFIER_LENGTH, errors);
+  rejectUnexpectedKeys(record, ["sessionId", "sessionEpoch"], "payload", errors);
+  validateSessionReference(record, errors);
   return errors;
 }
 
 function validateSetModePayload(value: unknown): string[] {
-  const errors = validateSessionFields(value, ["sessionId", "mode"]);
+  const errors = validateSessionFields(value, ["sessionId", "sessionEpoch", "mode"]);
   if (!isRecord(value)) return errors;
   if (typeof value.mode !== "string" || !Object.hasOwn(KEYBOARD_MODES, value.mode)) {
     errors.push("payload.mode must be a known keyboard mode.");
@@ -176,7 +199,7 @@ function validateSetModePayload(value: unknown): string[] {
 }
 
 function validateSetLayoutPayload(value: unknown): string[] {
-  const errors = validateSessionFields(value, ["sessionId", "layoutId"]);
+  const errors = validateSessionFields(value, ["sessionId", "sessionEpoch", "layoutId"]);
   if (!isRecord(value)) return errors;
   requireNonEmptyString(value.layoutId, "payload.layoutId", MAX_IDENTIFIER_LENGTH, errors);
   return errors;
@@ -187,7 +210,7 @@ function validateSessionFields(value: unknown, allowedKeys: readonly string[]): 
   const record = requireRecord(value, "payload", errors);
   if (!record) return errors;
   rejectUnexpectedKeys(record, allowedKeys, "payload", errors);
-  requireNonEmptyString(record.sessionId, "payload.sessionId", MAX_IDENTIFIER_LENGTH, errors);
+  validateSessionReference(record, errors);
   return errors;
 }
 
@@ -217,12 +240,19 @@ function validateMemoryLearnPayload(value: unknown): string[] {
   const errors: string[] = [];
   const record = requireRecord(value, "payload", errors);
   if (!record) return errors;
-  rejectUnexpectedKeys(record, ["sessionId", "commitEpoch"], "payload", errors);
-  requireNonEmptyString(record.sessionId, "payload.sessionId", MAX_IDENTIFIER_LENGTH, errors);
+  rejectUnexpectedKeys(record, ["sessionId", "sessionEpoch", "commitEpoch"], "payload", errors);
+  validateSessionReference(record, errors);
   if (!Number.isSafeInteger(record.commitEpoch) || (record.commitEpoch as number) < 1) {
     errors.push("payload.commitEpoch must be a positive safe integer.");
   }
   return errors;
+}
+
+function validateSessionReference(record: Record<string, unknown>, errors: string[]): void {
+  requireNonEmptyString(record.sessionId, "payload.sessionId", MAX_IDENTIFIER_LENGTH, errors);
+  if (!Number.isSafeInteger(record.sessionEpoch) || (record.sessionEpoch as number) < 1) {
+    errors.push("payload.sessionEpoch must be a positive safe integer.");
+  }
 }
 
 function validateTypingContext(value: unknown, path: string, errors: string[]): void {

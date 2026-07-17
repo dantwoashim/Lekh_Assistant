@@ -49,12 +49,13 @@ private:
   bool shouldHandleKey(WPARAM wParam, LPARAM lParam) const;
   bool experimentalKeyEatingEnabled() const;
   bool prepareSafeContext(ITfContext* context);
+  bool negotiateDaemon();
   bool beginDaemonSession();
   bool processKey(ITfContext* context, WPARAM wParam, LPARAM lParam);
   void endDaemonSession();
   void abandonDaemonSession();
   void closeActiveContext(bool finishComposition);
-  std::wstring nextRequestId(const wchar_t* operation) const;
+  lekh::tsf::RequestMetadata nextRequestMetadata(const wchar_t* operation, DWORD timeoutMs);
   HRESULT adviseSinks();
   void unadviseSinks();
 
@@ -68,7 +69,10 @@ private:
   LekhIpcClient ipc_;
   ITfContext* activeContext_ = nullptr;
   ITfComposition* activeComposition_ = nullptr;
-  std::wstring sessionId_;
+  std::wstring clientInstanceId_;
+  std::wstring serverInstanceId_;
+  lekh::tsf::SessionHandle session_;
+  LONGLONG requestSequence_ = 0;
 };
 
 STDAPI DllGetClassObject(REFCLSID clsid, REFIID iid, void** object);

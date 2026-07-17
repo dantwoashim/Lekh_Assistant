@@ -1,6 +1,8 @@
 import { createKeyboardEngine } from "../../../src/engine/keyboard";
 import type { CandidateUpdate, CommitResult, KeyboardEngine } from "../../../src/engine/keyboard";
 import {
+  IPC_PROTOCOL_LIMITS,
+  IPC_SCHEMA_VERSION,
   createIpcErrorResponse,
   createIpcResponse,
   isIpcMessageType
@@ -11,8 +13,14 @@ import type {
   BeginSessionResult,
   DiagnosticsMetricsResult,
   HealthCheckResult,
-  IpcResponse
+  IpcMessageType,
+  IpcPayloadByType,
+  IpcResponse,
+  IpcResultByType,
+  TypedIpcRequest,
+  TypedIpcResponse
 } from "../../shared/ipc/messages";
+import { IpcProtocolState } from "./protocolState";
 
 const DAEMON_VERSION = "0.1.0-dev";
 const HOT_PATH_TIMEOUT_MS = 50;
@@ -20,6 +28,7 @@ const HOT_PATH_TIMEOUT_MS = 50;
 export interface KeyboardDaemonOptions {
   engine?: KeyboardEngine;
   now?: () => number;
+  serverInstanceId?: string;
 }
 
 export interface HotPathFallback<T> {
@@ -31,8 +40,10 @@ export class KeyboardDaemon {
   private readonly engine: KeyboardEngine;
   private readonly startedAt: number;
   private readonly now: () => number;
+  private readonly protocol: IpcProtocolState;
   private warmReady = false;
-  private activeSessions = 0;
+  private pendingRequests = 0;
+  private dispatchTail: Promise<void> = Promise.resolve();
   private lastError: DiagnosticsMetricsResult["lastError"];
   private readonly counters = {
     processedKeystrokes: 0,
@@ -45,9 +56,28 @@ export class KeyboardDaemon {
     this.engine = options.engine ?? createKeyboardEngine();
     this.now = options.now ?? Date.now;
     this.startedAt = this.now();
+    this.protocol = new IpcProtocolState({ now: this.now, serverInstanceId: options.serverInstanceId });
   }
 
-  async handle(value: unknown): Promise<IpcResponse> {
+  handle(value: unknown): Promise<IpcResponse> {
+    if (this.pendingRequests >= IPC_PROTOCOL_LIMITS.maximumPendingRequestsPerConnection) {
+      return Promise.resolve(createIpcErrorResponse(
+        requestIdentity(value),
+        { code: "IPC_QUEUE_FULL", message: "The daemon request queue is full." },
+        0,
+        { serverInstanceId: this.protocol.serverInstanceId }
+      ));
+    }
+
+    this.pendingRequests += 1;
+    const response = this.dispatchTail.then(() => this.handleSerial(value));
+    this.dispatchTail = response.then(() => undefined, () => undefined);
+    return response.finally(() => {
+      this.pendingRequests = Math.max(0, this.pendingRequests - 1);
+    });
+  }
+
+  private async handleSerial(value: unknown): Promise<IpcResponse> {
     const startedAt = this.now();
     const validation = validateIpcRequest(value);
     if (!validation.ok) {
@@ -56,17 +86,21 @@ export class KeyboardDaemon {
         identity,
         {
           code: "IPC_SCHEMA_INVALID",
-          message: validation.errors.join(" "),
-          recoverable: true
+          message: validation.errors.join(" ")
         },
-        this.now() - startedAt
+        this.now() - startedAt,
+        { serverInstanceId: this.protocol.serverInstanceId }
       );
     }
 
     const request = validation.request;
+    const preflight = this.protocol.preflight(request);
+    if (!preflight.proceed) return preflight.response;
+
     try {
       const response = await this.dispatch(request);
       response.latencyMs = this.now() - startedAt;
+      this.protocol.remember(request, response);
       return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -75,24 +109,32 @@ export class KeyboardDaemon {
         message,
         at: this.now()
       };
-      return createIpcErrorResponse(
+      const response = createIpcErrorResponse(
         request,
         {
           code: "DAEMON_DISPATCH_FAILED",
-          message,
-          recoverable: true
+          message
         },
-        this.now() - startedAt
+        this.now() - startedAt,
+        { serverInstanceId: this.protocol.serverInstanceId }
       );
+      this.protocol.remember(request, response);
+      return response;
     }
   }
 
-  async withHotPathTimeout<T>(work: Promise<T>, timeoutMs: number, fallback: T): Promise<HotPathFallback<T>> {
+  async withHotPathTimeout<T>(
+    work: Promise<T>,
+    timeoutMs: number,
+    fallback: T,
+    onTimeout?: () => void
+  ): Promise<HotPathFallback<T>> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<HotPathFallback<T>>((resolve) => {
       timeout = setTimeout(() => {
         this.counters.ipcTimeouts += 1;
         this.counters.passThroughFallbacks += 1;
+        onTimeout?.();
         resolve({ timedOut: true, value: fallback });
       }, timeoutMs);
     });
@@ -105,7 +147,7 @@ export class KeyboardDaemon {
   metrics(): DiagnosticsMetricsResult {
     return {
       uptimeMs: Math.max(0, this.now() - this.startedAt),
-      activeSessions: this.activeSessions,
+      activeSessions: this.protocol.activeSessionCount,
       warmReady: this.warmReady,
       lastError: this.lastError,
       counters: { ...this.counters }
@@ -114,6 +156,17 @@ export class KeyboardDaemon {
 
   private async dispatch(request: AnyTypedIpcRequest): Promise<IpcResponse> {
     switch (request.type) {
+      case "protocol.negotiate": {
+        return this.success(request, {
+          selectedVersion: IPC_SCHEMA_VERSION,
+          serverInstanceId: this.protocol.serverInstanceId,
+          limits: {
+            maximumFrameBytes: IPC_PROTOCOL_LIMITS.maximumFrameBytes,
+            hotPathDeadlineMs: IPC_PROTOCOL_LIMITS.hotPathDeadlineMs,
+            maximumPendingRequestsPerConnection: IPC_PROTOCOL_LIMITS.maximumPendingRequestsPerConnection
+          }
+        });
+      }
       case "health.check": {
         const payload: HealthCheckResult = {
           status: this.lastError ? "degraded" : "ok",
@@ -121,109 +174,137 @@ export class KeyboardDaemon {
           engineReady: this.warmReady,
           warnings: []
         };
-        return createIpcResponse(request, payload);
+        return this.success(request, payload);
       }
       case "engine.warm": {
         const result = await this.engine.warm(request.payload ?? undefined);
         this.warmReady = result.ready;
-        return createIpcResponse(request, result);
+        return this.success(request, result);
       }
       case "session.begin": {
         const { context } = request.payload;
+        const sessionId = this.engine.beginSession(context);
         const payload: BeginSessionResult = {
-          sessionId: this.engine.beginSession(context)
+          sessionId,
+          sessionEpoch: this.protocol.openSession(request.clientInstanceId, sessionId)
         };
-        this.activeSessions += 1;
-        return createIpcResponse(request, payload);
+        return this.success(request, payload);
       }
       case "session.processKeyStroke": {
         const { sessionId, key } = request.payload;
         this.counters.processedKeystrokes += 1;
         const result = await this.withHotPathTimeout(
           Promise.resolve().then(() => this.engine.processKeyStroke(sessionId, key)),
-          HOT_PATH_TIMEOUT_MS,
-          hotPathCandidateFallback(sessionId, "Native hot path exceeded 50ms; passing key through.")
+          this.hotPathTimeout(request),
+          hotPathCandidateFallback(sessionId, "Native hot path exceeded its deadline; passing key through."),
+          () => this.retireSession(sessionId)
         );
-        return createIpcResponse(request, result.value);
+        return this.success(request, result.value);
       }
       case "session.updateComposition": {
         const { sessionId, input, cursor } = request.payload;
         const result = await this.withHotPathTimeout(
           Promise.resolve().then(() => this.engine.updateComposition(sessionId, input, cursor)),
-          HOT_PATH_TIMEOUT_MS,
-          hotPathCandidateFallback(sessionId, "Native composition update exceeded 50ms; preserving host input.", input, cursor)
+          this.hotPathTimeout(request),
+          hotPathCandidateFallback(sessionId, "Native composition update exceeded its deadline; preserving host input.", input, cursor),
+          () => this.retireSession(sessionId)
         );
-        return createIpcResponse(request, result.value);
+        return this.success(request, result.value);
       }
       case "session.commitCandidate": {
         const { sessionId, candidateId } = request.payload;
         const { value: result } = await this.withHotPathTimeout(
           Promise.resolve().then(() => this.engine.commitCandidate(sessionId, candidateId)),
-          HOT_PATH_TIMEOUT_MS,
-          hotPathCommitFallback(sessionId, "Candidate commit exceeded 50ms; native host should pass through.")
+          this.hotPathTimeout(request),
+          hotPathCommitFallback(sessionId, "Candidate commit exceeded its deadline; native host should pass through."),
+          () => this.retireSession(sessionId)
         );
         if (result.committedText) this.counters.committedCandidates += 1;
-        return createIpcResponse(request, result);
+        return this.success(request, result);
       }
       case "session.commitRaw": {
         const { sessionId } = request.payload;
         const { value: result } = await this.withHotPathTimeout(
           Promise.resolve().then(() => this.engine.commitRaw(sessionId)),
-          HOT_PATH_TIMEOUT_MS,
-          hotPathCommitFallback(sessionId, "Raw commit exceeded 50ms; native host should pass through.")
+          this.hotPathTimeout(request),
+          hotPathCommitFallback(sessionId, "Raw commit exceeded its deadline; native host should pass through."),
+          () => this.retireSession(sessionId)
         );
         if (result.committedText) this.counters.committedCandidates += 1;
-        return createIpcResponse(request, result);
+        return this.success(request, result);
       }
       case "session.cancel": {
         const { sessionId } = request.payload;
         this.engine.cancelComposition(sessionId);
-        return createIpcResponse(request, { cancelled: true });
+        return this.success(request, { cancelled: true });
       }
       case "session.end": {
         const { sessionId } = request.payload;
         this.engine.endSession(sessionId);
-        this.activeSessions = Math.max(0, this.activeSessions - 1);
-        return createIpcResponse(request, { ended: true });
+        this.protocol.closeSession(sessionId);
+        return this.success(request, { ended: true });
       }
       case "session.setMode": {
         const { sessionId, mode } = request.payload;
         this.engine.setMode(sessionId, mode);
-        return createIpcResponse(request, { mode });
+        return this.success(request, { mode });
       }
       case "session.setLayout": {
         const { sessionId, layoutId } = request.payload;
         this.engine.setLayout(sessionId, layoutId);
-        return createIpcResponse(request, { layoutId });
+        return this.success(request, { layoutId });
       }
       case "suggestions.get": {
         const { context } = request.payload;
-        return createIpcResponse(request, this.engine.getSuggestions(context));
+        return this.success(request, this.engine.getSuggestions(context));
       }
       case "proofHints.get": {
         const { textWindow, context } = request.payload;
-        return createIpcResponse(request, this.engine.getProofHints(textWindow, context));
+        return this.success(request, this.engine.getProofHints(textWindow, context));
       }
       case "dictionary.lookup": {
         const { query, context } = request.payload;
-        return createIpcResponse(request, this.engine.lookupDictionary(query, context));
+        return this.success(request, this.engine.lookupDictionary(query, context));
       }
       case "memory.learn": {
         const learned = this.engine.learnCommittedCorrection(
           request.payload.sessionId,
           request.payload.commitEpoch
         );
-        return createIpcResponse(request, { learned });
+        return this.success(request, { learned });
       }
       case "diagnostics.getMetrics": {
-        return createIpcResponse(request, this.metrics());
+        return this.success(request, this.metrics());
       }
       case "engine.shutdown": {
         await this.engine.shutdown();
         this.warmReady = false;
-        this.activeSessions = 0;
-        return createIpcResponse(request, { shutdown: true });
+        const response = this.success(request, { shutdown: true });
+        this.protocol.reset();
+        return response;
       }
+    }
+  }
+
+  private success<T extends IpcMessageType>(
+    request: TypedIpcRequest<T>,
+    payload: IpcResultByType[T]
+  ): TypedIpcResponse<T> {
+    return createIpcResponse<T>(request, payload, undefined, {
+      serverInstanceId: this.protocol.serverInstanceId
+    });
+  }
+
+  private hotPathTimeout(request: AnyTypedIpcRequest): number {
+    return Math.max(1, Math.min(HOT_PATH_TIMEOUT_MS, Math.trunc(request.deadlineAt - this.now())));
+  }
+
+  private retireSession(sessionId: string): void {
+    if (!this.protocol.closeSession(sessionId)) return;
+    try {
+      this.engine.endSession(sessionId);
+    } catch {
+      // The protocol epoch is already retired; engine cleanup is best effort.
     }
   }
 }
@@ -259,13 +340,18 @@ function hotPathCommitFallback(sessionId: string, warning: string): CommitResult
   };
 }
 
-function requestIdentity(value: unknown): { id: string; type: AnyTypedIpcRequest["type"] } {
+function requestIdentity(value: unknown): Pick<AnyTypedIpcRequest, "id" | "type"> &
+  Partial<Pick<AnyTypedIpcRequest, "requestSequence" | "payload">> {
   if (!isRecord(value)) {
     return { id: "invalid", type: "health.check" };
   }
   return {
     id: typeof value.id === "string" && value.id ? value.id : "invalid",
-    type: isIpcMessageType(value.type) ? value.type : "health.check"
+    type: isIpcMessageType(value.type) ? value.type : "health.check",
+    ...(Number.isSafeInteger(value.requestSequence) && (value.requestSequence as number) >= 0
+      ? { requestSequence: value.requestSequence as number }
+      : {}),
+    ...("payload" in value ? { payload: value.payload as IpcPayloadByType[IpcMessageType] } : {})
   };
 }
 

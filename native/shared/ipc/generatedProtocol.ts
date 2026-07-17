@@ -1,6 +1,6 @@
 // Generated from lekh-keyboard-protocol.json. Do not edit.
-export const IPC_SCHEMA_VERSION = 1 as const;
-export const IPC_COMPATIBLE_SCHEMA_VERSIONS = [1] as const;
+export const IPC_SCHEMA_VERSION = 2 as const;
+export const IPC_COMPATIBLE_SCHEMA_VERSIONS = [2] as const;
 export const IPC_CLIENTS = ["windows-tsf","macos-imk","companion","daemon-test"] as const;
 export const IPC_PROTOCOL_LIMITS = {
   "maximumFrameBytes": 65536,
@@ -9,10 +9,16 @@ export const IPC_PROTOCOL_LIMITS = {
   "maximumQueryLength": 1024,
   "maximumContextDomains": 32,
   "hotPathDeadlineMs": 50,
+  "controlDeadlineMs": 5000,
   "maximumPendingRequestsPerConnection": 32,
-  "maximumReplayEntriesPerClient": 256
+  "maximumReplayEntriesPerClient": 256,
+  "maximumClientInstances": 64
 } as const;
 export const IPC_MESSAGE_DESCRIPTORS = {
+  "protocol.negotiate": {
+    "sessionBound": false,
+    "deadlineClass": "control"
+  },
   "health.check": {
     "sessionBound": false,
     "deadlineClass": "control"
