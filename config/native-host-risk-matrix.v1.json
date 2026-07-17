@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "recordType": "lekh-native-host-risk-matrix-policy",
+  "pairingStrategy": "target-host-balanced-mode-pairwise",
+  "evidenceReusePolicy": "one-evidence-artifact-identity-per-scenario",
+  "expectedScenarioCount": 70,
+  "maximumCartesianFraction": 0.25,
+  "productionPassRate": 1,
+  "maximumOpenDefects": {
+    "P0": 0,
+    "P1": 0
+  },
+  "targets": [
+    {
+      "architecture": "arm64",
+      "id": "macos-13-arm64",
+      "osFamily": "macOS",
+      "osVersion": "13"
+    },
+    {
+      "architecture": "x86_64",
+      "id": "macos-13-x86_64",
+      "osFamily": "macOS",
+      "osVersion": "13"
+    },
+    {
+      "architecture": "arm64",
+      "id": "macos-14-arm64",
+      "osFamily": "macOS",
+      "osVersion": "14"
+    },
+    {
+      "architecture": "x86_64",
+      "id": "macos-14-x86_64",
+      "osFamily": "macOS",
+      "osVersion": "14"
+    },
+    {
+      "architecture": "arm64",
+      "id": "macos-15-arm64",
+      "osFamily": "macOS",
+      "osVersion": "15"
+    },
+    {
+      "architecture": "x86_64",
+      "id": "macos-15-x86_64",
+      "osFamily": "macOS",
+      "osVersion": "15"
+    },
+    {
+      "architecture": "arm64",
+      "id": "macos-26-arm64",
+      "osFamily": "macOS",
+      "osVersion": "26"
+    },
+    {
+      "architecture": "x86_64",
+      "id": "windows-10-x86_64",
+      "osFamily": "Windows",
+      "osVersion": "10"
+    },
+    {
+      "architecture": "arm64",
+      "id": "windows-11-arm64",
+      "osFamily": "Windows",
+      "osVersion": "11"
+    },
+    {
+      "architecture": "x86_64",
+      "id": "windows-11-x86_64",
+      "osFamily": "Windows",
+      "osVersion": "11"
+    }
+  ],
+  "hosts": [
+    {
+      "applicationByPlatform": {
+        "macOS": "VoiceOver with TextEdit",
+        "Windows": "Narrator with Notepad"
+      },
+      "id": "accessibility-client",
+      "label": "Accessibility client",
+      "riskCases": [
+        "announced-composition",
+        "caret-selection-integrity",
+        "focus-transition"
+      ]
+    },
+    {
+      "applicationByPlatform": {
+        "macOS": "Google Chrome",
+        "Windows": "Google Chrome"
+      },
+      "id": "chromium",
+      "label": "Chromium editor",
+      "riskCases": [
+        "contenteditable-composition",
+        "iframe-focus",
+        "password-suppression"
+      ]
+    },
+    {
+      "applicationByPlatform": {
+        "macOS": "Visual Studio Code",
+        "Windows": "Visual Studio Code"
+      },
+      "id": "electron",
+      "label": "Electron editor",
+      "riskCases": [
+        "candidate-window-focus",
+        "composition-restart",
+        "shortcut-pass-through"
+      ]
+    },
+    {
+      "applicationByPlatform": {
+        "macOS": "TextEdit",
+        "Windows": "Notepad"
+      },
+      "id": "native-editor",
+      "label": "Native editor",
+      "riskCases": [
+        "marked-text-range",
+        "replacement-range",
+        "undo-redo"
+      ]
+    },
+    {
+      "applicationByPlatform": {
+        "macOS": "Microsoft Word",
+        "Windows": "Microsoft Word"
+      },
+      "id": "office-class",
+      "label": "Office-class editor",
+      "riskCases": [
+        "autocorrect-interaction",
+        "document-model-selection",
+        "tracked-changes"
+      ]
+    },
+    {
+      "applicationByPlatform": {
+        "macOS": "Screen Sharing remote editor",
+        "Windows": "Remote Desktop editor"
+      },
+      "id": "remote-virtualized",
+      "label": "Remote or virtualized input",
+      "riskCases": [
+        "latency-timeout-fail-open",
+        "reconnect-session-retirement",
+        "shortcut-forwarding"
+      ]
+    },
+    {
+      "applicationByPlatform": {
+        "macOS": "Lekh secure-field QA host",
+        "Windows": "Lekh password-field QA host"
+      },
+      "id": "secure-field",
+      "label": "Secure field",
+      "riskCases": [
+        "no-learning",
+        "no-suggestions",
+        "raw-pass-through"
+      ]
+    }
+  ],
+  "modes": [
+    {
+      "id": "mixed-code-protected",
+      "label": "Code-mixed text with protected spans"
+    },
+    {
+      "id": "romanized-latin",
+      "label": "Romanized Latin output"
+    },
+    {
+      "id": "romanized-nepali",
+      "label": "Romanized Nepali output"
+    },
+    {
+      "id": "traditional-nepali",
+      "label": "Traditional Nepali physical layout"
+    }
+  ]
+}
