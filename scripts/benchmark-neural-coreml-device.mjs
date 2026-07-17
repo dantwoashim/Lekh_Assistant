@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
+import { validateNeuralDeviceMeasurements } from "./lib/neural-device-measurements.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -13,6 +14,9 @@ const modelDir = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodel
 const manifestPath = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const failures = [];
 const warnings = [];
+const manifest = existsSync(manifestPath)
+  ? JSON.parse(readFileSync(manifestPath, "utf8"))
+  : null;
 
 let measurements = [];
 if (measurementsPath) {
@@ -23,7 +27,6 @@ if (measurementsPath) {
   warnings.push("No device measurements supplied; benchmark harness is complete but no production latency evidence exists.");
 }
 
-const architectures = new Set(measurements.map((row) => row.architecture));
 const p99Values = measurements.map((row) => Number(row.p99Ms)).filter(Number.isFinite);
 const p50Values = measurements.map((row) => Number(row.p50Ms)).filter(Number.isFinite);
 const p95Values = measurements.map((row) => Number(row.p95Ms)).filter(Number.isFinite);
@@ -36,23 +39,18 @@ const summary = {
   devices: measurements
 };
 
+const deviceValidation = measurements.length > 0 && manifest
+  ? validateNeuralDeviceMeasurements(measurements, { manifest, production })
+  : null;
+if (deviceValidation) {
+  failures.push(...deviceValidation.issueCodes);
+  warnings.push(...deviceValidation.warnings);
+}
+
 if (production) {
   if (!existsSync(modelDir)) failures.push("Production benchmark requires models/macos/LekhNeuralTransliterator.mlmodelc.");
   if (!existsSync(manifestPath)) failures.push("Production benchmark requires models/macos/LekhNeuralTransliterator.manifest.json.");
-  for (const requiredArch of ["arm64", "x86_64"]) {
-    if (!architectures.has(requiredArch)) failures.push(`Production benchmark requires a ${requiredArch} device measurement.`);
-  }
   if (summary.p99Ms === null || summary.p99Ms > 3) failures.push(`Production neural p99 must be <=3 ms; got ${summary.p99Ms}.`);
-}
-
-for (const row of measurements) {
-  if (!["arm64", "x86_64"].includes(row.architecture)) failures.push(`Unknown benchmark architecture ${row.architecture}.`);
-  if (Number(row.p99Ms) > 3) failures.push(`Device ${row.name} p99Ms exceeds 3 ms: ${row.p99Ms}.`);
-  if (row.packagedApp !== true) {
-    if (production) failures.push(`Device ${row.name} must benchmark the packaged app, not a notebook or simulator.`);
-    else warnings.push(`Device ${row.name} is a local model benchmark, not packaged-app production evidence.`);
-  }
-  if (row.secureFieldInferenceCount !== 0) failures.push(`Device ${row.name} secureFieldInferenceCount must be 0.`);
 }
 
 const status = failures.length === 0
@@ -68,6 +66,11 @@ finish(status, failures.length === 0 ? 0 : 1, {
   manifest: relative(root, manifestPath),
   measurements: measurementsPath ? relative(root, measurementsPath) : null,
   performance: summary,
+  computePlacement: deviceValidation ? {
+    architectures: deviceValidation.architectures,
+    neuralEngineClaimAllowed: deviceValidation.neuralEngineClaimAllowed,
+    intelFallbackProven: deviceValidation.intelFallbackProven
+  } : null,
   failures,
   warnings,
   productionEligible: production && failures.length === 0

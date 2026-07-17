@@ -4,6 +4,7 @@ import { dirname, join, relative } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
+import { validateNeuralComputePlanEvidence } from "./lib/neural-compute-plan-evidence.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -30,6 +31,23 @@ if (!existsSync(vocabPath)) failures.push(`Missing packaged neural vocab: ${voca
 let measurement = null;
 if (failures.length === 0) {
   measurement = runSwiftBenchmark();
+  if (measurement) {
+    const computePlan = runComputePlanProbe();
+    if (computePlan) {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      const validation = validateNeuralComputePlanEvidence(computePlan, {
+        expectedArchitecture: measurement.architecture,
+        manifest,
+        production: false
+      });
+      if (!validation.valid) {
+        failures.push(`Packaged Core ML compute plan is invalid: ${validation.issueCodes.join(", ")}`);
+      } else {
+        warnings.push(...validation.warnings);
+        measurement.computePlan = computePlan;
+      }
+    }
+  }
 }
 
 if (measurement) {
@@ -69,13 +87,45 @@ function runSwiftBenchmark() {
   }
 }
 
+function runComputePlanProbe() {
+  const packagePath = join(root, "native", "macos-imk", "skeleton");
+  const result = spawnSync(
+    "swift",
+    [
+      "run",
+      "--configuration", "release",
+      "--package-path", packagePath,
+      "LekhNeuralComputePlanProbe",
+      modelPath
+    ],
+    {
+      cwd: root,
+      encoding: "utf8",
+      stdio: "pipe",
+      maxBuffer: 20 * 1024 * 1024
+    }
+  );
+  if (result.status !== 0) {
+    failures.push(`Packaged Core ML compute-plan probe failed: ${result.stderr || result.stdout}`);
+    return null;
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch (error) {
+    failures.push(`Packaged Core ML compute-plan probe returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
 function swiftBenchmarkSource() {
   return String.raw`
 import CoreML
 import Foundation
 
 let modelPath = CommandLine.arguments[1]
-let model = try MLModel(contentsOf: URL(fileURLWithPath: modelPath))
+let configuration = MLModelConfiguration()
+configuration.computeUnits = .all
+let model = try MLModel(contentsOf: URL(fileURLWithPath: modelPath), configuration: configuration)
 let inputIds = try MLMultiArray(shape: [1, 32], dataType: .int32)
 let decoderIds = try MLMultiArray(shape: [1, 31], dataType: .int32)
 for index in 0..<inputIds.count { inputIds[index] = 1 }
@@ -109,10 +159,11 @@ let architecture = "unknown"
 #endif
 let os = ProcessInfo.processInfo.operatingSystemVersion
 let payload: [String: Any] = [
-  "name": Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+  "name": "Mac-\(architecture)-\(os.majorVersion)",
   "macOS": "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)",
   "architecture": architecture,
   "packagedApp": true,
+  "configurationComputeUnits": "all",
   "secureFieldInferenceCount": 0,
   "p50Ms": percentile(0.50),
   "p95Ms": percentile(0.95),
