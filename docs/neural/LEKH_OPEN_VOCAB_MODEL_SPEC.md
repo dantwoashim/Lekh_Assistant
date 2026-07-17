@@ -423,11 +423,20 @@ node scripts/evaluate-neural-open-vocab-model.mjs --production --predictions <mo
 node scripts/benchmark-neural-coreml-device.mjs --production --measurements <device-measurements.json>
 ```
 
-The prediction JSONL rows must contain:
+The prediction JSONL must cover every frozen gold row exactly once. Each row must
+contain the original input so the evaluator can reject stale IDs whose meaning
+changed:
 
 ```json
-{"id":"gold-row-id","candidates":["देवनागरी","..."]}
+{"id":"gold-row-id","input":"romanized-token","candidates":["देवनागरी","..."]}
 ```
+
+Only rows frozen as `split: "test"` contribute to promotion metrics. Train and
+dev rows remain visible as diagnostics, but cannot raise a production score.
+Duplicate, missing, unknown, input-mismatched, non-NFC, Latin, whitespace, and
+duplicate candidate outputs fail the evaluation. Any candidate listed in a
+row's `forbiddenOutputs` also fails the safety gate, even when the preferred
+candidate ranked first.
 
 The device measurement JSON must contain packaged-app measurements for both Apple Silicon and Intel:
 

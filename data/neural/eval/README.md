@@ -62,6 +62,8 @@ Rules:
 - `forbiddenOutputs` contains unsafe outputs that must never be emitted.
 - `previousContext` contains at most two committed tokens.
 - `split` must be one of `train`, `dev`, or `test`.
+- A normalized input must not appear across multiple splits, even with a
+  different output.
 - A normalized input-output pair must not appear across multiple splits.
 - Personal/private user text must not be included.
 
@@ -88,9 +90,15 @@ The production manifest must be backed by an evaluation report proving:
 | Names top-3 accuracy | 0.90 |
 | Protected false-conversion rate | 0 |
 | Single-token phrase expansion rate | 0 |
+| Forbidden candidate rate | 0 |
+| Adversarial forbidden candidate rate | 0 |
 | Secure-field inference count | 0 |
 
-Report token-weighted and type-weighted metrics separately. A single aggregate score is not enough.
+Promotion metrics use only the frozen `test` split. Train, dev, and all-row
+metrics are diagnostic and cannot be substituted for test results. Report
+token-weighted and type-weighted metrics separately; a single aggregate score
+is not enough. Secure-field inference is proved by the packaged/native runtime
+evidence, never inferred or hard-coded by the prediction evaluator.
 
 ## Required failure buckets
 
@@ -150,7 +158,8 @@ This command verifies:
 - protected/pass-through rows expect no neural candidate;
 - forbidden outputs do not overlap acceptable outputs;
 - required cases are present;
-- normalized input/output pairs do not leak across train/dev/test splits.
+- normalized inputs and input/output pairs do not leak across train/dev/test
+  splits.
 
 Production row-count validation is intentionally stricter:
 

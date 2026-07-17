@@ -2,12 +2,22 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
+import {
+  evaluateNeuralPredictions,
+  validateNeuralEvaluationSafety,
+  validateNeuralPredictionRows
+} from "./lib/neural-evaluation.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
 const production = args.has("production");
-const predictionsPath = args.get("predictions");
+const optionalPredictionsPath = args.get("predictions-if-present");
+const predictionsPath = args.get("predictions") ?? (
+  optionalPredictionsPath && existsSync(join(process.cwd(), optionalPredictionsPath))
+    ? optionalPredictionsPath
+    : undefined
+);
 const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-open-vocab-evaluation-production.json" : "neural-open-vocab-evaluation.json");
 const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v1.json");
 const datasetManifestPath = join(root, "data", "generated", "neural-open-vocab", "manifest.json");
@@ -30,16 +40,26 @@ if (predictionsPath) {
   warnings.push("No model predictions supplied; evaluation harness is complete but accuracy is not production evidence.");
 }
 
-const byId = new Map(predictionRows.map((row) => [row.id, row]));
-const metrics = evaluate(goldRows, byId);
-validateSafety(metrics);
+const predictionValidation = predictionsPath
+  ? validateNeuralPredictionRows(predictionRows, goldRows)
+  : { valid: true, issueCodes: [], predictionsById: new Map() };
+failures.push(...predictionValidation.issueCodes);
+const metrics = evaluateNeuralPredictions(goldRows, predictionValidation.predictionsById, "test");
+const metricsBySplit = Object.fromEntries(
+  ["train", "dev", "test", "all"].map((split) => [
+    split,
+    evaluateNeuralPredictions(goldRows, predictionValidation.predictionsById, split)
+  ])
+);
+const safetyValidation = validateNeuralEvaluationSafety(metrics);
+failures.push(...safetyValidation.issueCodes);
 
 if (production) {
-  if (metrics.tailTop1Accuracy < 0.88) failures.push(`tailTop1Accuracy must be >=0.88; got ${metrics.tailTop1Accuracy}.`);
-  if (metrics.tailTop3Accuracy < 0.96) failures.push(`tailTop3Accuracy must be >=0.96; got ${metrics.tailTop3Accuracy}.`);
-  if (metrics.chatConventionTop1Accuracy < 0.92) failures.push(`chatConventionTop1Accuracy must be >=0.92; got ${metrics.chatConventionTop1Accuracy}.`);
-  if (metrics.chatConventionTop3Accuracy < 0.98) failures.push(`chatConventionTop3Accuracy must be >=0.98; got ${metrics.chatConventionTop3Accuracy}.`);
-  if (metrics.namesTop3Accuracy < 0.90) failures.push(`namesTop3Accuracy must be >=0.90; got ${metrics.namesTop3Accuracy}.`);
+  requireMinimum("tailTop1Accuracy", metrics.tailTop1Accuracy, 0.88);
+  requireMinimum("tailTop3Accuracy", metrics.tailTop3Accuracy, 0.96);
+  requireMinimum("chatConventionTop1Accuracy", metrics.chatConventionTop1Accuracy, 0.92);
+  requireMinimum("chatConventionTop3Accuracy", metrics.chatConventionTop3Accuracy, 0.98);
+  requireMinimum("namesTop3Accuracy", metrics.namesTop3Accuracy, 0.90);
 }
 
 const status = failures.length === 0
@@ -56,7 +76,13 @@ finish(status, failures.length === 0 ? 0 : 1, {
   predictions: predictionsPath ? relative(root, predictionsPath) : null,
   predictionRows: predictionRows.length,
   goldRows: goldRows.length,
+  promotionSplit: "test",
   metrics,
+  metricsBySplit,
+  predictionValidation: {
+    exactCoverage: predictionsPath ? predictionValidation.valid : false,
+    issueCodes: predictionValidation.issueCodes
+  },
   failures,
   warnings,
   productionEligible: production && failures.length === 0
@@ -119,63 +145,18 @@ function loadPredictionRows(pathValue) {
     .filter(Boolean)
     .map((line, index) => {
       try {
-        const row = JSON.parse(line);
-        if (!row.id || !Array.isArray(row.candidates)) {
-          failures.push(`Prediction row ${pathValue}:${index + 1} must contain id and candidates[].`);
-        }
-        return row;
+        return JSON.parse(line);
       } catch (error) {
         failures.push(`Invalid prediction JSONL ${pathValue}:${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
-        return { id: `invalid-${index}`, candidates: [] };
+        return { id: `invalid-${index}`, input: "invalid", candidates: [] };
       }
     });
 }
 
-function evaluate(rows, predictions) {
-  const buckets = {
-    tail: rows.filter((row) => row.expectedAction === "produce-candidate"),
-    chat: rows.filter((row) => row.suiteId === "chat-convention"),
-    names: rows.filter((row) => row.suiteId === "names"),
-    protected: rows.filter((row) => row.expectedAction === "no-neural-candidate"),
-    adversarial: rows.filter((row) => row.suiteId === "adversarial-neural-tail")
-  };
-  const top = (bucketRows, n) => {
-    if (bucketRows.length === 0 || predictions.size === 0) return 0;
-    let hits = 0;
-    for (const row of bucketRows) {
-      const acceptable = new Set(row.acceptableOutputs ?? row.acceptable ?? row.expected ?? []);
-      const candidates = (predictions.get(row.id)?.candidates ?? []).slice(0, n).map(String);
-      if (candidates.some((candidate) => acceptable.has(candidate))) hits += 1;
-    }
-    return round(hits / bucketRows.length);
-  };
-  const falseConversionRate = buckets.protected.length === 0 || predictions.size === 0
-    ? 0
-    : round(buckets.protected.filter((row) => (predictions.get(row.id)?.candidates ?? []).length > 0).length / buckets.protected.length);
-  const phraseExpansionRate = buckets.tail.length === 0 || predictions.size === 0
-    ? 0
-    : round(buckets.tail.filter((row) => (predictions.get(row.id)?.candidates ?? []).some((candidate) => /\s/u.test(String(candidate)))).length / buckets.tail.length);
-  return {
-    tailTop1Accuracy: top(buckets.tail, 1),
-    tailTop3Accuracy: top(buckets.tail, 3),
-    chatConventionTop1Accuracy: top(buckets.chat, 1),
-    chatConventionTop3Accuracy: top(buckets.chat, 3),
-    namesTop3Accuracy: top(buckets.names, 3),
-    protectedFalseConversionRate: falseConversionRate,
-    singleTokenPhraseExpansionRate: phraseExpansionRate,
-    secureFieldInferenceCount: 0,
-    evaluatedBuckets: Object.fromEntries(Object.entries(buckets).map(([key, value]) => [key, value.length]))
-  };
-}
-
-function validateSafety(metrics) {
-  if (metrics.protectedFalseConversionRate !== 0) failures.push("Protected/pass-through rows produced neural candidates.");
-  if (metrics.singleTokenPhraseExpansionRate !== 0) failures.push("Single-token neural predictions include whitespace phrase expansions.");
-  if (metrics.secureFieldInferenceCount !== 0) failures.push("Secure field inference count must be 0.");
-}
-
-function round(value) {
-  return Math.round(value * 1_000_000) / 1_000_000;
+function requireMinimum(name, value, minimum) {
+  if (!Number.isFinite(value) || value < minimum) {
+    failures.push(`${name} on the frozen test split must be >=${minimum}; got ${value ?? "not measured"}.`);
+  }
 }
 
 function finish(status, exitCode, details) {

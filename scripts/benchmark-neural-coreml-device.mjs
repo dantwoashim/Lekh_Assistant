@@ -8,7 +8,12 @@ const root = process.cwd();
 const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
 const production = args.has("production");
-const measurementsPath = args.get("measurements");
+const optionalMeasurementsPath = args.get("measurements-if-present");
+const measurementsPath = args.get("measurements") ?? (
+  optionalMeasurementsPath && existsSync(join(process.cwd(), optionalMeasurementsPath))
+    ? optionalMeasurementsPath
+    : undefined
+);
 const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-coreml-device-benchmark-production.json" : "neural-coreml-device-benchmark.json");
 const modelDir = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
 const manifestPath = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
