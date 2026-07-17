@@ -1,14 +1,14 @@
 # Native IPC Contract
 
-Windows native services may communicate with the Lekh daemon over local-only IPC using the message envelope in `messages.ts` and the JSON schema in `lekh-keyboard-ipc.schema.json`. The macOS IMK does not use this protocol on its typing path; its deterministic engine is in-process.
+`lekh-keyboard-protocol.json` is the canonical protocol source. Generation produces the JSON Schema, TypeScript descriptors and response schemas, Swift constants, and C++ constants. Every one of the 18 request and success-response payloads has a closed-world generated schema. `requestValidation.ts` validates daemon requests, while `responseValidation.ts` resolves the generated definitions and rejects missing, extra, type-confused, unbounded, or unsafe nested response data.
 
-Production encoding preference is length-prefixed CBOR or MessagePack. JSON is allowed for debug builds and schema validation. The contract is versioned as `version: 1`.
+The current Windows transport is protocol version 2, strict UTF-8 newline-delimited JSON, bounded to 65,536 bytes including the newline. The public named pipe terminates in the native broker; the daemon is a contained child behind inherited private handles. The macOS IMK does not use this protocol on its typing path because its deterministic engine is in-process.
 
-Hot-path keystroke calls target under 10 ms common case and must time out at 50 ms. Timeout behavior is fail-open: the native shell passes through or preserves composition and reports a diagnostic outside the hot path.
+Hot-path calls have a 50 ms whole-request deadline. Timeout, malformed metadata, unknown response fields, stale epochs, and unavailable IPC fail open: the native shell preserves the host input path and reports only bounded, non-sensitive diagnostics outside the hot path.
 
 Security requirements:
 
-- Windows uses a per-user named pipe.
+- Windows uses a per-logon/user protected named pipe and verifies the broker process identity.
 - macOS may use app-group-scoped XPC only for administrative work outside the typing path; it is not a keystroke dependency.
 - Cross-user connections are rejected.
 - No remote TCP listener or local-network API is allowed.

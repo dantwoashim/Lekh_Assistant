@@ -16,7 +16,11 @@
     "maximumPendingRequestsPerConnection": 32,
     "maximumReplayEntriesPerClient": 256,
     "maximumClientInstances": 64,
-    "clientIdleTtlMs": 1800000
+    "clientIdleTtlMs": 1800000,
+    "maximumCandidateResults": 8,
+    "maximumProofHints": 8,
+    "maximumDictionaryResults": 8,
+    "maximumResponseListItems": 32
   },
   "recoveryActions": ["none", "retry", "passThrough", "restartSession", "restartDaemon"],
   "errors": [
@@ -109,6 +113,131 @@
         "platform": { "type": "string", "enum": ["web", "windows-tsf", "macos-imk", "test"] },
         "nativeCode": { "oneOf": [{ "type": "number" }, { "type": "string", "maxLength": 256 }] }
       }
+    },
+    "Utf16Range": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        { "type": "integer", "minimum": 0, "maximum": 16384 },
+        { "type": "integer", "minimum": 0, "maximum": 16384 }
+      ],
+      "items": false
+    },
+    "KeyboardHostAction": {
+      "type": "string",
+      "enum": ["passThrough", "compose", "commit", "cancel", "errorFallback"]
+    },
+    "Candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "type", "confidence", "reason"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "text": { "type": "string", "maxLength": 16384 },
+        "label": { "type": "string", "maxLength": 16384 },
+        "type": {
+          "type": "string",
+          "enum": ["word", "phrase", "completion", "correction", "dictionary", "personal", "protected", "romanized-helper"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "reason": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 16384 } },
+        "shortcut": { "type": "string", "maxLength": 256 },
+        "replaceRange": { "$ref": "#/$defs/Utf16Range" }
+      }
+    },
+    "InlineCompletion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "displayText", "contextText", "candidate", "confidence", "source", "acceptKeys"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 16384 },
+        "displayText": { "type": "string", "maxLength": 16384 },
+        "contextText": { "type": "string", "maxLength": 16384 },
+        "candidate": { "$ref": "#/$defs/Candidate" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "source": { "type": "string", "enum": ["active-candidate", "ngram-lm"] },
+        "acceptKeys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["Tab", "Enter"] }
+        }
+      }
+    },
+    "ProofHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["range", "original", "suggestion", "type", "confidence", "action", "explanation"],
+      "properties": {
+        "range": { "$ref": "#/$defs/Utf16Range" },
+        "original": { "type": "string", "maxLength": 16384 },
+        "suggestion": { "type": "string", "maxLength": 16384 },
+        "type": {
+          "type": "string",
+          "enum": ["spelling", "postposition", "normalization", "matra", "halanta", "compound", "name-variant", "agreement", "honorific"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "action": { "type": "string", "enum": ["auto-suggest", "hint-only", "ask"] },
+        "explanation": { "type": "string", "maxLength": 16384 }
+      }
+    },
+    "DictionaryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "word", "confidence"],
+      "properties": {
+        "query": { "type": "string", "maxLength": 1024 },
+        "word": { "type": "string", "maxLength": 16384 },
+        "romanized": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 16384 } },
+        "variants": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 16384 } },
+        "domains": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 256 } },
+        "source": { "type": "string", "maxLength": 16384 },
+        "meaning": { "type": "string", "maxLength": 16384 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "CandidateUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "mode", "surface", "action", "compositionText", "displayText", "caret", "candidates", "proofHints", "shouldShowCandidateUI", "confidence", "warnings", "schemaVersion"],
+      "properties": {
+        "sessionId": { "$ref": "#/$defs/SessionId" },
+        "mode": { "$ref": "#/$defs/KeyboardMode" },
+        "surface": { "$ref": "#/$defs/SuggestionSurface" },
+        "action": { "$ref": "#/$defs/KeyboardHostAction" },
+        "compositionText": { "type": "string", "maxLength": 16384 },
+        "displayText": { "type": "string", "maxLength": 16384 },
+        "caret": { "type": "integer", "minimum": 0, "maximum": 16384 },
+        "candidates": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/Candidate" } },
+        "primary": { "$ref": "#/$defs/Candidate" },
+        "inlineCompletion": { "$ref": "#/$defs/InlineCompletion" },
+        "proofHints": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/ProofHint" } },
+        "committedText": { "type": "string", "maxLength": 16384 },
+        "consumedRange": { "$ref": "#/$defs/Utf16Range" },
+        "shouldShowCandidateUI": { "type": "boolean" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "warnings": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 16384 } },
+        "latencyMs": { "type": "number", "minimum": 0 },
+        "schemaVersion": { "const": 1 }
+      }
+    },
+    "CommitResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "action", "committedText", "commitEpoch", "memoryRecorded", "schemaVersion"],
+      "properties": {
+        "sessionId": { "$ref": "#/$defs/SessionId" },
+        "action": { "$ref": "#/$defs/KeyboardHostAction" },
+        "committedText": { "type": "string", "maxLength": 16384 },
+        "commitEpoch": { "type": "integer", "minimum": 1 },
+        "consumedRange": { "$ref": "#/$defs/Utf16Range" },
+        "replacementRange": { "$ref": "#/$defs/Utf16Range" },
+        "followupCandidates": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/Candidate" } },
+        "memoryRecorded": { "type": "boolean" },
+        "schemaVersion": { "const": 1 }
+      }
     }
   },
   "messages": [
@@ -162,6 +291,17 @@
         "additionalProperties": false,
         "required": ["client"],
         "properties": { "client": { "type": "string", "enum": ["windows-tsf", "macos-imk", "companion", "daemon-test"] } }
+      },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "engineReady", "warnings"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok", "degraded"] },
+          "daemonVersion": { "type": "string", "maxLength": 256 },
+          "engineReady": { "type": "boolean" },
+          "warnings": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 16384 } }
+        }
       }
     },
     {
@@ -177,6 +317,19 @@
             "properties": { "timeoutMs": { "type": "number", "minimum": 0, "maximum": 60000 } }
           }
         ]
+      },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ready", "partial", "loadedModules", "unavailableModules", "warmTimeMs", "warnings"],
+        "properties": {
+          "ready": { "type": "boolean" },
+          "partial": { "type": "boolean" },
+          "loadedModules": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 256 } },
+          "unavailableModules": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 256 } },
+          "warmTimeMs": { "type": "number", "minimum": 0 },
+          "warnings": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 16384 } }
+        }
       }
     },
     {
@@ -188,6 +341,15 @@
         "additionalProperties": false,
         "required": ["context"],
         "properties": { "context": { "$ref": "#/$defs/TypingContext" } }
+      },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "sessionEpoch"],
+        "properties": {
+          "sessionId": { "$ref": "#/$defs/SessionId" },
+          "sessionEpoch": { "type": "integer", "minimum": 1 }
+        }
       }
     },
     {
@@ -202,7 +364,8 @@
           "sessionId": { "$ref": "#/$defs/SessionId" },
           "key": { "$ref": "#/$defs/KeyboardKeyEvent" }
         }
-      }
+      },
+      "responsePayload": { "$ref": "#/$defs/CandidateUpdate" }
     },
     {
       "type": "session.updateComposition",
@@ -217,7 +380,8 @@
           "input": { "type": "string", "maxLength": 16384 },
           "cursor": { "type": "integer", "minimum": 0, "maximum": 16384 }
         }
-      }
+      },
+      "responsePayload": { "$ref": "#/$defs/CandidateUpdate" }
     },
     {
       "type": "session.commitCandidate",
@@ -231,25 +395,39 @@
           "sessionId": { "$ref": "#/$defs/SessionId" },
           "candidateId": { "type": "string", "minLength": 1, "maxLength": 256 }
         }
-      }
+      },
+      "responsePayload": { "$ref": "#/$defs/CommitResult" }
     },
     {
       "type": "session.commitRaw",
       "sessionBound": true,
       "deadlineClass": "hotPath",
-      "requestPayload": { "$ref": "#/$defs/SessionPayload" }
+      "requestPayload": { "$ref": "#/$defs/SessionPayload" },
+      "responsePayload": { "$ref": "#/$defs/CommitResult" }
     },
     {
       "type": "session.cancel",
       "sessionBound": true,
       "deadlineClass": "hotPath",
-      "requestPayload": { "$ref": "#/$defs/SessionPayload" }
+      "requestPayload": { "$ref": "#/$defs/SessionPayload" },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cancelled"],
+        "properties": { "cancelled": { "const": true } }
+      }
     },
     {
       "type": "session.end",
       "sessionBound": true,
       "deadlineClass": "hotPath",
-      "requestPayload": { "$ref": "#/$defs/SessionPayload" }
+      "requestPayload": { "$ref": "#/$defs/SessionPayload" },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ended"],
+        "properties": { "ended": { "const": true } }
+      }
     },
     {
       "type": "session.setMode",
@@ -263,6 +441,12 @@
           "sessionId": { "$ref": "#/$defs/SessionId" },
           "mode": { "$ref": "#/$defs/KeyboardMode" }
         }
+      },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode"],
+        "properties": { "mode": { "$ref": "#/$defs/KeyboardMode" } }
       }
     },
     {
@@ -277,6 +461,12 @@
           "sessionId": { "$ref": "#/$defs/SessionId" },
           "layoutId": { "type": "string", "minLength": 1, "maxLength": 256 }
         }
+      },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["layoutId"],
+        "properties": { "layoutId": { "type": "string", "minLength": 1, "maxLength": 256 } }
       }
     },
     {
@@ -288,7 +478,8 @@
         "additionalProperties": false,
         "required": ["context"],
         "properties": { "context": { "$ref": "#/$defs/TypingContext" } }
-      }
+      },
+      "responsePayload": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/Candidate" } }
     },
     {
       "type": "proofHints.get",
@@ -302,7 +493,8 @@
           "textWindow": { "type": "string", "maxLength": 16384 },
           "context": { "$ref": "#/$defs/TypingContext" }
         }
-      }
+      },
+      "responsePayload": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/ProofHint" } }
     },
     {
       "type": "dictionary.lookup",
@@ -316,7 +508,8 @@
           "query": { "type": "string", "minLength": 1, "maxLength": 1024 },
           "context": { "$ref": "#/$defs/TypingContext" }
         }
-      }
+      },
+      "responsePayload": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/DictionaryResult" } }
     },
     {
       "type": "memory.learn",
@@ -330,9 +523,62 @@
           "sessionId": { "$ref": "#/$defs/SessionId" },
           "commitEpoch": { "type": "integer", "minimum": 1 }
         }
+      },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["learned"],
+        "properties": { "learned": { "type": "boolean" } }
       }
     },
-    { "type": "diagnostics.getMetrics", "sessionBound": false, "deadlineClass": "control", "requestPayload": { "type": "null" } },
-    { "type": "engine.shutdown", "sessionBound": false, "deadlineClass": "control", "requestPayload": { "type": "null" } }
+    {
+      "type": "diagnostics.getMetrics",
+      "sessionBound": false,
+      "deadlineClass": "control",
+      "requestPayload": { "type": "null" },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["uptimeMs", "activeSessions", "warmReady", "counters"],
+        "properties": {
+          "uptimeMs": { "type": "number", "minimum": 0 },
+          "activeSessions": { "type": "integer", "minimum": 0 },
+          "warmReady": { "type": "boolean" },
+          "lastError": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "message", "at"],
+            "properties": {
+              "code": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "message": { "type": "string", "minLength": 1, "maxLength": 16384 },
+              "at": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "counters": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["processedKeystrokes", "ipcTimeouts", "passThroughFallbacks", "committedCandidates"],
+            "properties": {
+              "processedKeystrokes": { "type": "integer", "minimum": 0 },
+              "ipcTimeouts": { "type": "integer", "minimum": 0 },
+              "passThroughFallbacks": { "type": "integer", "minimum": 0 },
+              "committedCandidates": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "engine.shutdown",
+      "sessionBound": false,
+      "deadlineClass": "control",
+      "requestPayload": { "type": "null" },
+      "responsePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["shutdown"],
+        "properties": { "shutdown": { "const": true } }
+      }
+    }
   ]
 }

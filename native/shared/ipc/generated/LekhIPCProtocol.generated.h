@@ -14,6 +14,10 @@ inline constexpr std::size_t kMaximumActiveConnections = 16;
 inline constexpr std::size_t kMaximumPendingRequestsPerConnection = 32;
 inline constexpr std::size_t kMaximumClientInstances = 64;
 inline constexpr std::uint64_t kClientIdleTtlMilliseconds = 1800000;
+inline constexpr std::size_t kMaximumCandidateResults = 8;
+inline constexpr std::size_t kMaximumProofHints = 8;
+inline constexpr std::size_t kMaximumDictionaryResults = 8;
+inline constexpr std::size_t kMaximumResponseListItems = 32;
 inline constexpr std::array<std::string_view, 18> kMessageTypes = {
   "protocol.negotiate",
   "health.check",

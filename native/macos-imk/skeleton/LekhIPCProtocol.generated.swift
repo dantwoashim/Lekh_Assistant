@@ -10,6 +10,10 @@ public enum LekhIPCProtocolContract {
   public static let maximumPendingRequestsPerConnection = 32
   public static let maximumClientInstances = 64
   public static let clientIdleTtlMilliseconds = 1800000
+  public static let maximumCandidateResults = 8
+  public static let maximumProofHints = 8
+  public static let maximumDictionaryResults = 8
+  public static let maximumResponseListItems = 32
 }
 
 public enum LekhIPCMessageType: String, CaseIterable, Sendable {

@@ -14,7 +14,11 @@ export const IPC_PROTOCOL_LIMITS = {
   "maximumPendingRequestsPerConnection": 32,
   "maximumReplayEntriesPerClient": 256,
   "maximumClientInstances": 64,
-  "clientIdleTtlMs": 1800000
+  "clientIdleTtlMs": 1800000,
+  "maximumCandidateResults": 8,
+  "maximumProofHints": 8,
+  "maximumDictionaryResults": 8,
+  "maximumResponseListItems": 32
 } as const;
 export const IPC_MESSAGE_DESCRIPTORS = {
   "protocol.negotiate": {

@@ -77,6 +77,7 @@ interface IpcResponse<T = unknown> {
 - At most 16 named-pipe connections and 32 queued requests per connection are admitted.
 - At most 64 negotiated client identities are retained. An identity idle for 30 minutes is evicted before admission checks, and every protocol/engine session it owned is retired in the same serial dispatch boundary.
 - The schema is versioned as `version: 2`; negotiation, request sequence, deadline, client instance, server instance, and session epoch are mandatory where applicable.
+- All 18 request payloads and all 18 success-response payloads derive closed-world schemas from the canonical protocol specification. The TypeScript response validator recursively enforces generated definitions, nested object keys, tuple lengths, list limits, enum values, finite numbers, and JSON-safe integers.
 - Identifiers are bounded to 256 UTF-16 code units. Request sequences, timestamps, deadlines, session epochs, and commit epochs must be non-negative or positive JSON-safe integers as their field contracts require; oversized or fractional metadata is rejected before dispatch.
 - `memory.learn` payload is exactly `{sessionId, sessionEpoch, commitEpoch}`. It cannot transport a correction entry or surrounding text, and returns `learned: false` for missing, stale, replayed, ended, secure, uncertain, or unclassified sessions.
 

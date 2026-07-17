@@ -6,6 +6,7 @@ const specPath = resolve(root, "native/shared/ipc/lekh-keyboard-protocol.json");
 const outputs = {
   schema: resolve(root, "native/shared/ipc/lekh-keyboard-ipc.schema.json"),
   typescript: resolve(root, "native/shared/ipc/generatedProtocol.ts"),
+  responseSchemas: resolve(root, "native/shared/ipc/generatedResponseSchemas.ts"),
   swift: resolve(root, "native/macos-imk/skeleton/LekhIPCProtocol.generated.swift"),
   cpp: resolve(root, "native/shared/ipc/generated/LekhIPCProtocol.generated.h")
 };
@@ -17,6 +18,7 @@ validateSpec(spec);
 const generated = {
   schema: `${JSON.stringify(generateSchema(spec), null, 2)}\n`,
   typescript: generateTypeScript(spec),
+  responseSchemas: generateTypeScriptResponseSchemas(spec),
   swift: generateSwift(spec),
   cpp: generateCpp(spec)
 };
@@ -50,6 +52,9 @@ function validateSpec(value) {
     fail("compatibleVersions must include currentVersion");
   }
   if (!Array.isArray(value.messages) || value.messages.length === 0) fail("messages must be non-empty");
+  if (!value.commonDefinitions || typeof value.commonDefinitions !== "object" || Array.isArray(value.commonDefinitions)) {
+    fail("commonDefinitions must be an object");
+  }
   if (!value.limits || typeof value.limits !== "object" || Array.isArray(value.limits)) fail("limits must be an object");
   for (const [name, limit] of Object.entries(value.limits)) {
     if (!Number.isSafeInteger(limit) || limit < 1) fail(`limits.${name} must be a positive safe integer`);
@@ -60,6 +65,7 @@ function validateSpec(value) {
   for (const message of value.messages) {
     if (typeof message.sessionBound !== "boolean") fail(`${message.type}.sessionBound must be boolean`);
     if (!message.requestPayload || typeof message.requestPayload !== "object") fail(`${message.type} needs requestPayload`);
+    if (!message.responsePayload || typeof message.responsePayload !== "object") fail(`${message.type} needs responsePayload`);
   }
   const codes = value.errors.map((error) => error.code);
   if (new Set(codes).size !== codes.length) fail("error codes must be unique");
@@ -216,6 +222,15 @@ function generateTypeScript(value) {
     `export type IpcRecoveryAction = (typeof IPC_ERROR_DEFINITIONS)[IpcErrorCode]["action"];\n`;
 }
 
+function generateTypeScriptResponseSchemas(value) {
+  const responsePayloadSchemas = Object.fromEntries(
+    value.messages.map((message) => [message.type, addSafeIntegerBounds(message.responsePayload)])
+  );
+  return `// Generated from lekh-keyboard-protocol.json. Do not edit.\n` +
+    `export const IPC_COMMON_DEFINITIONS = ${JSON.stringify(addSafeIntegerBounds(value.commonDefinitions), null, 2)} as const;\n` +
+    `export const IPC_RESPONSE_PAYLOAD_SCHEMAS = ${JSON.stringify(responsePayloadSchemas, null, 2)} as const;\n`;
+}
+
 function generateSwift(value) {
   const cases = value.messages.map((message) => `  case ${swiftIdentifier(message.type)} = "${message.type}"`).join("\n");
   const errors = value.errors.map((error) => `  case ${swiftIdentifier(error.code.toLowerCase())} = "${error.code}"`).join("\n");
@@ -229,6 +244,10 @@ function generateSwift(value) {
     `  public static let maximumPendingRequestsPerConnection = ${value.limits.maximumPendingRequestsPerConnection}\n` +
     `  public static let maximumClientInstances = ${value.limits.maximumClientInstances}\n` +
     `  public static let clientIdleTtlMilliseconds = ${value.limits.clientIdleTtlMs}\n` +
+    `  public static let maximumCandidateResults = ${value.limits.maximumCandidateResults}\n` +
+    `  public static let maximumProofHints = ${value.limits.maximumProofHints}\n` +
+    `  public static let maximumDictionaryResults = ${value.limits.maximumDictionaryResults}\n` +
+    `  public static let maximumResponseListItems = ${value.limits.maximumResponseListItems}\n` +
     `}\n\npublic enum LekhIPCMessageType: String, CaseIterable, Sendable {\n${cases}\n}\n\n` +
     `public enum LekhIPCErrorCode: String, CaseIterable, Sendable {\n${errors}\n}\n`;
 }
@@ -244,6 +263,10 @@ function generateCpp(value) {
     `inline constexpr std::size_t kMaximumPendingRequestsPerConnection = ${value.limits.maximumPendingRequestsPerConnection};\n` +
     `inline constexpr std::size_t kMaximumClientInstances = ${value.limits.maximumClientInstances};\n` +
     `inline constexpr std::uint64_t kClientIdleTtlMilliseconds = ${value.limits.clientIdleTtlMs};\n` +
+    `inline constexpr std::size_t kMaximumCandidateResults = ${value.limits.maximumCandidateResults};\n` +
+    `inline constexpr std::size_t kMaximumProofHints = ${value.limits.maximumProofHints};\n` +
+    `inline constexpr std::size_t kMaximumDictionaryResults = ${value.limits.maximumDictionaryResults};\n` +
+    `inline constexpr std::size_t kMaximumResponseListItems = ${value.limits.maximumResponseListItems};\n` +
     `inline constexpr std::array<std::string_view, ${value.messages.length}> kMessageTypes = {\n${messages}\n};\n` +
     `inline constexpr std::array<std::string_view, ${value.errors.length}> kErrorCodes = {\n${errors}\n};\n` +
     `} // namespace lekh::ipc\n`;
