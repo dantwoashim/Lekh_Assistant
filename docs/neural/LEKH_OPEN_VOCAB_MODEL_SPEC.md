@@ -390,6 +390,12 @@ The Phase 4 gate must:
 - require open-vocabulary GRU/Transformer seq2seq configuration;
 - require beam search, no whitespace output, no Latin output, and no auto-commit eligibility;
 - require a 1M-5M parameter budget and a <= 16 MB compiled model budget;
+- reject normalized-input overlap across train, dev, and test inside the trainer,
+  even if an earlier dataset check was bypassed;
+- build tokenizer vocabularies from train only and never inject frozen required
+  evaluation answers into train or dev;
+- make missing historical checkpoint provenance fail closed instead of filling it
+  from the current dataset;
 - flag the existing closed-vocabulary model directory as disconnected until a matching production manifest and digest exist.
 
 Production proof is intentionally separate:
@@ -437,6 +443,11 @@ Duplicate, missing, unknown, input-mismatched, non-NFC, Latin, whitespace, and
 duplicate candidate outputs fail the evaluation. Any candidate listed in a
 row's `forbiddenOutputs` also fails the safety gate, even when the preferred
 candidate ranked first.
+
+Raw-model diagnostics must decode every row without consulting
+`expectedAction`. Protected/pass-through and secure-field claims come only from
+the packaged native admission path; a prediction producer may not manufacture
+empty output from the expected answer.
 
 The device measurement JSON must contain packaged-app measurements for both Apple Silicon and Intel:
 

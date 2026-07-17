@@ -135,6 +135,10 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def directory_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     for file in sorted(p for p in path.rglob("*") if p.is_file()):
@@ -153,22 +157,35 @@ def load_rows(dataset_manifest_path: Path, max_train_rows: int, max_dev_rows: in
     manifest = read_json(dataset_manifest_path)
     train_path = ROOT / manifest["splitFiles"]["train"]
     dev_path = ROOT / manifest["splitFiles"]["dev"]
+    test_path = ROOT / manifest["splitFiles"]["test"]
+    split_inputs = {
+        "train": load_split_inputs(train_path),
+        "dev": load_split_inputs(dev_path),
+        "test": load_split_inputs(test_path),
+    }
+    for left, right in (("train", "dev"), ("train", "test"), ("dev", "test")):
+        overlap = split_inputs[left] & split_inputs[right]
+        if overlap:
+            example = sorted(overlap)[0]
+            raise SystemExit(f"Dataset input leakage between {left} and {right}: {example}")
     train_all = load_split(train_path, "train")
     dev_all = load_split(dev_path, "dev")
     train = deterministic_source_sample(train_all, max_train_rows, seed, "train")
     dev = deterministic_source_sample(dev_all, max_dev_rows, seed + 1, "dev")
-    for input_text, output_text in REQUIRED_CASES.items():
-        seed = {
-            "id": f"required_{input_text}",
-            "input": input_text,
-            "target": output_text,
-            "acceptable": [output_text],
-            "sourceIds": ["lekh-required-production-case"],
-            "weight": 8.0,
-        }
-        train.extend([seed] * 64)
-        dev.append(seed)
     return train, dev, manifest
+
+
+def load_split_inputs(path: Path) -> set[str]:
+    inputs: set[str] = set()
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            value = normalize_input(row.get("input", ""))
+            if value:
+                inputs.add(value)
+    return inputs
 
 
 def load_split(path: Path, split: str) -> list[dict[str, Any]]:
@@ -368,8 +385,8 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     train_rows, dev_rows, dataset_manifest = load_rows(args.dataset_manifest, args.max_train_rows, args.max_dev_rows, args.seed)
-    input_vocab = build_vocab(train_rows + dev_rows, "input")
-    output_vocab = build_vocab(train_rows + dev_rows, "output")
+    input_vocab = build_vocab(train_rows, "input")
+    output_vocab = build_vocab(train_rows, "output")
     model = Seq2Seq(len(input_vocab), len(output_vocab), args.embedding_dim, args.hidden_dim, args.layers, args.dropout)
     device = device_for_training()
     model.to(device)
@@ -426,6 +443,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "evaluation": evaluation,
     }
     torch.save(checkpoint, CHECKPOINT_PATH)
+    checkpoint_sha256 = sha256_file(CHECKPOINT_PATH)
     report = {
         "generatedAt": iso_now(),
         "command": "python scripts/train-open-vocab-seq2seq-transliterator.py",
@@ -438,11 +456,14 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "inputDatasetManifestSha256": checkpoint["datasetManifestSha256"],
         "inputDatasetSplitSha256": checkpoint["datasetSplitSha256"],
         "checkpoint": rel(CHECKPOINT_PATH),
+        "checkpointSha256": checkpoint_sha256,
         "parameterCount": checkpoint["parameterCount"],
         "trainingRows": len(train_rows),
         "devRows": len(dev_rows),
         "trainingSourceCounts": checkpoint["trainingSourceCounts"],
         "devSourceCounts": checkpoint["devSourceCounts"],
+        "trainingSampleIdSha256": sha256_text("\n".join(sorted(row["id"] for row in train_rows))),
+        "devSampleIdSha256": sha256_text("\n".join(sorted(row["id"] for row in dev_rows))),
         "samplingPolicy": {
             "type": "deterministic-source-aware-weighted-sampling",
             "seed": args.seed,
@@ -470,9 +491,9 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
     if not CHECKPOINT_PATH.exists():
         raise SystemExit(f"Missing checkpoint: {CHECKPOINT_PATH}. Run training first.")
     checkpoint = torch.load(CHECKPOINT_PATH, map_location="cpu")
-    dataset_manifest = read_json(args.dataset_manifest) if args.dataset_manifest.exists() else {}
-    checkpoint.setdefault("datasetSplitSha256", dataset_manifest.get("sha256", {}))
-    checkpoint.setdefault("datasetManifestSha256", sha256_file(args.dataset_manifest) if args.dataset_manifest.exists() else "")
+    for field in ("datasetSplitSha256", "datasetManifestSha256"):
+        if not checkpoint.get(field):
+            raise SystemExit(f"Checkpoint is missing historical provenance field: {field}")
     model = Seq2Seq(
         len(checkpoint["inputVocab"]),
         len(checkpoint["outputVocab"]),
@@ -484,10 +505,12 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
     model.load_state_dict(checkpoint["stateDict"])
     model.eval()
     report = read_json(TRAINING_REPORT_PATH) if TRAINING_REPORT_PATH.exists() else {}
-    report.setdefault("inputDatasetSplitSha256", checkpoint.get("datasetSplitSha256", {}))
+    if report.get("inputDatasetSplitSha256") != checkpoint.get("datasetSplitSha256"):
+        raise SystemExit("Training report split provenance does not match checkpoint provenance.")
+    if report.get("inputDatasetManifestSha256") != checkpoint.get("datasetManifestSha256"):
+        raise SystemExit("Training report manifest provenance does not match checkpoint provenance.")
     if not VOCAB_METADATA_PATH.exists():
-        dataset_manifest = read_json(args.dataset_manifest) if args.dataset_manifest.exists() else {}
-        write_vocab_metadata(checkpoint["inputVocab"], checkpoint["outputVocab"], args, dataset_manifest)
+        raise SystemExit("Checkpoint vocabulary metadata is missing; historical provenance cannot be backfilled from current inputs.")
     return {"model": model, "checkpoint": checkpoint, "report": report}
 
 
@@ -540,7 +563,6 @@ def evaluate_model(model: Seq2Seq, rows: list[dict[str, Any]], input_vocab: dict
     sample = rows[: min(len(rows), 800)]
     top1 = 0
     top3 = 0
-    required = 0
     for row in sample:
         predictions = decode_candidates(model, row["input"], input_vocab, output_vocab, args.max_input_len, args.max_output_len, beam_width=3)
         acceptable = set(row.get("acceptable") or [row["target"]])
@@ -548,15 +570,11 @@ def evaluate_model(model: Seq2Seq, rows: list[dict[str, Any]], input_vocab: dict
             top1 += 1
         if any(candidate in acceptable for candidate in predictions[:3]):
             top3 += 1
-    for input_text, output_text in REQUIRED_CASES.items():
-        if decode_candidates(model, input_text, input_vocab, output_vocab, args.max_input_len, args.max_output_len, beam_width=4)[:1] == [output_text]:
-            required += 1
     model.to(device)
     return {
         "sampleRows": len(sample),
         "sampleTop1Accuracy": round(top1 / max(len(sample), 1), 6),
         "sampleTop3Accuracy": round(top3 / max(len(sample), 1), 6),
-        "requiredTop1Accuracy": round(required / len(REQUIRED_CASES), 6),
     }
 
 
@@ -571,18 +589,15 @@ def write_gold_predictions(model: Seq2Seq, checkpoint: dict[str, Any], args: arg
                 rows.append(row)
     with PREDICTIONS_PATH.open("w", encoding="utf-8") as handle:
         for row in rows:
-            if row.get("expectedAction") == "no-neural-candidate":
-                candidates: list[str] = []
-            else:
-                candidates = decode_candidates(
-                    model,
-                    row["input"],
-                    checkpoint["inputVocab"],
-                    checkpoint["outputVocab"],
-                    args.max_input_len,
-                    args.max_output_len,
-                    beam_width=4,
-                )
+            candidates = decode_candidates(
+                model,
+                row["input"],
+                checkpoint["inputVocab"],
+                checkpoint["outputVocab"],
+                args.max_input_len,
+                args.max_output_len,
+                beam_width=4,
+            )
             handle.write(json.dumps({"id": row["id"], "input": row["input"], "candidates": candidates[:8]}, ensure_ascii=False) + "\n")
 
 

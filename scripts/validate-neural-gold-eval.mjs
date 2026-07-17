@@ -15,8 +15,10 @@ const warnings = [];
 const requiredCasesFound = new Map();
 const ids = new Set();
 const splitPairs = new Map();
+const splitInputs = new Map();
 const suiteReports = [];
 let totalRows = 0;
+let totalTestRows = 0;
 
 const rowSchema = readJson(rowSchemaPath, "gold row schema");
 const manifest = readJson(manifestPath, "gold manifest");
@@ -46,6 +48,17 @@ for (const [pair, splits] of splitPairs) {
   if (splits.size > 1) {
     failures.push(`Normalized input/output pair leaks across splits: ${pair.replace("\u0000", " -> ")} in ${Array.from(splits).sort().join(", ")}`);
   }
+}
+for (const [input, splits] of splitInputs) {
+  if (splits.size > 1) {
+    failures.push(`Normalized input leaks across splits: ${input} in ${Array.from(splits).sort().join(", ")}`);
+  }
+}
+if (production && totalRows < 250_000) {
+  failures.push(`Production neural gold requires at least 250,000 reviewed rows; found ${totalRows}.`);
+}
+if (production && totalTestRows < 100_000) {
+  failures.push(`Production neural gold requires at least 100,000 held-out test rows; found ${totalTestRows}.`);
 }
 
 const status = failures.length === 0
@@ -82,6 +95,7 @@ function validateSuite(suite, requiredCases) {
   }
 
   totalRows += rows.length;
+  totalTestRows += splitCounts.test;
   const foundationMinimum = Number(suite.foundationMinimumRows ?? 1);
   const productionMinimum = Number(suite.productionMinimumRows ?? foundationMinimum);
   if (rows.length < foundationMinimum) {
@@ -134,6 +148,13 @@ function validateRow(row, suite, lineNumber, requiredCases, splitCounts, actionC
 
   if (typeof row.input !== "string" || row.input.length === 0 || /\s/.test(row.input)) failures.push(`${location} input must be a single active token.`);
   assertNfc(row.input, `${location} input`);
+  const normalizedInput = normalizeInput(row.input);
+  const inputSplits = splitInputs.get(normalizedInput) ?? new Set();
+  inputSplits.add(row.split);
+  splitInputs.set(normalizedInput, inputSplits);
+  if (Object.keys(requiredCases).some((input) => normalizeInput(input) === normalizedInput) && row.split !== "test") {
+    failures.push(`${location} required held-out case ${row.input} must remain in the test split.`);
+  }
   for (const token of row.previousContext ?? []) {
     if (/\s/.test(String(token))) failures.push(`${location} previousContext token contains whitespace: ${token}`);
     assertNfc(String(token), `${location} previousContext`);
@@ -223,6 +244,7 @@ function finish(status, exitCode) {
     manifest: "data/neural/gold/manifest.v1.json",
     rowSchema: "data/neural/schema/lekh-neural-gold-row.schema.json",
     totalRows,
+    totalTestRows,
     suites: suiteReports,
     requiredCases: Object.fromEntries(requiredCasesFound),
     failures,

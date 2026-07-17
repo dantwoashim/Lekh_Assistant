@@ -10,11 +10,31 @@ const args = parseArgs(process.argv.slice(2));
 const production = args.has("production");
 const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-training-contract-production-report.json" : "neural-training-contract-report.json");
 const configPath = args.get("config") ?? join(root, "data", "neural", "training", "open-vocab-seq2seq-v1.config.json");
+const trainerPath = join(root, "scripts", "train-open-vocab-seq2seq-transliterator.py");
 const manifestPath = args.get("manifest") ?? join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const modelDir = args.get("model") ?? join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
 const graphPath = join(modelDir, "model.espresso.net");
 const failures = [];
 const warnings = [];
+const trainer = existsSync(trainerPath) ? readFileSync(trainerPath, "utf8") : "";
+
+if (!trainer) failures.push("Missing open-vocabulary training implementation.");
+if (trainer.includes("lekh-required-production-case") || trainer.includes("train.extend([seed] *")) {
+  failures.push("Training implementation must not inject frozen required evaluation cases into train or dev.");
+}
+if (trainer.includes("build_vocab(train_rows + dev_rows")) {
+  failures.push("Tokenizer vocabulary must not learn from dev or test labels.");
+}
+if (!trainer.includes('build_vocab(train_rows, "input")') ||
+    !trainer.includes('build_vocab(train_rows, "output")')) {
+  failures.push("Tokenizer vocabulary must be derived from the training split only.");
+}
+if (!trainer.includes("Dataset input leakage between") || !trainer.includes("load_split_inputs(test_path)")) {
+  failures.push("Trainer must fail closed on normalized-input overlap between train, dev, and test.");
+}
+if (trainer.includes('row.get("expectedAction") == "no-neural-candidate"')) {
+  failures.push("Raw model prediction generation must not use the expected answer to manufacture an empty candidate list.");
+}
 
 const config = readJsonIfExists(configPath, "training config");
 let manifest = null;
@@ -95,6 +115,7 @@ finish(status, failures.length === 0 ? 0 : 1, {
   phase: 4,
   production,
   config: relative(root, configPath),
+  trainer: relative(root, trainerPath),
   model: relative(root, modelDir),
   manifest: relative(root, manifestPath),
   modelExists,

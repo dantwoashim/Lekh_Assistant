@@ -26,7 +26,8 @@
     },
     "id": {
       "type": "string",
-      "pattern": "^neural_open_vocab_[a-f0-9]{16}$"
+      "pattern": "^neural_open_vocab_[a-f0-9]{16}$",
+      "description": "Stable example identity derived only from action, normalized input, and normalized target."
     },
     "split": {
       "enum": ["train", "dev", "test"]
@@ -79,7 +80,8 @@
     },
     "rowHash": {
       "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the complete finalized record excluding this field; recomputed after all duplicate-source merges."
     }
   }
 }

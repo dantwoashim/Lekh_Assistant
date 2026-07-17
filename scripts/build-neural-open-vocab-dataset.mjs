@@ -3,6 +3,12 @@ import { createHash } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
+import {
+  createNeuralOpenVocabAccumulator,
+  finalizeNeuralOpenVocabAccumulator,
+  mergeNeuralOpenVocabAccumulator,
+  validateNeuralOpenVocabRecord
+} from "./lib/neural-open-vocab-record.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -34,7 +40,9 @@ loadLegacyTsvRows();
 loadPrivateSyubrajRows();
 loadPrivateAksharantarRows();
 
-const rows = [...rowsByKey.values()].sort((a, b) => a.id.localeCompare(b.id));
+const rows = [...rowsByKey.values()]
+  .map(finalizeNeuralOpenVocabAccumulator)
+  .sort((a, b) => a.id.localeCompare(b.id));
 const splitRows = {
   train: rows.filter((row) => row.split === "train"),
   dev: rows.filter((row) => row.split === "dev"),
@@ -302,50 +310,26 @@ function addCleanRow(candidate, location) {
   const rowKey = `${candidate.action}\u0000${input}\u0000${target ?? "<NO_NEURAL_CANDIDATE>"}`;
   if (rowsByKey.has(rowKey)) {
     const existing = rowsByKey.get(rowKey);
-    existing.sourceIds = Array.from(new Set([...existing.sourceIds, ...sourceIds])).sort();
-    existing.acceptable = Array.from(new Set([...existing.acceptable, ...acceptable])).sort();
-    existing.weight = Math.min(12, Math.max(existing.weight, candidate.weight) + 0.15);
-    if (existing.reviewTier !== candidate.reviewTier) {
-      existing.reviewTier = mergedReviewTier(existing.reviewTier, candidate.reviewTier);
-    }
+    mergeNeuralOpenVocabAccumulator(existing, {
+      ...candidate,
+      input,
+      target,
+      split,
+      acceptable,
+      sourceIds
+    });
     reject("duplicate-clean-row-merged", 1);
     return;
   }
 
-  const rowHash = sha256([
-    candidate.action,
+  rowsByKey.set(rowKey, createNeuralOpenVocabAccumulator({
+    ...candidate,
     split,
-    input,
-    target ?? "",
-    acceptable.join("|"),
-    candidate.category,
-    sourceIds.join("|")
-  ].join("\u0000"));
-  rowsByKey.set(rowKey, {
-    schemaVersion: 1,
-    id: `neural_open_vocab_${rowHash.slice(0, 16)}`,
-    split,
-    action: candidate.action,
     input,
     target,
     acceptable,
-    category: candidate.category,
-    sourceIds,
-    sourceTier: candidate.sourceTier,
-    reviewTier: candidate.reviewTier,
-    license: candidate.license,
-    weight: candidate.weight,
-    rowHash
-  });
-}
-
-function mergedReviewTier(left, right) {
-  const tiers = new Set([left, right].filter(Boolean));
-  if (tiers.has("native-speaker-reviewed") || tiers.has("adjudicated-review")) return "adjudicated-review";
-  if (tiers.has("gold")) return "gold";
-  if (tiers.has("curated-public-aksharantar") && tiers.has("silver-public-transliteration")) return "curated-public-corroborated";
-  if (tiers.has("curated-public-aksharantar")) return "curated-public-aksharantar";
-  return [...tiers].sort().join("+") || "unknown";
+    sourceIds
+  }));
 }
 
 function splitForRow(input, requestedSplit) {
@@ -372,9 +356,15 @@ function validateCleanRows(rows, splitRows) {
   }
   const seenIds = new Set();
   const splitByPair = new Map();
+  const splitsByInput = new Map();
   for (const row of rows) {
     if (seenIds.has(row.id)) failures.push(`Duplicate cleaned row id: ${row.id}`);
     seenIds.add(row.id);
+    const recordValidation = validateNeuralOpenVocabRecord(row);
+    failures.push(...recordValidation.issueCodes.map((issue) => `${issue}:${row.id}`));
+    const inputSplits = splitsByInput.get(row.input) ?? new Set();
+    inputSplits.add(row.split);
+    splitsByInput.set(row.input, inputSplits);
     if (row.input.normalize("NFC") !== row.input) failures.push(`Non-NFC input in row ${row.id}`);
     if (/\s/.test(row.input)) failures.push(`Whitespace input in row ${row.id}`);
     if (row.action === "produce-candidate") {
@@ -390,6 +380,9 @@ function validateCleanRows(rows, splitRows) {
   }
   for (const [key, splits] of splitByPair) {
     if (splits.size > 1) failures.push(`Cleaned input/target pair leaks across splits: ${key.replace("\u0000", " -> ")}`);
+  }
+  for (const [input, splits] of splitsByInput) {
+    if (splits.size > 1) failures.push(`Cleaned normalized input leaks across splits: ${input}`);
   }
 }
 

@@ -66,6 +66,10 @@ Rules:
   different output.
 - A normalized input-output pair must not appear across multiple splits.
 - Personal/private user text must not be included.
+- Required held-out cases must remain test-only. Training scripts may not copy,
+  oversample, or probe their expected answers during fitting or dev selection.
+- Tokenizer vocabularies must be frozen independently or built from train only;
+  dev/test labels cannot influence them.
 
 For protected and pass-through rows, use:
 
