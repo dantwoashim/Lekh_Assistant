@@ -1,6 +1,4 @@
-import { mkdirSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type {
   KeyboardCorrectionMemoryStore,
   KeyboardSettings,
@@ -12,39 +10,24 @@ import { defaultKeyboardSettings } from "../../../src/engine/keyboard/storage";
 import { isSecureContext } from "../../../src/engine/keyboard/modes";
 import type { DictionaryResult, TypingContext } from "../../../src/engine/keyboard/types";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
-import { nativeKeyboardDataDir } from "./jsonFileStores";
-
-type SqlitePrimitive = string | number | bigint | null;
-
-interface StatementSync {
-  all(...params: SqlitePrimitive[]): unknown[];
-  get(...params: SqlitePrimitive[]): unknown;
-  run(...params: SqlitePrimitive[]): unknown;
-}
-
-interface DatabaseSync {
-  exec(sql: string): void;
-  prepare(sql: string): StatementSync;
-  close(): void;
-}
-
-interface SqliteModule {
-  DatabaseSync: new (path: string) => DatabaseSync;
-}
-
-interface Row {
-  [key: string]: unknown;
-}
-
-const require = createRequire(import.meta.url);
+import {
+  nativeKeyboardDataDir,
+  normalizeKeyboardSettings,
+  normalizePersonalDictionaryEntry,
+  privacySafeCorrectionMemoryEntry
+} from "./jsonFileStores";
+import { prepareSQLiteDatabase } from "./sqliteDatabase";
+import { withSQLiteTransaction } from "./sqliteMigrations";
+import type { SQLiteDatabase, SQLiteRow } from "./sqliteTypes";
 
 export class SQLiteKeyboardStorage {
-  private readonly db: DatabaseSync;
+  private readonly db: SQLiteDatabase;
 
-  constructor(private readonly dbPath: string) {
-    mkdirSync(dirname(dbPath), { recursive: true });
-    this.db = openDatabase(dbPath);
-    this.initialize();
+  constructor(dbPath: string) {
+    if (!dbPath.endsWith(".sqlite3")) {
+      throw new Error(`SQLite keyboard storage requires a .sqlite3 path: ${dbPath}`);
+    }
+    this.db = prepareSQLiteDatabase(dbPath);
   }
 
   static defaultPath(platform: "windows" | "macos" | "linux", homeDir: string): string {
@@ -66,62 +49,18 @@ export class SQLiteKeyboardStorage {
   close(): void {
     this.db.close();
   }
-
-  private initialize(): void {
-    this.db.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = NORMAL;
-      PRAGMA foreign_keys = ON;
-      CREATE TABLE IF NOT EXISTS settings (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        json TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS personal_dictionary (
-        id TEXT PRIMARY KEY,
-        word TEXT NOT NULL,
-        romanized_json TEXT NOT NULL,
-        domains_json TEXT NOT NULL,
-        source TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        schema_version INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS personal_dictionary_word_idx ON personal_dictionary(word);
-      CREATE TABLE IF NOT EXISTS correction_memory (
-        id TEXT PRIMARY KEY,
-        input_romanized TEXT,
-        input_preeti TEXT,
-        normalized_input TEXT NOT NULL,
-        chosen_output TEXT NOT NULL,
-        normalized_output TEXT NOT NULL,
-        rejected_alternatives_json TEXT NOT NULL,
-        context_json TEXT NOT NULL,
-        source TEXT NOT NULL,
-        frequency INTEGER NOT NULL,
-        confidence_at_selection REAL NOT NULL,
-        first_seen TEXT NOT NULL,
-        last_used TEXT NOT NULL,
-        pinned INTEGER NOT NULL DEFAULT 0,
-        blocked INTEGER NOT NULL DEFAULT 0,
-        decay_weight REAL
-      );
-      CREATE INDEX IF NOT EXISTS correction_memory_input_idx ON correction_memory(normalized_input);
-      CREATE INDEX IF NOT EXISTS correction_memory_last_used_idx ON correction_memory(last_used);
-    `);
-  }
 }
 
 export class SQLiteKeyboardSettingsStore implements KeyboardSettingsStore {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: SQLiteDatabase) {}
 
   async getSettings(): Promise<KeyboardSettings> {
     const row = asRow(this.db.prepare("SELECT json FROM settings WHERE id = 1").get());
-    return normalizeSettings(parseJson(row?.json, defaultKeyboardSettings()));
+    return normalizeKeyboardSettings(parseJson(row?.json, defaultKeyboardSettings()));
   }
 
   async updateSettings(patch: Partial<KeyboardSettings>): Promise<void> {
-    const settings = normalizeSettings({
+    const settings = normalizeKeyboardSettings({
       ...(await this.getSettings()),
       ...patch,
       telemetryEnabled: false,
@@ -136,7 +75,7 @@ export class SQLiteKeyboardSettingsStore implements KeyboardSettingsStore {
 }
 
 export class SQLitePersonalDictionaryStore implements PersonalDictionaryStore {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: SQLiteDatabase) {}
 
   async lookup(query: string): Promise<DictionaryResult[]> {
     const normalized = query.trim().toLowerCase();
@@ -157,6 +96,27 @@ export class SQLitePersonalDictionaryStore implements PersonalDictionaryStore {
   }
 
   async addWord(entry: PersonalDictionaryEntry): Promise<void> {
+    this.upsert(entry);
+  }
+
+  async removeWord(id: string): Promise<void> {
+    this.db.prepare("DELETE FROM personal_dictionary WHERE id = ?").run(id);
+  }
+
+  async export(): Promise<unknown> {
+    return { schemaVersion: 1, entries: this.rows() };
+  }
+
+  async import(data: unknown): Promise<void> {
+    if (!isEntryExport<PersonalDictionaryEntry>(data)) return;
+    withSQLiteTransaction(this.db, () => {
+      this.db.exec("DELETE FROM personal_dictionary");
+      for (const entry of data.entries) this.upsert(entry);
+    });
+  }
+
+  private upsert(entry: PersonalDictionaryEntry): void {
+    const normalizedEntry = normalizePersonalDictionaryEntry(entry);
     this.db.prepare(`
       INSERT INTO personal_dictionary (
         id, word, romanized_json, domains_json, source, created_at, updated_at, schema_version
@@ -170,31 +130,15 @@ export class SQLitePersonalDictionaryStore implements PersonalDictionaryStore {
         updated_at = excluded.updated_at,
         schema_version = excluded.schema_version
     `).run(
-      entry.id,
-      entry.word,
-      JSON.stringify(entry.romanized ?? []),
-      JSON.stringify(entry.domains ?? []),
-      entry.source,
-      entry.createdAt,
-      entry.updatedAt,
-      entry.schemaVersion
+      normalizedEntry.id,
+      normalizedEntry.word,
+      JSON.stringify(normalizedEntry.romanized ?? []),
+      JSON.stringify(normalizedEntry.domains ?? []),
+      normalizedEntry.source,
+      normalizedEntry.createdAt,
+      normalizedEntry.updatedAt,
+      normalizedEntry.schemaVersion
     );
-  }
-
-  async removeWord(id: string): Promise<void> {
-    this.db.prepare("DELETE FROM personal_dictionary WHERE id = ?").run(id);
-  }
-
-  async export(): Promise<unknown> {
-    return { schemaVersion: 1, entries: this.rows() };
-  }
-
-  async import(data: unknown): Promise<void> {
-    if (!isEntryExport<PersonalDictionaryEntry>(data)) return;
-    this.db.exec("DELETE FROM personal_dictionary");
-    for (const entry of data.entries) {
-      await this.addWord(entry);
-    }
   }
 
   private rows(): PersonalDictionaryEntry[] {
@@ -207,49 +151,10 @@ export class SQLitePersonalDictionaryStore implements PersonalDictionaryStore {
 }
 
 export class SQLiteCorrectionMemoryStore implements KeyboardCorrectionMemoryStore {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: SQLiteDatabase) {}
 
   async record(entry: CorrectionMemoryEntry): Promise<void> {
-    this.db.prepare(`
-      INSERT INTO correction_memory (
-        id, input_romanized, input_preeti, normalized_input, chosen_output, normalized_output,
-        rejected_alternatives_json, context_json, source, frequency, confidence_at_selection,
-        first_seen, last_used, pinned, blocked, decay_weight
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        input_romanized = excluded.input_romanized,
-        input_preeti = excluded.input_preeti,
-        normalized_input = excluded.normalized_input,
-        chosen_output = excluded.chosen_output,
-        normalized_output = excluded.normalized_output,
-        rejected_alternatives_json = excluded.rejected_alternatives_json,
-        context_json = excluded.context_json,
-        source = excluded.source,
-        frequency = excluded.frequency,
-        confidence_at_selection = excluded.confidence_at_selection,
-        last_used = excluded.last_used,
-        pinned = excluded.pinned,
-        blocked = excluded.blocked,
-        decay_weight = excluded.decay_weight
-    `).run(
-      entry.id,
-      entry.inputRomanized ?? null,
-      entry.inputPreeti ?? null,
-      entry.normalizedInput,
-      entry.chosenOutput,
-      entry.normalizedOutput,
-      JSON.stringify(entry.rejectedAlternatives),
-      JSON.stringify(entry.context),
-      entry.source,
-      entry.frequency,
-      entry.confidenceAtSelection,
-      entry.timestamps.firstSeen,
-      entry.timestamps.lastUsed,
-      entry.pinned ? 1 : 0,
-      entry.blocked ? 1 : 0,
-      entry.decayWeight ?? null
-    );
+    this.upsert(entry);
   }
 
   async query(input: string, context: TypingContext): Promise<CorrectionMemoryEntry[]> {
@@ -259,10 +164,10 @@ export class SQLiteCorrectionMemoryStore implements KeyboardCorrectionMemoryStor
     return this.db.prepare(`
       SELECT *
       FROM correction_memory
-      WHERE normalized_input LIKE ?
+      WHERE instr(lower(normalized_input), ?) = 1
       ORDER BY pinned DESC, frequency DESC, last_used DESC
       LIMIT 20
-    `).all(`${normalizedInput}%`).map((raw) => correctionMemoryEntryFromRow(asRequiredRow(raw)));
+    `).all(normalizedInput).map((raw) => correctionMemoryEntryFromRow(asRequiredRow(raw)));
   }
 
   async forget(input: string, chosenOutput?: string): Promise<void> {
@@ -294,39 +199,58 @@ export class SQLiteCorrectionMemoryStore implements KeyboardCorrectionMemoryStor
 
   async import(data: unknown): Promise<void> {
     if (!isEntryExport<CorrectionMemoryEntry>(data)) return;
-    await this.reset();
-    for (const entry of data.entries) {
-      await this.record(entry);
-    }
+    withSQLiteTransaction(this.db, () => {
+      this.db.exec("DELETE FROM correction_memory");
+      for (const entry of data.entries) this.upsert(entry);
+    });
+  }
+
+  private upsert(entry: CorrectionMemoryEntry): void {
+    const normalizedEntry = privacySafeCorrectionMemoryEntry(entry);
+    this.db.prepare(`
+      INSERT INTO correction_memory (
+        id, input_romanized, input_preeti, normalized_input, chosen_output, normalized_output,
+        rejected_alternatives_json, context_domain, source, frequency, confidence_at_selection,
+        first_seen, last_used, pinned, blocked, decay_weight
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        input_romanized = excluded.input_romanized,
+        input_preeti = excluded.input_preeti,
+        normalized_input = excluded.normalized_input,
+        chosen_output = excluded.chosen_output,
+        normalized_output = excluded.normalized_output,
+        rejected_alternatives_json = excluded.rejected_alternatives_json,
+        context_domain = excluded.context_domain,
+        source = excluded.source,
+        frequency = excluded.frequency,
+        confidence_at_selection = excluded.confidence_at_selection,
+        last_used = excluded.last_used,
+        pinned = excluded.pinned,
+        blocked = excluded.blocked,
+        decay_weight = excluded.decay_weight
+    `).run(
+      normalizedEntry.id,
+      normalizedEntry.inputRomanized ?? null,
+      normalizedEntry.inputPreeti ?? null,
+      normalizedEntry.normalizedInput,
+      normalizedEntry.chosenOutput,
+      normalizedEntry.normalizedOutput,
+      JSON.stringify(normalizedEntry.rejectedAlternatives),
+      sanitizedContextDomain(normalizedEntry.context.domain),
+      normalizedEntry.source,
+      normalizedEntry.frequency,
+      normalizedEntry.confidenceAtSelection,
+      normalizedEntry.timestamps.firstSeen,
+      normalizedEntry.timestamps.lastUsed,
+      normalizedEntry.pinned ? 1 : 0,
+      normalizedEntry.blocked ? 1 : 0,
+      normalizedEntry.decayWeight ?? null
+    );
   }
 }
 
-function openDatabase(dbPath: string): DatabaseSync {
-  try {
-    const sqlite = require("node:sqlite") as SqliteModule;
-    return new sqlite.DatabaseSync(dbPath);
-  } catch (error) {
-    if (error instanceof Error && /No such built-in module: node:sqlite/.test(error.message)) {
-      throw new Error(
-        "SQLite keyboard storage requires a Node.js runtime with node:sqlite. " +
-        "Use JsonFileKeyboardStorage with an explicit .json path for development fallback storage.",
-        { cause: error }
-      );
-    }
-    throw error;
-  }
-}
-
-function normalizeSettings(value: unknown): KeyboardSettings {
-  return {
-    ...defaultKeyboardSettings(),
-    ...(isRecord(value) ? value : {}),
-    telemetryEnabled: false,
-    schemaVersion: 1
-  };
-}
-
-function personalDictionaryEntryFromRow(row: Row): PersonalDictionaryEntry {
+function personalDictionaryEntryFromRow(row: SQLiteRow): PersonalDictionaryEntry {
   return {
     id: stringValue(row.id),
     word: stringValue(row.word),
@@ -339,7 +263,8 @@ function personalDictionaryEntryFromRow(row: Row): PersonalDictionaryEntry {
   };
 }
 
-function correctionMemoryEntryFromRow(row: Row): CorrectionMemoryEntry {
+function correctionMemoryEntryFromRow(row: SQLiteRow): CorrectionMemoryEntry {
+  const domain = sanitizedContextDomain(row.context_domain);
   return {
     id: stringValue(row.id),
     inputRomanized: optionalString(row.input_romanized),
@@ -348,7 +273,11 @@ function correctionMemoryEntryFromRow(row: Row): CorrectionMemoryEntry {
     chosenOutput: stringValue(row.chosen_output),
     normalizedOutput: stringValue(row.normalized_output),
     rejectedAlternatives: parseStringArray(row.rejected_alternatives_json),
-    context: parseJson(row.context_json, { leftWindow: "", rightWindow: "" }) as CorrectionMemoryEntry["context"],
+    context: {
+      leftWindow: "",
+      rightWindow: "",
+      ...(domain ? { domain } : {})
+    },
     source: correctionMemorySource(row.source),
     frequency: numberValue(row.frequency, 1),
     confidenceAtSelection: numberValue(row.confidence_at_selection, 0.8),
@@ -376,6 +305,12 @@ function parseJson(value: unknown, fallback: unknown): unknown {
   }
 }
 
+function sanitizedContextDomain(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return /^[\p{L}\p{N}._:-]{1,64}$/u.test(normalized) ? normalized : null;
+}
+
 function isEntryExport<T>(value: unknown): value is { schemaVersion: 1; entries: T[] } {
   return isRecord(value) && Array.isArray(value.entries);
 }
@@ -393,15 +328,15 @@ function correctionMemorySource(value: unknown): CorrectionMemoryEntry["source"]
   return "import";
 }
 
-function asRow(value: unknown): Row | undefined {
+function asRow(value: unknown): SQLiteRow | undefined {
   return isRecord(value) ? value : undefined;
 }
 
-function asRequiredRow(value: unknown): Row {
+function asRequiredRow(value: unknown): SQLiteRow {
   return asRow(value) ?? {};
 }
 
-function isRecord(value: unknown): value is Row {
+function isRecord(value: unknown): value is SQLiteRow {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

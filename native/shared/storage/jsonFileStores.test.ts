@@ -1,5 +1,5 @@
-import { mkdtemp, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { defaultTypingContext } from "../../../src/engine/keyboard";
@@ -71,6 +71,67 @@ describe("native JSON file keyboard stores", () => {
 
     await memory.reset();
     expect(await memory.query("pra", defaultTypingContext("romanized"))).toHaveLength(0);
+  });
+
+  it("strips reconstructable context windows from new and legacy JSON storage", async () => {
+    const filePath = await tempStoragePath();
+    const leftWindow = "private sentence before the correction";
+    const rightWindow = "private sentence after the correction";
+    const storage = new JsonFileKeyboardStorage(filePath);
+    await storage.correctionMemory().record({
+      ...memoryEntry("private", "swasthya", "स्वास्थ्य"),
+      context: { leftWindow, rightWindow, domain: "health" }
+    });
+    expect(await storage.correctionMemory().query("swas", defaultTypingContext("romanized"))).toEqual([
+      expect.objectContaining({ context: { leftWindow: "", rightWindow: "", domain: "health" } })
+    ]);
+    expect(await readFile(filePath, "utf8")).not.toContain(leftWindow);
+    expect(await readFile(filePath, "utf8")).not.toContain(rightWindow);
+
+    const legacy = JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>;
+    const entries = legacy.correctionMemory as CorrectionMemoryEntry[];
+    entries[0] = {
+      ...entries[0],
+      context: { leftWindow, rightWindow, domain: "health" },
+      privateText: "unknown fields must not survive normalization"
+    } as CorrectionMemoryEntry;
+    await writeFile(filePath, JSON.stringify(legacy), "utf8");
+
+    await storage.read();
+    expect(await readFile(filePath, "utf8")).not.toContain(leftWindow);
+    expect(await readFile(filePath, "utf8")).not.toContain(rightWindow);
+    expect(await readFile(filePath, "utf8")).not.toContain("unknown fields must not survive normalization");
+  });
+
+  it("returns no correction history for an empty query", async () => {
+    const storage = new JsonFileKeyboardStorage(await tempStoragePath());
+    await storage.correctionMemory().record(memoryEntry("mem_1", "niraj", "नीरज"));
+    expect(await storage.correctionMemory().query("   ", defaultTypingContext("romanized"))).toEqual([]);
+  });
+
+  it("rejects a future JSON schema without rewriting the original file", async () => {
+    const filePath = await tempStoragePath();
+    const future = JSON.stringify({ schemaVersion: 99, privateFutureData: "preserve exactly" });
+    await writeFile(filePath, future, "utf8");
+    const storage = new JsonFileKeyboardStorage(filePath);
+    await expect(storage.read()).rejects.toThrow(/schema version/);
+    expect(await readFile(filePath, "utf8")).toBe(future);
+  });
+
+  it("refuses to write JSON under a SQLite filename", async () => {
+    const filePath = (await tempStoragePath()).replace(/\.json$/, ".sqlite3");
+    expect(() => new JsonFileKeyboardStorage(filePath)).toThrow(/requires an explicit \.json path/);
+    await expect(readFile(filePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("creates private JSON storage permissions where chmod is supported", async () => {
+    const filePath = await tempStoragePath();
+    const storage = new JsonFileKeyboardStorage(filePath);
+    await storage.settings().updateSettings({ showRomanizedLabels: true });
+    if (process.platform !== "win32") {
+      expect((await stat(dirname(filePath))).mode & 0o777).toBe(0o700);
+      expect((await stat(filePath)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it("forgets correction memory by input and chosen output", async () => {
