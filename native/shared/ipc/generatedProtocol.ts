@@ -1,0 +1,158 @@
+// Generated from lekh-keyboard-protocol.json. Do not edit.
+export const IPC_SCHEMA_VERSION = 1 as const;
+export const IPC_COMPATIBLE_SCHEMA_VERSIONS = [1] as const;
+export const IPC_CLIENTS = ["windows-tsf","macos-imk","companion","daemon-test"] as const;
+export const IPC_PROTOCOL_LIMITS = {
+  "maximumFrameBytes": 65536,
+  "maximumIdentifierLength": 256,
+  "maximumTextLength": 16384,
+  "maximumQueryLength": 1024,
+  "maximumContextDomains": 32,
+  "hotPathDeadlineMs": 50,
+  "maximumPendingRequestsPerConnection": 32,
+  "maximumReplayEntriesPerClient": 256
+} as const;
+export const IPC_MESSAGE_DESCRIPTORS = {
+  "health.check": {
+    "sessionBound": false,
+    "deadlineClass": "control"
+  },
+  "engine.warm": {
+    "sessionBound": false,
+    "deadlineClass": "control"
+  },
+  "session.begin": {
+    "sessionBound": false,
+    "deadlineClass": "hotPath"
+  },
+  "session.processKeyStroke": {
+    "sessionBound": true,
+    "deadlineClass": "hotPath"
+  },
+  "session.updateComposition": {
+    "sessionBound": true,
+    "deadlineClass": "hotPath"
+  },
+  "session.commitCandidate": {
+    "sessionBound": true,
+    "deadlineClass": "hotPath"
+  },
+  "session.commitRaw": {
+    "sessionBound": true,
+    "deadlineClass": "hotPath"
+  },
+  "session.cancel": {
+    "sessionBound": true,
+    "deadlineClass": "hotPath"
+  },
+  "session.end": {
+    "sessionBound": true,
+    "deadlineClass": "hotPath"
+  },
+  "session.setMode": {
+    "sessionBound": true,
+    "deadlineClass": "control"
+  },
+  "session.setLayout": {
+    "sessionBound": true,
+    "deadlineClass": "control"
+  },
+  "suggestions.get": {
+    "sessionBound": false,
+    "deadlineClass": "control"
+  },
+  "proofHints.get": {
+    "sessionBound": false,
+    "deadlineClass": "control"
+  },
+  "dictionary.lookup": {
+    "sessionBound": false,
+    "deadlineClass": "control"
+  },
+  "memory.learn": {
+    "sessionBound": true,
+    "deadlineClass": "control"
+  },
+  "diagnostics.getMetrics": {
+    "sessionBound": false,
+    "deadlineClass": "control"
+  },
+  "engine.shutdown": {
+    "sessionBound": false,
+    "deadlineClass": "control"
+  }
+} as const;
+export const IPC_MESSAGE_TYPES = Object.freeze(Object.keys(IPC_MESSAGE_DESCRIPTORS)) as readonly (keyof typeof IPC_MESSAGE_DESCRIPTORS)[];
+export type GeneratedIpcMessageType = keyof typeof IPC_MESSAGE_DESCRIPTORS;
+export const IPC_ERROR_DEFINITIONS = {
+  "IPC_SCHEMA_INVALID": {
+    "recoverable": true,
+    "action": "passThrough"
+  },
+  "IPC_VERSION_UNSUPPORTED": {
+    "recoverable": true,
+    "action": "restartDaemon"
+  },
+  "IPC_NEGOTIATION_REQUIRED": {
+    "recoverable": true,
+    "action": "restartSession"
+  },
+  "IPC_DEADLINE_EXCEEDED": {
+    "recoverable": true,
+    "action": "passThrough"
+  },
+  "IPC_REPLAY_DETECTED": {
+    "recoverable": true,
+    "action": "restartSession"
+  },
+  "IPC_SEQUENCE_INVALID": {
+    "recoverable": true,
+    "action": "restartSession"
+  },
+  "IPC_SESSION_STALE": {
+    "recoverable": true,
+    "action": "restartSession"
+  },
+  "IPC_SESSION_UNKNOWN": {
+    "recoverable": true,
+    "action": "restartSession"
+  },
+  "IPC_QUEUE_FULL": {
+    "recoverable": true,
+    "action": "passThrough"
+  },
+  "IPC_PAYLOAD_TOO_LARGE": {
+    "recoverable": true,
+    "action": "passThrough"
+  },
+  "IPC_EMPTY_LINE": {
+    "recoverable": true,
+    "action": "retry"
+  },
+  "IPC_JSON_PARSE_FAILED": {
+    "recoverable": true,
+    "action": "retry"
+  },
+  "IPC_CLIENT_IDENTITY_REJECTED": {
+    "recoverable": false,
+    "action": "none"
+  },
+  "IPC_TIMEOUT": {
+    "recoverable": true,
+    "action": "passThrough"
+  },
+  "DAEMON_CLI_FAILED": {
+    "recoverable": true,
+    "action": "restartDaemon"
+  },
+  "DAEMON_DISPATCH_FAILED": {
+    "recoverable": true,
+    "action": "passThrough"
+  },
+  "NAMED_PIPE_REQUEST_FAILED": {
+    "recoverable": true,
+    "action": "restartDaemon"
+  }
+} as const;
+export type IpcErrorCode = keyof typeof IPC_ERROR_DEFINITIONS;
+export type IpcRecoveryAction = (typeof IPC_ERROR_DEFINITIONS)[IpcErrorCode]["action"];

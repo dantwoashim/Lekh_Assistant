@@ -11,31 +11,25 @@ import type {
   WarmOptions,
   WarmResult
 } from "../../../src/engine/keyboard/types";
+import {
+  IPC_ERROR_DEFINITIONS,
+  IPC_MESSAGE_TYPES,
+  IPC_SCHEMA_VERSION
+} from "./generatedProtocol";
+import type {
+  GeneratedIpcMessageType,
+  IpcErrorCode,
+  IpcRecoveryAction
+} from "./generatedProtocol";
 
-export const IPC_SCHEMA_VERSION = 1 as const;
+export {
+  IPC_ERROR_DEFINITIONS,
+  IPC_MESSAGE_TYPES,
+  IPC_SCHEMA_VERSION
+};
+export type { IpcErrorCode, IpcRecoveryAction };
 
-export const IPC_MESSAGE_TYPES = [
-  "health.check",
-  "engine.warm",
-  "session.begin",
-  "session.processKeyStroke",
-  "session.updateComposition",
-  "session.commitCandidate",
-  "session.commitRaw",
-  "session.cancel",
-  "session.end",
-  "session.setMode",
-  "session.setLayout",
-  "suggestions.get",
-  "proofHints.get",
-  "dictionary.lookup",
-  "memory.learn",
-  "diagnostics.getMetrics",
-  "engine.shutdown"
-] as const;
-
-export type IpcMessageType =
-  (typeof IPC_MESSAGE_TYPES)[number];
+export type IpcMessageType = GeneratedIpcMessageType;
 
 export interface IpcRequest<T = unknown> {
   id: string;
@@ -52,9 +46,10 @@ export interface IpcResponse<T = unknown> {
   ok: boolean;
   payload?: T;
   error?: {
-    code: string;
+    code: IpcErrorCode;
     message: string;
     recoverable: boolean;
+    action?: IpcRecoveryAction;
   };
   latencyMs?: number;
 }

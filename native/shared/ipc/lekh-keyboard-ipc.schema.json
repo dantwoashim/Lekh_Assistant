@@ -2,12 +2,208 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lekh.local/schemas/lekh-keyboard-ipc.schema.json",
   "title": "Lekh Keyboard IPC",
-  "description": "Versioned local-only IPC envelope for native keyboard shells, daemon, and companion.",
+  "description": "Generated versioned local-only IPC contract for native keyboard shells, daemon, and companion.",
   "oneOf": [
-    { "$ref": "#/$defs/IpcRequest" },
-    { "$ref": "#/$defs/IpcResponse" }
+    {
+      "$ref": "#/$defs/IpcRequest"
+    },
+    {
+      "$ref": "#/$defs/IpcResponse"
+    }
   ],
   "$defs": {
+    "SessionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "KeyboardMode": {
+      "type": "string",
+      "enum": [
+        "romanized",
+        "traditional",
+        "romanized-romanized",
+        "romanized-traditional",
+        "traditional-traditional",
+        "traditional-romanized",
+        "unicode-proofread",
+        "dictionary-lookup",
+        "diagnostic"
+      ]
+    },
+    "SuggestionSurface": {
+      "type": "string",
+      "enum": [
+        "romanized-to-unicode",
+        "romanized-to-romanized",
+        "romanized-to-unicode-with-labels",
+        "traditional-to-unicode",
+        "traditional-to-romanized-helper",
+        "traditional-to-traditional-proofread"
+      ]
+    },
+    "TypingContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "leftTextWindow",
+        "activeDomains",
+        "preserveEnglish",
+        "secureInput",
+        "mode",
+        "enabledSurfaces"
+      ],
+      "properties": {
+        "appId": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "appName": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "fieldType": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "password",
+            "search",
+            "code",
+            "unknown"
+          ]
+        },
+        "leftTextWindow": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "rightTextWindow": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "locale": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "activeDomains": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "preserveEnglish": {
+          "type": "boolean"
+        },
+        "secureInput": {
+          "type": "boolean"
+        },
+        "mode": {
+          "$ref": "#/$defs/KeyboardMode"
+        },
+        "layoutId": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "enabledSurfaces": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/SuggestionSurface"
+          }
+        },
+        "showRomanizedLabels": {
+          "type": "boolean"
+        },
+        "enableNextWordPrediction": {
+          "type": "boolean"
+        }
+      }
+    },
+    "KeyboardKeyEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "code",
+        "modifiers",
+        "timestamp"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "modifiers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "shift",
+            "ctrl",
+            "alt",
+            "meta"
+          ],
+          "properties": {
+            "shift": {
+              "type": "boolean"
+            },
+            "ctrl": {
+              "type": "boolean"
+            },
+            "alt": {
+              "type": "boolean"
+            },
+            "meta": {
+              "type": "boolean"
+            }
+          }
+        },
+        "isRepeat": {
+          "type": "boolean"
+        },
+        "timestamp": {
+          "type": "number"
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "web",
+            "windows-tsf",
+            "macos-imk",
+            "test"
+          ]
+        },
+        "nativeCode": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "maxLength": 256
+            }
+          ]
+        }
+      }
+    },
+    "SessionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId"
+      ],
+      "properties": {
+        "sessionId": {
+          "$ref": "#/$defs/SessionId"
+        }
+      }
+    },
     "MessageType": {
       "type": "string",
       "enum": [
@@ -30,60 +226,645 @@
         "engine.shutdown"
       ]
     },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "IPC_SCHEMA_INVALID",
+        "IPC_VERSION_UNSUPPORTED",
+        "IPC_NEGOTIATION_REQUIRED",
+        "IPC_DEADLINE_EXCEEDED",
+        "IPC_REPLAY_DETECTED",
+        "IPC_SEQUENCE_INVALID",
+        "IPC_SESSION_STALE",
+        "IPC_SESSION_UNKNOWN",
+        "IPC_QUEUE_FULL",
+        "IPC_PAYLOAD_TOO_LARGE",
+        "IPC_EMPTY_LINE",
+        "IPC_JSON_PARSE_FAILED",
+        "IPC_CLIENT_IDENTITY_REJECTED",
+        "IPC_TIMEOUT",
+        "DAEMON_CLI_FAILED",
+        "DAEMON_DISPATCH_FAILED",
+        "NAMED_PIPE_REQUEST_FAILED"
+      ]
+    },
+    "RecoveryAction": {
+      "type": "string",
+      "enum": [
+        "none",
+        "retry",
+        "passThrough",
+        "restartSession",
+        "restartDaemon"
+      ]
+    },
     "IpcRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "type", "version", "sentAt", "payload"],
+      "required": [
+        "id",
+        "type",
+        "version",
+        "sentAt",
+        "payload"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "type": { "$ref": "#/$defs/MessageType" },
-        "version": { "const": 1 },
-        "sentAt": { "type": "number" },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "type": {
+          "$ref": "#/$defs/MessageType"
+        },
+        "version": {
+          "const": 1
+        },
+        "sentAt": {
+          "type": "number"
+        },
         "payload": true
       },
       "allOf": [
         {
           "if": {
-            "properties": { "type": { "const": "memory.learn" } },
-            "required": ["type"]
+            "properties": {
+              "type": {
+                "const": "health.check"
+              }
+            },
+            "required": [
+              "type"
+            ]
           },
           "then": {
-            "properties": { "payload": { "$ref": "#/$defs/MemoryLearnPayload" } }
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "client"
+                ],
+                "properties": {
+                  "client": {
+                    "type": "string",
+                    "enum": [
+                      "windows-tsf",
+                      "macos-imk",
+                      "companion",
+                      "daemon-test"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "engine.warm"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "timeoutMs": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 60000
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.begin"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "context"
+                ],
+                "properties": {
+                  "context": {
+                    "$ref": "#/$defs/TypingContext"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.processKeyStroke"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sessionId",
+                  "key"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "$ref": "#/$defs/SessionId"
+                  },
+                  "key": {
+                    "$ref": "#/$defs/KeyboardKeyEvent"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.updateComposition"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sessionId",
+                  "input",
+                  "cursor"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "$ref": "#/$defs/SessionId"
+                  },
+                  "input": {
+                    "type": "string",
+                    "maxLength": 16384
+                  },
+                  "cursor": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 16384
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.commitCandidate"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sessionId",
+                  "candidateId"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "$ref": "#/$defs/SessionId"
+                  },
+                  "candidateId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.commitRaw"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SessionPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.cancel"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SessionPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.end"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SessionPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.setMode"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sessionId",
+                  "mode"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "$ref": "#/$defs/SessionId"
+                  },
+                  "mode": {
+                    "$ref": "#/$defs/KeyboardMode"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.setLayout"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sessionId",
+                  "layoutId"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "$ref": "#/$defs/SessionId"
+                  },
+                  "layoutId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "suggestions.get"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "context"
+                ],
+                "properties": {
+                  "context": {
+                    "$ref": "#/$defs/TypingContext"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "proofHints.get"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "textWindow"
+                ],
+                "properties": {
+                  "textWindow": {
+                    "type": "string",
+                    "maxLength": 16384
+                  },
+                  "context": {
+                    "$ref": "#/$defs/TypingContext"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "dictionary.lookup"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "query"
+                ],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "context": {
+                    "$ref": "#/$defs/TypingContext"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "memory.learn"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sessionId",
+                  "commitEpoch"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "$ref": "#/$defs/SessionId"
+                  },
+                  "commitEpoch": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "diagnostics.getMetrics"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "engine.shutdown"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "type": "null"
+              }
+            }
           }
         }
       ]
     },
-    "MemoryLearnPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["sessionId", "commitEpoch"],
-      "properties": {
-        "sessionId": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "commitEpoch": { "type": "integer", "minimum": 1 }
-      }
-    },
     "IpcResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "type", "version", "ok"],
+      "required": [
+        "id",
+        "type",
+        "version",
+        "ok"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "type": { "$ref": "#/$defs/MessageType" },
-        "version": { "const": 1 },
-        "ok": { "type": "boolean" },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "type": {
+          "$ref": "#/$defs/MessageType"
+        },
+        "version": {
+          "const": 1
+        },
+        "ok": {
+          "type": "boolean"
+        },
         "payload": true,
         "error": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["code", "message", "recoverable"],
+          "required": [
+            "code",
+            "message",
+            "recoverable"
+          ],
           "properties": {
-            "code": { "type": "string" },
-            "message": { "type": "string" },
-            "recoverable": { "type": "boolean" }
+            "code": {
+              "$ref": "#/$defs/ErrorCode"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            },
+            "recoverable": {
+              "type": "boolean"
+            },
+            "action": {
+              "$ref": "#/$defs/RecoveryAction"
+            }
           }
         },
-        "latencyMs": { "type": "number", "minimum": 0 }
-      }
+        "latencyMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "payload"
+            ],
+            "not": {
+              "required": [
+                "error"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "error"
+            ],
+            "not": {
+              "required": [
+                "payload"
+              ]
+            }
+          }
+        }
+      ]
     }
   }
 }

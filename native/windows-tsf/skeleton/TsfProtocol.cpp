@@ -1,5 +1,7 @@
 #include "TsfProtocol.h"
 
+#include "../../shared/ipc/generated/LekhIPCProtocol.generated.h"
+
 #include <climits>
 #include <cmath>
 #include <cwctype>
@@ -285,7 +287,7 @@ bool hasExactEnvelope(
   const JsonValue* ok = member(root, L"ok", JsonType::Boolean);
   return id && id->string == expectedId &&
     type && type->string == expectedType &&
-    version && version->number == 1 &&
+    version && version->number == lekh::ipc::kSchemaVersion &&
     ok && ok->boolean;
 }
 
@@ -302,7 +304,8 @@ std::optional<JsonValue> parseResponse(const std::wstring& response) {
 
 std::wstring makeBeginSessionRequest(const std::wstring& requestId, std::uint64_t sentAt) {
   return L"{\"id\":\"" + escapeJson(requestId) +
-    L"\",\"type\":\"session.begin\",\"version\":1,\"sentAt\":" + std::to_wstring(sentAt) +
+    L"\",\"type\":\"session.begin\",\"version\":" + std::to_wstring(lekh::ipc::kSchemaVersion) +
+    L",\"sentAt\":" + std::to_wstring(sentAt) +
     L",\"payload\":{\"context\":{\"fieldType\":\"normal\",\"leftTextWindow\":\"\",\"rightTextWindow\":\"\"," +
     L"\"locale\":\"ne-NP\",\"activeDomains\":[],\"preserveEnglish\":true,\"secureInput\":false," +
     L"\"mode\":\"romanized-traditional\",\"layoutId\":\"lekh-romanized\"," +
@@ -317,7 +320,8 @@ std::wstring makeProcessKeyRequest(
   std::uint64_t sentAt
 ) {
   return L"{\"id\":\"" + escapeJson(requestId) +
-    L"\",\"type\":\"session.processKeyStroke\",\"version\":1,\"sentAt\":" + std::to_wstring(sentAt) +
+    L"\",\"type\":\"session.processKeyStroke\",\"version\":" + std::to_wstring(lekh::ipc::kSchemaVersion) +
+    L",\"sentAt\":" + std::to_wstring(sentAt) +
     L",\"payload\":{\"sessionId\":\"" + escapeJson(sessionId) +
     L"\",\"key\":{\"key\":\"" + escapeJson(key.key) +
     L"\",\"code\":\"" + escapeJson(key.code) +
@@ -339,7 +343,8 @@ std::wstring makeSessionRequest(
 ) {
   return L"{\"id\":\"" + escapeJson(requestId) +
     L"\",\"type\":\"" + commandType(command) +
-    L"\",\"version\":1,\"sentAt\":" + std::to_wstring(sentAt) +
+    L"\",\"version\":" + std::to_wstring(lekh::ipc::kSchemaVersion) +
+    L",\"sentAt\":" + std::to_wstring(sentAt) +
     L",\"payload\":{\"sessionId\":\"" + escapeJson(sessionId) + L"\"}}";
 }
 

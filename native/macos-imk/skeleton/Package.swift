@@ -48,6 +48,7 @@ let package = Package(
         "LekhKeyboardLayoutTranslator.swift",
         "LekhLocalization.swift",
         "LekhMetricReporter.swift",
+        "LekhIPCProtocol.generated.swift",
         "LekhNativePreferences.swift",
         "LekhNeuralCandidateService.swift",
         "LekhPreferencesWindow.swift",

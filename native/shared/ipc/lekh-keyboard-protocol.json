@@ -1,0 +1,293 @@
+{
+  "specificationVersion": 1,
+  "protocolName": "Lekh Keyboard IPC",
+  "currentVersion": 1,
+  "compatibleVersions": [1],
+  "clients": ["windows-tsf", "macos-imk", "companion", "daemon-test"],
+  "limits": {
+    "maximumFrameBytes": 65536,
+    "maximumIdentifierLength": 256,
+    "maximumTextLength": 16384,
+    "maximumQueryLength": 1024,
+    "maximumContextDomains": 32,
+    "hotPathDeadlineMs": 50,
+    "maximumPendingRequestsPerConnection": 32,
+    "maximumReplayEntriesPerClient": 256
+  },
+  "recoveryActions": ["none", "retry", "passThrough", "restartSession", "restartDaemon"],
+  "errors": [
+    { "code": "IPC_SCHEMA_INVALID", "recoverable": true, "action": "passThrough" },
+    { "code": "IPC_VERSION_UNSUPPORTED", "recoverable": true, "action": "restartDaemon" },
+    { "code": "IPC_NEGOTIATION_REQUIRED", "recoverable": true, "action": "restartSession" },
+    { "code": "IPC_DEADLINE_EXCEEDED", "recoverable": true, "action": "passThrough" },
+    { "code": "IPC_REPLAY_DETECTED", "recoverable": true, "action": "restartSession" },
+    { "code": "IPC_SEQUENCE_INVALID", "recoverable": true, "action": "restartSession" },
+    { "code": "IPC_SESSION_STALE", "recoverable": true, "action": "restartSession" },
+    { "code": "IPC_SESSION_UNKNOWN", "recoverable": true, "action": "restartSession" },
+    { "code": "IPC_QUEUE_FULL", "recoverable": true, "action": "passThrough" },
+    { "code": "IPC_PAYLOAD_TOO_LARGE", "recoverable": true, "action": "passThrough" },
+    { "code": "IPC_EMPTY_LINE", "recoverable": true, "action": "retry" },
+    { "code": "IPC_JSON_PARSE_FAILED", "recoverable": true, "action": "retry" },
+    { "code": "IPC_CLIENT_IDENTITY_REJECTED", "recoverable": false, "action": "none" },
+    { "code": "IPC_TIMEOUT", "recoverable": true, "action": "passThrough" },
+    { "code": "DAEMON_CLI_FAILED", "recoverable": true, "action": "restartDaemon" },
+    { "code": "DAEMON_DISPATCH_FAILED", "recoverable": true, "action": "passThrough" },
+    { "code": "NAMED_PIPE_REQUEST_FAILED", "recoverable": true, "action": "restartDaemon" }
+  ],
+  "commonDefinitions": {
+    "SessionId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "KeyboardMode": {
+      "type": "string",
+      "enum": [
+        "romanized",
+        "traditional",
+        "romanized-romanized",
+        "romanized-traditional",
+        "traditional-traditional",
+        "traditional-romanized",
+        "unicode-proofread",
+        "dictionary-lookup",
+        "diagnostic"
+      ]
+    },
+    "SuggestionSurface": {
+      "type": "string",
+      "enum": [
+        "romanized-to-unicode",
+        "romanized-to-romanized",
+        "romanized-to-unicode-with-labels",
+        "traditional-to-unicode",
+        "traditional-to-romanized-helper",
+        "traditional-to-traditional-proofread"
+      ]
+    },
+    "TypingContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["leftTextWindow", "activeDomains", "preserveEnglish", "secureInput", "mode", "enabledSurfaces"],
+      "properties": {
+        "appId": { "type": "string", "maxLength": 16384 },
+        "appName": { "type": "string", "maxLength": 16384 },
+        "fieldType": { "type": "string", "enum": ["normal", "password", "search", "code", "unknown"] },
+        "leftTextWindow": { "type": "string", "maxLength": 16384 },
+        "rightTextWindow": { "type": "string", "maxLength": 16384 },
+        "locale": { "type": "string", "maxLength": 16384 },
+        "activeDomains": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 256 } },
+        "preserveEnglish": { "type": "boolean" },
+        "secureInput": { "type": "boolean" },
+        "mode": { "$ref": "#/$defs/KeyboardMode" },
+        "layoutId": { "type": "string", "maxLength": 16384 },
+        "enabledSurfaces": { "type": "array", "maxItems": 6, "items": { "$ref": "#/$defs/SuggestionSurface" } },
+        "showRomanizedLabels": { "type": "boolean" },
+        "enableNextWordPrediction": { "type": "boolean" }
+      }
+    },
+    "KeyboardKeyEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "code", "modifiers", "timestamp"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "code": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "modifiers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["shift", "ctrl", "alt", "meta"],
+          "properties": {
+            "shift": { "type": "boolean" },
+            "ctrl": { "type": "boolean" },
+            "alt": { "type": "boolean" },
+            "meta": { "type": "boolean" }
+          }
+        },
+        "isRepeat": { "type": "boolean" },
+        "timestamp": { "type": "number" },
+        "platform": { "type": "string", "enum": ["web", "windows-tsf", "macos-imk", "test"] },
+        "nativeCode": { "oneOf": [{ "type": "number" }, { "type": "string", "maxLength": 256 }] }
+      }
+    }
+  },
+  "messages": [
+    {
+      "type": "health.check",
+      "sessionBound": false,
+      "deadlineClass": "control",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["client"],
+        "properties": { "client": { "type": "string", "enum": ["windows-tsf", "macos-imk", "companion", "daemon-test"] } }
+      }
+    },
+    {
+      "type": "engine.warm",
+      "sessionBound": false,
+      "deadlineClass": "control",
+      "requestPayload": {
+        "oneOf": [
+          { "type": "null" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "timeoutMs": { "type": "number", "minimum": 0, "maximum": 60000 } }
+          }
+        ]
+      }
+    },
+    {
+      "type": "session.begin",
+      "sessionBound": false,
+      "deadlineClass": "hotPath",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["context"],
+        "properties": { "context": { "$ref": "#/$defs/TypingContext" } }
+      }
+    },
+    {
+      "type": "session.processKeyStroke",
+      "sessionBound": true,
+      "deadlineClass": "hotPath",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "key"],
+        "properties": {
+          "sessionId": { "$ref": "#/$defs/SessionId" },
+          "key": { "$ref": "#/$defs/KeyboardKeyEvent" }
+        }
+      }
+    },
+    {
+      "type": "session.updateComposition",
+      "sessionBound": true,
+      "deadlineClass": "hotPath",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "input", "cursor"],
+        "properties": {
+          "sessionId": { "$ref": "#/$defs/SessionId" },
+          "input": { "type": "string", "maxLength": 16384 },
+          "cursor": { "type": "integer", "minimum": 0, "maximum": 16384 }
+        }
+      }
+    },
+    {
+      "type": "session.commitCandidate",
+      "sessionBound": true,
+      "deadlineClass": "hotPath",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "candidateId"],
+        "properties": {
+          "sessionId": { "$ref": "#/$defs/SessionId" },
+          "candidateId": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      }
+    },
+    {
+      "type": "session.commitRaw",
+      "sessionBound": true,
+      "deadlineClass": "hotPath",
+      "requestPayload": { "$ref": "#/$defs/SessionPayload" }
+    },
+    {
+      "type": "session.cancel",
+      "sessionBound": true,
+      "deadlineClass": "hotPath",
+      "requestPayload": { "$ref": "#/$defs/SessionPayload" }
+    },
+    {
+      "type": "session.end",
+      "sessionBound": true,
+      "deadlineClass": "hotPath",
+      "requestPayload": { "$ref": "#/$defs/SessionPayload" }
+    },
+    {
+      "type": "session.setMode",
+      "sessionBound": true,
+      "deadlineClass": "control",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "mode"],
+        "properties": {
+          "sessionId": { "$ref": "#/$defs/SessionId" },
+          "mode": { "$ref": "#/$defs/KeyboardMode" }
+        }
+      }
+    },
+    {
+      "type": "session.setLayout",
+      "sessionBound": true,
+      "deadlineClass": "control",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "layoutId"],
+        "properties": {
+          "sessionId": { "$ref": "#/$defs/SessionId" },
+          "layoutId": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      }
+    },
+    {
+      "type": "suggestions.get",
+      "sessionBound": false,
+      "deadlineClass": "control",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["context"],
+        "properties": { "context": { "$ref": "#/$defs/TypingContext" } }
+      }
+    },
+    {
+      "type": "proofHints.get",
+      "sessionBound": false,
+      "deadlineClass": "control",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["textWindow"],
+        "properties": {
+          "textWindow": { "type": "string", "maxLength": 16384 },
+          "context": { "$ref": "#/$defs/TypingContext" }
+        }
+      }
+    },
+    {
+      "type": "dictionary.lookup",
+      "sessionBound": false,
+      "deadlineClass": "control",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["query"],
+        "properties": {
+          "query": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "context": { "$ref": "#/$defs/TypingContext" }
+        }
+      }
+    },
+    {
+      "type": "memory.learn",
+      "sessionBound": true,
+      "deadlineClass": "control",
+      "requestPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "commitEpoch"],
+        "properties": {
+          "sessionId": { "$ref": "#/$defs/SessionId" },
+          "commitEpoch": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    { "type": "diagnostics.getMetrics", "sessionBound": false, "deadlineClass": "control", "requestPayload": { "type": "null" } },
+    { "type": "engine.shutdown", "sessionBound": false, "deadlineClass": "control", "requestPayload": { "type": "null" } }
+  ]
+}
