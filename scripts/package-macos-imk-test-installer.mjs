@@ -321,8 +321,10 @@ function writeAppShellBundle({ appPath, displayName, identifier, executableName,
   );
   writeFileSync(join(appPath, "Contents", "PkgInfo"), "APPL????");
   if (existsSync(iconSource)) copyFileSync(iconSource, join(appPath, "Contents", "Resources", "Lekh.icns"));
-  writeFileSync(join(appPath, "Contents", "MacOS", executableName), script);
-  chmodSync(join(appPath, "Contents", "MacOS", executableName), 0o755);
+  const executablePath = join(appPath, "Contents", "MacOS", executableName);
+  writeFileSync(executablePath, script);
+  chmodSync(executablePath, 0o755);
+  run(`verify-shell-syntax-${executableName}`, "/bin/bash", ["-n", executablePath]);
 }
 
 function compileUniversalHelper(sourceFile, outputPath) {
@@ -541,8 +543,8 @@ fail() {
 	}
 	migrate_legacy_backup_bundles() {
 	  for backup_root in "$LEGACY_BACKUP_ROOT" "$BACKUP_ROOT"; do
-	    /usr/bin/find "$backup_root" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print0 2>/dev/null |
-	      while IFS= read -r -d '' backup; do
+	    [[ -d "$backup_root" ]] || continue
+	    while IFS= read -r -d '' backup; do
 	        "$LSREGISTER" -u "$backup" >> "$LOG_FILE" 2>&1 || true
 	        backup_name="$(/usr/bin/basename "$backup")"
 	        archive="$BACKUP_ROOT/$backup_name.zip"
@@ -556,8 +558,9 @@ fail() {
 	          /bin/rm -f "$archive_tmp"
 	          fail "could not archive an indexed rollback backup"
 	        fi
-	      done
+	    done < <(/usr/bin/find "$backup_root" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print0 2>/dev/null)
 	  done
+	  return 0
 	}
 rotate_backups() {
   local keep_count=3
@@ -587,7 +590,9 @@ log "install started payload=$PAYLOAD dest=$DEST version=$APP_VERSION build=$APP
 
 "$RESOURCE_DIR/restore-system-keyboard" --snapshot >> "$LOG_FILE" 2>&1 || log "could not snapshot the current non-Lekh input source"
 "$RESOURCE_DIR/restore-system-keyboard" >> "$LOG_FILE" 2>&1 || fail "could not select a safe input source before replacement"
-"$RESOURCE_DIR/register-lekh-input-source" "$DEST" --disable >> "$LOG_FILE" 2>&1 || true
+if [[ -f "$DEST/Contents/Info.plist" ]]; then
+  "$RESOURCE_DIR/register-lekh-input-source" "$DEST" --disable >> "$LOG_FILE" 2>&1 || true
+fi
 	stop_lekh_input_method_for_replacement || fail "could not stop the running input method before replacement"
 	migrate_legacy_backup_bundles
 
@@ -663,11 +668,12 @@ stop_lekh_input_method_for_removal() {
 }
 unregister_backup_bundles() {
   for backup_root in "$LEGACY_BACKUP_ROOT" "$ARCHIVE_BACKUP_ROOT"; do
-    /usr/bin/find "$backup_root" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print0 2>/dev/null |
-      while IFS= read -r -d '' backup; do
+    [[ -d "$backup_root" ]] || continue
+    while IFS= read -r -d '' backup; do
         "$LSREGISTER" -u "$backup" >> "$LOG_FILE" 2>&1 || true
-      done
+    done < <(/usr/bin/find "$backup_root" -maxdepth 1 -type d -name 'Lekh Keyboard.app.backup.*' -print0 2>/dev/null)
   done
+  return 0
 }
 dialog() {
   LEKH_DIALOG_MESSAGE="$1" /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1
@@ -726,7 +732,7 @@ elif [[ -f "$SUPPORT_DIR/lekh-keyboard.sqlite3" ]]; then
 fi
 /usr/bin/find "$SUPPORT_DIR" -depth -type d -empty -delete >/dev/null 2>&1 || true
 log "uninstall completed"
-dialog "Lekh Keyboard was removed. Dictionary packs, model files, backups, caches, and Lekh logs were deleted. Personal dictionary removed: $REMOVE_PERSONAL_DICTIONARY. Your previous keyboard was restored if macOS allowed the change.\n\nलेख किबोर्ड हटाइयो। dictionary packs, model files, backups, caches, र Lekh logs मेटाइयो। personal dictionary removed: $REMOVE_PERSONAL_DICTIONARY। macOS ले अनुमति दिएको भए पहिलेको keyboard restore गरिएको छ।"
+dialog "Lekh Keyboard was removed. Dictionary packs, model files, backups, caches, and Lekh logs were deleted. Personal dictionary removed: \${REMOVE_PERSONAL_DICTIONARY}. Your previous keyboard was restored if macOS allowed the change.\n\nलेख किबोर्ड हटाइयो। dictionary packs, model files, backups, caches, र Lekh logs मेटाइयो। personal dictionary removed: \${REMOVE_PERSONAL_DICTIONARY}। macOS ले अनुमति दिएको भए पहिलेको keyboard restore गरिएको छ।"
 /bin/rm -rf "$LOG_DIR"
 exit 0
 `;
@@ -778,7 +784,7 @@ INSTALLER_BIN="$INSTALLER_APP/Contents/MacOS/install-lekh-keyboard"
 
 echo "Lekh Keyboard terminal installer"
 echo "This unsigned QA build cannot pass Finder/Gatekeeper without Developer ID notarization."
-echo "This script removes the download quarantine from this extracted folder, verifies the packaged app signature, then runs the same installer."
+echo "This script removes only the known Finder metadata that blocks code-signature verification, verifies the packaged app signature, then runs the same installer."
 echo
 
 if [[ ! -x "$INSTALLER_BIN" ]]; then
@@ -787,7 +793,12 @@ if [[ ! -x "$INSTALLER_BIN" ]]; then
   exit 1
 fi
 
-/usr/bin/xattr -dr com.apple.quarantine "$INSTALLER_APP" "$UNINSTALLER_APP" "$PWD" 2>/dev/null || true
+for target in "$INSTALLER_APP" "$UNINSTALLER_APP"; do
+  /usr/bin/dot_clean -m "$target" >/dev/null 2>&1 || true
+  for attribute in com.apple.quarantine com.apple.FinderInfo com.apple.ResourceFork 'com.apple.fileprovider.fpfs#P' com.apple.provenance; do
+    /usr/bin/xattr -r -d "$attribute" "$target" 2>/dev/null || true
+  done
+done
 
 if ! /usr/bin/codesign --verify --deep --strict "$INSTALLER_APP" >/dev/null 2>&1; then
   echo "The installer app failed local code-signature verification." >&2
@@ -817,7 +828,7 @@ UNINSTALLER_APP="$PWD/Lekh Keyboard Uninstaller.app"
 UNINSTALLER_BIN="$UNINSTALLER_APP/Contents/MacOS/uninstall-lekh-keyboard"
 
 echo "Lekh Keyboard terminal uninstaller"
-echo "This script removes the download quarantine from the uninstaller, verifies it, then runs it."
+echo "This script removes only the known Finder metadata that blocks code-signature verification, verifies the uninstaller, then runs it."
 echo
 
 if [[ ! -x "$UNINSTALLER_BIN" ]]; then
@@ -826,7 +837,10 @@ if [[ ! -x "$UNINSTALLER_BIN" ]]; then
   exit 1
 fi
 
-/usr/bin/xattr -dr com.apple.quarantine "$UNINSTALLER_APP" "$PWD" 2>/dev/null || true
+/usr/bin/dot_clean -m "$UNINSTALLER_APP" >/dev/null 2>&1 || true
+for attribute in com.apple.quarantine com.apple.FinderInfo com.apple.ResourceFork 'com.apple.fileprovider.fpfs#P' com.apple.provenance; do
+  /usr/bin/xattr -r -d "$attribute" "$UNINSTALLER_APP" 2>/dev/null || true
+done
 
 if ! /usr/bin/codesign --verify --deep --strict "$UNINSTALLER_APP" >/dev/null 2>&1; then
   echo "The uninstaller app failed local code-signature verification." >&2

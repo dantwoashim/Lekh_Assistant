@@ -932,6 +932,8 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).toContain("SHA256SUMS.txt");
     expect(installerPackager).toContain("README.txt");
     expect(installerPackager).toContain("compileUniversalHelper");
+    expect(installerPackager).toContain("verify-shell-syntax-");
+    expect(installerPackager).toContain('["-n", executablePath]');
     expect(installerPackager).toContain("lipo");
     expect(installerPackager).toContain("LEKH_DIALOG_MESSAGE");
     expect(installerPackager).toContain("confirm_uninstall");
@@ -943,6 +945,8 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).toContain("InstallBackups");
     expect(installerPackager).toContain("rotate_backups");
     expect(installerPackager).toContain("keep_count=3");
+    expect(installerPackager).toContain('[[ -d "$backup_root" ]] || continue');
+    expect(installerPackager).toContain('done < <(/usr/bin/find "$backup_root"');
     expect(installerPackager).toContain("restore-system-keyboard\" --snapshot");
     expect(installerPackager).toContain("stop_lekh_input_method_for_replacement");
     expect(installerPackager).toContain("stop_lekh_input_method_for_removal");
@@ -953,6 +957,11 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).toContain("INSTALLED_CONNECTION_NAME");
     expect(installerPackager).not.toContain("pkill -x LekhInputMethodApp");
     expect(installerPackager).not.toContain("xattr -cr");
+    expect(installerPackager).toContain("com.apple.FinderInfo");
+    expect(installerPackager).toContain("com.apple.ResourceFork");
+    expect(installerPackager).toContain("com.apple.fileprovider.fpfs#P");
+    expect(installerPackager).toContain("\\${REMOVE_PERSONAL_DICTIONARY}");
+    expect(installerPackager).not.toContain("$REMOVE_PERSONAL_DICTIONARY।");
     expect(installerPackager).not.toContain("--noqtn");
     expect(installerPackager).not.toContain("TextInputMenuAgent");
     expect(installerPackager).not.toContain("TextInputSwitcher");
