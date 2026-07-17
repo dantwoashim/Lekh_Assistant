@@ -1,7 +1,8 @@
 #pragma once
 
+#include "LekhWindowsIdentity.h"
+
 #include <string>
-#include <vector>
 #include <windows.h>
 
 namespace lekh::pipe {
@@ -22,7 +23,7 @@ public:
 private:
   PSECURITY_DESCRIPTOR descriptor_ = nullptr;
   SECURITY_ATTRIBUTES attributes_ = {};
-  std::vector<DWORD> logonSidStorage_;
+  lekh::windows::Sid logonSid_;
   std::wstring logonSidString_;
 };
 

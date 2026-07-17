@@ -1,16 +1,15 @@
 #include "IpcClient.h"
 
 #include "Guids.h"
+#include "LekhWindowsIdentity.h"
 #include "../../shared/ipc/generated/LekhIPCProtocol.generated.h"
 
 #include <algorithm>
 #include <array>
 #include <climits>
 #include <iterator>
-#include <sddl.h>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace {
 
@@ -65,49 +64,6 @@ std::wstring fromUtf8(const char* value, DWORD bytes) {
   return output;
 }
 
-std::optional<std::wstring> currentUserSid() {
-  HANDLE token = nullptr;
-  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return std::nullopt;
-
-  DWORD requiredBytes = 0;
-  GetTokenInformation(token, TokenUser, nullptr, 0, &requiredBytes);
-  if (requiredBytes == 0) {
-    CloseHandle(token);
-    return std::nullopt;
-  }
-
-  std::vector<BYTE> buffer(requiredBytes);
-  if (!GetTokenInformation(token, TokenUser, buffer.data(), requiredBytes, &requiredBytes)) {
-    CloseHandle(token);
-    return std::nullopt;
-  }
-  CloseHandle(token);
-
-  const auto* user = reinterpret_cast<TOKEN_USER*>(buffer.data());
-  LPWSTR sidString = nullptr;
-  if (!ConvertSidToStringSidW(user->User.Sid, &sidString) || !sidString) return std::nullopt;
-  std::wstring output(sidString);
-  LocalFree(sidString);
-  return output;
-}
-
-bool readProcessTokenUser(HANDLE process, std::vector<BYTE>& buffer) {
-  HANDLE token = nullptr;
-  if (!OpenProcessToken(process, TOKEN_QUERY, &token)) return false;
-
-  DWORD requiredBytes = 0;
-  GetTokenInformation(token, TokenUser, nullptr, 0, &requiredBytes);
-  if (requiredBytes == 0) {
-    CloseHandle(token);
-    return false;
-  }
-
-  buffer.resize(requiredBytes);
-  const BOOL read = GetTokenInformation(token, TokenUser, buffer.data(), requiredBytes, &requiredBytes);
-  CloseHandle(token);
-  return read == TRUE;
-}
-
 bool pipeServerRunsAsCurrentUser(HANDLE pipe) {
   ULONG serverProcessId = 0;
   if (!GetNamedPipeServerProcessId(pipe, &serverProcessId) || serverProcessId == 0) return false;
@@ -115,20 +71,14 @@ bool pipeServerRunsAsCurrentUser(HANDLE pipe) {
   HANDLE serverProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, serverProcessId);
   if (!serverProcess) return false;
 
-  std::vector<BYTE> currentUser;
-  std::vector<BYTE> serverUser;
-  const bool readCurrent = readProcessTokenUser(GetCurrentProcess(), currentUser);
-  const bool readServer = readProcessTokenUser(serverProcess, serverUser);
+  const bool matches = lekh::windows::processRunsAsCurrentUser(serverProcess);
   CloseHandle(serverProcess);
-  if (!readCurrent || !readServer) return false;
-
-  const auto* current = reinterpret_cast<const TOKEN_USER*>(currentUser.data());
-  const auto* server = reinterpret_cast<const TOKEN_USER*>(serverUser.data());
-  return EqualSid(current->User.Sid, server->User.Sid) == TRUE;
+  return matches;
 }
 
 std::optional<std::wstring> configuredPipeName() {
-  const std::optional<std::wstring> sid = currentUserSid();
+  const std::optional<lekh::windows::Sid> currentUser = lekh::windows::currentUserSid();
+  const std::optional<std::wstring> sid = currentUser ? currentUser->string() : std::nullopt;
   if (!sid || sid->empty()) return std::nullopt;
   return std::wstring(kLekhPipeNamePrefix) + *sid;
 }

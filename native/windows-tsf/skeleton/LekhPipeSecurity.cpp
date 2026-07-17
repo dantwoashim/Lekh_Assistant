@@ -3,59 +3,10 @@
 #include <aclapi.h>
 #include <sddl.h>
 
-#include <cstddef>
 #include <optional>
 #include <utility>
 
 namespace {
-
-std::vector<DWORD> tokenInformation(TOKEN_INFORMATION_CLASS informationClass) {
-  HANDLE token = nullptr;
-  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return {};
-
-  DWORD requiredBytes = 0;
-  GetTokenInformation(token, informationClass, nullptr, 0, &requiredBytes);
-  if (requiredBytes == 0 || GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-    CloseHandle(token);
-    return {};
-  }
-
-  std::vector<DWORD> buffer((requiredBytes + sizeof(DWORD) - 1) / sizeof(DWORD));
-  const BOOL read = GetTokenInformation(
-    token,
-    informationClass,
-    buffer.data(),
-    static_cast<DWORD>(buffer.size() * sizeof(DWORD)),
-    &requiredBytes
-  );
-  CloseHandle(token);
-  if (!read) return {};
-  return buffer;
-}
-
-std::vector<DWORD> currentLogonSid() {
-  const std::vector<DWORD> groupsStorage = tokenInformation(TokenGroups);
-  if (groupsStorage.empty()) return {};
-  const auto* groups = reinterpret_cast<const TOKEN_GROUPS*>(groupsStorage.data());
-  for (DWORD index = 0; index < groups->GroupCount; ++index) {
-    const SID_AND_ATTRIBUTES& group = groups->Groups[index];
-    if ((group.Attributes & SE_GROUP_LOGON_ID) != SE_GROUP_LOGON_ID || !IsValidSid(group.Sid)) continue;
-    const DWORD sidBytes = GetLengthSid(group.Sid);
-    std::vector<DWORD> sidStorage((sidBytes + sizeof(DWORD) - 1) / sizeof(DWORD));
-    if (!CopySid(sidBytes, sidStorage.data(), group.Sid)) return {};
-    return sidStorage;
-  }
-  return {};
-}
-
-std::optional<std::wstring> sidString(PSID sid) {
-  if (!sid || !IsValidSid(sid)) return std::nullopt;
-  LPWSTR value = nullptr;
-  if (!ConvertSidToStringSidW(sid, &value) || !value) return std::nullopt;
-  std::wstring result(value);
-  LocalFree(value);
-  return result;
-}
 
 std::vector<DWORD> localSystemSid() {
   DWORD sidBytes = SECURITY_MAX_SID_SIZE;
@@ -121,16 +72,14 @@ SecurityContext::~SecurityContext() {
 
 bool SecurityContext::initialize() {
   if (descriptor_) return false;
-  logonSidStorage_ = currentLogonSid();
-  if (logonSidStorage_.empty()) return false;
+  const std::optional<lekh::windows::Sid> logonSid = lekh::windows::currentLogonSid();
+  if (!logonSid || !logonSid->valid()) return false;
+  logonSid_ = *logonSid;
 
-  const std::optional<std::wstring> logonSid = sidString(logonSidStorage_.data());
-  if (!logonSid) {
-    logonSidStorage_.clear();
-    return false;
-  }
+  const std::optional<std::wstring> logonSidString = logonSid_.string();
+  if (!logonSidString) return false;
 
-  const std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;" + *logonSid + L")";
+  const std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;" + *logonSidString + L")";
   PSECURITY_DESCRIPTOR descriptor = nullptr;
   if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
     sddl.c_str(),
@@ -138,18 +87,18 @@ bool SecurityContext::initialize() {
     &descriptor,
     nullptr
   )) {
-    logonSidStorage_.clear();
+    logonSid_ = {};
     return false;
   }
 
-  if (!validatesRestrictedDacl(descriptor, logonSidStorage_.data())) {
+  if (!validatesRestrictedDacl(descriptor, logonSid_.get())) {
     LocalFree(descriptor);
-    logonSidStorage_.clear();
+    logonSid_ = {};
     return false;
   }
 
   descriptor_ = descriptor;
-  logonSidString_ = *logonSid;
+  logonSidString_ = *logonSidString;
   attributes_.nLength = sizeof(attributes_);
   attributes_.lpSecurityDescriptor = descriptor_;
   attributes_.bInheritHandle = FALSE;
@@ -161,7 +110,7 @@ SECURITY_ATTRIBUTES* SecurityContext::attributes() {
 }
 
 bool SecurityContext::validatePipeHandle(HANDLE pipe) const {
-  if (!descriptor_ || pipe == nullptr || pipe == INVALID_HANDLE_VALUE || logonSidStorage_.empty()) return false;
+  if (!descriptor_ || pipe == nullptr || pipe == INVALID_HANDLE_VALUE || !logonSid_.valid()) return false;
   PSECURITY_DESCRIPTOR descriptor = nullptr;
   const DWORD result = GetSecurityInfo(
     pipe,
@@ -174,7 +123,7 @@ bool SecurityContext::validatePipeHandle(HANDLE pipe) const {
     &descriptor
   );
   if (result != ERROR_SUCCESS || !descriptor) return false;
-  const bool valid = validatesRestrictedDacl(descriptor, const_cast<DWORD*>(logonSidStorage_.data()));
+  const bool valid = validatesRestrictedDacl(descriptor, logonSid_.get());
   LocalFree(descriptor);
   return valid;
 }

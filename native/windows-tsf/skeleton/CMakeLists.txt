@@ -9,12 +9,26 @@ add_library(LekhTsfProtocol STATIC
   TsfProtocol.cpp
 )
 
+add_library(LekhWindowsIdentity STATIC
+  LekhWindowsIdentity.cpp
+)
+
 add_library(LekhPipeSecurity STATIC
   LekhPipeSecurity.cpp
 )
 
 target_compile_features(LekhTsfProtocol PUBLIC cxx_std_20)
 target_include_directories(LekhTsfProtocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(LekhWindowsIdentity PUBLIC cxx_std_20)
+target_compile_definitions(LekhWindowsIdentity PRIVATE
+  UNICODE
+  _UNICODE
+  WIN32_LEAN_AND_MEAN
+  NOMINMAX
+  _WIN32_WINNT=0x0A00
+)
+target_include_directories(LekhWindowsIdentity PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(LekhWindowsIdentity PRIVATE advapi32)
 target_compile_features(LekhPipeSecurity PUBLIC cxx_std_20)
 target_compile_definitions(LekhPipeSecurity PRIVATE
   UNICODE
@@ -24,7 +38,7 @@ target_compile_definitions(LekhPipeSecurity PRIVATE
   _WIN32_WINNT=0x0A00
 )
 target_include_directories(LekhPipeSecurity PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(LekhPipeSecurity PRIVATE advapi32)
+target_link_libraries(LekhPipeSecurity PRIVATE LekhWindowsIdentity advapi32)
 
 add_library(LekhTextService SHARED
   ClassFactory.cpp
@@ -47,6 +61,7 @@ target_compile_definitions(LekhTextService PRIVATE
 target_include_directories(LekhTextService PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(LekhTextService PRIVATE
   LekhTsfProtocol
+  LekhWindowsIdentity
   ole32
   oleaut32
   uuid
@@ -56,6 +71,7 @@ target_link_libraries(LekhTextService PRIVATE
 
 if(MSVC)
   target_compile_options(LekhTsfProtocol PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  target_compile_options(LekhWindowsIdentity PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhPipeSecurity PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhTextService PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
 endif()

@@ -109,10 +109,14 @@ describe("Windows TSF source safety contract", () => {
 
   it("uses a per-user pipe and cancellation-safe bounded overlapped IO", () => {
     const ipc = read("IpcClient.cpp");
+    const identity = read("LekhWindowsIdentity.cpp");
     const guids = read("Guids.h");
-    expect(ipc).toContain("ConvertSidToStringSidW");
+    expect(identity).toContain("ConvertSidToStringSidW");
+    expect(identity).toContain("std::vector<DWORD>");
+    expect(identity).not.toContain("std::vector<BYTE>");
     expect(ipc).toContain("GetNamedPipeServerProcessId");
-    expect(ipc).toContain("EqualSid");
+    expect(identity).toContain("EqualSid");
+    expect(ipc).toContain("processRunsAsCurrentUser(serverProcess)");
     expect(ipc).toContain("pipeServerRunsAsCurrentUser(pipe)");
     expect(ipc).toContain("if (!sid || sid->empty()) return std::nullopt");
     expect(ipc).toContain("if (pipeName_.empty()) return std::nullopt");
@@ -132,10 +136,11 @@ describe("Windows TSF source safety contract", () => {
 
   it("builds and verifies a protected logon-session pipe DACL", () => {
     const security = read("LekhPipeSecurity.cpp");
+    const identity = read("LekhWindowsIdentity.cpp");
     const securityTest = read("LekhPipeSecurityTests.cpp");
     const cmake = read("CMakeLists.txt");
-    expect(security).toContain("TokenGroups");
-    expect(security).toContain("SE_GROUP_LOGON_ID");
+    expect(identity).toContain("TokenGroups");
+    expect(identity).toContain("SE_GROUP_LOGON_ID");
     expect(security).toContain('L"D:P(A;;GA;;;SY)(A;;GA;;;"');
     expect(security).toContain("ConvertStringSecurityDescriptorToSecurityDescriptorW");
     expect(security).toContain("GetSecurityInfo");
