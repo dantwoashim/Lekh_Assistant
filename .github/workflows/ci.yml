@@ -66,3 +66,96 @@ jobs:
 
       - name: Run fixture quality report
         run: npm run report:quality
+
+  native-macos:
+    name: Native macOS (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - macos-15
+          - macos-15-intel
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify native source contracts
+        run: npm run check:ipc-schema && npm run test:native-scaffold
+
+      - name: Build Swift input method
+        run: npm run build:macos
+
+      - name: Exercise native typing behavior
+        run: swift run --package-path native/macos-imk/skeleton LekhInputMethodBehaviorProbe
+
+      - name: Compare TypeScript and Swift behavior contracts
+        shell: bash
+        run: |
+          corpus="$GITHUB_WORKSPACE/contracts/keyboard-behavior/v1/lekh-keyboard-behavior.v1.jsonl"
+          ./node_modules/.bin/vite-node \
+            scripts/run-keyboard-behavior-contract.ts \
+            "$corpus" > "$RUNNER_TEMP/typescript-behavior.jsonl"
+          swift run --package-path native/macos-imk/skeleton \
+            LekhBehaviorContractRunner \
+            "$corpus" > "$RUNNER_TEMP/swift-behavior.jsonl"
+          cmp "$RUNNER_TEMP/typescript-behavior.jsonl" "$RUNNER_TEMP/swift-behavior.jsonl"
+          shasum -a 256 "$RUNNER_TEMP/typescript-behavior.jsonl"
+
+  native-windows:
+    name: Native Windows (${{ matrix.runner }} / ${{ matrix.architecture }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            architecture: x64
+            run_tests: true
+          - runner: windows-2025
+            architecture: x64
+            run_tests: true
+          - runner: windows-2025
+            architecture: ARM64
+            run_tests: false
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify native source contracts
+        run: npm run check:ipc-schema && npm run test:native-scaffold
+
+      - name: Build and test Windows TSF service
+        shell: pwsh
+        run: |
+          if ("${{ matrix.run_tests }}" -eq "true") {
+            & ".\native\windows-tsf\skeleton\build.ps1" -Architecture "${{ matrix.architecture }}"
+          } else {
+            & ".\native\windows-tsf\skeleton\build.ps1" -Architecture "${{ matrix.architecture }}" -SkipTests
+          }
+
+      - name: Verify Windows packaging contract
+        if: matrix.architecture == 'x64'
+        run: npm run check:windows-installer-contract
