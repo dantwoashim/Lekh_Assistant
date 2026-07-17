@@ -878,6 +878,8 @@ describe("macOS IMK proof target source", () => {
     expect(installScript).not.toContain("xattr -cr");
     expect(installScript).not.toContain("--noqtn");
     expect(installScript).toContain("atomic-install-swap.swift");
+    expect(installScript).toContain("unsigned builds may still require approval in System Settings");
+    expect(installScript).not.toContain("was registered and enabled");
     expect(installScript).toContain("verify_bundle \"$APP\"");
     expect(installScript).toContain("verify_bundle \"$TMP_DEST\"");
     expect(installScript).toContain("verify_bundle \"$DEST\"");
@@ -926,6 +928,7 @@ describe("macOS IMK proof target source", () => {
 
   it("packages a non-destructive installer with rollback and a visible uninstaller", () => {
     const installerPackager = readFileSync(join(root, "scripts/package-macos-imk-test-installer.mjs"), "utf8");
+    const registerScript = readFileSync(join(root, "native/macos-imk/skeleton/register-dev.swift"), "utf8");
 
     expect(installerPackager).toContain("Lekh Keyboard Uninstaller.app");
     expect(installerPackager).toContain("rollback()");
@@ -968,8 +971,16 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).toContain("lekh-keyboard-uninstaller.XXXXXX");
     expect(installerPackager).toContain("SOURCE_INSTALLER_APP");
     expect(installerPackager).toContain("SOURCE_UNINSTALLER_APP");
-    expect(installerPackager).toContain("metadata-free staged installer");
+    expect(installerPackager).toContain("authenticated snapshot's installer");
     expect(installerPackager).toContain("outside Finder/File Provider storage");
+    expect(installerPackager).toContain('SOURCE_RELEASE_DIR="$PWD"');
+    expect(installerPackager).toContain('STAGED_RELEASE_DIR="$STAGING_DIR/Lekh Keyboard Test Installer"');
+    expect(installerPackager.indexOf('ditto --norsrc --noextattr --noacl "$SOURCE_RELEASE_DIR" "$STAGED_RELEASE_DIR"')).toBeLessThan(
+      installerPackager.indexOf('LEKH_RELEASE_VERIFY_NONINTERACTIVE=1 "$RELEASE_VERIFIER"')
+    );
+    expect(installerPackager.indexOf('LEKH_RELEASE_VERIFY_NONINTERACTIVE=1 "$RELEASE_VERIFIER"')).toBeLessThan(
+      installerPackager.indexOf('"$INSTALLER_BIN"')
+    );
     expect(installerPackager).toContain("\\${REMOVE_PERSONAL_DICTIONARY}");
     expect(installerPackager).not.toContain("$REMOVE_PERSONAL_DICTIONARY।");
     expect(installerPackager).not.toContain("--noqtn");
@@ -978,5 +989,12 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).not.toContain("codesign --force --sign - --timestamp=none \"$DEST\"");
     expect(installerPackager).not.toContain("SystemUIServer");
     expect(installerPackager).not.toContain("defaults delete com.lekh.inputmethod.LekhKeyboard");
+    expect(installerPackager).toContain("persistent user approval cannot be asserted by an unsigned installer");
+    expect(installerPackager).toContain("macOS may still require your approval before it appears");
+    expect(installerPackager).toContain("verify-extracted-release-self-contained");
+    expect(installerPackager).toContain("passed-self-contained-quarantine-path");
+    expect(installerPackager).not.toContain("Lekh Keyboard installed and enabled");
+    expect(registerScript).toContain("TIS accepting enablement does not prove");
+    expect(registerScript).not.toContain("normalized, and enabled through TIS");
   });
 });

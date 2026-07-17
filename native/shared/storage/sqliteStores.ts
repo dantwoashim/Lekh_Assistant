@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type {
@@ -9,6 +9,7 @@ import type {
   PersonalDictionaryStore
 } from "../../../src/engine/keyboard/storage";
 import { defaultKeyboardSettings } from "../../../src/engine/keyboard/storage";
+import { isSecureContext } from "../../../src/engine/keyboard/modes";
 import type { DictionaryResult, TypingContext } from "../../../src/engine/keyboard/types";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
 import { nativeKeyboardDataDir } from "./jsonFileStores";
@@ -252,7 +253,7 @@ export class SQLiteCorrectionMemoryStore implements KeyboardCorrectionMemoryStor
   }
 
   async query(input: string, context: TypingContext): Promise<CorrectionMemoryEntry[]> {
-    if (context.secureInput || context.fieldType === "password" || context.fieldType === "code") return [];
+    if (isSecureContext(context)) return [];
     const normalizedInput = input.trim().toLowerCase();
     if (!normalizedInput) return [];
     return this.db.prepare(`
@@ -306,232 +307,14 @@ function openDatabase(dbPath: string): DatabaseSync {
     return new sqlite.DatabaseSync(dbPath);
   } catch (error) {
     if (error instanceof Error && /No such built-in module: node:sqlite/.test(error.message)) {
-      return new JsonBackedDatabaseSync(dbPath);
+      throw new Error(
+        "SQLite keyboard storage requires a Node.js runtime with node:sqlite. " +
+        "Use JsonFileKeyboardStorage with an explicit .json path for development fallback storage.",
+        { cause: error }
+      );
     }
     throw error;
   }
-}
-
-interface JsonBackedState {
-  settings?: { json: string; updated_at: string };
-  personal_dictionary: Row[];
-  correction_memory: Row[];
-}
-
-class JsonBackedDatabaseSync implements DatabaseSync {
-  private state: JsonBackedState;
-
-  constructor(private readonly dbPath: string) {
-    this.state = this.load();
-  }
-
-  exec(sql: string): void {
-    const normalized = normalizeSql(sql);
-    if (normalized === "delete from personal_dictionary") {
-      this.state.personal_dictionary = [];
-      this.save();
-      return;
-    }
-    if (normalized === "delete from correction_memory") {
-      this.state.correction_memory = [];
-      this.save();
-    }
-  }
-
-  prepare(sql: string): StatementSync {
-    return new JsonBackedStatementSync(this, normalizeSql(sql));
-  }
-
-  close(): void {
-    this.save();
-  }
-
-  getSettings(): Row | undefined {
-    return this.state.settings;
-  }
-
-  upsertSettings(json: string, updatedAt: string): void {
-    this.state.settings = { json, updated_at: updatedAt };
-    this.save();
-  }
-
-  personalDictionaryRows(): Row[] {
-    return [...this.state.personal_dictionary].sort((a, b) =>
-      stringValue(b.updated_at).localeCompare(stringValue(a.updated_at)) || stringValue(a.word).localeCompare(stringValue(b.word), "ne")
-    );
-  }
-
-  upsertPersonalDictionary(values: SqlitePrimitive[]): void {
-    const [id, word, romanizedJson, domainsJson, source, createdAt, updatedAt, schemaVersion] = values;
-    const row: Row = {
-      id,
-      word,
-      romanized_json: romanizedJson,
-      domains_json: domainsJson,
-      source,
-      created_at: createdAt,
-      updated_at: updatedAt,
-      schema_version: schemaVersion
-    };
-    const index = this.state.personal_dictionary.findIndex((entry) => entry.id === id);
-    if (index >= 0) this.state.personal_dictionary[index] = row;
-    else this.state.personal_dictionary.push(row);
-    this.save();
-  }
-
-  removePersonalDictionary(id: SqlitePrimitive): void {
-    this.state.personal_dictionary = this.state.personal_dictionary.filter((entry) => entry.id !== id);
-    this.save();
-  }
-
-  correctionMemoryRows(): Row[] {
-    return [...this.state.correction_memory];
-  }
-
-  upsertCorrectionMemory(values: SqlitePrimitive[]): void {
-    const [
-      id,
-      inputRomanized,
-      inputPreeti,
-      normalizedInput,
-      chosenOutput,
-      normalizedOutput,
-      rejectedAlternativesJson,
-      contextJson,
-      source,
-      frequency,
-      confidenceAtSelection,
-      firstSeen,
-      lastUsed,
-      pinned,
-      blocked,
-      decayWeight
-    ] = values;
-    const existing = this.state.correction_memory.find((entry) => entry.id === id);
-    const row: Row = {
-      id,
-      input_romanized: inputRomanized,
-      input_preeti: inputPreeti,
-      normalized_input: normalizedInput,
-      chosen_output: chosenOutput,
-      normalized_output: normalizedOutput,
-      rejected_alternatives_json: rejectedAlternativesJson,
-      context_json: contextJson,
-      source,
-      frequency,
-      confidence_at_selection: confidenceAtSelection,
-      first_seen: existing?.first_seen ?? firstSeen,
-      last_used: lastUsed,
-      pinned,
-      blocked,
-      decay_weight: decayWeight
-    };
-    const index = this.state.correction_memory.findIndex((entry) => entry.id === id);
-    if (index >= 0) this.state.correction_memory[index] = row;
-    else this.state.correction_memory.push(row);
-    this.save();
-  }
-
-  queryCorrectionMemory(prefix: string): Row[] {
-    const normalizedPrefix = prefix.replace(/%$/, "");
-    return this.state.correction_memory
-      .filter((entry) => stringValue(entry.normalized_input).startsWith(normalizedPrefix))
-      .sort((a, b) => {
-        const pinned = numberValue(b.pinned, 0) - numberValue(a.pinned, 0);
-        if (pinned !== 0) return pinned;
-        const frequency = numberValue(b.frequency, 0) - numberValue(a.frequency, 0);
-        if (frequency !== 0) return frequency;
-        return stringValue(b.last_used).localeCompare(stringValue(a.last_used));
-      })
-      .slice(0, 20);
-  }
-
-  removeCorrectionMemory(normalizedInput: SqlitePrimitive, normalizedOutput?: SqlitePrimitive): void {
-    this.state.correction_memory = this.state.correction_memory.filter((entry) => {
-      if (entry.normalized_input !== normalizedInput) return true;
-      if (normalizedOutput === undefined) return false;
-      return (
-        stringValue(entry.normalized_output).toLowerCase() !== normalizedOutput &&
-        stringValue(entry.chosen_output).toLowerCase() !== normalizedOutput
-      );
-    });
-    this.save();
-  }
-
-  private load(): JsonBackedState {
-    if (!existsSync(this.dbPath)) {
-      return { personal_dictionary: [], correction_memory: [] };
-    }
-    try {
-      const parsed = JSON.parse(readFileSync(this.dbPath, "utf8"));
-      return {
-        settings: isRecord(parsed.settings) ? parsed.settings : undefined,
-        personal_dictionary: Array.isArray(parsed.personal_dictionary) ? parsed.personal_dictionary.filter(isRecord) : [],
-        correction_memory: Array.isArray(parsed.correction_memory) ? parsed.correction_memory.filter(isRecord) : []
-      };
-    } catch {
-      return { personal_dictionary: [], correction_memory: [] };
-    }
-  }
-
-  private save(): void {
-    writeFileSync(this.dbPath, `${JSON.stringify(this.state, null, 2)}\n`);
-  }
-}
-
-class JsonBackedStatementSync implements StatementSync {
-  constructor(
-    private readonly db: JsonBackedDatabaseSync,
-    private readonly sql: string
-  ) {}
-
-  all(...params: SqlitePrimitive[]): unknown[] {
-    if (this.sql.startsWith("select id, word, romanized_json")) return this.db.personalDictionaryRows();
-    if (this.sql.startsWith("select * from correction_memory where normalized_input like")) {
-      return this.db.queryCorrectionMemory(String(params[0] ?? ""));
-    }
-    if (this.sql.startsWith("select * from correction_memory order by")) {
-      return this.db.correctionMemoryRows().sort((a, b) => stringValue(b.last_used).localeCompare(stringValue(a.last_used)));
-    }
-    return [];
-  }
-
-  get(): unknown {
-    if (this.sql.startsWith("select json from settings")) return this.db.getSettings();
-    return undefined;
-  }
-
-  run(...params: SqlitePrimitive[]): unknown {
-    if (this.sql.startsWith("insert into settings")) {
-      this.db.upsertSettings(String(params[0] ?? ""), String(params[1] ?? ""));
-      return {};
-    }
-    if (this.sql.startsWith("insert into personal_dictionary")) {
-      this.db.upsertPersonalDictionary(params);
-      return {};
-    }
-    if (this.sql.startsWith("delete from personal_dictionary where id = ?")) {
-      this.db.removePersonalDictionary(params[0]);
-      return {};
-    }
-    if (this.sql.startsWith("insert into correction_memory")) {
-      this.db.upsertCorrectionMemory(params);
-      return {};
-    }
-    if (this.sql.startsWith("delete from correction_memory where normalized_input = ? and")) {
-      this.db.removeCorrectionMemory(params[0], params[1]);
-      return {};
-    }
-    if (this.sql.startsWith("delete from correction_memory where normalized_input = ?")) {
-      this.db.removeCorrectionMemory(params[0]);
-      return {};
-    }
-    return {};
-  }
-}
-
-function normalizeSql(sql: string): string {
-  return sql.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function normalizeSettings(value: unknown): KeyboardSettings {

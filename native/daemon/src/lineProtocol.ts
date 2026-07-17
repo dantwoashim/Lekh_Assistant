@@ -1,9 +1,7 @@
 import {
-  IPC_SCHEMA_VERSION,
   createIpcErrorResponse,
-  validateIpcEnvelope
+  createIpcRequest
 } from "../../shared/ipc/messages";
-import type { IpcRequest } from "../../shared/ipc/messages";
 import { KeyboardDaemon } from "./keyboardDaemon";
 
 export const MAX_IPC_LINE_BYTES = 64 * 1024;
@@ -59,31 +57,11 @@ export function createDaemonLineHandler(daemon = new KeyboardDaemon()): DaemonLi
         );
       }
 
-      const validation = validateIpcEnvelope(parsed);
-      if (!validation.ok) {
-        const partial = parsed as Partial<IpcRequest>;
-        const response = createIpcErrorResponse({
-          id: typeof partial.id === "string" && partial.id ? partial.id : "invalid",
-          type: "health.check"
-        }, {
-          code: "IPC_SCHEMA_INVALID",
-          message: validation.errors.join(" "),
-          recoverable: true
-        });
-        return JSON.stringify(response);
-      }
-
-      const response = await daemon.handle(parsed as IpcRequest);
+      const response = await daemon.handle(parsed);
       return JSON.stringify(response);
     },
     async shutdown(): Promise<void> {
-      const shutdownRequest: IpcRequest = {
-        id: "daemon_cli_shutdown",
-        type: "engine.shutdown",
-        version: IPC_SCHEMA_VERSION,
-        sentAt: Date.now(),
-        payload: undefined
-      };
+      const shutdownRequest = createIpcRequest("engine.shutdown", null, "daemon_cli_shutdown");
       await daemon.handle(shutdownRequest);
     }
   };

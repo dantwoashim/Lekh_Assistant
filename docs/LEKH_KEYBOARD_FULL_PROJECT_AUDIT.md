@@ -1,5 +1,7 @@
 # Lekh Keyboard Full Project Audit and Production Readiness Roadmap
 
+> Historical baseline: this audit records the repository state examined in June 2026. For current release truth and the 2026-07-17 cross-audit hardening status, use [CURRENT_PRODUCTION_READINESS_STATUS.md](CURRENT_PRODUCTION_READINESS_STATUS.md). Do not treat historical pass counts or native-install claims below as current artifact evidence.
+
 Audit date: 2026-06-09  
 Workspace: `/Users/rohanbasnet14/Documents/Romanized-Nepali-Keyboard`  
 Fresh evidence folder: `/Users/rohanbasnet14/Documents/Romanized-Nepali-Keyboard/reports/full-audit-2026-06-09T06-15-19-307Z`  

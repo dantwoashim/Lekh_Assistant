@@ -2,6 +2,39 @@ import CoreML
 import CryptoKit
 import Foundation
 
+/// Pure, model-independent admission policy for the optional neural tail.
+///
+/// The deterministic engine owns exact shared tokens. Neural input must also
+/// leave room for an explicit EOS token and be fully representable by the
+/// verified character vocabulary. Rejecting any unknown character is stricter
+/// than an unknown-token-ratio threshold and prevents the model from guessing
+/// from a lossy `<unk>`-heavy encoding.
+public struct LekhNeuralInputAdmissionPolicy {
+  private let maxLength: Int
+  private let representableTokens: Set<String>
+  private let deterministicTokenInputs: Set<String>
+
+  public init(
+    maxLength: Int,
+    representableTokens: Set<String>,
+    deterministicTokenInputs: Set<String>
+  ) {
+    self.maxLength = maxLength
+    self.representableTokens = representableTokens
+    self.deterministicTokenInputs = deterministicTokenInputs
+  }
+
+  public func accepts(_ normalizedInput: String) -> Bool {
+    let inputTokens = Array(normalizedInput).map(String.init)
+    guard !inputTokens.isEmpty,
+          inputTokens.count < maxLength,
+          !deterministicTokenInputs.contains(normalizedInput) else {
+      return false
+    }
+    return inputTokens.allSatisfy { representableTokens.contains($0) }
+  }
+}
+
 public final class LekhNeuralCandidateService {
   public static let shared = LekhNeuralCandidateService()
 
@@ -19,7 +52,7 @@ public final class LekhNeuralCandidateService {
   private var runtimeState: LekhNeuralRuntimeState = .loading
   private var model: MLModel?
   private var vocab: LekhNeuralVocabMetadata?
-  private var deterministicTokenInputs: Set<String> = []
+  private var inputAdmissionPolicy: LekhNeuralInputAdmissionPolicy?
 
   public var status: String {
     runtimeStateLock.lock()
@@ -56,9 +89,7 @@ public final class LekhNeuralCandidateService {
     guard let runtime = inferenceSnapshot(),
           LekhMixedScriptPolicy.preserveCandidate(for: rawInput) == nil,
           Self.isSafeToken(normalized),
-          normalized.count < runtime.vocab.input.maxLength,
-          Self.isRepresentableInput(normalized, vocab: runtime.vocab),
-          !runtime.deterministicTokenInputs.contains(normalized),
+          runtime.inputAdmissionPolicy.accepts(normalized),
           normalized.count >= 3 else {
       completion([])
       return
@@ -96,12 +127,12 @@ public final class LekhNeuralCandidateService {
   private func inferenceSnapshot() -> (
     model: MLModel,
     vocab: LekhNeuralVocabMetadata,
-    deterministicTokenInputs: Set<String>
+    inputAdmissionPolicy: LekhNeuralInputAdmissionPolicy
   )? {
     runtimeStateLock.lock()
     defer { runtimeStateLock.unlock() }
-    guard runtimeState.canInfer, let model, let vocab else { return nil }
-    return (model, vocab, deterministicTokenInputs)
+    guard runtimeState.canInfer, let model, let vocab, let inputAdmissionPolicy else { return nil }
+    return (model, vocab, inputAdmissionPolicy)
   }
 
   private func loadVerifiedRuntime(bundle: Bundle) {
@@ -111,6 +142,9 @@ public final class LekhNeuralCandidateService {
     var loadedState: LekhNeuralRuntimeState = .gated(.resourceMissing)
     var requiresKnownAnswerAttestation = false
     do {
+      guard !deterministicInputs.isEmpty else {
+        throw LekhNeuralGateFailure.deterministicTokenPackUnavailable
+      }
       let artifact = try Self.loadVerifiedArtifact(bundle: bundle)
       verifiedArtifact = artifact
       if experimentalEnabled {
@@ -139,9 +173,14 @@ public final class LekhNeuralCandidateService {
     }
 
     runtimeStateLock.lock()
-    deterministicTokenInputs = deterministicInputs
     model = verifiedArtifact?.model
     vocab = verifiedArtifact?.vocab
+    inputAdmissionPolicy = verifiedArtifact.map { artifact in
+      Self.makeInputAdmissionPolicy(
+        vocab: artifact.vocab,
+        deterministicTokenInputs: deterministicInputs
+      )
+    }
     runtimeState = loadedState
     runtimeStateLock.unlock()
 
@@ -240,8 +279,15 @@ public final class LekhNeuralCandidateService {
   }
 
   private static func encodedInput(_ input: String, vocab: LekhNeuralVocabMetadata) throws -> MLMultiArray {
-    let array = try MLMultiArray(shape: [1, NSNumber(value: vocab.input.maxLength)], dataType: .int32)
     let chars = Array(input).map(String.init)
+    guard chars.count < vocab.input.maxLength,
+          chars.allSatisfy({ character in
+            guard let tokenId = vocab.input.idsByToken[character] else { return false }
+            return tokenId != vocab.input.unkId
+          }) else {
+      throw LekhNeuralInferenceFailure.inputNotRepresentable
+    }
+    let array = try MLMultiArray(shape: [1, NSNumber(value: vocab.input.maxLength)], dataType: .int32)
     for index in 0..<vocab.input.maxLength {
       let value: Int
       if index < chars.count {
@@ -343,11 +389,24 @@ public final class LekhNeuralCandidateService {
     return containsDevanagari
   }
 
-  private static func isRepresentableInput(_ value: String, vocab: LekhNeuralVocabMetadata) -> Bool {
-    Array(value).allSatisfy { character in
-      guard let tokenId = vocab.input.idsByToken[String(character)] else { return false }
-      return tokenId != vocab.input.unkId
-    }
+  private static func makeInputAdmissionPolicy(
+    vocab: LekhNeuralVocabMetadata,
+    deterministicTokenInputs: Set<String>
+  ) -> LekhNeuralInputAdmissionPolicy {
+    let specialTokenIds = Set([
+      vocab.input.padId,
+      vocab.input.sosId,
+      vocab.input.eosId,
+      vocab.input.unkId
+    ])
+    let representableTokens = Set(vocab.input.idsByToken.compactMap { entry in
+      specialTokenIds.contains(entry.value) ? nil : entry.key
+    })
+    return LekhNeuralInputAdmissionPolicy(
+      maxLength: vocab.input.maxLength,
+      representableTokens: representableTokens,
+      deterministicTokenInputs: deterministicTokenInputs
+    )
   }
 
   private static func loadVerifiedArtifact(bundle: Bundle) throws -> LekhVerifiedNeuralArtifact {
@@ -875,6 +934,7 @@ private enum LekhNeuralGateFailure: String, Error {
   case modelHashMismatch = "model-hash-mismatch"
   case modelLoadFailed = "model-load-failed"
   case modelIOContractInvalid = "model-io-contract-invalid"
+  case deterministicTokenPackUnavailable = "deterministic-token-pack-unavailable"
   case manifestNotProductionEligible = "manifest-not-production-eligible"
   case productionProvenanceInvalid = "production-provenance-invalid"
   case productionQualityInvalid = "production-quality-invalid"
@@ -882,6 +942,10 @@ private enum LekhNeuralGateFailure: String, Error {
   case productionLimitationsPresent = "production-limitations-present"
   case knownAnswerAttestationFailed = "known-answer-attestation-failed"
   case artifactVerificationFailed = "artifact-verification-failed"
+}
+
+private enum LekhNeuralInferenceFailure: Error {
+  case inputNotRepresentable
 }
 
 private struct LekhVerifiedNeuralArtifact {

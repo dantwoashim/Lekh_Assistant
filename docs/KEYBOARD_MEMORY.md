@@ -1,20 +1,21 @@
 # Keyboard Memory
 
-Updated: 2026-05-27
+Updated: 2026-07-17
 
 Keyboard memory personalizes candidate ranking locally after a user commits a candidate.
 
 ## Current Implementation
 
-- `commitCandidate` records the accepted candidate when the context is not secure.
+- `commitCandidate` records the accepted candidate only when the host explicitly classifies the field as `normal` or `search`; missing, secure, password, code, and unknown classifications fail closed.
 - The memory entry stores input, chosen output, mode, and surrounding context.
 - Future updates can boost the accepted candidate to the top.
-- `learnCorrection(entry)` can import compatible local entries.
+- `learnCorrection(entry)` remains a trusted in-process import boundary for compatible local entries; it is not exposed to an untrusted daemon client.
+- Daemon `memory.learn` carries only a live session id plus a one-time server-issued commit epoch. It confirms an already server-derived non-secure learning event and cannot submit text, context, timestamps, or ranking fields.
 
 ## Covered Behavior
 
 - selecting `प्रबिनको` for `prabin` can make `प्रबिनको` the top future candidate;
-- secure/password/code contexts do not record memory;
+- secure/password/code/unknown/unclassified contexts do not record memory;
 - memory candidates do not override protected structured tokens.
 
 ## Storage Status

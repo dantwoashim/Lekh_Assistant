@@ -31,6 +31,16 @@ describe("daemon CLI line protocol", () => {
     const empty = JSON.parse(await handler.handleLine(" "));
     expect(empty.error).toEqual(expect.objectContaining({ code: "IPC_EMPTY_LINE", recoverable: true }));
 
+    const invalidPayload = JSON.parse(await handler.handleLine(JSON.stringify({
+      id: "invalid_payload",
+      type: "session.setMode",
+      version: 1,
+      sentAt: 1,
+      payload: { sessionId: "session-1", mode: "invented" }
+    })));
+    expect(invalidPayload).toEqual(expect.objectContaining({ id: "invalid_payload", ok: false, type: "session.setMode" }));
+    expect(invalidPayload.error).toEqual(expect.objectContaining({ code: "IPC_SCHEMA_INVALID", recoverable: true }));
+
     await handler.shutdown();
   });
 

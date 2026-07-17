@@ -193,7 +193,7 @@ export function companionSettingsToTypingContext(
     const needle = item.toLowerCase();
     return appName.toLowerCase().includes(needle) || appId.toLowerCase().includes(needle);
   });
-  const secureInput = Boolean(patch.secureInput || patch.fieldType === "password" || patch.fieldType === "code" || !normalized.enableLocalMemory || normalized.pauseLearning || appExcluded);
+  const secureInput = Boolean(patch.secureInput || patch.fieldType === "password" || patch.fieldType === "code" || patch.fieldType === "unknown" || !normalized.enableLocalMemory || normalized.pauseLearning || appExcluded);
 
   return {
     leftTextWindow: "",

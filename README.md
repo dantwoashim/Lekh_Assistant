@@ -65,29 +65,29 @@ npm run package:macos:imk:test-installer
 
 Because this artifact is ad-hoc signed unless `LEKH_MAC_DEVELOPER_ID` is provided at build time, a downloaded zip can be blocked by Gatekeeper. For test builds only, open **System Settings > Privacy & Security** and choose **Open Anyway** for `Lekh Keyboard Test Installer.app`.
 
-If macOS shows only **Move to Trash** or **Done** with no install/open option, use the terminal fallback included in the zip:
+If macOS shows only **Move to Trash** or **Done** with no install/open option, use the authenticated terminal fallback included in the zip. Open Terminal, type `bash` followed by one space, drag `Install Lekh Keyboard from Terminal.command` into the Terminal window, and press Return. Do not recursively remove quarantine attributes from the extracted folder.
 
 ```bash
-cd ~/Downloads/'Lekh Keyboard Test Installer'
-xattr -dr com.apple.quarantine .
-./Install\ Lekh\ Keyboard\ from\ Terminal.command
+bash "/path/to/Lekh Keyboard Test Installer/Install Lekh Keyboard from Terminal.command"
 ```
 
-That fallback is only for unsigned QA builds. Production builds must be Developer ID signed, notarized, and stapled instead of asking users to bypass Gatekeeper.
+That fallback first creates a private metadata-clean snapshot of the complete extracted release, authenticates the signed closed-world inventory of that exact snapshot, verifies its code signature, and then runs the same installer from the snapshot. It is only for unsigned QA builds; it does not turn the build into an Apple-trusted or notarized release.
 
-The zip also includes `Verify Lekh Release.command`, `SHA256SUMS.txt`, `RELEASE-MANIFEST.json`, `RELEASE-MANIFEST.json.minisig`, and `lekh-release-manifest-minisign.pub`. Testers with `minisign` installed can verify the extracted folder before installing:
+The zip also includes `Verify Lekh Release.command`, `SHA256SUMS.txt`, `RELEASE-MANIFEST.json`, `RELEASE-MANIFEST.json.minisig`, and `lekh-release-manifest-minisign.pub`. The verifier is self-contained and does not require Homebrew or a separately installed `minisign` binary. To avoid Finder launching the quarantined helper in place, run the verifier through Terminal; it creates and authenticates a private metadata-clean snapshot:
 
 ```bash
-./Verify\ Lekh\ Release.command
+bash "/path/to/Lekh Keyboard Test Installer/Verify Lekh Release.command"
 ```
 
-For terminal-first QA distribution without Developer ID, the release folder also generates a Homebrew Cask:
+The canonical signing key and its independently checkable fingerprint are published in [`docs/security/RELEASE_SIGNING_KEYS.md`](docs/security/RELEASE_SIGNING_KEYS.md). Package verification proves integrity under that project-owned key; it does not prove an Apple-verified developer identity.
+
+The generated Homebrew Cask is a convenience for technical testers, not a Gatekeeper bypass or a substitute for Developer ID identity and notarization:
 
 ```bash
 brew install --cask ./release/native/macos/lekh-keyboard-test.rb
 ```
 
-After installation, choose `Lekh Keyboard` from the macOS input menu in the menu bar. If it does not appear immediately, log out and back in, then add it from **Keyboard Settings > Text Input > Edit > Nepali**. The packaged uninstaller asks for confirmation, restores the previous input source when macOS allows it, and deletes local learned words, dictionary packs, model files, install backups, caches, and Lekh logs.
+After installation, save your work and log out and back in. Then open **System Settings > Keyboard > Text Input > Edit**, click **+**, and add `Lekh Keyboard` under **Nepali**. An unsigned installer can request TIS registration but cannot honestly guarantee that macOS persisted user approval, so the installer deliberately reports those as separate states. The packaged uninstaller asks for confirmation, restores the previous input source when macOS allows it, and deletes local learned words, dictionary packs, model files, install backups, caches, and Lekh logs.
 
 Current macOS IMK test-build behavior includes:
 

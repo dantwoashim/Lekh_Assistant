@@ -90,7 +90,7 @@ export function buildCandidateUpdate(session: KeyboardSession, options: Candidat
       proofHints: [],
       shouldShowCandidateUI: false,
       confidence: 1,
-      warnings: dedupeWarnings([...warnings, "Secure/code field: raw pass-through only."]),
+      warnings: dedupeWarnings([...warnings, "Secure/uncertain field: raw pass-through only."]),
       latencyMs: nowMs() - start,
       schemaVersion: 1
     };

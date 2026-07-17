@@ -63,6 +63,7 @@ describe("keyboard native storage contracts", () => {
 
     expect(await store.query("pra", defaultTypingContext("romanized"))).toHaveLength(1);
     expect(await store.query("pra", { ...defaultTypingContext("romanized"), secureInput: true })).toHaveLength(0);
+    expect(await store.query("pra", { ...defaultTypingContext("romanized"), fieldType: "unknown" })).toHaveLength(0);
   });
 
   it("forgets correction memory entries by input and optional output", async () => {
@@ -90,6 +91,7 @@ describe("keyboard native storage contracts", () => {
       proofHints: [],
       lastUpdateTime: Date.now(),
       lastCommittedText: "",
+      commitEpoch: 0,
       warnings: [],
       committedHistory: []
     };

@@ -1,99 +1,112 @@
 # Current Production Readiness Status
 
-Generated: 2026-06-10
+Updated: 2026-07-17
 
-## Current Decision
+Evidence basis: the current reviewed source revision and the hardening changes described below. These changes have passed tests but are not present in the previously shared build 176 archive until a new archive is built and verified.
 
-Final launch recommendation: `NOT_READY_BLOCKED_BY_EXTERNAL_NATIVE_REQUIREMENTS`.
+## Current decision
 
-The JavaScript/TypeScript keyboard engine, default verification loop, hard-timeout test gate, corpus package gate, active blind leakage gate, bundle budget gate, third-party notice gate, Keyboard Lab validation path, companion shell, unsigned macOS companion dev package, unsigned macOS IMK development input-method package, dev daemon/IPC contract, and privacy checks are currently passing. The native-facing engine API now returns explicit host actions (`passThrough`, `compose`, `commit`, `cancel`, `errorFallback`), user-data safety fails closed without Git metadata, Windows TSF IPC source uses bounded overlapped named-pipe IO, and the daemon line protocol rejects oversized IPC payloads. The macOS IMK dev input source now builds, installs, registers, enables, and launch-smokes locally without auto-selecting globally. The project is not public-launch-ready because macOS host-app typing matrix validation still needs to be completed, Windows TSF has not been built/tested on Windows, signed installers are unavailable, Traditional physical layout needs human LTK validation, and real pilot feedback is not complete.
+Lekh is a promising experimental macOS preview, not a production keyboard and not yet the complete product Niraj requested.
 
-## User-Reported Readiness List
+Canonical release decision: `NOT_READY_BLOCKED_BY_EXTERNAL_NATIVE_REQUIREMENTS`.
 
-| Area | Current status | Evidence | Remaining blocker |
-| --- | --- | --- | --- |
-| Production verification | ready for default repo gate | `npm run verify` passed on 2026-06-10 with product-truth, bundle budget, corpus, installer-flow, and notice gates | rerun before release tag |
-| Full test reliability | ready for default suites | 35 files / 233 tests passed in `npm run verify`; `test:native-scaffold` passed with 7 files / 24 tests | keep timing gates in CI |
-| Full corpus | partial | D1-D8 row counts present; package check passed | only 124 human/project-reviewed gold rows |
-| Real blind benchmark | partial | 100k blind rows frozen; active disjointness contamination is `0`; 1,896 public-proof eligible benchmark fixtures | not a 100k human-reviewed real-world blind set |
-| Mixed Nepali-English flagship behavior | ready for engine/lab validation | typing-session protected/mixed suites pass | private pilot tuning still needed |
-| Traditional physical keyboard | blocked-human | normal audit gate passes pending scaffold; `audit:traditional-layout:final` fails until verified layout JSON exists | LTK capture and typist validation required |
-| Windows native keyboard | blocked-native-environment | TSF source exists, safe pass-through guard is tested by source scan, and IPC client uses bounded overlapped IO | real Windows build, TSF host tests, signing cert |
-| macOS native keyboard | partial native-dev proof | `npm run build:macos`, `npm run package:macos:imk:dev`, `native/macos-imk/skeleton/install-dev.sh`, `npm run check:macos-imk-bundle`, and `npm run check:macos-imk-install` pass; input source `com.lekh.inputmethod.keyboard` registers, enables, launch-smokes, and packages the local runtime suggestions pack without auto-selecting globally | host-app typing matrix, XPC service, Developer ID/notarization |
-| Production companion app | partial | `npm run build:companion` passed; `npm run package:macos:unsigned` produced `/Users/rohanbasnet14/Documents/Romanized-Nepali-Keyboard/release/Lekh Keyboard Companion.app` | signed/notarized package and daemon/service integration |
-| Installers/signing | blocked-external plus implementation work | Windows package command now blocks honestly on macOS; mac unsigned companion package passes | Windows release machine, Authenticode cert, Developer ID, notarization |
-| Public launch | not ready | scorecard says `NOT_READY_BLOCKED_BY_EXTERNAL_NATIVE_REQUIREMENTS` | platform tests, signing, Traditional validation, pilot feedback |
+Machine-readable product markers retained for automated truth checks:
 
-## Issue Closure Snapshot
+- `Windows native keyboard | blocked-native-environment`
+- `macOS native keyboard | partial native-dev proof`
+- `Traditional physical keyboard | blocked-human`
 
-| ID | Status | Evidence |
+The native completion target remains a production macOS IMK input method with host-app matrix evidence. Under the current no-Developer-ID constraint, the project can ship only a transparently unsigned community preview, not that production-equivalent channel.
+
+- **Community Unsigned macOS Preview:** source is approaching a new QA candidate, but the old build 176 archive must not be represented as containing the latest fixes. Rebuild it, verify it, and perform clean-account install/use/uninstall testing before redistribution.
+- **Apple-trusted macOS production channel:** unavailable under the explicit no-Developer-ID constraint. The project will not pretend that ad-hoc signing, Minisign, Homebrew, or manual approval equals Apple notarization.
+- **Windows keyboard:** blocked on implementation. The current TSF code is a fail-open feasibility skeleton; it does not begin a real engine session, own a TSF composition, apply marked or committed text, or render candidates.
+- **Original product request:** incomplete. Romanized and internal Traditional modes exist on macOS, but authoritative Traditional physical-layout validation, working Windows support, cross-host suggestions/proofreading, and a dictionary with dependable meanings remain unfinished.
+
+## Request-to-product truth
+
+| Requested capability | Current evidence | Honest status |
 | --- | --- | --- |
-| P0-01 | fixed | Typecheck passes and package/runtime identity is now `lekh-keyboard`. |
-| P0-02 | fixed | `npm run test` exits cleanly. |
-| P0-03 | fixed | `npm run verify` passes after removing duplicate self-smoke work. |
-| P0-04 | fixed for gate truth | `npm run corpus:keyboard:package-check` is wired into `verify` and exposes human-reviewed row count. |
-| P0-05 | fixed | scorecard fails on stale required reports and p95 target misses; launch recommendation now distinguishes native implementation failure. |
-| P1-01 | fixed | `benchmark:romanized:self:smoke` now runs 140 cases in under 1s in the latest run. |
-| P1-02 | fixed | mixed full-span fixtures pass in typing-session. |
-| P1-03 | fixed | `swasthay` correction fixture passes. |
-| P1-04 | fixed | `nagrikta praman patr` correction fixture passes. |
-| P1-05 | fixed | unknown English-like token preserve gate covered. |
-| P1-06 | fixed | protected spans no longer preserve the whole mixed sentence. |
-| P1-07 | fixed for engine policy | loanword preference/context candidates present; user preference remains settings/pilot work. |
-| P1-08 | blocked-human | Traditional physical layout cannot be completed without source capture. |
-| P1-09 | fixed | active-prefix proofread suppression covered. |
-| P1-10 | partial/safe | Windows TSF source now defaults to pass-through unless experimental key-eating flag is set; macOS IMK dev input source builds, installs, registers, enables, launch-smokes, packages local runtime suggestions, and does not auto-select; real host-app typing matrix still needed. |
-| P1-11 | fixed | scorecard marks companion as partial, not complete native keyboard. |
-| P2-01 | fixed | perf gate fails on target misses; latest p95 targets pass. |
-| P2-02 | partially fixed/gated | app shell and feature chunks are split; `check:bundle-budget` passes; remaining large chunks are approved lazy local data/Hunspell packs. |
-| P2-03 | fixed for current docs | current readiness docs now reflect command evidence. |
-| P2-04 | fixed | corpus package reports human-reviewed gold rows separately. |
-| P2-05 | fixed | `ram` exact-name prior test passes. |
-| P2-06 | partial | hostile cases exist; real human-reviewed blind benchmark remains data work. |
-| P2-07 | fixed | `verify` runs typecheck before build. |
-| P3-01 | partial | current docs updated; historical prompt reports remain archival clutter. |
-| P3-02 | partial | native docs are tied to explicit build/package blockers. |
-| P3-03 | pending | runtime JSON packs work; compact binary/trie packs remain optimization work. |
-| P0 native action gap | fixed | `CandidateUpdate.action` and `CommitResult.action` now expose host decisions; keyboard tests cover pass-through, commit, cancel, and error fallback. |
-| P0 user-data fail-open | fixed | `check:user-data` passes in Git and fails closed outside Git metadata. |
-| P0 Traditional final gate | fixed | `audit:traditional-layout:final` exits 1 with explicit missing verified layout files. |
-| P1 runtime scan risk | improved | runtime suggestion pack now uses a lazy prefix index instead of whole-pack scans per keystroke. |
-| P1 IPC hardening | improved | daemon line protocol has 64KB payload cap, named-pipe socket timeout, and oversized payload tests. |
+| macOS Romanized keyboard | Native IMK and local candidate engine exist; significant automated Swift coverage exists | experimental; real-host and pilot evidence incomplete |
+| macOS Traditional keyboard | Internal Traditional pipelines and fallback mappings exist | blocked on authoritative LTK layout capture and skilled human validation |
+| Windows Romanized/Traditional keyboard | C++ TSF and daemon scaffolds exist; default key eating is disabled | not implemented as a usable keyboard |
+| auto-suggestions | Local candidate, completion, and ranking code exists | useful prototype; cross-engine conformance and host acceptance incomplete |
+| proofreading while typing | Proof-hint code and macOS UI paths exist | not certified across target host applications |
+| dictionary while typing | Lookup returns words, aliases, domains, and some metadata | meanings/definitions and product UX are incomplete |
+| neural acceleration | Build 176 contains an experimental local Core ML model | `productionEligible` is false; `.all` compute units do not prove Neural Engine execution |
+| trusted macOS installation | Project-owned signed manifest and ad-hoc code signature exist | cryptographic integrity is possible; Apple identity/notarization is not |
 
-## Latest Key Metrics
+## Verified on 2026-07-17
 
-| Metric | Latest value |
-| --- | ---: |
-| typing-session fixtures | 66 |
-| typing-session failed sessions | 0 |
-| duplicate candidate count | 0 |
-| shortcut sequence validity | 1.0 |
-| Romanized live update p95 | 1 ms |
-| dictionary lookup p95 | 8 ms |
-| memory ranking p95 | 0 ms |
-| 5KB Preeti side utility p95 | 19 ms |
-| public-proof eligible fixtures | 1,896 |
-| human/project-reviewed gold rows | 124 |
-| frozen blind rows | 100,000 |
-
-## Native Evidence
-
-| Command | Result |
+| Check | Result |
 | --- | --- |
-| `npm run test:native-scaffold` | passed, 7 files / 25 tests |
-| `npm run build:daemon` | passed |
-| `npm run build:windows` | `blocked-native-environment` on darwin-arm64 |
-| `npm run package:windows:unsigned` | `blocked-native-environment` on darwin-arm64; manual Windows commands emitted |
-| `npm run build:macos` | passed; Swift IMK target builds |
-| `npm run package:macos:imk:dev` | passed; unsigned IMK input-method bundle produced |
-| `native/macos-imk/skeleton/install-dev.sh` | passed; installed, registered, and enabled `com.lekh.inputmethod.keyboard` without auto-selecting |
-| `npm run check:macos-imk-bundle` | passed; bundle includes executable, Info.plist, and local runtime suggestions pack |
-| `npm run check:macos-imk-install` | passed; installed bundle is discoverable and launch-smoked |
-| `npm run package:macos:unsigned` | passed; produced `/Users/rohanbasnet14/Documents/Romanized-Nepali-Keyboard/release/mac-arm64/Lekh Keyboard Companion.app` |
-| `npm run audit:traditional-layout:final` | expected fail; verified layout JSON files are missing, so final launch gate remains blocked-human |
+| TypeScript project build | `tsc -b --noEmit` passed |
+| Full Vitest run | 57 test files passed, 1 skipped; 411 tests passed, 1 skipped |
+| Focused safety/release run | 8 files and 117 tests passed |
+| Native IMK privacy/security policy | passed with zero violations |
+| Swift helper compilation | registration and self-contained release-verifier helpers compiled for arm64 and x86_64 |
+| Swift native behavior probe | candidate, delimiter, four-mode, and neural input-admission contracts passed |
+| Neural runtime manifest | `passed-experimental`; production provenance/context-rescorer warnings remain |
+| Production dependency audit | zero known npm vulnerabilities reported |
+| Generated terminal shell syntax | install and uninstall scripts passed `bash -n` |
 
-## Public Claim Boundary
+This evidence disproves the supplied masterplan's current headline claim that TypeScript typechecking is un-runnable. Large embedded data, overlapping project graphs, and inflated bundles remain architectural debt; a stale OOM observation is not a present stop-ship fact.
 
-Allowed: local-first engine/lab validation, verified repo checks, Romanized engine behavior, mixed/protected-token behavior, proofread/dictionary/memory prototypes, companion dev shell, unsigned macOS companion dev package, unsigned macOS IMK development input-method package that installs/registers/enables/launch-smokes without auto-selecting globally, native source/proof scaffolds.
+## Hardening implemented in the current working tree
 
-Not allowed yet: public launch, production Windows IME, production macOS IMK input method with host-app matrix evidence, signed/notarized installers, 99% universal accuracy, complete Traditional physical keyboard, complete LTK replacement.
+1. TypeScript range operations now respect extended grapheme boundaries for Devanagari combining sequences, virama conjuncts, emoji modifiers, and ZWJ sequences.
+2. A transition into a secure or uncertain field atomically clears surrounding text windows, active composition, candidates, proof hints, last committed text, and committed history.
+3. Named-pipe work and responses are serialized in arrival order; the five-second idle disconnect was replaced with a substantially longer development policy pending final lifecycle design.
+4. The macOS release verifier is self-contained: a bundled, hash-pinned CryptoKit helper verifies the legacy Ed25519 Minisign packet without requiring Homebrew or a tester-installed `minisign` executable.
+5. The terminal path creates a private metadata-clean snapshot of the complete release, verifies that exact closed-world snapshot, verifies code-sign integrity, and only then executes it.
+6. Installer and helper messages no longer claim that transient TIS enablement proves persistent macOS approval. Instructions explicitly separate installation, registration request, logout/login, and user approval in System Settings.
+7. Recursive quarantine removal was removed from current instructions. The canonical release-key fingerprint and the limits of project-owned signing are documented.
+8. All 17 daemon request types now pass exact, bounded runtime payload validation before dispatch. No-argument wire payloads use JSON-safe `null`, malformed hot-path requests cannot reach the engine, and correction-memory writes require an explicitly `normal` or `search` session. `memory.learn` accepts only a one-time server-issued `{sessionId, commitEpoch}` receipt and cannot carry client-supplied text or context.
+9. The TypeScript SQLite adapter no longer writes JSON fallback bytes into a `.sqlite3` path. Unsupported Node runtimes fail closed with actionable guidance, while tests prove the SQLite header, integrity/reopen behavior, and byte-for-byte preservation of rejected non-SQLite files.
+10. The supported development runtime is explicit (`node >=22.5`, `.nvmrc` 24, npm 11.8.0), matching the first Node release that provides `node:sqlite` and the CI matrix.
+11. The experimental neural tail now bypasses exact deterministic tokens, fails closed if the deterministic pack is unavailable, reserves an EOS slot, and rejects any input token that the verified vocabulary cannot represent. These are admission-safety fixes, not proof of Neural Engine execution or production quality.
+
+These are source changes, not retroactive repairs to build 176.
+
+## Highest-priority remaining work
+
+1. **One executable behavior contract:** create a versioned JSONL corpus for key events, grapheme deletion, secure transitions, protected spans, candidates, commits, and failure actions; run it against TypeScript and Swift before choosing a shared-engine technology.
+2. **One real Windows vertical slice:** implement focus/session lifecycle, `ToUnicodeEx` key translation, typed JSON, `ITfEditSession`, composition update/commit/cancel, protected input scopes, and candidate application. A key must never be eaten unless equivalent text was successfully applied.
+3. **Harden the daemon boundary:** validate every payload, bind request order and identity, add a user-only pipe ACL and server-owner verification, isolate real deadlines, persist safely, rate-limit learning, and recover independently of the companion.
+4. **Build a real storage migration boundary:** never write JSON to `.sqlite3`; validate before transactional import; use versioned copy-and-promote migrations; retain rollback; and never persist reconstructable surrounding sentences.
+5. **Add native CI:** macOS must compile Swift, run behavior probes, and test unsigned packaging; Windows must compile the TSF DLL and daemon, then exercise IPC and at least Notepad plus a dedicated password-field host.
+6. **Obtain human language authority:** recruit experienced Traditional/LTK typists and Nepali linguists to approve the physical layout, correction policy, names, dictionary meanings, and ambiguous Romanized behavior.
+7. **Prove neural value honestly:** evaluate with production overrides disabled, reconcile conflicting reports, measure both architectures, record actual compute-device evidence where available, and keep the deterministic path authoritative until gates pass.
+8. **Reduce accidental complexity:** replace static giant data imports with a validated `PackRepository`, split project graphs, consolidate task orchestration and living documentation, and decompose files by change reason after behavior is characterized.
+
+## No-Developer-ID release policy
+
+| Channel | Permitted claim | Required gates |
+| --- | --- | --- |
+| Build from source | transparent developer/community build | pinned dependencies, documented commands, reproducible provenance, tests |
+| Community Unsigned Preview | manually approved experimental QA binary | project-key signature, dependency-free verification, exact inventory, clean-account install/use/uninstall, explicit Gatekeeper limitations, no auto-update |
+| Apple-trusted production | normal consumer distribution | Developer ID, notarization, stapling, native matrices, pilot evidence |
+
+The first two channels remain valid without paying Apple. They are not renamed substitutes for the third.
+
+## Non-negotiable release invariants
+
+- No keystroke is lost, duplicated, or reordered; uncertainty fails open.
+- Secure and uncertain fields cause zero suggestions, zero learning, zero retained text, and zero text diagnostics.
+- No IPC payload touches engine or storage state before exact runtime validation.
+- One behavior corpus defines platform semantics; reimplementations must conform.
+- Benchmarks exclude runtime overrides and training/fixture leakage.
+- Every shipped archive is bound to a clean source revision and authenticated under the published project key.
+- Documentation distinguishes implemented, tested, experimentally packaged, human-validated, and production-eligible states.
+- A release gate must be executable and evidence-producing; a source-string assertion is not runtime proof.
+
+## Next release gate
+
+Do not send another archive until all of the following are true:
+
+1. Current source changes are committed to a stable revision.
+2. A fresh universal macOS archive is built from that clean revision.
+3. The archive passes its bundled verifier after normal Finder extraction.
+4. Install, logout/login, System Settings approval, selection, typing, and uninstall are tested from a clean user account.
+5. TextEdit and at least one browser/editor host pass Romanized typing, deletion, commit, candidate selection, protected-token, and secure-field smoke tests.
+6. The message to the tester states that the build is unsigned, unnotarized, experimental, manually approved, and not the completed Windows/Traditional product.

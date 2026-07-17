@@ -30,7 +30,9 @@ let package = Package(
         "register-dev.swift",
         "restore-system-keyboard.sh",
         "restore-system-keyboard.swift",
+        "terminate-exact-processes.swift",
         "uninstall-dev.sh",
+        "verify-release-manifest.swift",
         "Tests"
       ],
       sources: [

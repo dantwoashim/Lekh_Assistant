@@ -1,9 +1,10 @@
 import { applyProofread } from "../proofread";
 import type { ProofreadHint as EngineProofreadHint } from "../proofread";
+import { isSecureContext } from "./modes";
 import type { ProofHint, TypingContext } from "./types";
 
 export function getKeyboardProofHints(textWindow: string, context?: TypingContext): ProofHint[] {
-  if (!textWindow.trim() || context?.secureInput || context?.fieldType === "password" || context?.fieldType === "code") return [];
+  if (!textWindow.trim() || (context ? isSecureContext(context) : false)) return [];
   const result = applyProofread(textWindow, { autoFix: false });
   const activePrefix = activeDevanagariPrefixRange(textWindow);
   return result.hints

@@ -8,6 +8,7 @@ import type {
   PersonalDictionaryStore
 } from "../../../src/engine/keyboard/storage";
 import { defaultKeyboardSettings } from "../../../src/engine/keyboard/storage";
+import { isSecureContext } from "../../../src/engine/keyboard/modes";
 import type { DictionaryResult, TypingContext } from "../../../src/engine/keyboard/types";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
 
@@ -152,7 +153,7 @@ export class JsonFileCorrectionMemoryStore implements KeyboardCorrectionMemorySt
   }
 
   async query(input: string, context: TypingContext): Promise<CorrectionMemoryEntry[]> {
-    if (context.secureInput || context.fieldType === "password" || context.fieldType === "code") return [];
+    if (isSecureContext(context)) return [];
     const normalizedInput = input.trim().toLowerCase();
     const current = await this.storage.read();
     return current.correctionMemory.filter((entry) => entry.normalizedInput.toLowerCase().startsWith(normalizedInput));

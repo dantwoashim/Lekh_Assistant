@@ -82,12 +82,22 @@ require(service.includes("DispatchQueue(label: \"com.lekh.inputmethod.neural-can
 require(service.includes("neverInvokeInSecureFields"), "Runtime must enforce the secure-field policy from vocab metadata.");
 require(service.includes("public func cancelPending()"), "Runtime must expose explicit pending-inference cancellation.");
 require(
-  service.includes("!deterministicTokenInputs.contains(normalized)"),
+  service.includes("runtime.inputAdmissionPolicy.accepts(normalized)") &&
+    service.includes("!deterministicTokenInputs.contains(normalizedInput)") &&
+    service.includes("deterministicTokenPackUnavailable"),
   "Runtime must bypass neural inference for exact shared deterministic tokens."
 );
 require(service.includes("let budgetNanoseconds: UInt64 = 45_000_000"), "Runtime must enforce the measured 45 ms decode budget.");
-require(service.includes("normalized.count < vocab.input.maxLength"), "Runtime must reserve an EOS slot instead of silently truncating neural input.");
-require(service.includes("Self.isRepresentableInput(normalized, vocab: vocab)"), "Runtime must reject unknown-token-heavy inputs.");
+require(
+  service.includes("inputTokens.count < maxLength") &&
+    service.includes("guard chars.count < vocab.input.maxLength"),
+  "Runtime must reserve an EOS slot instead of silently truncating neural input."
+);
+require(
+  service.includes("inputTokens.allSatisfy { representableTokens.contains($0) }") &&
+    service.includes("return tokenId != vocab.input.unkId"),
+  "Runtime must reject unknown-token-heavy inputs."
+);
 const nativeBeamCap = Number(service.match(/min\((\d+), vocab\.decoder\.beamWidth\)/u)?.[1]);
 require(Number.isInteger(nativeBeamCap) && nativeBeamCap >= 1, "Native runtime beam cap could not be proven from source.");
 require(nativeBeamCap <= manifest.beamSearch?.beamWidth, "Native beam cap must not exceed the evaluated manifest beam width.");

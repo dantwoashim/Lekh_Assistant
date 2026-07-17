@@ -246,7 +246,10 @@ if shouldSelect {
     fputs("Lekh Keyboard input source could not be selected. status=\(selection.status)\n", stderr)
     exit(5)
   }
-  print("Lekh Keyboard input source registered, normalized, enabled, and selected through TIS. id=\(inputSourceId) duplicatesDisabled=\(duplicateSourcesDisabled)")
+  print("Lekh Keyboard input source registered, normalized, and selected through TIS. id=\(inputSourceId) duplicatesDisabled=\(duplicateSourcesDisabled)")
 } else {
-  print("Lekh Keyboard input source registered, normalized, and enabled through TIS. It was not selected. id=\(inputSourceId) duplicatesDisabled=\(duplicateSourcesDisabled)")
+  // TIS accepting enablement does not prove that System Settings has persisted
+  // approval for an unsigned third-party input method. Keep this diagnostic
+  // precise so callers never turn a transient TIS state into a false claim.
+  print("Lekh Keyboard input source registered and TIS accepted the enable request. It was not selected; macOS may still require approval in System Settings. id=\(inputSourceId) duplicatesDisabled=\(duplicateSourcesDisabled)")
 }

@@ -201,6 +201,12 @@ export interface CommitResult {
   committedText: string;
 
   /**
+   * Monotonic session-local epoch for this commit. Native clients must echo
+   * this value when explicitly confirming correction learning.
+   */
+  commitEpoch: number;
+
+  /**
    * Range inside active composition buffer consumed by this commit.
    * Offset unit: UTF-16 code units at the native boundary.
    */
@@ -259,6 +265,7 @@ export interface KeyboardEngine {
   lookupDictionary(query: string, context?: TypingContext): DictionaryResult[];
 
   learnCorrection(entry: unknown): void;
+  learnCommittedCorrection(sessionId: SessionId, commitEpoch: number): boolean;
 
   setContext(sessionId: SessionId, patch: Partial<TypingContext>): void;
   setMode(sessionId: SessionId, mode: KeyboardMode): void;
@@ -279,6 +286,7 @@ export interface KeyboardSession {
   proofHints: ProofHint[];
   lastUpdateTime: number;
   lastCommittedText: string;
+  commitEpoch: number;
   warnings: string[];
   committedHistory: string[];
 }

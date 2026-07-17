@@ -69,6 +69,7 @@ const memorySession: KeyboardSession = {
   proofHints: [],
   lastUpdateTime: 0,
   lastCommittedText: "",
+  commitEpoch: 0,
   warnings: [],
   committedHistory: []
 };

@@ -6,6 +6,10 @@
   "author": "Lekh",
   "license": "MIT",
   "type": "module",
+  "packageManager": "npm@11.8.0",
+  "engines": {
+    "node": ">=22.5"
+  },
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",

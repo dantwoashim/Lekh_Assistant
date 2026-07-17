@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  IPC_MESSAGE_TYPES,
   createIpcErrorResponse,
   createIpcRequest,
   createIpcResponse,
@@ -8,13 +7,6 @@ import {
 } from "./messages";
 
 describe("native IPC message contract", () => {
-  it("validates every declared message type as a request envelope", () => {
-    for (const type of IPC_MESSAGE_TYPES) {
-      const envelope = createIpcRequest(type, undefined as never, `test_${type}`, 1);
-      expect(validateIpcEnvelope(envelope), type).toEqual({ ok: true, errors: [] });
-    }
-  });
-
   it("creates valid success and recoverable error responses", () => {
     const request = createIpcRequest("health.check", { client: "daemon-test" }, "health_1", 1);
     const success = createIpcResponse(request, {

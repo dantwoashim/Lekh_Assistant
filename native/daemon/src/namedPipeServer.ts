@@ -4,7 +4,7 @@ import { MAX_IPC_LINE_BYTES, createDaemonLineHandler } from "./lineProtocol";
 import { defaultWindowsPipeName } from "./windowsPipeName";
 
 export const WINDOWS_PIPE_NAME = defaultWindowsPipeName();
-const SOCKET_IDLE_TIMEOUT_MS = 5_000;
+export const SOCKET_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 export interface NamedPipeDaemon {
   pipeName: string;
@@ -43,6 +43,13 @@ function wireSocket(socket: Socket, handler: ReturnType<typeof createDaemonLineH
     socket.destroy(new Error("Named pipe client timed out."));
   });
   let buffer = "";
+  const responses = createOrderedResponseQueue(
+    (line) => handler.handleLine(line),
+    (response) => {
+      socket.write(`${response}\n`);
+    },
+    namedPipeErrorResponse
+  );
 
   socket.on("data", (chunk) => {
     buffer += chunk;
@@ -66,23 +73,52 @@ function wireSocket(socket: Socket, handler: ReturnType<typeof createDaemonLineH
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
     for (const line of lines) {
-      void handler.handleLine(line).then(
-        (response) => socket.write(`${response}\n`),
-        (error) =>
-          socket.write(
-            `${JSON.stringify({
-              id: "named_pipe_failed",
-              type: "health.check",
-              version: 1,
-              ok: false,
-              error: {
-                code: "NAMED_PIPE_REQUEST_FAILED",
-                message: error instanceof Error ? error.message : String(error),
-                recoverable: true
-              }
-            })}\n`
-          )
-      );
+      void responses.enqueue(line);
+    }
+  });
+}
+
+export interface OrderedResponseQueue {
+  enqueue(line: string): Promise<void>;
+  drain(): Promise<void>;
+}
+
+export function createOrderedResponseQueue(
+  handleLine: (line: string) => Promise<string>,
+  writeLine: (response: string) => void | Promise<void>,
+  errorResponse: (error: unknown) => string
+): OrderedResponseQueue {
+  let tail = Promise.resolve();
+  return {
+    enqueue(line) {
+      const current = tail.then(async () => {
+        try {
+          await writeLine(await handleLine(line));
+        } catch (error) {
+          await writeLine(errorResponse(error));
+        }
+      });
+      // A failed transport write must not allow a later request to overtake it
+      // or permanently poison the queue. Socket errors are handled separately.
+      tail = current.catch(() => undefined);
+      return current;
+    },
+    drain() {
+      return tail;
+    }
+  };
+}
+
+function namedPipeErrorResponse(error: unknown): string {
+  return JSON.stringify({
+    id: "named_pipe_failed",
+    type: "health.check",
+    version: 1,
+    ok: false,
+    error: {
+      code: "NAMED_PIPE_REQUEST_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      recoverable: true
     }
   });
 }

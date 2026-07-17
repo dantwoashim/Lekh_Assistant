@@ -1,3 +1,4 @@
+import { isSecureContext } from "./modes";
 import type { DictionaryResult, TypingContext } from "./types";
 import type { CorrectionMemoryEntry } from "../memory/types";
 
@@ -124,7 +125,7 @@ export class InMemoryKeyboardCorrectionMemoryStore implements KeyboardCorrection
   }
 
   async query(input: string, context: TypingContext): Promise<CorrectionMemoryEntry[]> {
-    if (context.secureInput || context.fieldType === "password" || context.fieldType === "code") return [];
+    if (isSecureContext(context)) return [];
     const normalizedInput = input.trim().toLowerCase();
     return this.entries.filter((entry) => entry.normalizedInput.toLowerCase().startsWith(normalizedInput));
   }

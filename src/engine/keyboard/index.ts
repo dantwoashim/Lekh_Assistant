@@ -50,7 +50,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     if (!this.sessions.has(sessionId)) return unknownSessionUpdate(sessionId, "", 0);
     const session = this.sessions.get(sessionId);
     if (isSecureContext(session.context)) {
-      return withAction(this.refresh(sessionId), "passThrough", "Secure/code field: native key passed through without composition.");
+      return withAction(this.refresh(sessionId), "passThrough", "Secure/uncertain field: native key passed through without composition.");
     }
     if (isCandidateShortcutKey(key) && session.compositionText.length > 0) {
       const update = this.refresh(sessionId);
@@ -116,6 +116,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
         sessionId,
         action: "compose",
         committedText: "",
+        commitEpoch: session.commitEpoch,
         consumedRange: candidate.replaceRange ?? [0, session.compositionText.length],
         followupCandidates: [],
         memoryRecorded: false,
@@ -124,11 +125,19 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     }
     const result = commitCandidateResult(session, candidate);
     if (result.memoryRecorded) {
-      this.memoryEntries = recordKeyboardMemorySelection(this.memoryEntries, session, candidate);
-      this.memoryVersion += 1;
+      const nextEntries = recordKeyboardMemorySelection(this.memoryEntries, session, candidate);
+      result.memoryRecorded = nextEntries !== this.memoryEntries;
+      if (result.memoryRecorded) {
+        this.memoryEntries = nextEntries;
+        this.memoryVersion += 1;
+      }
     }
     result.followupCandidates = nextWordCandidates(result.committedText, session);
-    this.sessions.recordCommit(sessionId, result.committedText);
+    result.commitEpoch = this.sessions.recordCommit(
+      sessionId,
+      result.committedText,
+      result.memoryRecorded && candidate.type !== "protected"
+    );
     this.cache.clear(sessionId);
     this.refreshCache.delete(sessionId);
     return result;
@@ -139,7 +148,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     const session = this.sessions.get(sessionId);
     const result = commitRawResult(session);
     result.followupCandidates = nextWordCandidates(result.committedText, session);
-    this.sessions.recordCommit(sessionId, result.committedText);
+    result.commitEpoch = this.sessions.recordCommit(sessionId, result.committedText);
     this.cache.clear(sessionId);
     this.refreshCache.delete(sessionId);
     return result;
@@ -175,6 +184,10 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     this.memoryEntries = importKeyboardMemoryEntry(this.memoryEntries, entry);
     this.memoryVersion += 1;
     this.refreshCache.clear();
+  }
+
+  learnCommittedCorrection(sessionId: SessionId, commitEpoch: number): boolean {
+    return this.sessions.consumeCorrectionLearningGrant(sessionId, commitEpoch) !== undefined;
   }
 
   setContext(sessionId: SessionId, patch: Partial<TypingContext>): void {

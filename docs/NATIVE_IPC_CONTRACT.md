@@ -51,7 +51,7 @@ interface IpcResponse<T = unknown> {
 | `suggestions.get` | `getSuggestions` |
 | `proofHints.get` | `getProofHints` |
 | `dictionary.lookup` | `lookupDictionary` |
-| `memory.learn` | `learnCorrection` |
+| `memory.learn` | `learnCommittedCorrection` using a one-time server-issued commit receipt |
 | `diagnostics.getMetrics` | daemon diagnostics wrapper |
 | `engine.shutdown` | `shutdown` |
 
@@ -67,6 +67,7 @@ interface IpcResponse<T = unknown> {
 - Production preference: length-prefixed CBOR or MessagePack.
 - Debug mode: JSON.
 - The schema is versioned as `version: 1`.
+- `memory.learn` payload is exactly `{sessionId, commitEpoch}`. It cannot transport a correction entry or surrounding text, and returns `learned: false` for missing, stale, replayed, ended, secure, uncertain, or unclassified sessions.
 
 ## Security
 

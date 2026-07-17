@@ -2,6 +2,7 @@ import { lookupByRomanized, wordsByNormalized } from "../../core/dictionary/load
 import { normalizeNepaliText } from "../../core/normalize/normalizeNepaliText";
 import { loadLexicalAuthority } from "../lexicon";
 import { queryLexiconByRomanized, queryRuntimeDictionary } from "../lexicon/authority";
+import { isSecureContext } from "./modes";
 import type { DictionaryResult, TypingContext } from "./types";
 
 const LOOKUP_CACHE_MAX = 512;
@@ -9,7 +10,7 @@ const lookupCache = new Map<string, DictionaryResult[]>();
 
 export function lookupKeyboardDictionary(query: string, context?: TypingContext): DictionaryResult[] {
   const trimmed = query.trim();
-  if (!trimmed || context?.secureInput || context?.fieldType === "password" || context?.fieldType === "code") return [];
+  if (!trimmed || (context ? isSecureContext(context) : false)) return [];
 
   const normalized = normalizeNepaliText(trimmed);
   const cacheKey = `${normalized}\u0000${trimmed.toLowerCase()}`;

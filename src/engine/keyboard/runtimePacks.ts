@@ -1,6 +1,7 @@
 import runtimePack from "../../data/keyboard-packs/v0.1/runtime-suggestions.json";
 import predictionModel from "../../data/keyboard-packs/v0.1/prediction-model.json";
 import { convertRomanized } from "../romanized";
+import { isSecureContext } from "./modes";
 import { romanizedCanonicalKey, romanizedToleranceKeys, romanizedToleranceMatch } from "./romanizationTolerance";
 import type { Candidate, TypingContext } from "./types";
 
@@ -96,7 +97,7 @@ export function runtimePackVersion(): string {
 }
 
 export function runtimePackCandidates(input: string, context?: TypingContext, rangeEnd = input.length): Candidate[] {
-  if (context?.secureInput || context?.fieldType === "password" || context?.fieldType === "code") return [];
+  if (context ? isSecureContext(context) : false) return [];
   const normalized = normalizeRoman(input);
   if (normalized.length < 2) return [];
   const packIndexes = runtimePackIndexes();

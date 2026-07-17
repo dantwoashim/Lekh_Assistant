@@ -32,3 +32,11 @@ RWTn5TpP0Eb66L+FGf3KnXjxWNmDSvTv1Ac6u8rpflmN2iYNmFxNGSv9
 ```
 
 Used to verify the detached signature for `RELEASE-MANIFEST.json`.
+
+SHA-256 of the final Base64 public-key line (the fingerprint printed by the bundled verifier):
+
+```text
+9aecb50ce961d9ee898f6b5bd23e27de02463cb88135ea5e115939811898db77
+```
+
+Compare the verifier's printed fingerprint with this value through an independent copy of the repository or its GitHub page. A key and fingerprint bundled only inside the same downloaded archive are not, by themselves, an independent statement of publisher identity. This project-owned signature authenticates release integrity; it does not replace Apple Developer ID signing or notarization.

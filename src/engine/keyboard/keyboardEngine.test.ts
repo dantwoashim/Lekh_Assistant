@@ -227,7 +227,7 @@ describe("KeyboardEngine session API", () => {
 
   it("commits selected candidate and clears composition", () => {
     const engine = createKeyboardEngine();
-    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), fieldType: "normal" });
     const update = engine.updateComposition(sessionId, "karyalaya", 9);
     const result = engine.commitCandidate(sessionId, update.primary?.id ?? "");
     expect(result.action).toBe("commit");
@@ -658,7 +658,7 @@ describe("KeyboardEngine session API", () => {
 
   it("boosts repeated local memory selections without using secure fields", () => {
     const engine = createKeyboardEngine();
-    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), fieldType: "normal" });
     let update = engine.updateComposition(sessionId, "prabin", 6);
     const second = update.candidates.find((candidate) => candidate.text !== update.primary?.text);
     expect(second).toBeTruthy();
@@ -719,7 +719,7 @@ describe("KeyboardEngine session API", () => {
     expect(result.followupCandidates?.some((candidate) => candidate.text === "दर्ता")).toBe(true);
   });
 
-  it("preserves raw input in secure contexts", () => {
+  it("passes secure input through without retaining or echoing it", () => {
     const engine = createKeyboardEngine();
     const context = {
       ...defaultTypingContext("romanized"),
@@ -728,7 +728,9 @@ describe("KeyboardEngine session API", () => {
     };
     const sessionId = engine.beginSession(context);
     const update = engine.updateComposition(sessionId, "swasthya", 8);
-    expect(update.displayText).toBe("swasthya");
+    expect(update.action).toBe("passThrough");
+    expect(update.compositionText).toBe("");
+    expect(update.displayText).toBe("");
     expect(update.candidates).toHaveLength(0);
     expect(update.proofHints).toHaveLength(0);
     expect(update.warnings.join(" ")).toMatch(/Secure/);
@@ -752,7 +754,7 @@ describe("KeyboardEngine session API", () => {
 
   it("flushes sessions and local memory on shutdown", async () => {
     const engine = createKeyboardEngine();
-    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), fieldType: "normal" });
     const update = engine.updateComposition(sessionId, "prabin", 6);
     const alternate = update.candidates.find((candidate) => candidate.text !== update.primary?.text);
     expect(alternate).toBeTruthy();
@@ -809,6 +811,16 @@ describe("KeyboardEngine session API", () => {
     expect(commit.committedText).toBe("");
   });
 
+  it("never stores a composition caret inside an extended grapheme", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession(defaultTypingContext("traditional"));
+
+    const update = engine.updateComposition(sessionId, "कि", 1);
+
+    expect(update.compositionText).toBe("कि");
+    expect(update.caret).toBe(0);
+  });
+
   it("evicts idle sessions with TTL cleanup for daemon lifecycle safety", () => {
     const manager = new KeyboardSessionManager(1, 2);
     const first = manager.beginSession(defaultTypingContext("romanized"));
@@ -818,5 +830,100 @@ describe("KeyboardEngine session API", () => {
     expect(manager.cleanupExpired(Date.now() + 10)).toBeGreaterThan(0);
     expect(manager.has(first)).toBe(false);
     expect(manager.has(second)).toBe(false);
+  });
+
+  it("atomically purges retained text and assistance when a session becomes secure", () => {
+    const manager = new KeyboardSessionManager();
+    const sessionId = manager.beginSession({
+      ...defaultTypingContext("romanized"),
+      leftTextWindow: "prior context ",
+      rightTextWindow: "after"
+    });
+    manager.recordCommit(sessionId, "निजी");
+    manager.updateComposition(sessionId, "secret", 6);
+    manager.updateCandidates(sessionId, [{
+      id: "private-candidate",
+      text: "गोप्य",
+      type: "word",
+      confidence: 0.9,
+      reason: ["test"]
+    }]);
+    manager.updateProofHints(sessionId, [{
+      range: [0, 6],
+      original: "secret",
+      suggestion: "गोप्य",
+      type: "spelling",
+      confidence: 0.9,
+      action: "hint-only",
+      explanation: "test"
+    }]);
+
+    const secured = manager.updateContext(sessionId, {
+      fieldType: "password",
+      secureInput: true,
+      leftTextWindow: "new password",
+      rightTextWindow: "sensitive suffix"
+    });
+
+    expect(secured.context.leftTextWindow).toBe("");
+    expect(secured.context.rightTextWindow).toBe("");
+    expect(secured.compositionText).toBe("");
+    expect(secured.caret).toBe(0);
+    expect(secured.candidates).toEqual([]);
+    expect(secured.proofHints).toEqual([]);
+    expect(secured.lastCommittedText).toBe("");
+    expect(secured.committedHistory).toEqual([]);
+  });
+
+  it("never retains host text when a session starts secure or uncertain", () => {
+    for (const fieldType of ["password", "code", "unknown"] as const) {
+      const manager = new KeyboardSessionManager();
+      const sessionId = manager.beginSession({
+        ...defaultTypingContext("romanized"),
+        fieldType,
+        leftTextWindow: "sensitive left context",
+        rightTextWindow: "sensitive right context"
+      });
+      const session = manager.get(sessionId);
+      expect(session.context.secureInput, fieldType).toBe(true);
+      expect(session.context.leftTextWindow, fieldType).toBe("");
+      expect(session.context.rightTextWindow, fieldType).toBe("");
+      expect(session.warnings.join(" "), fieldType).toMatch(/Secure\/uncertain/);
+    }
+  });
+
+  it("rejects every later text-bearing mutation while a session remains secure", () => {
+    const manager = new KeyboardSessionManager();
+    const sessionId = manager.beginSession({
+      ...defaultTypingContext("romanized"),
+      fieldType: "unknown"
+    });
+
+    manager.updateComposition(sessionId, "secret composition", 6);
+    manager.updateCandidates(sessionId, [{
+      id: "secret-candidate",
+      text: "secret candidate",
+      type: "word",
+      confidence: 0.9,
+      reason: ["secret reason"]
+    }], ["secret warning"]);
+    manager.updateProofHints(sessionId, [{
+      range: [0, 6],
+      original: "secret",
+      suggestion: "private",
+      type: "spelling",
+      confidence: 0.9,
+      action: "hint-only",
+      explanation: "secret explanation"
+    }]);
+    manager.recordCommit(sessionId, "secret commit");
+
+    const session = manager.get(sessionId);
+    expect(session.compositionText).toBe("");
+    expect(session.candidates).toEqual([]);
+    expect(session.proofHints).toEqual([]);
+    expect(session.lastCommittedText).toBe("");
+    expect(session.committedHistory).toEqual([]);
+    expect(JSON.stringify(session)).not.toContain("secret");
   });
 });

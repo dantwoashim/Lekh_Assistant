@@ -228,9 +228,35 @@ private func verifyCandidatePointerGate() {
   )
 }
 
+private func verifyNeuralInputAdmissionPolicy() {
+  let policy = LekhNeuralInputAdmissionPolicy(
+    maxLength: 6,
+    representableTokens: Set("abcdefghijklmnopqrstuvwxyz".map(String.init)),
+    deterministicTokenInputs: ["bato", "chha"]
+  )
+
+  require(policy.accepts("cafe"), "A representable neural-tail token with an EOS slot must be admitted")
+  require(!policy.accepts("bato"), "An exact shared deterministic token must bypass the neural tail")
+  require(!policy.accepts("chha"), "Every exact shared deterministic token must bypass the neural tail")
+  require(
+    !policy.accepts("abcdef"),
+    "An input that fills the tensor must be rejected so the final slot remains available for EOS"
+  )
+  require(
+    !policy.accepts("a🙂🙂"),
+    "An unknown-token-heavy input must be rejected instead of producing a lossy encoding"
+  )
+  require(
+    !policy.accepts("caf1"),
+    "Even one unknown input character must fail closed before Core ML inference"
+  )
+  require(!policy.accepts(""), "An empty token must not enter neural inference")
+}
+
 verifyCandidateStateMachine()
 verifyAutoCommitPolicy()
 verifyFourModeContract()
 verifyRuntimeActivationGate()
 verifyCandidatePointerGate()
-print("PASS: native candidate, delimiter, and four-mode unit contracts")
+verifyNeuralInputAdmissionPolicy()
+print("PASS: native candidate, delimiter, four-mode, and neural input-admission unit contracts")

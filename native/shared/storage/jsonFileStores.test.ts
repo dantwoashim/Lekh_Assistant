@@ -64,6 +64,7 @@ describe("native JSON file keyboard stores", () => {
 
     expect(await memory.query("pra", defaultTypingContext("romanized"))).toHaveLength(1);
     expect(await memory.query("pra", { ...defaultTypingContext("romanized"), secureInput: true })).toHaveLength(0);
+    expect(await memory.query("pra", { ...defaultTypingContext("romanized"), fieldType: "unknown" })).toHaveLength(0);
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual(
       expect.objectContaining({ schemaVersion: 1, correctionMemory: [expect.objectContaining({ id: "mem_1" })] })
     );

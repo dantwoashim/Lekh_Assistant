@@ -40,6 +40,26 @@
         "version": { "const": 1 },
         "sentAt": { "type": "number" },
         "payload": true
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "memory.learn" } },
+            "required": ["type"]
+          },
+          "then": {
+            "properties": { "payload": { "$ref": "#/$defs/MemoryLearnPayload" } }
+          }
+        }
+      ]
+    },
+    "MemoryLearnPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "commitEpoch"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "commitEpoch": { "type": "integer", "minimum": 1 }
       }
     },
     "IpcResponse": {

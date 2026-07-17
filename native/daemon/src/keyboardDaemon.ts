@@ -1,26 +1,17 @@
 import { createKeyboardEngine } from "../../../src/engine/keyboard";
 import type { CandidateUpdate, CommitResult, KeyboardEngine } from "../../../src/engine/keyboard";
 import {
-  IPC_SCHEMA_VERSION,
   createIpcErrorResponse,
   createIpcResponse,
-  validateIpcEnvelope
+  isIpcMessageType
 } from "../../shared/ipc/messages";
+import { validateIpcRequest } from "../../shared/ipc/requestValidation";
 import type {
-  BeginSessionPayload,
+  AnyTypedIpcRequest,
   BeginSessionResult,
   DiagnosticsMetricsResult,
-  DictionaryLookupPayload,
   HealthCheckResult,
-  IpcRequest,
-  IpcResponse,
-  ProcessKeyStrokePayload,
-  ProofHintsPayload,
-  SessionPayload,
-  SetLayoutPayload,
-  SetModePayload,
-  SuggestionsPayload,
-  UpdateCompositionPayload
+  IpcResponse
 } from "../../shared/ipc/messages";
 
 const DAEMON_VERSION = "0.1.0-dev";
@@ -56,24 +47,23 @@ export class KeyboardDaemon {
     this.startedAt = this.now();
   }
 
-  async handle(request: IpcRequest): Promise<IpcResponse> {
+  async handle(value: unknown): Promise<IpcResponse> {
     const startedAt = this.now();
-    const envelope = validateIpcEnvelope(request);
-    if (!envelope.ok) {
+    const validation = validateIpcRequest(value);
+    if (!validation.ok) {
+      const identity = requestIdentity(value);
       return createIpcErrorResponse(
-        {
-          id: typeof request?.id === "string" && request.id ? request.id : "invalid",
-          type: isKnownType(request?.type) ? request.type : "health.check"
-        },
+        identity,
         {
           code: "IPC_SCHEMA_INVALID",
-          message: envelope.errors.join(" "),
+          message: validation.errors.join(" "),
           recoverable: true
         },
         this.now() - startedAt
       );
     }
 
+    const request = validation.request;
     try {
       const response = await this.dispatch(request);
       response.latencyMs = this.now() - startedAt;
@@ -122,7 +112,7 @@ export class KeyboardDaemon {
     };
   }
 
-  private async dispatch(request: IpcRequest): Promise<IpcResponse> {
+  private async dispatch(request: AnyTypedIpcRequest): Promise<IpcResponse> {
     switch (request.type) {
       case "health.check": {
         const payload: HealthCheckResult = {
@@ -134,12 +124,12 @@ export class KeyboardDaemon {
         return createIpcResponse(request, payload);
       }
       case "engine.warm": {
-        const result = await this.engine.warm(request.payload as never);
+        const result = await this.engine.warm(request.payload ?? undefined);
         this.warmReady = result.ready;
         return createIpcResponse(request, result);
       }
       case "session.begin": {
-        const { context } = request.payload as BeginSessionPayload;
+        const { context } = request.payload;
         const payload: BeginSessionResult = {
           sessionId: this.engine.beginSession(context)
         };
@@ -147,7 +137,7 @@ export class KeyboardDaemon {
         return createIpcResponse(request, payload);
       }
       case "session.processKeyStroke": {
-        const { sessionId, key } = request.payload as ProcessKeyStrokePayload;
+        const { sessionId, key } = request.payload;
         this.counters.processedKeystrokes += 1;
         const result = await this.withHotPathTimeout(
           Promise.resolve().then(() => this.engine.processKeyStroke(sessionId, key)),
@@ -157,7 +147,7 @@ export class KeyboardDaemon {
         return createIpcResponse(request, result.value);
       }
       case "session.updateComposition": {
-        const { sessionId, input, cursor } = request.payload as UpdateCompositionPayload;
+        const { sessionId, input, cursor } = request.payload;
         const result = await this.withHotPathTimeout(
           Promise.resolve().then(() => this.engine.updateComposition(sessionId, input, cursor)),
           HOT_PATH_TIMEOUT_MS,
@@ -166,7 +156,7 @@ export class KeyboardDaemon {
         return createIpcResponse(request, result.value);
       }
       case "session.commitCandidate": {
-        const { sessionId, candidateId } = request.payload as { sessionId: string; candidateId: string };
+        const { sessionId, candidateId } = request.payload;
         const { value: result } = await this.withHotPathTimeout(
           Promise.resolve().then(() => this.engine.commitCandidate(sessionId, candidateId)),
           HOT_PATH_TIMEOUT_MS,
@@ -176,7 +166,7 @@ export class KeyboardDaemon {
         return createIpcResponse(request, result);
       }
       case "session.commitRaw": {
-        const { sessionId } = request.payload as SessionPayload;
+        const { sessionId } = request.payload;
         const { value: result } = await this.withHotPathTimeout(
           Promise.resolve().then(() => this.engine.commitRaw(sessionId)),
           HOT_PATH_TIMEOUT_MS,
@@ -186,41 +176,44 @@ export class KeyboardDaemon {
         return createIpcResponse(request, result);
       }
       case "session.cancel": {
-        const { sessionId } = request.payload as SessionPayload;
+        const { sessionId } = request.payload;
         this.engine.cancelComposition(sessionId);
         return createIpcResponse(request, { cancelled: true });
       }
       case "session.end": {
-        const { sessionId } = request.payload as SessionPayload;
+        const { sessionId } = request.payload;
         this.engine.endSession(sessionId);
         this.activeSessions = Math.max(0, this.activeSessions - 1);
         return createIpcResponse(request, { ended: true });
       }
       case "session.setMode": {
-        const { sessionId, mode } = request.payload as SetModePayload;
+        const { sessionId, mode } = request.payload;
         this.engine.setMode(sessionId, mode);
         return createIpcResponse(request, { mode });
       }
       case "session.setLayout": {
-        const { sessionId, layoutId } = request.payload as SetLayoutPayload;
+        const { sessionId, layoutId } = request.payload;
         this.engine.setLayout(sessionId, layoutId);
         return createIpcResponse(request, { layoutId });
       }
       case "suggestions.get": {
-        const { context } = request.payload as SuggestionsPayload;
+        const { context } = request.payload;
         return createIpcResponse(request, this.engine.getSuggestions(context));
       }
       case "proofHints.get": {
-        const { textWindow, context } = request.payload as ProofHintsPayload;
+        const { textWindow, context } = request.payload;
         return createIpcResponse(request, this.engine.getProofHints(textWindow, context));
       }
       case "dictionary.lookup": {
-        const { query, context } = request.payload as DictionaryLookupPayload;
+        const { query, context } = request.payload;
         return createIpcResponse(request, this.engine.lookupDictionary(query, context));
       }
       case "memory.learn": {
-        this.engine.learnCorrection(request.payload);
-        return createIpcResponse(request, { learned: true });
+        const learned = this.engine.learnCommittedCorrection(
+          request.payload.sessionId,
+          request.payload.commitEpoch
+        );
+        return createIpcResponse(request, { learned });
       }
       case "diagnostics.getMetrics": {
         return createIpcResponse(request, this.metrics());
@@ -231,15 +224,6 @@ export class KeyboardDaemon {
         this.activeSessions = 0;
         return createIpcResponse(request, { shutdown: true });
       }
-      default:
-        return createIpcErrorResponse(
-          request,
-          {
-            code: "IPC_MESSAGE_UNSUPPORTED",
-            message: `Unsupported IPC message: ${request.type}`,
-            recoverable: true
-          }
-        );
     }
   }
 }
@@ -268,12 +252,23 @@ function hotPathCommitFallback(sessionId: string, warning: string): CommitResult
     sessionId,
     action: "passThrough",
     committedText: "",
+    commitEpoch: 0,
     followupCandidates: [],
     memoryRecorded: false,
     schemaVersion: 1
   };
 }
 
-function isKnownType(value: unknown): value is IpcRequest["type"] {
-  return typeof value === "string" && validateIpcEnvelope({ id: "probe", type: value, version: IPC_SCHEMA_VERSION, sentAt: 1, payload: null }).ok;
+function requestIdentity(value: unknown): { id: string; type: AnyTypedIpcRequest["type"] } {
+  if (!isRecord(value)) {
+    return { id: "invalid", type: "health.check" };
+  }
+  return {
+    id: typeof value.id === "string" && value.id ? value.id : "invalid",
+    type: isIpcMessageType(value.type) ? value.type : "health.check"
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

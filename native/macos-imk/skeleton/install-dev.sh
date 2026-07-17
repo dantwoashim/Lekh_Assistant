@@ -172,5 +172,6 @@ archive_stale_lekh_bundles
 /usr/bin/swift "$(dirname "$0")/register-dev.swift" "$DEST"
 /bin/rm -f "$RUNTIME_HEALTH"
 echo "Installed Lekh Keyboard input method to: $DEST"
-echo "Lekh Keyboard was registered and enabled, but not forced as the current keyboard."
+echo "Registration was requested and TIS accepted the enable request; unsigned builds may still require approval in System Settings."
+echo "Lekh Keyboard was not forced as the current keyboard."
 echo "For controlled native testing only: swift native/macos-imk/skeleton/register-dev.swift \"$DEST\" --select-only"

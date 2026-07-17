@@ -1,3 +1,4 @@
+import { isLearningAllowedContext } from "./modes";
 import type { Candidate, CommitResult, KeyboardSession, SessionId } from "./types";
 
 export function commitCandidateResult(session: KeyboardSession, candidate: Candidate): CommitResult {
@@ -5,9 +6,10 @@ export function commitCandidateResult(session: KeyboardSession, candidate: Candi
     sessionId: session.sessionId,
     action: "commit",
     committedText: candidate.text,
+    commitEpoch: session.commitEpoch + 1,
     consumedRange: candidate.replaceRange ?? [0, session.compositionText.length],
     followupCandidates: [],
-    memoryRecorded: !session.context.secureInput && session.context.fieldType !== "password" && session.context.fieldType !== "code",
+    memoryRecorded: isLearningAllowedContext(session.context),
     schemaVersion: 1
   };
 }
@@ -17,6 +19,7 @@ export function commitRawResult(session: KeyboardSession): CommitResult {
     sessionId: session.sessionId,
     action: "commit",
     committedText: session.compositionText,
+    commitEpoch: session.compositionText ? session.commitEpoch + 1 : session.commitEpoch,
     consumedRange: [0, session.compositionText.length],
     followupCandidates: [],
     memoryRecorded: false,
@@ -29,6 +32,7 @@ export function emptyCommitResult(sessionId: SessionId): CommitResult {
     sessionId,
     action: "errorFallback",
     committedText: "",
+    commitEpoch: 0,
     consumedRange: [0, 0],
     followupCandidates: [],
     memoryRecorded: false,

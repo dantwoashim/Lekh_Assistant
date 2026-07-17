@@ -123,7 +123,8 @@ export interface DictionaryLookupPayload {
 }
 
 export interface MemoryLearnPayload {
-  entry: unknown;
+  sessionId: SessionId;
+  commitEpoch: number;
 }
 
 export interface DiagnosticsMetricsResult {
@@ -145,7 +146,7 @@ export interface DiagnosticsMetricsResult {
 
 export type IpcPayloadByType = {
   "health.check": HealthCheckPayload;
-  "engine.warm": WarmOptions | undefined;
+  "engine.warm": WarmOptions | null;
   "session.begin": BeginSessionPayload;
   "session.processKeyStroke": ProcessKeyStrokePayload;
   "session.updateComposition": UpdateCompositionPayload;
@@ -159,8 +160,8 @@ export type IpcPayloadByType = {
   "proofHints.get": ProofHintsPayload;
   "dictionary.lookup": DictionaryLookupPayload;
   "memory.learn": MemoryLearnPayload;
-  "diagnostics.getMetrics": undefined;
-  "engine.shutdown": undefined;
+  "diagnostics.getMetrics": null;
+  "engine.shutdown": null;
 };
 
 export type IpcResultByType = {
@@ -187,6 +188,10 @@ export type TypedIpcRequest<T extends IpcMessageType> = IpcRequest<IpcPayloadByT
   type: T;
 };
 
+export type AnyTypedIpcRequest = {
+  [T in IpcMessageType]: TypedIpcRequest<T>;
+}[IpcMessageType];
+
 export type TypedIpcResponse<T extends IpcMessageType> = IpcResponse<IpcResultByType[T]> & {
   type: T;
 };
@@ -207,13 +212,13 @@ export function createIpcRequest<T extends IpcMessageType>(
 }
 
 export function createIpcResponse<T extends IpcMessageType>(
-  request: Pick<IpcRequest, "id" | "type" | "version">,
+  request: Pick<TypedIpcRequest<T>, "id" | "type" | "version">,
   payload: IpcResultByType[T],
   latencyMs?: number
 ): TypedIpcResponse<T> {
   return {
     id: request.id,
-    type: request.type as T,
+    type: request.type,
     version: IPC_SCHEMA_VERSION,
     ok: true,
     payload,
