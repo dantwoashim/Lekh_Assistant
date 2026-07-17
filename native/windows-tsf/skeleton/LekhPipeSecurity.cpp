@@ -91,7 +91,10 @@ bool SecurityContext::initialize() {
 
   const std::vector<DWORD> systemSidStorage = localSystemSid();
   if (systemSidStorage.empty()) return false;
-  const bool authorizationIsSystem = EqualSid(authorizationSid_.get(), systemSidStorage.data()) == TRUE;
+  const bool authorizationIsSystem = EqualSid(
+    authorizationSid_.get(),
+    const_cast<DWORD*>(systemSidStorage.data())
+  ) == TRUE;
   const std::wstring sddl = authorizationIsSystem
     ? L"D:P(A;;GA;;;SY)"
     : L"D:P(A;;GA;;;SY)(A;;GA;;;" + *authorizationSidString + L")";
