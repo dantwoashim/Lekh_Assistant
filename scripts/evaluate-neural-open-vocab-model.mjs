@@ -19,7 +19,7 @@ const predictionsPath = args.get("predictions") ?? (
     : undefined
 );
 const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-open-vocab-evaluation-production.json" : "neural-open-vocab-evaluation.json");
-const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v1.json");
+const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v2.json");
 const datasetManifestPath = join(root, "data", "generated", "neural-open-vocab", "manifest.json");
 const failures = [];
 const warnings = [];

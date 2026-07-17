@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -6,7 +7,7 @@ import { performance } from "node:perf_hooks";
 const root = process.cwd();
 const startedAt = performance.now();
 const production = process.argv.includes("--production");
-const manifestPath = join(root, "data", "neural", "gold", "manifest.v1.json");
+const manifestPath = join(root, "data", "neural", "gold", "manifest.v2.json");
 const rowSchemaPath = join(root, "data", "neural", "schema", "lekh-neural-gold-row.schema.json");
 const reportPath = join(root, "reports", production ? "neural-gold-eval-production-report.json" : "neural-gold-eval-report.json");
 
@@ -30,10 +31,15 @@ if (rowSchema) {
 }
 
 if (manifest) {
-  assert(manifest.schemaVersion === 1, "Gold manifest schemaVersion must be 1.");
+  assert(manifest.schemaVersion === 2, "Gold manifest schemaVersion must be 2.");
+  assert(manifest.releaseId === "lekh-neural-gold-foundation-v2", "Gold manifest releaseId is not the locked v2 release.");
   assert(Array.isArray(manifest.suites) && manifest.suites.length === 7, "Gold manifest must define exactly seven Phase 1 suites.");
   for (const suite of manifest.suites ?? []) {
     validateSuite(suite, manifest.requiredCases ?? {});
+  }
+  const actualCorpusSha256 = corpusSha256(manifest.suites ?? []);
+  if (manifest.corpusSha256 !== actualCorpusSha256) {
+    failures.push(`Gold corpus digest mismatch: expected ${manifest.corpusSha256}, got ${actualCorpusSha256}.`);
   }
 }
 
@@ -82,6 +88,9 @@ function validateSuite(suite, requiredCases) {
   }
 
   const lines = readFileSync(suitePath, "utf8").split(/\r?\n/).filter(Boolean);
+  const actualSha256 = sha256File(suitePath);
+  if (suite.sha256 !== actualSha256) failures.push(`${suite.path} SHA-256 does not match the locked manifest.`);
+  if (suite.rows !== lines.length) failures.push(`${suite.path} row count does not match the locked manifest.`);
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     let row = null;
     try {
@@ -213,6 +222,25 @@ function assertNfc(value, label) {
   if (String(value).normalize("NFC") !== String(value)) failures.push(`${label} must be NFC-normalized.`);
 }
 
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function corpusSha256(suites) {
+  const hash = createHash("sha256");
+  for (const suite of suites) {
+    hash.update(String(suite.id));
+    hash.update("\0");
+    hash.update(String(suite.path));
+    hash.update("\0");
+    hash.update(String(suite.sha256));
+    hash.update("\0");
+    hash.update(String(suite.rows));
+    hash.update("\n");
+  }
+  return hash.digest("hex");
+}
+
 function readJson(path, label) {
   if (!existsSync(path)) {
     failures.push(`Missing ${label}: ${relative(root, path)}`);
@@ -241,7 +269,8 @@ function finish(status, exitCode) {
     durationMs: Math.round(performance.now() - startedAt),
     status,
     production,
-    manifest: "data/neural/gold/manifest.v1.json",
+    manifest: "data/neural/gold/manifest.v2.json",
+    corpusSha256: manifest?.corpusSha256 ?? null,
     rowSchema: "data/neural/schema/lekh-neural-gold-row.schema.json",
     totalRows,
     totalTestRows,

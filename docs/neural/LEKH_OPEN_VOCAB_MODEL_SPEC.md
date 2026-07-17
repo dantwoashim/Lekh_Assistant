@@ -269,7 +269,7 @@ Phase 1 is complete when these files exist and pass the foundation validator:
 
 ```txt
 data/neural/schema/lekh-neural-gold-row.schema.json
-data/neural/gold/manifest.v1.json
+data/neural/gold/manifest.v2.json
 data/neural/gold/romanized-nepali-token-gold.v1.jsonl
 data/neural/gold/chat-convention-gold.v1.jsonl
 data/neural/gold/names-gold.v1.jsonl
@@ -292,7 +292,7 @@ Production proof is intentionally separate:
 npm run check:neural-gold:production
 ```
 
-The production command must fail until the real human-reviewed row-count targets in `data/neural/gold/manifest.v1.json` are satisfied. Phase 1 seed rows prove the evaluation contract; they are not accuracy evidence for a public neural model.
+The production command must fail until the real human-reviewed row-count targets in `data/neural/gold/manifest.v2.json` are satisfied. Phase 1 seed rows prove the evaluation contract; they are not accuracy evidence for a public neural model.
 
 ## 14. Phase 2 source-cleaning proof
 
@@ -325,9 +325,19 @@ The builder must:
 - reject whitespace outputs;
 - reject Latin outputs;
 - keep protected/pass-through rows as `no-neural-candidate` safety negatives;
-- dedupe rows;
+- finalize order-independent duplicate merges before computing a stable example
+  ID and full-record SHA-256;
 - split by normalized input so input/target pairs cannot leak across train/dev/test;
-- write deterministic JSONL plus a manifest with SHA-256 for every split.
+- verify the locked gold release, private import manifests, source TSV snapshots,
+  legacy split inputs, builder, registry, and row schema;
+- write deterministic JSONL plus a schema-v2 manifest with split row counts,
+  byte counts, SHA-256 values, and one canonical `datasetContentSha256` that
+  excludes only `generatedAt`.
+
+An unchanged input snapshot and builder must reproduce the same dataset content
+identity even when generation time changes. A training report and checkpoint
+must bind that stable identity, exact split hashes, sampled-row digests, and the
+checkpoint digest. Historical evidence is never rewritten to match newer data.
 
 Production proof is intentionally separate:
 

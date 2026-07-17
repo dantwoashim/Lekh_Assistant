@@ -51,7 +51,7 @@ COMPILED_MODEL_DIR = ROOT / "models/macos/LekhNeuralTransliterator.mlmodelc"
 MANIFEST_PATH = ROOT / "models/macos/LekhNeuralTransliterator.manifest.json"
 VOCAB_METADATA_PATH = ROOT / "models/macos/LekhNeuralTransliterator.vocab.json"
 DATASET_MANIFEST_PATH = ROOT / "data/generated/neural-open-vocab/manifest.json"
-GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v1.json"
+GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v2.json"
 CONFIG_PATH = ROOT / "data/neural/training/open-vocab-seq2seq-v1.config.json"
 
 PAD = "<pad>"
@@ -433,6 +433,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "outputVocab": output_vocab,
         "config": vars(args),
         "datasetManifestSha256": sha256_file(args.dataset_manifest),
+        "datasetContentSha256": dataset_manifest.get("datasetContentSha256", ""),
         "datasetSplitSha256": dataset_manifest.get("sha256", {}),
         "parameterCount": sum(parameter.numel() for parameter in model.parameters()),
         "trainingRows": len(train_rows),
@@ -454,6 +455,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "device": str(device),
         "inputDatasetManifest": rel(args.dataset_manifest),
         "inputDatasetManifestSha256": checkpoint["datasetManifestSha256"],
+        "inputDatasetContentSha256": checkpoint["datasetContentSha256"],
         "inputDatasetSplitSha256": checkpoint["datasetSplitSha256"],
         "checkpoint": rel(CHECKPOINT_PATH),
         "checkpointSha256": checkpoint_sha256,
@@ -491,7 +493,7 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
     if not CHECKPOINT_PATH.exists():
         raise SystemExit(f"Missing checkpoint: {CHECKPOINT_PATH}. Run training first.")
     checkpoint = torch.load(CHECKPOINT_PATH, map_location="cpu")
-    for field in ("datasetSplitSha256", "datasetManifestSha256"):
+    for field in ("datasetSplitSha256", "datasetManifestSha256", "datasetContentSha256"):
         if not checkpoint.get(field):
             raise SystemExit(f"Checkpoint is missing historical provenance field: {field}")
     model = Seq2Seq(
@@ -509,6 +511,8 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("Training report split provenance does not match checkpoint provenance.")
     if report.get("inputDatasetManifestSha256") != checkpoint.get("datasetManifestSha256"):
         raise SystemExit("Training report manifest provenance does not match checkpoint provenance.")
+    if report.get("inputDatasetContentSha256") != checkpoint.get("datasetContentSha256"):
+        raise SystemExit("Training report stable dataset identity does not match checkpoint provenance.")
     if not VOCAB_METADATA_PATH.exists():
         raise SystemExit("Checkpoint vocabulary metadata is missing; historical provenance cannot be backfilled from current inputs.")
     return {"model": model, "checkpoint": checkpoint, "report": report}
@@ -765,6 +769,7 @@ def write_vocab_metadata(input_vocab: dict[str, int], output_vocab: dict[str, in
         "dataset": {
             "manifest": rel(args.dataset_manifest),
             "manifestSha256": sha256_file(args.dataset_manifest) if args.dataset_manifest.exists() else "",
+            "contentSha256": dataset_manifest.get("datasetContentSha256", ""),
             "splitSha256": dataset_manifest.get("sha256", {}),
         },
         "nativeRuntimePolicy": {

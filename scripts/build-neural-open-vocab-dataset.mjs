@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
+import {
+  computeNeuralDatasetContentSha256,
+  validateNeuralDatasetManifest
+} from "./lib/neural-dataset-manifest.mjs";
 import {
   createNeuralOpenVocabAccumulator,
   finalizeNeuralOpenVocabAccumulator,
@@ -14,11 +18,13 @@ const root = process.cwd();
 const startedAt = performance.now();
 const production = process.argv.includes("--production");
 const registryPath = join(root, "data", "neural", "sources.v1.json");
-const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v1.json");
+const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v2.json");
 const legacyDatasetDir = join(root, "data", "generated", "neural-transliteration");
 const privateSyubrajPath = join(root, "data", "private", "neural", "syubraj-roman2nepali-transliteration", "syubraj-roman2nepali-transliteration.tsv");
+const privateSyubrajManifestPath = join(dirname(privateSyubrajPath), "manifest.json");
 const privateSyubrajRowLimit = Number(process.env.LEKH_NEURAL_SYUBRAJ_ROW_LIMIT ?? "1200000");
 const privateAksharantarPath = join(root, "data", "private", "neural", "ai4bharat-aksharantar-nepali", "aksharantar-nepali.tsv");
+const privateAksharantarManifestPath = join(dirname(privateAksharantarPath), "manifest.json");
 const privateAksharantarRowLimit = Number(process.env.LEKH_NEURAL_AKSHARANTAR_ROW_LIMIT ?? "1200000");
 const outDir = join(root, "data", "generated", "neural-open-vocab");
 const reportPath = join(root, "reports", production ? "neural-open-vocab-dataset-production-report.json" : "neural-open-vocab-dataset-report.json");
@@ -29,12 +35,15 @@ const rejected = {};
 const rowsByKey = new Map();
 const splitByInput = new Map();
 const sourceCounts = {};
+const sourceConsumption = new Map();
+let generatedManifest = null;
 
 const registry = readJson(registryPath, "source registry");
 const goldManifest = readJson(goldManifestPath, "gold manifest");
 const sources = new Map((registry?.sources ?? []).map((source) => [source.id, source]));
 
 validateRegistry(registry);
+validateGoldRelease(goldManifest);
 loadGoldRows(goldManifest);
 loadLegacyTsvRows();
 loadPrivateSyubrajRows();
@@ -221,6 +230,7 @@ function loadPrivateSyubrajRows() {
     }, `${relative(root, privateSyubrajPath)}:${lineIndex + 2}`);
     imported += 1;
   }
+  sourceConsumption.set(sourceId, imported);
   if (lines.length > imported) {
     warnings.push(`Private syubraj source has ${lines.length} rows; open-vocab builder used the first ${imported} rows for bounded-memory production gating. Set LEKH_NEURAL_SYUBRAJ_ROW_LIMIT to raise this.`);
   }
@@ -284,6 +294,7 @@ function loadPrivateAksharantarRows() {
     }, `${relative(root, privateAksharantarPath)}:${lineIndex + 2}`);
     imported += 1;
   }
+  sourceConsumption.set(sourceId, imported);
   if (lines.length > imported) {
     warnings.push(`Private Aksharantar Nepali source has ${lines.length} rows; open-vocab builder used the first ${imported} rows. Set LEKH_NEURAL_AKSHARANTAR_ROW_LIMIT to raise this.`);
   }
@@ -409,14 +420,21 @@ function validateProductionReadiness(rows) {
 }
 
 function writeOutputs(rows, splitRows) {
-  if (failures.length > 0 && production) return;
+  if (failures.length > 0) return;
   mkdirSync(outDir, { recursive: true });
   for (const split of ["train", "dev", "test"]) {
     writeJsonl(join(outDir, `${split}.jsonl`), splitRows[split]);
   }
+  const splitPaths = {
+    train: join(outDir, "train.jsonl"),
+    dev: join(outDir, "dev.jsonl"),
+    test: join(outDir, "test.jsonl")
+  };
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
+    contentIdentity: "sha256-canonical-json-v1",
+    datasetContentSha256: "",
     datasetId: "lekh-open-vocab-cleaned-v1",
     rowSchema: "data/neural/schema/lekh-neural-open-vocab-row.schema.json",
     sourceRegistry: "data/neural/sources.v1.json",
@@ -427,14 +445,22 @@ function writeOutputs(rows, splitRows) {
     },
     counts: Object.fromEntries(Object.entries(splitRows).map(([split, value]) => [split, value.length])),
     totalRows: rows.length,
+    bytes: Object.fromEntries(Object.entries(splitPaths).map(([split, path]) => [split, statSync(path).size])),
     sha256: {
-      train: fileSha256(join(outDir, "train.jsonl")),
-      dev: fileSha256(join(outDir, "dev.jsonl")),
-      test: fileSha256(join(outDir, "test.jsonl"))
+      train: fileSha256(splitPaths.train),
+      dev: fileSha256(splitPaths.dev),
+      test: fileSha256(splitPaths.test)
     },
-    cleaningPolicy: cleaningPolicy()
+    recordIdentityPolicy: "stable-example-id-and-final-record-sha256-v1",
+    cleaningPolicy: cleaningPolicy(),
+    provenance: datasetProvenance()
   };
+  manifest.datasetContentSha256 = computeNeuralDatasetContentSha256(manifest);
+  const manifestValidation = validateNeuralDatasetManifest(manifest);
+  failures.push(...manifestValidation.issueCodes);
+  if (failures.length > 0) return;
   writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  generatedManifest = manifest;
 }
 
 function writeJsonl(path, rows) {
@@ -468,6 +494,36 @@ function validateRegistry(registry) {
   }
   for (const required of registry.productionRequiredSources ?? []) {
     if (!ids.has(required)) failures.push(`Production required source missing from registry: ${required}`);
+  }
+}
+
+function validateGoldRelease(manifest) {
+  if (!manifest) return;
+  if (manifest.schemaVersion !== 2 || manifest.releaseId !== "lekh-neural-gold-foundation-v2" ||
+      !/^[a-f0-9]{64}$/u.test(String(manifest.corpusSha256 ?? ""))) {
+    failures.push("Open-vocabulary dataset requires the locked neural gold v2 release.");
+  }
+  for (const suite of manifest.suites ?? []) {
+    const path = join(root, suite.path ?? "");
+    if (!existsSync(path)) continue;
+    const rows = readFileSync(path, "utf8").split(/\r?\n/u).filter(Boolean).length;
+    if (suite.sha256 !== fileSha256(path) || suite.rows !== rows) {
+      failures.push(`Locked neural gold suite identity mismatch: ${suite.path}.`);
+    }
+  }
+  const corpusHash = createHash("sha256");
+  for (const suite of manifest.suites ?? []) {
+    corpusHash.update(String(suite.id));
+    corpusHash.update("\0");
+    corpusHash.update(String(suite.path));
+    corpusHash.update("\0");
+    corpusHash.update(String(suite.sha256));
+    corpusHash.update("\0");
+    corpusHash.update(String(suite.rows));
+    corpusHash.update("\n");
+  }
+  if (manifest.corpusSha256 !== corpusHash.digest("hex")) {
+    failures.push("Locked neural gold aggregate corpus digest is stale.");
   }
 }
 
@@ -538,7 +594,119 @@ function sha256(value) {
 }
 
 function fileSha256(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+  const hash = createHash("sha256");
+  const fd = openSync(path, "r");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead = 0;
+    do {
+      bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    closeSync(fd);
+  }
+  return hash.digest("hex");
+}
+
+function datasetProvenance() {
+  const rowSchemaPath = join(root, "data", "neural", "schema", "lekh-neural-open-vocab-row.schema.json");
+  const builderPath = join(root, "scripts", "build-neural-open-vocab-dataset.mjs");
+  return {
+    builder: lockedFile(builderPath),
+    sourceRegistry: lockedFile(registryPath),
+    rowSchema: lockedFile(rowSchemaPath),
+    goldRelease: {
+      ...lockedFile(goldManifestPath),
+      releaseId: goldManifest?.releaseId ?? null,
+      corpusSha256: goldManifest?.corpusSha256 ?? null,
+      suites: (goldManifest?.suites ?? []).map((suite) => ({
+        id: suite.id,
+        path: suite.path,
+        sha256: suite.sha256,
+        rows: suite.rows
+      }))
+    },
+    inputs: [
+      sourceFileProvenance(
+        "syubraj-roman2nepali-transliteration",
+        privateSyubrajPath,
+        privateSyubrajManifestPath,
+        sourceConsumption.get("syubraj-roman2nepali-transliteration") ?? 0,
+        privateSyubrajRowLimit
+      ),
+      sourceFileProvenance(
+        "ai4bharat-aksharantar-nepali",
+        privateAksharantarPath,
+        privateAksharantarManifestPath,
+        sourceConsumption.get("ai4bharat-aksharantar-nepali") ?? 0,
+        privateAksharantarRowLimit
+      ),
+      ...["train", "dev", "test"].map((split) => {
+        const path = join(legacyDatasetDir, `${split}.tsv`);
+        return {
+          id: `legacy-neural-transliteration-${split}`,
+          status: existsSync(path) ? "present" : "missing",
+          path: relative(root, path),
+          sha256: existsSync(path) ? fileSha256(path) : null,
+          bytes: existsSync(path) ? statSync(path).size : null
+        };
+      })
+    ]
+  };
+}
+
+function lockedFile(path) {
+  return {
+    path: relative(root, path),
+    sha256: existsSync(path) ? fileSha256(path) : null,
+    bytes: existsSync(path) ? statSync(path).size : null
+  };
+}
+
+function sourceFileProvenance(id, dataPath, importManifestPath, consumedRows, rowLimit) {
+  if (!existsSync(dataPath)) {
+    return {
+      id,
+      status: "missing",
+      path: relative(root, dataPath),
+      sha256: null,
+      bytes: null,
+      consumedRows: 0,
+      rowLimit,
+      importManifest: null
+    };
+  }
+  const actualSha256 = fileSha256(dataPath);
+  let importManifest = null;
+  if (!existsSync(importManifestPath)) {
+    failures.push(`Imported neural source is missing its provenance manifest: ${relative(root, importManifestPath)}.`);
+  } else {
+    try {
+      const parsed = JSON.parse(readFileSync(importManifestPath, "utf8"));
+      const declaredOutputSha256 = parsed?.output?.sha256 ?? null;
+      if (declaredOutputSha256 !== actualSha256) {
+        failures.push(`Imported neural source digest does not match its provenance manifest: ${id}.`);
+      }
+      importManifest = {
+        path: relative(root, importManifestPath),
+        sha256: fileSha256(importManifestPath),
+        declaredOutputSha256
+      };
+    } catch (error) {
+      failures.push(`Imported neural source provenance manifest is invalid for ${id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return {
+    id,
+    status: "present",
+    path: relative(root, dataPath),
+    sha256: actualSha256,
+    bytes: statSync(dataPath).size,
+    consumedRows,
+    rowLimit,
+    importManifest
+  };
 }
 
 function actualSourceCounts(rows) {
@@ -569,7 +737,6 @@ function cleaningPolicy() {
 
 function finish(status, exitCode) {
   mkdirSync(dirname(reportPath), { recursive: true });
-  const manifestPath = join(outDir, "manifest.json");
   const report = {
     generatedAt: new Date().toISOString(),
     command: production
@@ -580,7 +747,9 @@ function finish(status, exitCode) {
     status,
     production,
     datasetDir: "data/generated/neural-open-vocab",
-    manifest: existsSync(manifestPath) ? "data/generated/neural-open-vocab/manifest.json" : null,
+    manifest: generatedManifest ? "data/generated/neural-open-vocab/manifest.json" : null,
+    manifestSchemaVersion: generatedManifest?.schemaVersion ?? null,
+    datasetContentSha256: generatedManifest?.datasetContentSha256 ?? null,
     sourceRegistry: "data/neural/sources.v1.json",
     privateSources: {
       syubraj: existsSync(privateSyubrajPath) ? relative(root, privateSyubrajPath) : null,

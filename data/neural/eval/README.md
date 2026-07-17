@@ -136,7 +136,7 @@ Those reports must be reproducible from committed scripts plus ignored/private r
 The committed foundation suites are:
 
 ```txt
-data/neural/gold/manifest.v1.json
+data/neural/gold/manifest.v2.json
 data/neural/gold/romanized-nepali-token-gold.v1.jsonl
 data/neural/gold/chat-convention-gold.v1.jsonl
 data/neural/gold/names-gold.v1.jsonl
@@ -203,6 +203,13 @@ The cleaned row schema is:
 ```txt
 data/neural/schema/lekh-neural-open-vocab-row.schema.json
 ```
+
+The generated schema-v2 manifest binds each split's row count, bytes, and
+SHA-256, plus the exact builder, registry, row schema, locked gold release,
+private import snapshots, and legacy inputs. Its canonical
+`datasetContentSha256` excludes only the volatile generation timestamp. Model
+evidence must bind this stable digest; a full manifest-file hash alone is not a
+reproducible dataset identity.
 
 This dataset is allowed to include contract seeds and local silver rows. It is not production data until:
 
