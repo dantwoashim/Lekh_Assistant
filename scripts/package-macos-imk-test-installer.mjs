@@ -788,31 +788,53 @@ const terminalInstallScript = `#!/usr/bin/env bash
 set -euo pipefail
 
 cd "$(dirname "$0")" || exit 1
-INSTALLER_APP="$PWD/Lekh Keyboard Test Installer.app"
-UNINSTALLER_APP="$PWD/Lekh Keyboard Uninstaller.app"
-INSTALLER_BIN="$INSTALLER_APP/Contents/MacOS/install-lekh-keyboard"
+SOURCE_INSTALLER_APP="$PWD/Lekh Keyboard Test Installer.app"
+SOURCE_INSTALLER_BIN="$SOURCE_INSTALLER_APP/Contents/MacOS/install-lekh-keyboard"
+LOCAL_TMP_ROOT="\${TMPDIR:-/tmp}"
+LOCAL_TMP_ROOT="\${LOCAL_TMP_ROOT%/}"
+STAGING_DIR=""
+
+cleanup_staging() {
+  if [[ -n "$STAGING_DIR" && "$STAGING_DIR" == "$LOCAL_TMP_ROOT"/lekh-keyboard-installer.* ]]; then
+    /bin/rm -rf -- "$STAGING_DIR"
+  fi
+}
+trap cleanup_staging EXIT
+trap 'exit 130' INT TERM HUP
 
 echo "Lekh Keyboard terminal installer"
 echo "This unsigned QA build cannot pass Finder/Gatekeeper without Developer ID notarization."
 echo "This script removes only the known Finder metadata that blocks code-signature verification, verifies the packaged app signature, then runs the same installer."
 echo
 
-if [[ ! -x "$INSTALLER_BIN" ]]; then
-  echo "Missing installer executable: $INSTALLER_BIN" >&2
+if [[ ! -x "$SOURCE_INSTALLER_BIN" ]]; then
+  echo "Missing installer executable: $SOURCE_INSTALLER_BIN" >&2
   read -r -p "Press Return to close this window..."
   exit 1
 fi
 
-for target in "$INSTALLER_APP" "$UNINSTALLER_APP"; do
-  /usr/bin/dot_clean -m "$target" >/dev/null 2>&1 || true
-  for attribute in com.apple.quarantine com.apple.FinderInfo com.apple.ResourceFork 'com.apple.fileprovider.fpfs#P' com.apple.provenance; do
-    /usr/bin/xattr -r -d "$attribute" "$target" 2>/dev/null || true
-  done
+umask 077
+STAGING_DIR="$(/usr/bin/mktemp -d "$LOCAL_TMP_ROOT/lekh-keyboard-installer.XXXXXX")" || {
+  echo "Could not create a private local installer staging directory." >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+}
+INSTALLER_APP="$STAGING_DIR/Lekh Keyboard Test Installer.app"
+INSTALLER_BIN="$INSTALLER_APP/Contents/MacOS/install-lekh-keyboard"
+/usr/bin/ditto --norsrc --noextattr --noacl "$SOURCE_INSTALLER_APP" "$INSTALLER_APP" || {
+  echo "Could not stage the installer outside Finder/File Provider storage." >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+}
+/usr/bin/dot_clean -m "$INSTALLER_APP" >/dev/null 2>&1 || true
+for attribute in com.apple.quarantine com.apple.FinderInfo com.apple.ResourceFork 'com.apple.fileprovider.fpfs#P' com.apple.provenance; do
+  /usr/bin/xattr -r -d "$attribute" "$INSTALLER_APP" 2>/dev/null || true
 done
 
-if ! /usr/bin/codesign --verify --deep --strict "$INSTALLER_APP" >/dev/null 2>&1; then
-  echo "The installer app failed local code-signature verification." >&2
-  echo "Delete this copy and download the release zip again." >&2
+if ! verify_output="$(/usr/bin/codesign --verify --deep --strict --verbose=4 "$INSTALLER_APP" 2>&1)"; then
+  echo "The metadata-free staged installer failed code-signature verification." >&2
+  printf '%s\n' "$verify_output" >&2
+  echo "The signed app contents differ from the release archive; use a fresh package." >&2
   read -r -p "Press Return to close this window..."
   exit 1
 fi
@@ -834,27 +856,52 @@ const terminalUninstallScript = `#!/usr/bin/env bash
 set -euo pipefail
 
 cd "$(dirname "$0")" || exit 1
-UNINSTALLER_APP="$PWD/Lekh Keyboard Uninstaller.app"
-UNINSTALLER_BIN="$UNINSTALLER_APP/Contents/MacOS/uninstall-lekh-keyboard"
+SOURCE_UNINSTALLER_APP="$PWD/Lekh Keyboard Uninstaller.app"
+SOURCE_UNINSTALLER_BIN="$SOURCE_UNINSTALLER_APP/Contents/MacOS/uninstall-lekh-keyboard"
+LOCAL_TMP_ROOT="\${TMPDIR:-/tmp}"
+LOCAL_TMP_ROOT="\${LOCAL_TMP_ROOT%/}"
+STAGING_DIR=""
+
+cleanup_staging() {
+  if [[ -n "$STAGING_DIR" && "$STAGING_DIR" == "$LOCAL_TMP_ROOT"/lekh-keyboard-uninstaller.* ]]; then
+    /bin/rm -rf -- "$STAGING_DIR"
+  fi
+}
+trap cleanup_staging EXIT
+trap 'exit 130' INT TERM HUP
 
 echo "Lekh Keyboard terminal uninstaller"
 echo "This script removes only the known Finder metadata that blocks code-signature verification, verifies the uninstaller, then runs it."
 echo
 
-if [[ ! -x "$UNINSTALLER_BIN" ]]; then
-  echo "Missing uninstaller executable: $UNINSTALLER_BIN" >&2
+if [[ ! -x "$SOURCE_UNINSTALLER_BIN" ]]; then
+  echo "Missing uninstaller executable: $SOURCE_UNINSTALLER_BIN" >&2
   read -r -p "Press Return to close this window..."
   exit 1
 fi
 
+umask 077
+STAGING_DIR="$(/usr/bin/mktemp -d "$LOCAL_TMP_ROOT/lekh-keyboard-uninstaller.XXXXXX")" || {
+  echo "Could not create a private local uninstaller staging directory." >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+}
+UNINSTALLER_APP="$STAGING_DIR/Lekh Keyboard Uninstaller.app"
+UNINSTALLER_BIN="$UNINSTALLER_APP/Contents/MacOS/uninstall-lekh-keyboard"
+/usr/bin/ditto --norsrc --noextattr --noacl "$SOURCE_UNINSTALLER_APP" "$UNINSTALLER_APP" || {
+  echo "Could not stage the uninstaller outside Finder/File Provider storage." >&2
+  read -r -p "Press Return to close this window..."
+  exit 1
+}
 /usr/bin/dot_clean -m "$UNINSTALLER_APP" >/dev/null 2>&1 || true
 for attribute in com.apple.quarantine com.apple.FinderInfo com.apple.ResourceFork 'com.apple.fileprovider.fpfs#P' com.apple.provenance; do
   /usr/bin/xattr -r -d "$attribute" "$UNINSTALLER_APP" 2>/dev/null || true
 done
 
-if ! /usr/bin/codesign --verify --deep --strict "$UNINSTALLER_APP" >/dev/null 2>&1; then
-  echo "The uninstaller app failed local code-signature verification." >&2
-  echo "Delete this copy and download the release zip again." >&2
+if ! verify_output="$(/usr/bin/codesign --verify --deep --strict --verbose=4 "$UNINSTALLER_APP" 2>&1)"; then
+  echo "The metadata-free staged uninstaller failed code-signature verification." >&2
+  printf '%s\n' "$verify_output" >&2
+  echo "The signed app contents differ from the release archive; use a fresh package." >&2
   read -r -p "Press Return to close this window..."
   exit 1
 fi

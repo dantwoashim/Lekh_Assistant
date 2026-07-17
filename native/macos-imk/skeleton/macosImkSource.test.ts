@@ -962,6 +962,12 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).toContain("com.apple.FinderInfo");
     expect(installerPackager).toContain("com.apple.ResourceFork");
     expect(installerPackager).toContain("com.apple.fileprovider.fpfs#P");
+    expect(installerPackager).toContain("lekh-keyboard-installer.XXXXXX");
+    expect(installerPackager).toContain("lekh-keyboard-uninstaller.XXXXXX");
+    expect(installerPackager).toContain("SOURCE_INSTALLER_APP");
+    expect(installerPackager).toContain("SOURCE_UNINSTALLER_APP");
+    expect(installerPackager).toContain("metadata-free staged installer");
+    expect(installerPackager).toContain("outside Finder/File Provider storage");
     expect(installerPackager).toContain("\\${REMOVE_PERSONAL_DICTIONARY}");
     expect(installerPackager).not.toContain("$REMOVE_PERSONAL_DICTIONARY।");
     expect(installerPackager).not.toContain("--noqtn");
