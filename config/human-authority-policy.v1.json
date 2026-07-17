@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "recordType": "lekh-human-authority-policy",
+  "approvalPath": "data/language-review/v1/human-authority-approval.json",
+  "maximumOpenDefects": {
+    "P0": 0,
+    "P1": 0
+  },
+  "domains": [
+    {
+      "id": "accessibility-language",
+      "label": "Accessible labels, announcements, and instructions",
+      "minimumExternalReviewers": 2,
+      "minimumReviewers": 3,
+      "requiredArtifacts": [
+        "data/language-review/v1/accessibility-language.jsonl"
+      ],
+      "requiredRoleCounts": {
+        "accessibility-reviewer": 1,
+        "internal-product-owner": 1,
+        "nepali-linguist": 1
+      }
+    },
+    {
+      "id": "ambiguous-romanization",
+      "label": "Ambiguous Romanization and candidate ordering",
+      "minimumExternalReviewers": 2,
+      "minimumReviewers": 3,
+      "requiredArtifacts": [
+        "data/language-review/v1/ambiguous-romanization.jsonl",
+        "src/data/aliases/romanized-aliases.tsv"
+      ],
+      "requiredRoleCounts": {
+        "internal-product-owner": 1,
+        "nepali-linguist": 2
+      }
+    },
+    {
+      "id": "code-mixed-behavior",
+      "label": "Nepali-English code-mixed preservation and conversion",
+      "minimumExternalReviewers": 2,
+      "minimumReviewers": 3,
+      "requiredArtifacts": [
+        "data/keyboard-corpus/curated/v0.1/D4_mixed_nepali_english_sentences.v0.1.jsonl",
+        "data/keyboard-corpus/runtime/v0.1/mixed-policy.json"
+      ],
+      "requiredRoleCounts": {
+        "internal-product-owner": 1,
+        "nepali-linguist": 2
+      }
+    },
+    {
+      "id": "corrections-proofread",
+      "label": "Spelling, grammar, and proofread corrections",
+      "minimumExternalReviewers": 2,
+      "minimumReviewers": 3,
+      "requiredArtifacts": [
+        "data/keyboard-corpus/curated/v0.1/D5_proofread_error_corrections.v0.1.jsonl",
+        "data/keyboard-corpus/runtime/v0.1/proofread-rules.json"
+      ],
+      "requiredRoleCounts": {
+        "internal-product-owner": 1,
+        "nepali-linguist": 2
+      }
+    },
+    {
+      "id": "dictionary-meanings",
+      "label": "Dictionary headwords, senses, and meanings",
+      "minimumExternalReviewers": 2,
+      "minimumReviewers": 3,
+      "requiredArtifacts": [
+        "data/language-review/v1/dictionary-meanings.jsonl",
+        "src/data/wordlists/ne-seed.tsv"
+      ],
+      "requiredRoleCounts": {
+        "internal-product-owner": 1,
+        "nepali-linguist": 2
+      }
+    },
+    {
+      "id": "names",
+      "label": "Personal names and surname variants",
+      "minimumExternalReviewers": 2,
+      "minimumReviewers": 3,
+      "requiredArtifacts": [
+        "data/keyboard-corpus/curated/v0.1/D6_name_surname_variants.v0.1.jsonl",
+        "data/keyboard-corpus/runtime/v0.1/name-index.json"
+      ],
+      "requiredRoleCounts": {
+        "internal-product-owner": 1,
+        "nepali-linguist": 2
+      }
+    },
+    {
+      "id": "romanized-aliases",
+      "label": "Romanized word and phrase aliases",
+      "minimumExternalReviewers": 2,
+      "minimumReviewers": 3,
+      "requiredArtifacts": [
+        "data/keyboard-corpus/curated/v0.1/D1_word_aliases.v0.1.jsonl",
+        "data/keyboard-corpus/curated/v0.1/D2_phrase_aliases.v0.1.jsonl",
+        "src/data/aliases/romanized-aliases.tsv",
+        "src/data/phrases/romanized-phrases.tsv"
+      ],
+      "requiredRoleCounts": {
+        "internal-product-owner": 1,
+        "nepali-linguist": 2
+      }
+    },
+    {
+      "id": "traditional-layout",
+      "label": "Traditional and LTK-compatible physical layouts",
+      "minimumExternalReviewers": 2,
+      "minimumReviewers": 3,
+      "requiredArtifacts": [
+        "bench/fixtures/traditional-layout/layout-audit.jsonl",
+        "data/layouts/traditional-ltk-compatible.json",
+        "data/layouts/traditional-standard.json"
+      ],
+      "requiredRoleCounts": {
+        "internal-product-owner": 1,
+        "nepali-linguist": 1,
+        "traditional-typist": 2
+      }
+    }
+  ]
+}
