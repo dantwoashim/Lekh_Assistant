@@ -2,27 +2,65 @@
 
 #include "Guids.h"
 
-#include <sddl.h>
+#include <algorithm>
+#include <array>
+#include <climits>
 #include <iterator>
+#include <sddl.h>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace {
 
+constexpr std::size_t kMaximumFrameBytes = 64 * 1024;
+
 std::string toUtf8(const std::wstring& value) {
   if (value.empty()) return "";
-  const int size = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+  if (value.size() > static_cast<size_t>(INT_MAX)) return "";
+  const int size = WideCharToMultiByte(
+    CP_UTF8,
+    WC_ERR_INVALID_CHARS,
+    value.data(),
+    static_cast<int>(value.size()),
+    nullptr,
+    0,
+    nullptr,
+    nullptr
+  );
+  if (size <= 0) return "";
   std::string output(static_cast<size_t>(size), '\0');
-  WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), output.data(), size, nullptr, nullptr);
+  if (WideCharToMultiByte(
+    CP_UTF8,
+    WC_ERR_INVALID_CHARS,
+    value.data(),
+    static_cast<int>(value.size()),
+    output.data(),
+    size,
+    nullptr,
+    nullptr
+  ) != size) {
+    return "";
+  }
   return output;
 }
 
 std::wstring fromUtf8(const char* value, DWORD bytes) {
   if (!value || bytes == 0) return L"";
-  const int size = MultiByteToWideChar(CP_UTF8, 0, value, static_cast<int>(bytes), nullptr, 0);
+  if (bytes > static_cast<DWORD>(INT_MAX)) return L"";
+  const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value, static_cast<int>(bytes), nullptr, 0);
+  if (size <= 0) return L"";
   std::wstring output(static_cast<size_t>(size), L'\0');
-  MultiByteToWideChar(CP_UTF8, 0, value, static_cast<int>(bytes), output.data(), size);
+  if (MultiByteToWideChar(
+    CP_UTF8,
+    MB_ERR_INVALID_CHARS,
+    value,
+    static_cast<int>(bytes),
+    output.data(),
+    size
+  ) != size) {
+    return L"";
+  }
   return output;
 }
 
@@ -65,7 +103,9 @@ std::wstring configuredPipeName() {
 std::optional<DWORD> waitForOverlappedBytes(HANDLE handle, OVERLAPPED& overlapped, DWORD timeoutMs) {
   const DWORD waitResult = WaitForSingleObject(overlapped.hEvent, timeoutMs);
   if (waitResult != WAIT_OBJECT_0) {
-    CancelIo(handle);
+    CancelIoEx(handle, &overlapped);
+    DWORD ignoredBytes = 0;
+    GetOverlappedResult(handle, &overlapped, &ignoredBytes, TRUE);
     return std::nullopt;
   }
 
@@ -111,20 +151,58 @@ std::optional<DWORD> readFileWithTimeout(HANDLE pipe, char* data, DWORD bufferSi
   return bytesRead;
 }
 
+std::optional<DWORD> remainingTimeout(ULONGLONG startedAt, DWORD timeoutMs) {
+  const ULONGLONG elapsed = GetTickCount64() - startedAt;
+  if (elapsed >= timeoutMs) return std::nullopt;
+  return timeoutMs - static_cast<DWORD>(elapsed);
+}
+
+std::optional<std::string> readLineWithDeadline(
+  HANDLE pipe,
+  ULONGLONG startedAt,
+  DWORD timeoutMs
+) {
+  std::string frame;
+  frame.reserve(4096);
+  std::array<char, 4096> chunk = {};
+
+  while (frame.size() <= kMaximumFrameBytes) {
+    const std::optional<DWORD> remaining = remainingTimeout(startedAt, timeoutMs);
+    if (!remaining) return std::nullopt;
+    const std::optional<DWORD> bytesRead = readFileWithTimeout(
+      pipe,
+      chunk.data(),
+      static_cast<DWORD>(chunk.size()),
+      *remaining
+    );
+    if (!bytesRead) return std::nullopt;
+
+    const auto newline = std::find(chunk.begin(), chunk.begin() + *bytesRead, '\n');
+    const std::size_t contentBytes = static_cast<std::size_t>(newline - chunk.begin());
+    if (frame.size() + contentBytes > kMaximumFrameBytes) return std::nullopt;
+    frame.append(chunk.data(), contentBytes);
+
+    if (newline != chunk.begin() + *bytesRead) {
+      if (std::any_of(newline + 1, chunk.begin() + *bytesRead, [](char value) {
+        return value != '\r' && value != '\n';
+      })) {
+        return std::nullopt;
+      }
+      if (!frame.empty() && frame.back() == '\r') frame.pop_back();
+      return frame;
+    }
+  }
+
+  return std::nullopt;
+}
+
 } // namespace
 
 LekhIpcClient::LekhIpcClient(std::wstring pipeName)
   : pipeName_(pipeName.empty() ? configuredPipeName() : std::move(pipeName)) {}
 
-bool LekhIpcClient::canConnect(DWORD timeoutMs) const {
-  if (!WaitNamedPipeW(pipeName_.c_str(), timeoutMs)) return false;
-  HANDLE pipe = CreateFileW(pipeName_.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (pipe == INVALID_HANDLE_VALUE) return false;
-  CloseHandle(pipe);
-  return true;
-}
-
 std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine, DWORD timeoutMs) const {
+  const ULONGLONG startedAt = GetTickCount64();
   if (!WaitNamedPipeW(pipeName_.c_str(), timeoutMs)) return std::nullopt;
 
   HANDLE pipe = CreateFileW(
@@ -138,21 +216,26 @@ std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine,
   );
   if (pipe == INVALID_HANDLE_VALUE) return std::nullopt;
 
-  DWORD mode = PIPE_READMODE_MESSAGE;
-  SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr);
-
   std::string payload = toUtf8(jsonLine);
+  if (!jsonLine.empty() && payload.empty()) {
+    CloseHandle(pipe);
+    return std::nullopt;
+  }
   if (payload.empty() || payload.back() != '\n') payload.push_back('\n');
+  if (payload.size() > kMaximumFrameBytes) {
+    CloseHandle(pipe);
+    return std::nullopt;
+  }
   const DWORD bytesToWrite = static_cast<DWORD>(payload.size());
-  if (!writeFileWithTimeout(pipe, payload.data(), bytesToWrite, timeoutMs)) {
+  const std::optional<DWORD> writeTimeout = remainingTimeout(startedAt, timeoutMs);
+  if (!writeTimeout || !writeFileWithTimeout(pipe, payload.data(), bytesToWrite, *writeTimeout)) {
     CloseHandle(pipe);
     return std::nullopt;
   }
 
-  std::vector<char> buffer(16384);
-  const std::optional<DWORD> bytesRead = readFileWithTimeout(pipe, buffer.data(), static_cast<DWORD>(buffer.size()), timeoutMs);
+  const std::optional<std::string> response = readLineWithDeadline(pipe, startedAt, timeoutMs);
   CloseHandle(pipe);
-  if (!bytesRead || *bytesRead == 0) return std::nullopt;
+  if (!response || response->empty()) return std::nullopt;
 
-  return fromUtf8(buffer.data(), *bytesRead);
+  return fromUtf8(response->data(), static_cast<DWORD>(response->size()));
 }

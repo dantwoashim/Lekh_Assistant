@@ -62,9 +62,21 @@ if (build.status !== 0) {
   finish("failed", { step: "build", stdout: build.stdout, stderr: build.stderr }, build.status ?? 1);
 }
 
+const nativeTests = spawnSync("ctest", ["--test-dir", buildDir, "-C", "Release", "--output-on-failure"], {
+  encoding: "utf8",
+  stdio: "pipe"
+});
+if (nativeTests.status !== 0) {
+  finish("failed", { step: "native-tests", stdout: nativeTests.stdout, stderr: nativeTests.stderr }, nativeTests.status ?? 1);
+}
+
 const dll = join(buildDir, "bin", "Release", "LekhTextService.dll");
 if (!existsSync(dll)) {
   finish("failed", { step: "artifact", reason: `Expected DLL was not found at ${dll}` }, 1);
 }
 
-finish("passed", { artifact: dll, cmake: cmakeVersion.stdout.split("\n")[0] }, 0);
+finish("passed", {
+  artifact: dll,
+  cmake: cmakeVersion.stdout.split("\n")[0],
+  nativeTests: "passed"
+}, 0);

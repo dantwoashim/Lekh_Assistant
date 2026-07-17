@@ -1,25 +1,26 @@
-# Windows TSF Feasibility Spike
+# Windows TSF Vertical Slice
 
-Goal: prove a minimal text service can receive key events, start composition, show a dummy candidate, commit static Unicode, and pass through when the daemon is unavailable.
+The first real vertical slice now covers:
 
-Required interfaces:
+1. TSF activation and document/context focus lifecycle.
+2. Explicit safe input-scope classification.
+3. Real daemon `session.begin`, key processing, and `session.end` lifecycle.
+4. Strict IPC response parsing and cross-session rejection.
+5. Marked composition creation/update, commit, and cancel through `ITfEditSession`.
+6. Fail-open behavior when privacy classification, daemon IPC, parsing, or host editing fails.
 
-- `ITfTextInputProcessor`
-- `ITfTextInputProcessorEx` if activated on supported Windows versions
-- `ITfKeyEventSink`
-- composition manager
-- candidate list UI
-- language profile registration
-- input scope checks for password and secure fields
+The slice is opt-in with `LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING=1`. Without that setting, every key passes through unchanged.
 
-Test apps:
+Native validation targets:
 
 - Notepad
 - Word
-- Chrome
-- Edge
+- Chrome and Edge
 - VS Code
 - Excel
-- a government web form
+- Windows Terminal
+- password, PIN, private, search, rich-text, and government web-form fields
 
-Production blockers: code signing certificate, installer validation, Windows test matrix, and pilot feedback.
+The portable protocol suite runs on non-Windows development hosts. The full DLL and its CTest suite require Windows, MSVC, CMake, and the Windows SDK.
+
+Candidate UI, display attributes, contextual document reads, signing, installer validation, and the complete host matrix remain production blockers.
