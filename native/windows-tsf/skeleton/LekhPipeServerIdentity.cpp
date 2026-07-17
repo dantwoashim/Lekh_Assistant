@@ -17,7 +17,9 @@ std::optional<std::wstring> modulePath(HMODULE module) {
 }
 
 std::optional<std::wstring> processImagePath(HANDLE process) {
-  if (!process || process == INVALID_HANDLE_VALUE) return std::nullopt;
+  // QueryFullProcessImageName accepts the GetCurrentProcess() pseudo-handle,
+  // whose value is also used as INVALID_HANDLE_VALUE by file APIs.
+  if (!process) return std::nullopt;
   std::vector<wchar_t> buffer(32768, L'\0');
   DWORD length = static_cast<DWORD>(buffer.size());
   if (!QueryFullProcessImageNameW(process, 0, buffer.data(), &length) || length == 0) return std::nullopt;

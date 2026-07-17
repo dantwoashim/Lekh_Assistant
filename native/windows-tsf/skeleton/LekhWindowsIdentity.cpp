@@ -7,7 +7,9 @@
 namespace {
 
 std::vector<DWORD> tokenInformation(HANDLE process, TOKEN_INFORMATION_CLASS informationClass) {
-  if (!process || process == INVALID_HANDLE_VALUE) return {};
+  // Process handles have different validity rules from file handles:
+  // GetCurrentProcess() is the supported pseudo-handle value (HANDLE)-1.
+  if (!process) return {};
   HANDLE token = nullptr;
   if (!OpenProcessToken(process, TOKEN_QUERY, &token)) return {};
 

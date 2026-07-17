@@ -1,7 +1,9 @@
 #include "LekhPipeServerIdentity.h"
+#include "LekhWindowsIdentity.h"
 
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,6 +28,12 @@ std::wstring currentExecutablePath() {
 int main() {
   const std::wstring executable = currentExecutablePath();
   require(!executable.empty(), "could not resolve the identity-test executable");
+  const std::optional<lekh::windows::Sid> userSid = lekh::windows::currentUserSid();
+  require(userSid && userSid->valid(), "could not resolve the current process user SID");
+  require(
+    lekh::windows::processRunsAsCurrentUser(GetCurrentProcess()),
+    "the current-process pseudo-handle did not match its own user SID"
+  );
   require(
     lekh::pipe::processMatchesCurrentUserAndImage(GetCurrentProcess(), executable),
     "current process did not match its exact on-disk image"
