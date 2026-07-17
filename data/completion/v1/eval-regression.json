@@ -13,7 +13,7 @@
     { "prefix": "dher", "expectedSource": "dherai", "expectedTarget": "धेरै" }
   ],
   "negative": [
-    { "prefix": "openai", "reason": "protected-latin-token" },
+    { "prefix": "postgresql", "reason": "protected-latin-token" },
     { "prefix": "github", "reason": "protected-latin-token" },
     { "prefix": "prab", "reason": "name-prefix" },
     { "prefix": "nira", "reason": "name-prefix" },

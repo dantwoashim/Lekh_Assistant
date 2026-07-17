@@ -19,7 +19,7 @@ const ELIGIBLE_LICENSE = "MIT";
 const ELIGIBLE_REVIEW_TIER = "repository-curated-regression";
 const PROTECTED_PREFIXES = new Set([
   "api", "email", "github", "gmail", "http", "https", "icloud", "login",
-  "macos", "npm", "openai", "otp", "password", "pdf", "pin", "readme",
+  "macos", "npm", "postgresql", "otp", "password", "pdf", "pin", "readme",
   "swiftui", "url", "username", "wifi"
 ]);
 

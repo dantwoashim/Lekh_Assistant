@@ -96,7 +96,7 @@ public final class LekhTokenCompletionIndex {
   private static let allowedReviewTier = "repository-curated-regression"
   private static let protectedPrefixes: Set<String> = [
     "api", "email", "github", "gmail", "http", "https", "icloud", "login",
-    "macos", "npm", "openai", "otp", "password", "pdf", "pin", "readme",
+    "macos", "npm", "postgresql", "otp", "password", "pdf", "pin", "readme",
     "swiftui", "url", "username", "wifi"
   ]
 

@@ -212,7 +212,7 @@ private func benchmarkNeuralServiceIfRequested() {
     "Shared deterministic exact tokens must bypass the experimental neural tail"
   )
   var protectedBypass: [String: [String]] = [:]
-  for token in ["OpenAI", "GitHub", "npm", "SwiftUI", "macOS", "README", "hello"] {
+  for token in ["PostgreSQL", "GitHub", "npm", "SwiftUI", "macOS", "README", "hello"] {
     var candidates: [String]?
     service.candidates(for: token, secureInputActive: false) { candidates = $0 }
     require(candidates == [], "Protected Latin token \(token) must synchronously bypass Core ML")
@@ -422,7 +422,7 @@ private func assertRomanizedRomanizedModeDoesNotConvertMarkedTextToDevanagari() 
 }
 
 private func assertProtectedLatinTokensStayByteExactAndBypassNeuralTail() {
-  let protectedTokens = ["OpenAI", "GitHub", "npm", "SwiftUI", "macOS", "README", "hello"]
+  let protectedTokens = ["PostgreSQL", "GitHub", "npm", "SwiftUI", "macOS", "README", "hello"]
   for token in protectedTokens {
     let decision = type(
       token,
@@ -481,7 +481,7 @@ private func assertTokenCompletionArtifactIsVerifiedAndExplicitOnly() {
   require(lekh.first?.source == "lekhharu", "Reviewed lekh source completion must be available")
   require(lekh.first?.target == "लेखहरू", "Reviewed lekh target completion must be available")
   require(
-    ["openai", "github", "nira", "prab", "mero", "pani", "nepal", "janma miti", "a@b.com", "9800000000"]
+    ["postgresql", "github", "nira", "prab", "mero", "pani", "nepal", "janma miti", "a@b.com", "9800000000"]
       .allSatisfy { index.candidates(for: $0).isEmpty },
     "Protected, name-like, complete, ambiguous, phrase, and sensitive inputs must remain suppressed"
   )

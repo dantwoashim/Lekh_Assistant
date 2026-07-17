@@ -119,7 +119,7 @@ public enum LekhMixedScriptPolicy {
     "login", "username", "password", "wifi", "wi-fi", "qr", "id", "pin", "cvv",
     "esewa", "khalti", "ime", "ntc", "ncell", "tiktok", "whatsapp", "viber",
     "zoom", "teams", "slack", "github", "git", "xcode", "swift", "json", "csv",
-    "openai", "npm", "swiftui", "macos", "readme", "hello",
+    "postgresql", "npm", "swiftui", "macos", "readme", "hello",
     "user", "candidate", "phrase", "detect", "wrong", "upload", "submit"
   ]
 

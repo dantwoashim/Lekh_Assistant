@@ -20,7 +20,7 @@
     },
     "regressionEvaluation": {
       "path": "data/completion/v1/eval-regression.json",
-      "sha256": "71449b4daba275ec4179d7214c4e708e1fc24d275a44af1c31d098d8a962dff4"
+      "sha256": "3513a8be30ad27f8788b1f375c001fc1e54dd80dbb9ed3da0c9e845e4689274b"
     }
   },
   "runtimePolicy": {

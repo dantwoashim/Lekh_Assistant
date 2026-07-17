@@ -79,7 +79,7 @@ describe("token completion pipeline", () => {
     const { artifact, failures } = buildCompletionArtifact({ seeds, registry, evaluation });
     expect(failures).toEqual([]);
     const prefixes = new Set(artifact.entries.map((entry) => entry.prefix));
-    for (const blocked of ["openai", "github", "prab", "nira", "janma miti", "a@b.com", "9800000000"]) {
+    for (const blocked of ["postgresql", "github", "prab", "nira", "janma miti", "a@b.com", "9800000000"]) {
       expect(prefixes.has(blocked)).toBe(false);
     }
   });
