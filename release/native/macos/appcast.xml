@@ -9,20 +9,20 @@
     <language>en</language>
     <item>
       <title>Lekh Keyboard 0.1.0</title>
-      <sparkle:version>170</sparkle:version>
+      <sparkle:version>172</sparkle:version>
       <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
-      <sparkle:minimumAutoupdateVersion>170</sparkle:minimumAutoupdateVersion>
+      <sparkle:minimumAutoupdateVersion>172</sparkle:minimumAutoupdateVersion>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <pubDate>Fri, 17 Jul 2026 04:22:05 GMT</pubDate>
+      <pubDate>Fri, 17 Jul 2026 04:36:03 GMT</pubDate>
       <description><![CDATA[Local-first Nepali keyboard update.]]></description>
       <enclosure
         url="https://lekh-assistant.pages.dev/updates/macos/Lekh-Keyboard-Test-Installer.zip"
-        sparkle:version="170"
+        sparkle:version="172"
         sparkle:shortVersionString="0.1.0"
         type="application/zip"
-        length="6110268"
-        sparkle:edSignature="E4kUHopajvSGrvtgk9Eb5Jtu8DlvFym5C5Dbt2SSXDFgQ89j2YbJDCQs+rsiS3Q9askYg1LdqV1J+Lu/7XtFAg=="
-        sparkle:sha256="4a22efefefcae0712d272b4e04b4c3b83d1b2371237bbe47c5e0b2f9362e5c79" />
+        length="6110906"
+        sparkle:edSignature="r9qB/kvptR3ifXnVO69VdJgzm8+46lKdaXRTgVEoyBmj/O91pRD0vLWzfs6nKjtspdW1TtjwKF6r//rO9Q0FAA=="
+        sparkle:sha256="f969229e4790d77cca59d8d49b88fd083c66dc47dcbd31a34a2b8c63f70429ad" />
     </item>
   </channel>
 </rss>

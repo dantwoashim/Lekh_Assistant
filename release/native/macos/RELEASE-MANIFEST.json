@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-17T04:22:05.319Z",
+  "generatedAt": "2026-07-17T04:36:03.638Z",
   "product": "Lekh Keyboard",
   "channel": "test-adhoc",
   "version": "0.1.0",
-  "build": 170,
+  "build": 172,
   "hashAlgorithm": "SHA-256",
   "signature": {
     "algorithm": "minisign",
@@ -15,27 +15,27 @@
     {
       "path": "appcast.xml",
       "bytes": 1319,
-      "sha256": "4c851712942892ae9922d37e7e8f0029203b375af550db6afd34e330fb5af87e"
+      "sha256": "146877ac20ef5531ecdb44b509797bc4f9e4a887ef3b64f65ba0729622270a48"
     },
     {
-      "path": "dictionary-packs/test-adhoc-build170/manifest.json",
+      "path": "dictionary-packs/test-adhoc-build172/manifest.json",
       "bytes": 811,
-      "sha256": "e08cb9b997d7cbab3e30c90ffb8fcd81b956b2118dbabecb298a76333e9d0bc6"
+      "sha256": "a3ea7cc50a73c19335f0f06841224eac49962c06be296f5322ed569800e3afaf"
     },
     {
-      "path": "dictionary-packs/test-adhoc-build170/runtime-suggestions-test-adhoc-build170.lkb",
+      "path": "dictionary-packs/test-adhoc-build172/runtime-suggestions-test-adhoc-build172.lkb",
       "bytes": 3029747,
       "sha256": "190e3a424a88f569a40d75274d8478c4e761138618f5d901a5c816a4df1da286"
     },
     {
       "path": "Lekh-Keyboard-Test-Installer.zip",
-      "bytes": 6110268,
-      "sha256": "4a22efefefcae0712d272b4e04b4c3b83d1b2371237bbe47c5e0b2f9362e5c79"
+      "bytes": 6110906,
+      "sha256": "f969229e4790d77cca59d8d49b88fd083c66dc47dcbd31a34a2b8c63f70429ad"
     },
     {
       "path": "lekh-keyboard-test.rb",
       "bytes": 604,
-      "sha256": "e154b6c8183d99dc63f66be18edb03a5041bf7ce5ea4149a3a6457216d1e1623"
+      "sha256": "f9dfed0a3ee59124494d04ae31b18dc2dbdfc148f57a49f3738bab998b2c1f31"
     }
   ]
 }
