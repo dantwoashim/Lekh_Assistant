@@ -11,50 +11,13 @@ LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchS
 LEGACY_BACKUP_ROOT="$HOME/Library/Application Support/Lekh Keyboard/InstallBackups"
 ARCHIVE_BACKUP_ROOT="$HOME/Library/Application Support/Lekh Keyboard/InstallBackups.noindex"
 RUNTIME_HEALTH="$HOME/Library/Application Support/Lekh Keyboard/runtime-health.v1.json"
-
-lekh_pid_is_running() {
-  local pid="$1"
-  local command_name
-  command_name="$(/bin/ps -p "$pid" -o comm= 2>/dev/null | /usr/bin/tr -d '[:space:]')"
-  command_name="${command_name##*/}"
-  [[ "$command_name" == "LekhInputMethodApp" ]]
-}
-
-remaining_lekh_pids() {
-  local pid
-  for pid in "$@"; do
-    if lekh_pid_is_running "$pid"; then
-      printf '%s ' "$pid"
-    fi
-  done
-}
+TERMINATE_EXACT="$(dirname "$0")/terminate-exact-processes.swift"
 
 stop_lekh_input_method_for_removal() {
-  local pids
-  local remaining
-  local attempt=0
-  pids="$(/usr/bin/pgrep -x LekhInputMethodApp 2>/dev/null || true)"
-  [[ -n "$pids" ]] || return 0
-
-  /bin/kill -TERM $pids >/dev/null 2>&1 || true
-  while (( attempt < 30 )); do
-    remaining="$(remaining_lekh_pids $pids)"
-    [[ -z "$remaining" ]] && return 0
-    /bin/sleep 0.1
-    attempt=$((attempt + 1))
-  done
-
-  echo "Lekh Keyboard did not exit after SIGTERM; forcing only the remaining process(es): $remaining" >&2
-  /bin/kill -KILL $remaining >/dev/null 2>&1 || true
-  attempt=0
-  while (( attempt < 20 )); do
-    remaining="$(remaining_lekh_pids $remaining)"
-    [[ -z "$remaining" ]] && return 0
-    /bin/sleep 0.1
-    attempt=$((attempt + 1))
-  done
-  echo "Could not stop Lekh Keyboard process(es) before bundle removal: $remaining" >&2
-  return 1
+  /usr/bin/swift "$TERMINATE_EXACT" --terminate-all-exact-path \
+    "$DEST/Contents/MacOS/LekhInputMethodApp" >/dev/null
+  /usr/bin/swift "$TERMINATE_EXACT" --terminate-all-exact-path \
+    "$OLD_DEST/Contents/MacOS/LekhInputMethodApp" >/dev/null
 }
 
 unregister_stale_lekh_bundles() {

@@ -2,6 +2,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
+import {
+  trustedAttestationBindsReport,
+  verifyProductionReleaseAttestation
+} from "./lib/macos-production-release-attestation.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -21,8 +25,8 @@ const files = {
   companionModel: "native/macos-companion/LekhCompanionModel.swift",
   companionPackager: "scripts/package-native-macos-companion.mjs",
   contract: "data/engine/lekh-engine-contract.v1.json",
-  neuralSota: "reports/neural-sota-worldclass-report.json",
-  neuralDataset: "reports/neural-open-vocab-dataset-report.json",
+  neuralSota: production ? "reports/neural-sota-worldclass-production-report.json" : "reports/neural-sota-worldclass-report.json",
+  neuralDataset: production ? "reports/neural-open-vocab-dataset-production-report.json" : "reports/neural-open-vocab-dataset-report.json",
   qaMatrix: "reports/macos-imk-qa-matrix-report.json",
   updateSecurity: production ? "reports/macos-update-security-production-report.json" : "reports/macos-update-security-report.json"
 };
@@ -32,6 +36,8 @@ const neuralSota = readJson(files.neuralSota, false);
 const neuralDataset = readJson(files.neuralDataset, false);
 const qaMatrix = readJson(files.qaMatrix, false);
 const updateSecurity = readJson(files.updateSecurity, false);
+const trustedReleaseAttestation = production ? verifyProductionReleaseAttestation({ root }) : null;
+const bound = (path) => !production || trustedAttestationBindsReport(trustedReleaseAttestation, path, root);
 
 requireContains(source.forensicReport, "Until every checkbox has evidence, Lekh is not Level 5", "Forensic report must preserve evidence-before-Level-5 release gate.");
 requireContains(source.forensicReport, "No hot-path I/O, XPC, network, or synchronous model inference", "Forensic report must retain hot-path no-I/O/model requirement.");
@@ -86,9 +92,12 @@ if (neuralSota?.status !== "passed-phase10-sota-worldclass-guard" && !production
   failures.push(`Level-5 dev compliance requires Phase 10 SOTA guard to pass; got ${neuralSota?.status ?? "missing"}.`);
 }
 if (production) {
-  if (neuralSota?.status !== "passed-production-phase10-sota-worldclass") failures.push("Production Level-5 requires Phase 10 production SOTA pass.");
-  if (qaMatrix?.status !== "passed-production") failures.push(`Production Level-5 requires full host QA matrix; got ${qaMatrix?.status ?? "missing"}.`);
-  if (updateSecurity?.status !== "passed-production") failures.push(`Production Level-5 requires signing/notary/update security pass; got ${updateSecurity?.status ?? "missing"}.`);
+  if (trustedReleaseAttestation?.verified !== true) {
+    failures.push(`Production Level-5 requires trusted release attestation; issues: ${trustedReleaseAttestation?.issueCodes?.join(",") || "unverified"}.`);
+  }
+  if (neuralSota?.status !== "passed-production-phase10-sota-worldclass" || !bound(files.neuralSota)) failures.push("Production Level-5 requires an attested Phase 10 production SOTA pass.");
+  if (qaMatrix?.status !== "passed-production" || !bound(files.qaMatrix)) failures.push(`Production Level-5 requires an attested full host QA matrix; got ${qaMatrix?.status ?? "missing"}.`);
+  if (updateSecurity?.status !== "passed-production" || !bound(files.updateSecurity)) failures.push(`Production Level-5 requires an attested signing/notary/update security pass; got ${updateSecurity?.status ?? "missing"}.`);
 }
 
 const status = failures.length === 0
@@ -103,6 +112,10 @@ finish(status, failures.length === 0 ? 0 : 1, {
   neuralDatasetRows: neuralDataset?.totalRows ?? null,
   qaMatrixStatus: qaMatrix?.status ?? null,
   updateSecurityStatus: updateSecurity?.status ?? null,
+  trustedReleaseAttestation: {
+    verified: trustedReleaseAttestation?.verified === true,
+    issueCodes: trustedReleaseAttestation?.issueCodes ?? []
+  },
   failures,
   warnings
 });

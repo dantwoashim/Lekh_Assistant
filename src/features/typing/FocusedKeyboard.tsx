@@ -90,28 +90,9 @@ export function FocusedKeyboard() {
     window.addEventListener("beforeunload", shutdown);
     return () => {
       window.removeEventListener("beforeunload", shutdown);
+      void engine.shutdown();
     };
   }, [engine]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const liveValue = inputRef.current?.value;
-      if (typeof liveValue !== "string") return;
-      setInput((currentValue) => {
-        if (liveValue === currentValue) return currentValue;
-        setSelectedIndex(0);
-        const [start, end] = activeCompositionRange(liveValue);
-        const activeText = liveValue.slice(start, end);
-        engine.setContext(sessionId, {
-          leftTextWindow: liveValue.slice(0, start),
-          rightTextWindow: liveValue.slice(end)
-        });
-        setUpdate(engine.updateComposition(sessionId, activeText, activeText.length));
-        return liveValue;
-      });
-    }, 80);
-    return () => window.clearInterval(timer);
-  }, [engine, sessionId]);
 
   const modeDefinition = MODES.find((item) => item.id === mode) ?? MODES[1];
   const suggestions = suggestionsForMode(update, mode);
@@ -130,11 +111,7 @@ export function FocusedKeyboard() {
     setInput("");
     setSelectedIndex(0);
     setUpdate(engine.updateComposition(nextSessionId, "", 0));
-    if (inputRef.current) inputRef.current.value = "";
     inputRef.current?.focus();
-    window.requestAnimationFrame(() => {
-      inputRef.current?.focus();
-    });
   }
 
   const refresh = useCallback((nextInput: string, nextSessionId = sessionId) => {
@@ -148,20 +125,6 @@ export function FocusedKeyboard() {
     setSelectedIndex(0);
     setUpdate(engine.updateComposition(nextSessionId, nextActiveText, nextActiveText.length));
   }, [engine, sessionId]);
-
-  useEffect(() => {
-    const node = inputRef.current;
-    if (!node) return undefined;
-    const sync = () => refresh(node.value);
-    node.addEventListener("input", sync);
-    node.addEventListener("keyup", sync);
-    node.addEventListener("compositionend", sync);
-    return () => {
-      node.removeEventListener("input", sync);
-      node.removeEventListener("keyup", sync);
-      node.removeEventListener("compositionend", sync);
-    };
-  }, [refresh]);
 
   function acceptSuggestion(suggestion = activeSuggestion, options: { addSpace?: boolean } = {}) {
     if (!suggestion) return;
@@ -229,10 +192,6 @@ export function FocusedKeyboard() {
       return;
     }
 
-    window.requestAnimationFrame(() => {
-      const liveValue = inputRef.current?.value;
-      if (typeof liveValue === "string") refresh(liveValue);
-    });
   }
 
   return (
@@ -289,7 +248,6 @@ export function FocusedKeyboard() {
             aria-label={modeDefinition.label}
             value={input}
             onChange={(event) => refresh(event.target.value)}
-            onInput={(event) => refresh(event.currentTarget.value)}
             onKeyDown={handleKeyDown}
             onScroll={syncGhostScroll}
             placeholder={modeDefinition.placeholder}

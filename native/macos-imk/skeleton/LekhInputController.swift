@@ -169,6 +169,9 @@ open class LekhInputController: IMKInputController {
     0, 0.008, 0.016, 0.032, 0.064, 0.096
   ]
   private let engineClient: LekhEngineClient
+  /// Injectable for deterministic controller safety probes. Production IMK
+  /// construction always reads the OS Secure Event Input state directly.
+  private let secureInputActive: () -> Bool
   private let latencyTelemetry = LekhLatencyRingBuffer()
   private let candidateState = LekhCandidateController()
   private let neuralCandidateService = LekhNeuralCandidateService.shared
@@ -216,9 +219,13 @@ open class LekhInputController: IMKInputController {
     return true
   }
 
-  public init(engineClient: LekhEngineClient = LekhNativeEngineClient()) {
+  public init(
+    engineClient: LekhEngineClient = LekhNativeEngineClient(),
+    secureInputActive: @escaping () -> Bool = { IsSecureEventInputEnabled() }
+  ) {
     LekhNativePreferences.registerDefaults()
     self.engineClient = engineClient
+    self.secureInputActive = secureInputActive
     super.init()
     observeSharedPreferencesChanges()
     configureModeFromDefaults()
@@ -228,6 +235,7 @@ open class LekhInputController: IMKInputController {
   public required override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
     LekhNativePreferences.registerDefaults()
     self.engineClient = Self.defaultEngineClient()
+    self.secureInputActive = { IsSecureEventInputEnabled() }
     super.init(server: server, delegate: delegate, client: inputClient)
     self.candidatePanel = IMKCandidates(server: server, panelType: kIMKSingleRowSteppingCandidatePanel)
     self.candidatePanel?.setDismissesAutomatically(true)
@@ -293,7 +301,7 @@ open class LekhInputController: IMKInputController {
     setKeyboardLayoutOverride()
     lekhNativeLog("lifecycle.activate")
     modeMenuOpen = false
-    if IsSecureEventInputEnabled() {
+    if secureInputActive() {
       clearStateForSecureInput(client: sender as? IMKTextInput)
       return
     }
@@ -308,7 +316,7 @@ open class LekhInputController: IMKInputController {
     deactivateRuntimeEvidence()
     hideCandidates()
     defer { engineClient.endSession(sessionId) }
-    if IsSecureEventInputEnabled() {
+    if secureInputActive() {
       clearStateForSecureInput(client: sender as? IMKTextInput)
       return
     }
@@ -359,7 +367,7 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func cancelComposition() {
-    if IsSecureEventInputEnabled() {
+    if secureInputActive() {
       clearStateForSecureInput(client: self.client())
       return
     }
@@ -375,7 +383,7 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func commitComposition(_ sender: Any!) {
-    if IsSecureEventInputEnabled() {
+    if secureInputActive() {
       clearStateForSecureInput(client: sender as? IMKTextInput)
       return
     }
@@ -397,17 +405,21 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func composedString(_ sender: Any!) -> Any! {
-    guard !IsSecureEventInputEnabled() else { return "" }
+    guard !secureInputActive() else { return "" }
     return engineClient.rawBuffer(sessionId: sessionId)
   }
 
   open override func originalString(_ sender: Any!) -> NSAttributedString! {
-    guard !IsSecureEventInputEnabled() else { return NSAttributedString(string: "") }
+    guard !secureInputActive() else { return NSAttributedString(string: "") }
     return NSAttributedString(string: engineClient.rawBuffer(sessionId: sessionId))
   }
 
   open override func inputText(_ string: String!, client sender: Any!) -> Bool {
     guard let string, !string.isEmpty else { return false }
+    if secureInputActive() {
+      clearStateForSecureInput(client: sender as? IMKTextInput)
+      return false
+    }
     lekhNativeLog("event.inputText units=\(string.count)")
 
     var handledAny = false
@@ -425,6 +437,10 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func inputText(_ string: String!, key keyCode: Int, modifiers flags: Int, client sender: Any!) -> Bool {
+    if secureInputActive() {
+      clearStateForSecureInput(client: sender as? IMKTextInput)
+      return false
+    }
     let modifiers = NSEvent.ModifierFlags(rawValue: UInt(flags)).intersection(.deviceIndependentFlagsMask)
     let key = keyString(from: string, keyCode: keyCode, modifiers: modifiers)
     lekhNativeLog("event.inputTextKey flags=\(flags) units=\(string?.count ?? 0)")
@@ -434,6 +450,11 @@ open class LekhInputController: IMKInputController {
 
   open override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
     guard let event, event.type == .keyDown else { return false }
+
+    if secureInputActive() {
+      clearStateForSecureInput(client: sender as? IMKTextInput)
+      return false
+    }
 
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     let key = keyString(from: event)
@@ -454,9 +475,8 @@ open class LekhInputController: IMKInputController {
     // per-keystroke hot path and never in the middle of a word.
     applyPendingPreferencesAtBoundary()
 
-    if IsSecureEventInputEnabled() {
+    if secureInputActive() {
       clearStateForSecureInput(client: sender as? IMKTextInput)
-      lekhNativeLog("event.passThrough route=\(route) reason=secureInput")
       return false
     }
 
@@ -536,7 +556,7 @@ open class LekhInputController: IMKInputController {
     // Some hosts route editing keys only through `didCommand`, bypassing
     // processKeyInput's secure-input guard. Clear every in-memory composition
     // surface and let the secure host receive the command untouched.
-    if IsSecureEventInputEnabled() {
+    if secureInputActive() {
       clearStateForSecureInput(client: sender as? IMKTextInput)
       return false
     }
@@ -693,7 +713,7 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func candidates(_ sender: Any!) -> [Any]! {
-    guard !IsSecureEventInputEnabled() else { return [] }
+    guard !secureInputActive() else { return [] }
     return candidateState.currentState().candidates
   }
 
@@ -701,7 +721,7 @@ open class LekhInputController: IMKInputController {
     guard let text = candidateString?.string, !text.isEmpty, let client = self.client() else {
       return
     }
-    guard !IsSecureEventInputEnabled() else {
+    guard !secureInputActive() else {
       clearStateForSecureInput(client: client)
       return
     }
@@ -722,7 +742,7 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
-    guard !IsSecureEventInputEnabled() else {
+    guard !secureInputActive() else {
       clearStateForSecureInput(client: self.client())
       return
     }
@@ -769,7 +789,7 @@ open class LekhInputController: IMKInputController {
     privateMode.state = LekhNativePreferences.personalizationEnabled ? .off : .on
     privateMode.toolTip = LekhL10n.text("menu.privateMode.help")
     menu.addItem(privateMode)
-    if !IsSecureEventInputEnabled(), let currentCandidate = candidateState.selectedCandidate() {
+    if !secureInputActive(), let currentCandidate = candidateState.selectedCandidate() {
       menu.addItem(.separator())
       let forget = NSMenuItem(title: LekhL10n.text("menu.forgetCandidate"), action: #selector(forgetCurrentCandidateFromInputMenu(_:)), keyEquivalent: "")
       forget.target = self
@@ -785,7 +805,7 @@ open class LekhInputController: IMKInputController {
     tutorial.target = self
     menu.addItem(tutorial)
 
-    if LekhDiagnosticsPolicy.diagnosticsEnabled(secureInputActive: IsSecureEventInputEnabled()) {
+    if LekhDiagnosticsPolicy.diagnosticsEnabled(secureInputActive: secureInputActive()) {
       menu.addItem(.separator())
       let diagnostics = NSMenuItem(title: LekhL10n.text("menu.diagnostics"), action: #selector(showDiagnosticsFromInputMenu(_:)), keyEquivalent: "")
       diagnostics.target = self
@@ -805,7 +825,7 @@ open class LekhInputController: IMKInputController {
   }
 
   @objc private func forgetCurrentCandidateFromInputMenu(_ item: NSMenuItem) {
-    guard !IsSecureEventInputEnabled() else {
+    guard !secureInputActive() else {
       clearStateForSecureInput(client: self.client())
       return
     }
@@ -1106,7 +1126,7 @@ open class LekhInputController: IMKInputController {
   }
 
   private func commitRawComposition(client: IMKTextInput, suffix: String) -> Bool {
-    guard !IsSecureEventInputEnabled() else {
+    guard !secureInputActive() else {
       clearStateForSecureInput(client: client)
       return false
     }
@@ -1138,7 +1158,7 @@ open class LekhInputController: IMKInputController {
     client: IMKTextInput,
     suffix: String
   ) -> Bool {
-    guard !IsSecureEventInputEnabled() else {
+    guard !secureInputActive() else {
       clearStateForSecureInput(client: client)
       return false
     }
@@ -1584,7 +1604,7 @@ open class LekhInputController: IMKInputController {
   private func finishCompositionBeforeModeSwitch(client: IMKTextInput?) -> Bool {
     guard engineClient.hasComposition(sessionId: sessionId) else { return true }
     guard let client else { return false }
-    if IsSecureEventInputEnabled() {
+    if secureInputActive() {
       clearStateForSecureInput(client: client)
       return true
     }
@@ -1933,7 +1953,7 @@ open class LekhInputController: IMKInputController {
       // Secure Event Input can turn on after a nonsecure key scheduled this
       // render but before AppKit supplies caret geometry. Re-check here so no
       // stale completion surface or evidence crosses that boundary.
-      guard !IsSecureEventInputEnabled() else {
+      guard !self.secureInputActive() else {
         self.clearStateForSecureInput(client: self.client())
         return
       }
@@ -2039,7 +2059,7 @@ open class LekhInputController: IMKInputController {
   }
 
   private func requestAsyncNeuralCandidates(rawBuffer: String, deterministicCandidates: [String]) {
-    if IsSecureEventInputEnabled() {
+    if secureInputActive() {
       neuralCandidateService.cancelPending()
       return
     }
@@ -2047,9 +2067,9 @@ open class LekhInputController: IMKInputController {
           !rawBuffer.isEmpty,
           rawBuffer.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else { return }
     let sessionSnapshot = sessionId
-    neuralCandidateService.candidates(for: rawBuffer, secureInputActive: IsSecureEventInputEnabled()) { [weak self] neuralCandidates in
+    neuralCandidateService.candidates(for: rawBuffer, secureInputActive: secureInputActive()) { [weak self] neuralCandidates in
       guard let self,
-            !IsSecureEventInputEnabled(),
+            !self.secureInputActive(),
             self.sessionId == sessionSnapshot,
             self.engineClient.rawBuffer(sessionId: sessionSnapshot) == rawBuffer,
             let client = self.client(),
@@ -2122,6 +2142,7 @@ open class LekhInputController: IMKInputController {
         ? lastCompositionAnchorRect
         : nil
       let presentationToken = makeSurfaceToken(for: presentationClient)
+      let presentationActivationIdentifier = runtimeActivationIdentifier
       let panelShown = customCandidatePanel.show(
         items: state.displayItems,
         title: nativeMode.menuLabel,
@@ -2131,9 +2152,24 @@ open class LekhInputController: IMKInputController {
         expanded: candidateSelectionExplicit,
         passiveCommitText: activeAutoCommitCandidate?.text,
         announceSelection: announceSelection,
+        onDragCancellation: { [weak self] in
+          guard let self,
+                let client = self.client(),
+                let presentationActivationIdentifier,
+                !self.secureInputActive(),
+                self.runtimeActivationIdentifier == presentationActivationIdentifier,
+                self.isCurrentSurfaceToken(presentationToken, client: client),
+                self.candidatePresentationToken == presentationToken,
+                self.customCandidatePanel.isVisible else {
+            return
+          }
+          LekhRuntimeHealth.markCandidateDragCancellation(
+            activationIdentifier: presentationActivationIdentifier
+          )
+        },
         onSelect: { [weak self] selectedIndex, selectedText in
           guard let self, let client = self.client() else { return }
-          guard !IsSecureEventInputEnabled(),
+          guard !self.secureInputActive(),
                 self.isCurrentSurfaceToken(presentationToken, client: client),
                 self.candidatePresentationToken == presentationToken,
                 self.customCandidatePanel.isVisible else {
@@ -2445,7 +2481,7 @@ open class LekhInputController: IMKInputController {
 
   @discardableResult
   private func commitCandidateText(_ text: String, client: IMKTextInput, suffix: String) -> Bool {
-    guard !IsSecureEventInputEnabled() else {
+    guard !secureInputActive() else {
       clearStateForSecureInput(client: client)
       return false
     }
@@ -2473,7 +2509,7 @@ open class LekhInputController: IMKInputController {
   }
 
   private func shouldPersonalize(client: IMKTextInput) -> Bool {
-    guard !IsSecureEventInputEnabled() else { return false }
+    guard !secureInputActive() else { return false }
     return LekhNativePreferences.mayPersonalize(bundleIdentifier: client.bundleIdentifier())
   }
 

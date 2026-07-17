@@ -17,6 +17,9 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { classifyMacOSCodeSigning } from "./lib/macos-imk-dev-release-integrity.mjs";
+import { readProductionReleasePolicy } from "./lib/macos-production-release-attestation.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -46,6 +49,7 @@ const tokenCompletionSourcePath = join(root, "data", "completion", "runtime", "v
 const tokenCompletionManifestSourcePath = join(root, "data", "completion", "runtime", "v1", "lekh-token-completions.v1.manifest.json");
 const tokenCompletionBundlePath = join(appBundle, "Contents", "Resources", "lekh-token-completions.v1.json");
 const tokenCompletionManifestBundlePath = join(appBundle, "Contents", "Resources", "lekh-token-completions.v1.manifest.json");
+const buildProvenanceBundlePath = join(appBundle, "Contents", "Resources", "LekhBuildProvenance.v1.json");
 const neuralModelSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
 const neuralManifestSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const neuralVocabSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.vocab.json");
@@ -59,10 +63,22 @@ const archs = (process.env.LEKH_MAC_ARCHS ?? "arm64,x86_64")
   .map((arch) => arch.trim())
   .filter(Boolean);
 const signingIdentity = process.env.LEKH_MAC_DEVELOPER_ID || "-";
+const committedProductionTeamIdentifier = readProductionReleasePolicy(root)
+  .policy?.appleDeveloperTeamIdentifier ?? null;
 const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 const shortVersion = process.env.LEKH_VERSION || packageVersion.match(/^\d+\.\d+\.\d+/)?.[0];
 const gitCount = spawnSync("git", ["rev-list", "--count", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
 const buildNumber = process.env.LEKH_BUILD_NUMBER || gitCount;
+const gitRevisionProbe = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+const gitTreeProbe = spawnSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" });
+const gitStatusProbe = spawnSync(
+  "git",
+  ["status", "--porcelain=v1", "--untracked-files=all"],
+  { cwd: root, encoding: "utf8" }
+);
+const sourceRevision = gitRevisionProbe.status === 0 ? gitRevisionProbe.stdout.trim() : null;
+const sourceTree = gitTreeProbe.status === 0 ? gitTreeProbe.stdout.trim() : null;
+const sourceFilesCleanAtStart = gitStatusProbe.status === 0 && gitStatusProbe.stdout.trim() === "";
 const toolchainCacheDir = join(root, ".build-cache", "macos-toolchain");
 const toolchainEnv = {
   ...process.env,
@@ -214,10 +230,13 @@ const behaviorProbe = run(
   { cwd: skeletonDir }
 );
 const p99Match = behaviorProbe.stdout.match(/native-deterministic-p99-ns=(\d+)/);
-if (!p99Match || Number(p99Match[1]) >= 5_000_000) {
+const secureControllerCallbacksPassed = behaviorProbe.stdout.includes(
+  "native-secure-controller-callbacks=4/4 fail-open"
+);
+if (!p99Match || Number(p99Match[1]) >= 5_000_000 || !secureControllerCallbacksPassed) {
   finish("failed", {
     step: "native-behavior-performance-probe",
-    reason: "Full deterministic processKey p99 must be below 5 ms.",
+    reason: "Full deterministic processKey p99 must be below 5 ms and every IMK secure callback must pass the functional fail-open probe.",
     stdout: behaviorProbe.stdout
   }, 1);
 }
@@ -338,6 +357,35 @@ copyFileSync(
 copyFileSync(tokenCandidateSourcePath, tokenCandidateBundlePath);
 copyFileSync(tokenCompletionSourcePath, tokenCompletionBundlePath);
 copyFileSync(tokenCompletionManifestSourcePath, tokenCompletionManifestBundlePath);
+const packagingScriptSha256 = createHash("sha256")
+  .update(readFileSync(join(root, "scripts", "package-macos-imk-dev.mjs")))
+  .digest("hex");
+const finalGitStatusProbe = spawnSync(
+  "git",
+  ["status", "--porcelain=v1", "--untracked-files=all"],
+  { cwd: root, encoding: "utf8" }
+);
+// Generators run before provenance is sealed. A clean start is insufficient:
+// if any generator changes tracked or untracked source, HEAD no longer
+// describes the bytes that were packaged and the manifest must fail closed.
+const sourceFilesClean = sourceFilesCleanAtStart &&
+  finalGitStatusProbe.status === 0 &&
+  finalGitStatusProbe.stdout.trim() === "";
+const buildProvenance = {
+  schemaVersion: 1,
+  recordType: "lekh-imk-build-provenance",
+  gitRevision: sourceRevision,
+  gitTree: sourceTree,
+  sourceFilesClean,
+  shortVersion,
+  buildNumber,
+  architectures: [...archs].sort(),
+  packagingScriptSha256
+};
+writeFileSync(buildProvenanceBundlePath, `${JSON.stringify(buildProvenance, null, 2)}\n`, {
+  encoding: "utf8",
+  mode: 0o644
+});
 // Neural fallback is deliberately absent by default. Benchmark packaging is
 // opt-in so the dev bundle cannot silently ship a non-production neural tail.
 const neuralPackagingRequested = process.env.LEKH_PACKAGE_NEURAL_MODEL === "1";
@@ -418,6 +466,13 @@ const entitlementProbe = spawnSync("codesign", ["-d", "--entitlements", ":-", ap
   maxBuffer: 20 * 1024 * 1024
 });
 const entitlements = `${entitlementProbe.stdout}\n${entitlementProbe.stderr}`;
+const stagedCodeIdentity = spawnSync("codesign", [
+  "-dvvv", join(appBundle, "Contents", "MacOS", executableName)
+], { cwd: root, env: toolchainEnv, encoding: "utf8", stdio: "pipe" });
+const stagedCodeDirectoryHash = /CDHash=([^\s]+)/u.exec(stagedCodeIdentity.stderr)?.[1] ?? "";
+const stagedSigningEvidence = classifyMacOSCodeSigning(
+  `${stagedCodeIdentity.stdout ?? ""}\n${stagedCodeIdentity.stderr ?? ""}`
+);
 
 const packagingFailures = [];
 const connectionNameProbe = spawnSync(
@@ -440,6 +495,27 @@ if (strings.includes(root)) packagingFailures.push("Executable still contains th
 if (entitlements.includes("com.apple.security.get-task-allow")) {
   packagingFailures.push("Signed bundle contains com.apple.security.get-task-allow entitlement.");
 }
+if (
+  stagedCodeIdentity.status !== 0 ||
+  !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(stagedCodeDirectoryHash)
+) {
+  packagingFailures.push("Signed bundle has no valid CodeDirectory identity.");
+}
+if (signingIdentity === "-" && stagedSigningEvidence.classification !== "ad-hoc-development") {
+  packagingFailures.push("Development packaging must produce an explicitly ad-hoc hardened-runtime signature.");
+}
+if (signingIdentity !== "-" && stagedSigningEvidence.classification !== "developer-id-ready") {
+  packagingFailures.push("LEKH_MAC_DEVELOPER_ID must resolve to a timestamped Developer ID Application chain with hardened runtime.");
+}
+if (
+  signingIdentity !== "-" &&
+  (
+    !/^[A-Z0-9]{10}$/u.test(committedProductionTeamIdentifier ?? "") ||
+    stagedSigningEvidence.teamIdentifier !== committedProductionTeamIdentifier
+  )
+) {
+  packagingFailures.push("Developer ID Team ID must match config/macos-production-release-policy.v1.json.");
+}
 if (!existsSync(runtimeBinaryOutputPath) || statSync(runtimeBinaryOutputPath).size > 5 * 1024 * 1024) {
   packagingFailures.push("Packaged runtime binary lexicon must exist and stay under 5 MB.");
 }
@@ -457,6 +533,18 @@ if (!existsSync(tokenCompletionBundlePath) || statSync(tokenCompletionBundlePath
 }
 if (!existsSync(tokenCompletionManifestBundlePath) || statSync(tokenCompletionManifestBundlePath).size === 0) {
   packagingFailures.push("Packaged token-completion manifest is required.");
+}
+if (
+  !existsSync(buildProvenanceBundlePath) ||
+  statSync(buildProvenanceBundlePath).size === 0 ||
+  buildProvenance.gitRevision === null ||
+  buildProvenance.gitTree === null ||
+  buildProvenance.sourceFilesClean !== true ||
+  !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(buildProvenance.gitRevision) ||
+  !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(buildProvenance.gitTree) ||
+  !/^[a-f0-9]{64}$/u.test(buildProvenance.packagingScriptSha256)
+) {
+  packagingFailures.push("Packaged build provenance must bind a clean source tree to an exact Git revision/tree and packaging script.");
 }
 if (strings.includes("@rpath/Sparkle.framework")) packagingFailures.push("IMK executable must not link Sparkle.framework.");
 
@@ -518,8 +606,31 @@ const publishedFileInfo = run(
   [join(publishedAppBundle, "Contents", "MacOS", executableName)]
 ).stdout.trim();
 const publishedResources = join(publishedAppBundle, "Contents", "Resources");
+const publishedExecutablePath = join(publishedAppBundle, "Contents", "MacOS", executableName);
+const publishedExecutableSha256 = createHash("sha256")
+  .update(readFileSync(publishedExecutablePath))
+  .digest("hex");
+const publishedCodeIdentity = spawnSync("codesign", ["-dvvv", publishedExecutablePath], {
+  cwd: root,
+  env: toolchainEnv,
+  encoding: "utf8",
+  stdio: "pipe"
+});
+const publishedCodeDirectoryHash = /CDHash=([^\s]+)/u.exec(publishedCodeIdentity.stderr)?.[1] ?? "";
+const publishedSigningEvidence = classifyMacOSCodeSigning(
+  `${publishedCodeIdentity.stdout ?? ""}\n${publishedCodeIdentity.stderr ?? ""}`
+);
+const publishedBuildProvenancePath = join(publishedResources, "LekhBuildProvenance.v1.json");
+const publishedBuildProvenanceSha256 = createHash("sha256")
+  .update(readFileSync(publishedBuildProvenancePath))
+  .digest("hex");
 
-finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-ready", {
+const publishedStatus = publishedSigningEvidence.classification === "developer-id-ready"
+  ? "passed-developer-id-ready"
+  : publishedSigningEvidence.classification === "ad-hoc-development"
+    ? "passed-adhoc-release"
+    : "passed-development-signed";
+finish(publishedStatus, {
   artifact: publishedAppBundle,
   exportedArtifact: null,
   installCommand: "native/macos-imk/skeleton/install-dev.sh",
@@ -533,6 +644,12 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-r
   tokenCandidateContractBytes: statSync(join(publishedResources, "lekh-token-candidates.v1.json")).size,
   tokenCompletionIndexBytes: statSync(join(publishedResources, "lekh-token-completions.v1.json")).size,
   tokenCompletionManifestBytes: statSync(join(publishedResources, "lekh-token-completions.v1.manifest.json")).size,
+  buildProvenance,
+  buildProvenanceSha256: publishedBuildProvenanceSha256,
+  executableSha256: publishedExecutableSha256,
+  codeDirectoryHash: publishedCodeDirectoryHash,
+  signingClassification: publishedSigningEvidence.classification,
+  signingTeamIdentifier: publishedSigningEvidence.teamIdentifier,
   packagedNeuralModelBytes: neuralModelPackaged
     ? treeBytes(join(publishedResources, "LekhNeuralTransliterator.mlmodelc"))
     : 0,
@@ -547,7 +664,7 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-r
   experimentalNeuralTypingEnabled: experimentalNeuralTypingRequested,
   shortVersion,
   buildNumber,
-  productionSigningRequired: signingIdentity === "-"
+  productionSigningRequired: publishedSigningEvidence.productionSigningRequired
 }, 0);
 
 function treeBytes(path) {

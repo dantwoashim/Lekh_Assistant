@@ -98,6 +98,7 @@ class ProbeFinished extends Error {}
 
 let result = null;
 let coldTextEditPid = null;
+let coldTextEditIdentity = null;
 let realTempTextEditFile = null;
 let previousInputSource = null;
 let preferenceSnapshots = null;
@@ -294,6 +295,7 @@ try {
 
   const coldLaunch = launchColdTextEdit(realTempTextEditFile);
   coldTextEditPid = coldLaunch.pid;
+  coldTextEditIdentity = coldLaunch;
   if (coldLaunch.status !== 0 || !Number.isInteger(coldTextEditPid)) {
     blocked("launch-fresh-textedit", coldLaunch);
   }
@@ -391,7 +393,7 @@ try {
 } finally {
   const cleanupFailures = [];
   if (Number.isInteger(coldTextEditPid)) {
-    const termination = terminateColdTextEdit(coldTextEditPid);
+    const termination = terminateColdTextEdit(coldTextEditIdentity);
     if (termination.status !== 0) cleanupFailures.push(termination.note);
   }
   if (previousInputSource?.id) {

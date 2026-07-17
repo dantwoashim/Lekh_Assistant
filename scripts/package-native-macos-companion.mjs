@@ -24,10 +24,13 @@ import {
   parseCodeSignInspection,
   resolveCompanionBundleVersions
 } from "./lib/macos-companion-package-metadata.mjs";
+import { readProductionReleasePolicy } from "./lib/macos-production-release-attestation.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
 const signed = process.argv.includes("--signed");
+const committedProductionTeamIdentifier = readProductionReleasePolicy(root)
+  .policy?.appleDeveloperTeamIdentifier ?? null;
 const publicationTestMode = process.env.LEKH_PACKAGE_TEST_MODE === "1";
 const appSwapFault = process.env.LEKH_PACKAGE_TEST_FAULT_AFTER_APP_SWAP ?? null;
 const dmgSwapFault = process.env.LEKH_PACKAGE_TEST_FAULT_AFTER_DMG_SWAP ?? null;
@@ -645,7 +648,7 @@ function validateAppArtifactIdentity(identity, label) {
     signed &&
     (
       identity.signingKind !== "developer-id" ||
-      identity.teamIdentifier !== process.env.APPLE_TEAM_ID ||
+      identity.teamIdentifier !== committedProductionTeamIdentifier ||
       identity.secureTimestamp !== true
     )
   ) {
@@ -659,7 +662,7 @@ function validateAppArtifactIdentity(identity, label) {
 function validateDmgArtifactIdentity(identity, label) {
   if (
     identity.signingKind !== "developer-id" ||
-    identity.teamIdentifier !== process.env.APPLE_TEAM_ID ||
+    identity.teamIdentifier !== committedProductionTeamIdentifier ||
     identity.secureTimestamp !== true
   ) {
     throw new Error(`${label} does not match the required timestamped Developer ID Team ID.`);
@@ -1002,6 +1005,15 @@ if (signed) {
       reason: "Developer ID signing plus Keychain-backed notarization credentials are required for a production companion.",
       missingEnvironment: missingSigningEnvironment,
       unsignedDevCommand: "npm run package:macos:unsigned"
+    }, 2);
+  }
+  if (
+    !/^[A-Z0-9]{10}$/u.test(committedProductionTeamIdentifier ?? "") ||
+    process.env.APPLE_TEAM_ID !== committedProductionTeamIdentifier
+  ) {
+    finish("blocked-external", {
+      reason: "APPLE_TEAM_ID must exactly match the reviewed Team ID in config/macos-production-release-policy.v1.json.",
+      committedTeamIdentifierConfigured: /^[A-Z0-9]{10}$/u.test(committedProductionTeamIdentifier ?? "")
     }, 2);
   }
 }

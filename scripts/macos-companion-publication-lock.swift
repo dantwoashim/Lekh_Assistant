@@ -13,13 +13,22 @@ private func emit(_ evidence: LockEvidence) {
   FileHandle.standardOutput.write(Data("\n".utf8))
 }
 
+let arguments = CommandLine.arguments
 guard
-  CommandLine.arguments.count == 3,
-  CommandLine.arguments[1] == "--lock-fd",
-  let descriptor = Int32(CommandLine.arguments[2]),
-  descriptor >= 3
+  [3, 5].contains(arguments.count),
+  arguments[1] == "--lock-fd",
+  let descriptor = Int32(arguments[2]),
+  descriptor >= 3,
+  arguments.count == 3 || arguments[3] == "--wait-ms",
+  arguments.count == 3 || Int(arguments[4]) != nil
 else {
-  FileHandle.standardError.write(Data("usage: macos-companion-publication-lock --lock-fd <inherited-fd>\n".utf8))
+  FileHandle.standardError.write(Data("usage: macos-companion-publication-lock --lock-fd <inherited-fd> [--wait-ms <0...60000>]\n".utf8))
+  exit(EX_USAGE)
+}
+
+let waitMilliseconds = arguments.count == 5 ? Int(arguments[4])! : 0
+guard (0...60_000).contains(waitMilliseconds) else {
+  FileHandle.standardError.write(Data("lock wait must be between 0 and 60000 milliseconds\n".utf8))
   exit(EX_USAGE)
 }
 
@@ -27,14 +36,18 @@ else {
 // description as fd 3. BSD flock attaches to that open file description, so
 // the lock remains held by the parent's descriptor after this helper exits.
 // Never call LOCK_UN here: doing so would unlock the shared description.
-guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(waitMilliseconds) * 1_000_000
+while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
   let code = errno
-  emit(LockEvidence(
-    status: code == EWOULDBLOCK ? "busy" : "failed",
-    errorNumber: code,
-    reason: String(cString: strerror(code))
-  ))
-  exit(code == EWOULDBLOCK ? EX_TEMPFAIL : EX_OSERR)
+  guard code == EWOULDBLOCK, DispatchTime.now().uptimeNanoseconds < deadline else {
+    emit(LockEvidence(
+      status: code == EWOULDBLOCK ? "busy" : "failed",
+      errorNumber: code,
+      reason: String(cString: strerror(code))
+    ))
+    exit(code == EWOULDBLOCK ? EX_TEMPFAIL : EX_OSERR)
+  }
+  usleep(50_000)
 }
 
 emit(LockEvidence(status: "acquired", errorNumber: nil, reason: nil))

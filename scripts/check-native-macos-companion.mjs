@@ -11,6 +11,7 @@ import {
   parseCodeSignInspection,
   resolveCompanionBundleVersions
 } from "./lib/macos-companion-package-metadata.mjs";
+import { readProductionReleasePolicy } from "./lib/macos-production-release-attestation.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -19,8 +20,9 @@ const plistPath = join(appBundle, "Contents", "Info.plist");
 const executable = join(appBundle, "Contents", "MacOS", "LekhKeyboardCompanion");
 const failures = [];
 const production = process.argv.includes("--production");
+const productionPolicy = readProductionReleasePolicy(root).policy;
+const committedTeamIdentifier = productionPolicy?.appleDeveloperTeamIdentifier ?? null;
 const requiredProductionExpectations = [
-  "LEKH_EXPECTED_TEAM_ID",
   "LEKH_EXPECTED_SHORT_VERSION",
   "LEKH_EXPECTED_BUILD_VERSION",
   "LEKH_EXPECTED_SOURCE_REVISION"
@@ -31,8 +33,8 @@ const missingProductionExpectations = production
 if (missingProductionExpectations.length > 0) {
   failures.push(`Production verification requires explicit trust anchors: ${missingProductionExpectations.join(", ")}.`);
 }
-if (production && process.env.LEKH_EXPECTED_TEAM_ID && !/^[A-Z0-9]{10}$/.test(process.env.LEKH_EXPECTED_TEAM_ID)) {
-  failures.push("LEKH_EXPECTED_TEAM_ID must be an exact 10-character Apple Team ID.");
+if (production && !/^[A-Z0-9]{10}$/.test(committedTeamIdentifier ?? "")) {
+  failures.push("Production Apple Team ID is not configured in config/macos-production-release-policy.v1.json.");
 }
 if (production && process.env.LEKH_EXPECTED_SHORT_VERSION && !isValidCompanionShortVersion(process.env.LEKH_EXPECTED_SHORT_VERSION)) {
   failures.push("LEKH_EXPECTED_SHORT_VERSION is not a canonical three-part version.");
@@ -422,13 +424,13 @@ if (production && packageReport?.value?.signed !== true) {
   failures.push("Production companion verification requires a signed, notarized package report.");
 }
 if (production && packageReport?.value?.signed === true) {
-  const expectedTeamIdentifier = process.env.LEKH_EXPECTED_TEAM_ID;
+  const expectedTeamIdentifier = committedTeamIdentifier;
   const expectedSourceRevision = process.env.LEKH_EXPECTED_SOURCE_REVISION;
   if (artifactIdentity?.teamIdentifier !== expectedTeamIdentifier) {
-    failures.push("Delivered Developer ID Team ID does not match LEKH_EXPECTED_TEAM_ID.");
+    failures.push("Delivered Developer ID Team ID does not match the committed release policy.");
   }
   if (dmgArtifactIdentity?.teamIdentifier !== expectedTeamIdentifier) {
-    failures.push("Delivered DMG Developer ID Team ID does not match LEKH_EXPECTED_TEAM_ID.");
+    failures.push("Delivered DMG Developer ID Team ID does not match the committed release policy.");
   }
   if (packageReport.value.sourceRevision !== expectedSourceRevision) {
     failures.push("Signed package source revision does not match LEKH_EXPECTED_SOURCE_REVISION.");

@@ -199,8 +199,38 @@ private func verifyRuntimeActivationGate() {
   )
 }
 
+private func verifyCandidatePointerGate() {
+  var gate = LekhCandidatePointerGate()
+  require(!gate.beginPress(inside: false), "A mouse-down outside a candidate row must not open acceptance custody")
+  require(
+    gate.endPress(inside: false) == .ignored,
+    "An outside mouse-down followed by outside mouse-up must not report cancellation"
+  )
+  require(
+    gate.endPress(inside: true) == .ignored,
+    "A mouse-up inside without a custodied inside mouse-down must not select"
+  )
+
+  require(gate.beginPress(inside: true), "An inside mouse-down must open row-local pointer custody")
+  require(
+    gate.endPress(inside: false) == .cancelled,
+    "Only an inside mouse-down followed by outside mouse-up may report cancellation"
+  )
+  require(
+    gate.endPress(inside: false) == .ignored,
+    "A cancellation receipt must be one-shot for its custodied mouse-down"
+  )
+
+  require(gate.beginPress(inside: true), "A later inside mouse-down must open a new custody generation")
+  require(
+    gate.endPress(inside: true) == .selected,
+    "Inside mouse-down followed by inside mouse-up must select, not cancel"
+  )
+}
+
 verifyCandidateStateMachine()
 verifyAutoCommitPolicy()
 verifyFourModeContract()
 verifyRuntimeActivationGate()
+verifyCandidatePointerGate()
 print("PASS: native candidate, delimiter, and four-mode unit contracts")

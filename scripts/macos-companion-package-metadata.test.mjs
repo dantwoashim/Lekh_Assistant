@@ -131,6 +131,8 @@ describe("native macOS companion package metadata", () => {
     expect(packager).toContain("assertPublicationLockHeld()");
     expect(packager).not.toContain("publicationLockDirectory");
     expect(lockHelper).toContain("flock(descriptor, LOCK_EX | LOCK_NB)");
+    expect(lockHelper).toContain('arguments[3] == "--wait-ms"');
+    expect(lockHelper).toContain("usleep(50_000)");
     expect(lockHelper).toContain("Never call LOCK_UN here");
     expect(packager).toContain("recoverInterruptedPublication()");
     expect(packager).toContain("writePublicationTransaction(transaction)");
@@ -151,10 +153,10 @@ describe("native macOS companion package metadata", () => {
     expect(checker).toContain("signatureVerifiedOnDeliveredBundle");
     expect(checker).toContain("artifactIdentity[field] !== expectedArtifactIdentity[field]");
     expect(checker).toContain("inspectDmgEmbeddedCompanion(notarizedArtifact)");
-    expect(checker).toContain("LEKH_EXPECTED_TEAM_ID");
+    expect(checker).toContain("config/macos-production-release-policy.v1.json");
     expect(checker).toContain("LEKH_EXPECTED_SOURCE_REVISION");
     expect(checker).toContain("Delivered app stapled-ticket validation failed");
-    expect(checker).toContain("Delivered DMG Developer ID Team ID does not match LEKH_EXPECTED_TEAM_ID");
+    expect(checker).toContain("Delivered DMG Developer ID Team ID does not match the committed release policy");
     expect(checker).toContain("Production companion verification requires a signed, notarized package report");
     expect(checker).not.toContain("verificationBundle");
     expect(checker).not.toContain("signatureVerifiedOnCleanTransportCopy");

@@ -294,6 +294,13 @@ describe("macOS IMK proof target source", () => {
     expect(runtimeHealth).toContain("var lastGhostOfferedAt: Date?");
     expect(runtimeHealth).toContain("var lastGhostAcceptedAt: Date?");
     expect(runtimeHealth).toContain("var ghostSuppressionCounts: [String: Int]?");
+    expect(runtimeHealth).toContain("var candidateDragCancellationCount: Int?");
+    expect(runtimeHealth).toContain("var lastCandidateDragCancellationAt: Date?");
+    expect(runtimeHealth).toContain("markCandidateDragCancellation(activationIdentifier:");
+    expect(runtimeHealth).toContain("record.candidateDragCancellationCount = 0");
+    expect(runtimeHealth).toContain("record.lastCandidateDragCancellationAt = nil");
+    expect(runtimeHealth).not.toContain("securePassThrough");
+    expect(controller).not.toContain("recordSecurePassThroughHandled");
     expect(runtimeHealth).toContain("var controllerInstanceIdentifier: String?");
     expect(runtimeHealth).toContain("var activationIdentifier: String?");
     expect(runtimeHealth).toContain("var controllerIsActive: Bool?");
@@ -312,6 +319,8 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("recordGhostSuppression(.hostGeometryUnavailable)");
     expect(controller).toContain("recordGhostSuppression(.presentationUnavailable)");
     expect(controller).toContain("LekhRuntimeHealth.markControllerDeactivated(");
+    expect(controller).not.toContain("LekhRuntimeHealth.markSecurePassThrough(");
+    expect(controller).not.toContain("reason=secureInput");
     expect(controller).toContain("override func inputControllerWillClose()")
     expect(controller).toContain("deactivateRuntimeEvidence()")
     expect(controller).toContain("Secure Event Input can turn on after a nonsecure key scheduled this");
@@ -366,7 +375,8 @@ describe("macOS IMK proof target source", () => {
     expect(candidatePanel).toContain("bounds.contains(convert(event.locationInWindow, from: nil))");
     expect(candidatePanel).toContain("override func mouseDragged(with event:");
     expect(candidatePanel).toContain("mouseUp(with event:");
-    expect(candidatePanel).toContain("let shouldCommit = isPressActive && bounds.contains(point)");
+    expect(candidatePanel).toContain("let decision = pointerGate.endPress(inside: releasedInside)");
+    expect(candidatePanel).toContain("guard decision == .selected else { return }");
     expect(candidatePanel).toContain("onSelect?(candidateIndex, candidateText)");
     expect(candidatePanel).not.toContain("onHighlight");
     expect(controller).toContain("onSelect: { [weak self] selectedIndex, selectedText in");
@@ -395,7 +405,7 @@ describe("macOS IMK proof target source", () => {
       controller.indexOf("private func cancelLocalComposition")
     );
 
-    expect(commandBlock.indexOf("if IsSecureEventInputEnabled()")).toBeLessThan(
+    expect(commandBlock.indexOf("if secureInputActive()")).toBeLessThan(
       commandBlock.indexOf("NSResponder.cancelOperation")
     );
     expect(commandBlock).toContain("clearStateForSecureInput(client:");
@@ -403,7 +413,7 @@ describe("macOS IMK proof target source", () => {
     expect(commandBlock).toContain("NSResponder.insertTabIgnoringFieldEditor");
     expect(commandBlock).toContain("NSResponder.deleteForward");
     expect(commandBlock).toContain("NSResponder.moveLeftAndModifySelection");
-    expect(controller).toContain('guard !IsSecureEventInputEnabled() else { return "" }');
+    expect(controller).toContain('guard !secureInputActive() else { return "" }');
     expect(controller).toContain('return NSAttributedString(string: "")');
     expect(escapeBlock).toContain("return commitRawComposition(client: client, suffix: \"\")");
     expect(escapeBlock).not.toContain("return false");
@@ -422,7 +432,9 @@ describe("macOS IMK proof target source", () => {
     expect(markedTextBlock).not.toContain("NSFont.systemFont");
     expect(markedTextBlock).not.toContain("NSColor.labelColor");
     expect(controller).toContain("neuralCandidateService.cancelPending()");
-    expect(controller).toContain("if IsSecureEventInputEnabled() {\n      neuralCandidateService.cancelPending()\n      return\n    }\n    guard nativeMode");
+    expect(controller).toContain("if secureInputActive() {\n      neuralCandidateService.cancelPending()\n      return\n    }\n    guard nativeMode");
+    expect(controller).toContain("secureInputActive: @escaping () -> Bool");
+    expect(controller).toContain("self.secureInputActive = { IsSecureEventInputEnabled() }");
   });
 
   it("keeps the companion, input menu, and live IMK preferences coherent at word boundaries", () => {
@@ -438,7 +450,7 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("DispatchQueue.main.async { [weak self] in\n        self?.sharedPreferencesDidChange()");
     expect(controller).toContain("private func applyPendingPreferencesAtBoundary(force: Bool = false)");
     expect(controller).toContain("guard !engineClient.hasComposition(sessionId: sessionId) else { return }");
-    expect(controller).toContain("applyPendingPreferencesAtBoundary()\n\n    if IsSecureEventInputEnabled()");
+    expect(controller).toContain("applyPendingPreferencesAtBoundary()\n\n    if secureInputActive()");
     expect(controller).toContain('lekhCompanionBundleIdentifier = "com.lekh.keyboard.companion"');
     expect(controller).toContain("workspace.openApplication(at: companionURL");
     expect(controller).toContain("showLegacyPreferences()");
@@ -492,9 +504,10 @@ describe("macOS IMK proof target source", () => {
   it("keeps native inline preview as the default typing experience", () => {
     const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
 
+    const inlineCompositionStart = controller.indexOf("private var usesInlineComposition");
     const inlineCompositionBlock = controller.slice(
-      controller.indexOf("private var usesInlineComposition"),
-      controller.indexOf("public init(engineClient")
+      inlineCompositionStart,
+      controller.indexOf("  public init(", inlineCompositionStart)
     );
     expect(inlineCompositionBlock).toContain('LEKH_IMK_INLINE_COMPOSITION');
     expect(inlineCompositionBlock).toContain("return true");
@@ -664,7 +677,10 @@ describe("macOS IMK proof target source", () => {
       const preferenceSnapshotIndex = source.indexOf("  preferenceSnapshots = {", guardIndex);
       const preferenceMutationIndex = source.indexOf("  const preferenceWrites = [", guardIndex);
       const tisMutationIndex = source.indexOf('"--select-only"', guardIndex);
-      const hostLaunchIndex = source.indexOf("launchColdTextEdit(realTempTextEditFile)", guardIndex);
+      const hostLaunchMarker = relativePath.endsWith("candidate-mouse.mjs")
+        ? "launchColdTextEditUnderCustody(realTempTextEditFile)"
+        : "launchColdTextEdit(realTempTextEditFile)";
+      const hostLaunchIndex = source.indexOf(hostLaunchMarker, guardIndex);
 
       expect(source).toContain("consoleSessionPrecondition,");
       expect(guardIndex, relativePath).toBeGreaterThan(-1);
@@ -686,14 +702,26 @@ describe("macOS IMK proof target source", () => {
   it("proves custom candidate mouse acceptance and drag-away cancellation in an exact cold host", () => {
     const packageJson = readFileSync(join(root, "package.json"), "utf8");
     const probe = readFileSync(join(root, "scripts/check-macos-imk-host-candidate-mouse.mjs"), "utf8");
+    const reportBuilder = readFileSync(join(root, "scripts/lib/macos-candidate-mouse-report.mjs"), "utf8");
     const candidatePanel = readFileSync(join(root, "native/macos-imk/skeleton/LekhCandidatePanel.swift"), "utf8");
+    const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
 
     expect(packageJson).toContain("probe:macos-imk-host:candidate-mouse");
     expect(packageJson).not.toContain("check:macos-imk-host:candidate-mouse");
     expect(candidatePanel).toContain("panel.setAccessibilityRole(.window)");
     expect(candidatePanel).toContain('panel.setAccessibilityIdentifier("lekh.candidatePanel")');
+    expect(candidatePanel).toContain("public struct LekhCandidatePointerGate: Sendable");
+    expect(candidatePanel).toContain("return inside ? .selected : .cancelled");
+    expect(candidatePanel).toContain("if decision == .cancelled");
+    expect(candidatePanel).toContain("onDragCancellation?()");
+    expect(controller).toContain("self.runtimeActivationIdentifier == presentationActivationIdentifier");
+    expect(controller).toContain("self.isCurrentSurfaceToken(presentationToken, client: client)");
+    expect(controller).toContain("self.candidatePresentationToken == presentationToken");
+    expect(controller).toContain("LekhRuntimeHealth.markCandidateDragCancellation(");
     expect(probe).toContain("launchColdTextEdit");
     expect(probe).toContain("waitForExactRuntimeHealth");
+    expect(probe).toContain("automationPermissionPrecondition()");
+    expect(probe).toContain("eventListenAccessRequired: true");
     expect(probe).toContain('item.identifier === "lekh.candidatePanel"');
     expect(probe).toContain('row.identifier === "lekh.candidate.0"');
     expect(probe).toContain('row.identifier === "lekh.candidate.1"');
@@ -701,12 +729,125 @@ describe("macOS IMK proof target source", () => {
     expect(probe).toContain(".leftMouseDragged");
     expect(probe).toContain(".leftMouseUp");
     expect(probe).toContain("topmostWindow(at:");
-    expect(probe).toContain("startWindow.pid == inputMethodPid");
+    expect(probe).toContain("candidateWindowFramePreflight");
+    expect(probe).toContain("exactCandidateAXHitPreflight");
+    expect(probe).toContain("mouseRoutingWindowPreflight");
+    expect(probe).toContain("AXUIElementCopyElementAtPosition");
+    expect(probe).toContain('identifiers.contains("lekh.candidatePanel")');
+    expect(probe).toContain('"mouseButtonEventPosted": !postedButtonSequence.isEmpty');
+    expect(probe).toContain(".mouseEventWindowUnderMousePointerThatCanHandleThisEvent");
+    expect(probe).toContain("windowThatCanHandleEvent == Int64(candidateWindow.windowID)");
+    expect(probe.indexOf("var buttonEvents:")).toBeLessThan(probe.indexOf("let endRoute = routedWindow"));
+    expect(probe.indexOf("let endRoute = routedWindow")).toBeLessThan(probe.indexOf("let startRoute = routedWindow"));
+    const lastRecheck = probe.indexOf("guard refreshPreButtonStateEvidence()");
+    const toctouBoundGuard = probe.indexOf("guard withinTOCTOUBounds", lastRecheck);
+    const firstButtonPost = probe.indexOf("item.event.post(tap: .cghidEventTap)", lastRecheck);
+    expect(lastRecheck).toBeGreaterThan(-1);
+    expect(probe.indexOf("let startRoute = routedWindow")).toBeLessThan(lastRecheck);
+    expect(toctouBoundGuard).toBeGreaterThan(lastRecheck);
+    expect(toctouBoundGuard).toBeLessThan(firstButtonPost);
+    expect(firstButtonPost).toBeGreaterThan(lastRecheck);
+    expect(probe.slice(lastRecheck, firstButtonPost)).not.toContain("usleep");
+    expect(probe.slice(lastRecheck, firstButtonPost)).not.toContain(".mouseMoved");
+    expect(probe).toContain("recheckToMouseDownPostStartNs <= 10_000_000");
+    expect(probe).toContain("routeToMouseDownPostStartNs <= 50_000_000");
+    expect(probe).toContain("if mouseDownOutstanding");
+    expect(probe).toContain("postFallbackMouseUp()");
+    expect(probe).toContain('postedButtonSequence.append("fallback-up")');
+    expect(probe).toContain("exactSequence(evidence?.postedButtonSequence)");
+    expect(probe).toContain("exactSequence(evidence?.observedButtonSequence)");
+    expect(probe).toContain('"permission-blocked" : "invariant-failed"');
+    expect(probe).toContain("evidence?.tapCreationListenAccessOnFailure === false");
+    expect(probe).toContain("permissionRecheck.eventListenAccess === false");
+    expect(probe).toContain("permissionRecheck =");
+    expect(probe).toContain("finishMouseGestureFailure");
+    expect(probe).toContain("snapshotExactPreference(preferencesDomain, key)");
+    expect(probe).toContain("restoreExactPreference(preferencesDomain, preferenceKeys[name], snapshot)");
+    expect(probe).toContain("writePreference(preferencesDomain");
+    expect(probe).not.toContain('run("defaults"');
+    expect(probe).not.toContain("propertyListBase64");
+    expect(reportBuilder).toContain("inputSourceRestored: boolean(cleanup?.inputSourceRestored)");
+    expect(reportBuilder).toContain("preferencesRestored: boolean(cleanup?.preferencesRestored)");
+    expect(reportBuilder).toContain("temporaryDocumentRemoved: boolean(cleanup?.temporaryDocumentRemoved)");
+    expect(reportBuilder).toContain("rawCandidateTextSerialized: false");
+    expect(probe).toContain("buildCandidateMouseReport");
+    expect(probe).toContain("launchCandidateMouseRecoveryGuardian");
     expect(probe).toContain("CGWarpMouseCursorPosition(originalPointer)");
     expect(probe).toContain("actual !== validated.firstText");
     expect(probe).toContain("afterDragText !== dragChoices.visibleCompositionText");
     expect(probe).toContain("acceptedText !== clickChoices.secondText");
+    expect(probe).toContain("waitForCandidateDragCancellationReceipt");
+    expect(probe).toContain("dragReceiptAfter.delta !== 1");
+    expect(probe).toContain("clickReceiptDelta !== 0");
+    expect(probe).toContain("clickReceiptAfter.timestamp === dragReceiptAfter.timestamp");
+    expect(probe).toContain("exactTextEditFrontmostInvariantPreserved");
+    expect(probe).not.toContain("noStrayInputObserved");
+    expect(reportBuilder).toContain("proof.dragCancellationReceiptDelta === 1");
+    expect(reportBuilder).toContain("proof.clickCancellationReceiptDelta === 0");
     expect(probe).not.toContain("accessibilityPerformPress");
+  });
+
+  it("keeps secure-field host proof content-free and bound to an exact installed runtime", () => {
+    const packageJson = readFileSync(join(root, "package.json"), "utf8");
+    const probe = readFileSync(join(root, "scripts/check-macos-imk-host-secure-field.mjs"), "utf8");
+    const host = readFileSync(join(root, "native/macos-imk/qa-hosts/LekhSecureFieldHost/main.swift"), "utf8");
+    const hostHarness = readFileSync(join(root, "scripts/lib/macos-imk-host-harness.mjs"), "utf8");
+    const recovery = readFileSync(join(root, "scripts/lib/macos-secure-probe-recovery.mjs"), "utf8");
+    const qaMatrix = readFileSync(join(root, "scripts/check-macos-imk-qa-matrix.mjs"), "utf8");
+    const buildIdentity = readFileSync(join(root, "scripts/lib/macos-imk-build-identity.mjs"), "utf8");
+    const evidenceValidator = readFileSync(join(root, "scripts/lib/macos-imk-qa-evidence-validator.mjs"), "utf8");
+    const level5Matrix = readFileSync(join(root, "scripts/check-level5-proof-matrix.mjs"), "utf8");
+
+    expect(packageJson).toContain("probe:macos-imk-host:secure-field");
+    expect(packageJson).not.toContain("check:macos-imk-host:secure-field");
+    expect(probe).toContain("consoleSessionPrecondition()");
+    expect(probe).toContain("automationPermissionPrecondition()");
+    expect(probe).toContain("secureEventInputState()");
+    expect(probe).toContain("waitForExactRuntimeHealth({");
+    expect(probe).toContain("logicalDatabaseSnapshot()");
+    expect(probe).toContain("visibleLekhInputMethodSurfaces(runtimePid)");
+    expect(probe).toContain("restoreExactInputSource(previousInputSource.id)");
+    expect(probe).toContain('"macos-ascii-source-substitution"');
+    expect(probe).toContain("sourceStableThroughEntry: secureRouteStable");
+    expect(probe).toContain('"lekh-selected-route-attribution-unavailable"');
+    expect(probe).toContain("liveControllerCallbackAttributed: false");
+    expect(probe).toContain("callback guards are covered by the separate native functional probe");
+    expect(probe).toContain("runtimeHealthFileUnchanged: runtimeHealthUnchanged");
+    expect(probe).not.toContain("securePassThroughCount");
+    expect(probe).toContain("await postSecureEvents(keys(syntheticRawToken)");
+    expect(probe).toContain("logEvidence.eventCount !== 0");
+    expect(probe).toContain("metricEvidence.appendedByteCount !== 0");
+    expect(probe).toContain("artifactProvenanceEvidence({");
+    expect(probe).toContain("initialArtifact.localArtifactIntegrityVerified");
+    expect(probe).toContain("This local check is not source-to-binary attestation.");
+    expect(probe).not.toContain("cryptographically bound to the exact clean evidence revision");
+    expect(probe).toContain("acquireSecureProbeRecoveryLock()");
+    expect(probe).toContain("prepareSecureProbeRecovery({");
+    expect(probe).toContain("await launchSecureProbeRecoveryGuardian({");
+    expect(probe).toContain("await waitForSecureProbeRecoveryGuardian(recoveryGuardian)");
+    expect(probe).toContain('disposition: settlement.disposition');
+    expect(probe).toContain("releaseSecureProbeRecoveryLock(recoveryLock)");
+    expect(probe).not.toContain(".cghidEventTap");
+    expect(probe).not.toContain("kAXValueAttribute");
+    expect(hostHarness).not.toContain("AXUIElementCopyAttributeValue(match, kAXValueAttribute");
+    expect(host).toContain("NSSecureTextField");
+    expect(host).toContain("secureExactMatch: secureField.stringValue == expectedSecureText");
+    expect(host).not.toContain("secureField.stringValue,");
+    expect(host).toContain("FileHandle.standardInput.readabilityHandler");
+    expect(recovery).toContain("normal-completion-recorded");
+    expect(recovery).toContain("executableSha256");
+    expect(recovery).toContain("timingSafeEqual");
+    expect(qaMatrix).toContain('app: "Password Fields"');
+    expect(qaMatrix).toContain('case: "secure-field-no-memory"');
+    expect(buildIdentity).toContain('LOCAL_PROVENANCE_ASSURANCE = "local-unattested"');
+    expect(buildIdentity).toContain("sourceToBinaryAttested: false");
+    expect(buildIdentity).not.toContain("verified: issues.length === 0");
+    expect(evidenceValidator).toContain("requireTrustedSourceToBinaryAttestation = false");
+    expect(evidenceValidator).toContain('"secure.trusted-source-to-binary-attestation-required"');
+    expect(qaMatrix).toContain("validateSecureFieldHostEvidenceFile({ root, trustedBuildAttestation })");
+    expect(qaMatrix).toContain("productionEligible: validation.trustedSourceToBinaryAttested === true");
+    expect(qaMatrix).toContain("manualHostEvidenceAllowedForMatrix({ production, app, testCase })");
+    expect(level5Matrix).toContain("validateSecureFieldHostEvidenceFile({ root, trustedBuildAttestation })");
   });
 
   it("does not auto-select the unfinished IMK during normal dev install", () => {
@@ -741,8 +882,10 @@ describe("macOS IMK proof target source", () => {
     expect(installScript).toContain("verify_bundle \"$DEST\"");
     expect(installScript).toContain("restoring the prior input method");
     expect(installScript).toContain("stop_lekh_input_method_for_replacement");
-    expect(installScript).toContain("/bin/kill -TERM");
-    expect(installScript).toContain("/bin/kill -KILL");
+    expect(installScript).toContain("verify-macos-imk-dev-artifact.mjs");
+    expect(installScript).toContain("macos-imk-dev-package-report.json");
+    expect(installScript).toContain("terminate-exact-processes.swift");
+    expect(installScript).not.toContain("pgrep -x LekhInputMethodApp");
     expect(installScript).not.toContain("pkill -x LekhInputMethodApp");
     expect(installScript).not.toContain("killall TextInputMenuAgent");
     expect(installScript).not.toContain("killall imklaunchagent");
@@ -803,8 +946,9 @@ describe("macOS IMK proof target source", () => {
     expect(installerPackager).toContain("restore-system-keyboard\" --snapshot");
     expect(installerPackager).toContain("stop_lekh_input_method_for_replacement");
     expect(installerPackager).toContain("stop_lekh_input_method_for_removal");
-    expect(installerPackager).toContain("/bin/kill -TERM");
-    expect(installerPackager).toContain("/bin/kill -KILL");
+    expect(installerPackager).toContain("verifyMacOSIMKDevArtifact");
+    expect(installerPackager).toContain("terminate-exact-processes.swift");
+    expect(installerPackager).not.toContain("pgrep -x LekhInputMethodApp");
     expect(installerPackager).toContain("RUNTIME_HEALTH");
     expect(installerPackager).toContain("INSTALLED_CONNECTION_NAME");
     expect(installerPackager).not.toContain("pkill -x LekhInputMethodApp");

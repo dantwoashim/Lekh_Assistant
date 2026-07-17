@@ -1192,6 +1192,98 @@ private func assertCandidateInteractionStartsPassiveAndPagesSafely() {
   require(controller.currentState().selectedIndex == nil, "Dismissal must restore the passive state")
 }
 
+private func assertEveryControllerCallbackFailsOpenUnderSecureInput() {
+  typealias Callback = (LekhInputController, ProbeTextInputClient) -> Bool
+  let keyEvent: () -> NSEvent = {
+    NSEvent.keyEvent(
+      with: .keyDown,
+      location: .zero,
+      modifierFlags: [],
+      timestamp: 0,
+      windowNumber: 0,
+      context: nil,
+      characters: "x",
+      charactersIgnoringModifiers: "x",
+      isARepeat: false,
+      keyCode: 7
+    )!
+  }
+  let callbacks: [(name: String, invoke: Callback)] = [
+    ("inputText", { controller, client in
+      controller.inputText("x", client: client)
+    }),
+    ("inputTextKey", { controller, client in
+      controller.inputText("x", key: 7, modifiers: 0, client: client)
+    }),
+    ("handle", { controller, client in
+      controller.handle(keyEvent(), client: client)
+    }),
+    ("didCommand", { controller, client in
+      controller.didCommand(by: #selector(NSResponder.deleteBackward(_:)), client: client)
+    })
+  ]
+
+  for callback in callbacks {
+    let directClient = ProbeTextInputClient()
+    let directController = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      secureInputActive: { true }
+    )
+    require(
+      !callback.invoke(directController, directClient),
+      "\(callback.name) must pass through when secure input is already active"
+    )
+    require(
+      directClient.markedTextMutations.isEmpty && directClient.committedTextMutations.isEmpty,
+      "\(callback.name) must not mutate a secure client without prior composition"
+    )
+    require(
+      directController.candidates(directClient).isEmpty &&
+        (directController.composedString(directClient) as? String) == "" &&
+        directController.originalString(directClient).string.isEmpty,
+      "\(callback.name) must expose no secure composition or candidates"
+    )
+
+    var secure = false
+    let transitionClient = ProbeTextInputClient()
+    let transitionController = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      secureInputActive: { secure }
+    )
+    require(
+      transitionController.inputText("ab", client: transitionClient),
+      "\(callback.name) transition probe must establish nonsecure composition"
+    )
+    let markedMutationCount = transitionClient.markedTextMutations.count
+    secure = true
+    require(
+      !callback.invoke(transitionController, transitionClient),
+      "\(callback.name) must pass the first secure callback through"
+    )
+    require(
+      transitionClient.markedTextMutations.count == markedMutationCount + 1 &&
+        transitionClient.markedTextMutations.last == "",
+      "\(callback.name) must clear exactly one pre-existing marked range"
+    )
+    require(
+      transitionClient.committedTextMutations.isEmpty &&
+        transitionController.candidates(transitionClient).isEmpty &&
+        (transitionController.composedString(transitionClient) as? String) == "" &&
+        transitionController.originalString(transitionClient).string.isEmpty,
+      "\(callback.name) secure transition must clear local state without committing or ranking"
+    )
+    let afterClearMutationCount = transitionClient.markedTextMutations.count
+    require(
+      !callback.invoke(transitionController, transitionClient) &&
+        transitionClient.markedTextMutations.count == afterClearMutationCount,
+      "\(callback.name) repeated secure callbacks must remain mutation-free"
+    )
+  }
+
+  RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+  print("native-secure-controller-callbacks=4/4 fail-open")
+}
+
 private func assertDeterministicHotPathP99() {
   var samples: [UInt64] = []
   samples.reserveCapacity(2_000)
@@ -1231,6 +1323,7 @@ assertPersonalizationResetClearsLiveRankingState()
 assertRepositoryCuratedTokenQualityContract()
 assertSharedTokenPackNativeConformance()
 assertCandidateInteractionStartsPassiveAndPagesSafely()
+assertEveryControllerCallbackFailsOpenUnderSecureInput()
 assertDeterministicHotPathP99()
 dumpCandidateDiagnosticsIfRequested()
 benchmarkNeuralServiceIfRequested()

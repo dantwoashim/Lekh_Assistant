@@ -1,93 +1,74 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { arch, platform } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
+import {
+  captureManualHostEvidenceContext,
+  LEKH_INPUT_SOURCE_IDENTIFIER,
+  macOSQAMatrixStatus,
+  MANUAL_HOST_EVIDENCE_SCHEMA_VERSION,
+  MANUAL_HOST_EVIDENCE_SUITE,
+  manualHostEvidenceAllowedForMatrix,
+  validateManualHostEvidence,
+  validateSecureFieldHostEvidence,
+  validateSecureFieldHostEvidenceFile
+} from "./lib/macos-imk-qa-evidence-validator.mjs";
+import {
+  PRODUCTION_QA_EVIDENCE_INDEX_PATH,
+  verifyProductionIMKBuildAttestation
+} from "./lib/macos-production-release-attestation.mjs";
+import {
+  canonicalMacOSQATuples,
+  MACOS_IMK_QA_MATRIX_POLICY_PATH,
+  readCanonicalMacOSQAMatrixPolicy
+} from "./lib/macos-imk-qa-matrix-policy.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
 const production = process.argv.includes("--production");
 const evidenceRoot = join(root, "reports", "qa", "macos-imk");
 const reportPath = join(root, "reports", "macos-imk-qa-matrix-report.json");
+const matrixPolicyResult = readCanonicalMacOSQAMatrixPolicy(root);
+if (!matrixPolicyResult.valid) {
+  console.error(JSON.stringify({
+    status: "failed-canonical-qa-matrix-policy-invalid",
+    policy: MACOS_IMK_QA_MATRIX_POLICY_PATH,
+    issueCodes: matrixPolicyResult.issueCodes
+  }, null, 2));
+  process.exit(1);
+}
+const matrixPolicy = matrixPolicyResult.policy;
+const manualEvidenceContext = captureManualHostEvidenceContext({ root });
+const trustedBuildAttestation = production
+  ? verifyProductionIMKBuildAttestation({ root })
+  : null;
 
-const apps = [
-  "TextEdit",
-  "Notes",
-  "Safari",
-  "Chrome",
-  "Messages",
-  "Mail",
-  "WhatsApp Desktop",
-  "VS Code",
-  "Electron",
-  "Microsoft Word",
-  "Google Docs",
-  "Spotlight",
-  "Password Fields",
-  "Slack",
-  "Terminal"
-];
-
-const cases = [
-  "romanized-word-swasthya",
-  "romanized-to-romanized",
-  "romanized-to-nepali",
-  "traditional-to-nepali",
-  "traditional-to-romanized",
-  "mixed-english-nepali",
-  "protected-token",
-  "traditional-input",
-  "backspace-composition",
-  "escape-cancel",
-  "two-stage-escape",
-  "enter-commit",
-  "tab-candidate-or-focus",
-  "ghost-tab-accept",
-  "passive-digit-safety",
-  "explicit-option-candidate",
-  "space-commit",
-  "command-shortcuts-pass-through",
-  "input-source-switching",
-  "engine-component-failure-raw-fallback",
-  "input-method-restart",
-  "sleep-wake",
-  "app-restart",
-  "logout-login",
-  "uninstall-reinstall",
-  "secure-field-no-memory"
-];
-
-const macTargets = [
-  "macOS 13 Apple Silicon",
-  "macOS 14 Apple Silicon",
-  "macOS 15 Apple Silicon",
-  "macOS 26 Apple Silicon",
-  "macOS 13 Intel",
-  "macOS 14 Intel",
-  "macOS 15 Intel"
-];
+const apps = [...matrixPolicy.apps];
+const cases = [...matrixPolicy.cases];
+const macTargets = [...matrixPolicy.targets];
 
 const currentMachineTarget = detectCurrentMacTarget();
-const smokeEvidence = collectTextEditSmokeEvidence(currentMachineTarget);
+const smokeEvidence = [
+  ...collectTextEditSmokeEvidence(currentMachineTarget),
+  ...collectSecureFieldEvidence(currentMachineTarget)
+];
 
-const expectedEvidence = [];
-for (const target of macTargets) {
-  for (const app of apps) {
-    for (const testCase of cases) {
-      expectedEvidence.push({
-        target,
-        app,
-        case: testCase,
-        evidence: evidenceFiles(app, testCase, target)
-      });
-    }
-  }
-}
+const expectedEvidence = canonicalMacOSQATuples(matrixPolicy).map(({ target, app, case: testCase }) => ({
+  target,
+  app,
+  case: testCase,
+  evidence: evidenceFiles(app, testCase, target)
+}));
 
 const missing = expectedEvidence.filter((row) => row.evidence.length === 0);
 const present = expectedEvidence.length - missing.length;
-const status = production && missing.length > 0 ? "failed-missing-host-evidence" : "passed-dev-matrix-defined";
+const evidenceIndex = buildEvidenceIndex(expectedEvidence);
+const status = production && evidenceIndex.issues.length > 0
+  ? "failed-production-evidence-index-invalid"
+  : macOSQAMatrixStatus({ production, missingCount: missing.length });
 
 const report = {
   generatedAt: new Date().toISOString(),
@@ -104,17 +85,54 @@ const report = {
   expectedTestCountPerTarget: apps.length * cases.length,
   expectedTotalAcrossTargets: expectedEvidence.length,
   evidenceRoot: "reports/qa/macos-imk",
+  matrixPolicy: {
+    path: matrixPolicyResult.path,
+    sha256: matrixPolicyResult.sha256,
+    tupleOrdering: matrixPolicy.tupleOrdering,
+    evidenceReusePolicy: matrixPolicy.evidenceReusePolicy
+  },
   currentMachineTarget,
   evidenceSummary: {
     present,
     missing: missing.length,
     total: expectedEvidence.length,
-    derivedFromSmokeReports: smokeEvidence.length
+    derivedFromSmokeReports: smokeEvidence.filter((item) => !production || item.productionEligible === true).length,
+    smokeReportsCollected: smokeEvidence.length
+  },
+  evidenceIndex: {
+    path: PRODUCTION_QA_EVIDENCE_INDEX_PATH,
+    sha256: evidenceIndex.sha256,
+    sizeBytes: evidenceIndex.sizeBytes,
+    entryCount: evidenceIndex.record.entries.length,
+    issueCodes: evidenceIndex.issues
   },
   derivedSmokeEvidence: smokeEvidence,
   requiredEvidenceFormat: {
-    path: "reports/qa/macos-imk/<app-slug>/<case-slug>.json",
-    fields: ["app", "case", "macOSVersion", "architecture", "inputSource", "steps", "expected", "actual", "pass", "artifacts", "logPaths"]
+    path: "reports/qa/macos-imk/<app-slug>/<case-slug>.<target-or-run-id>.json",
+    schemaVersion: MANUAL_HOST_EVIDENCE_SCHEMA_VERSION,
+    suite: MANUAL_HOST_EVIDENCE_SUITE,
+    inputSource: LEKH_INPUT_SOURCE_IDENTIFIER,
+    exactTopLevelFields: [
+      "schemaVersion", "suite", "generatedAt", "target", "app", "case",
+      "macOSVersion", "architecture", "inputSource", "bundleIdentity", "steps",
+      "expected", "actual", "pass", "artifacts", "logPaths", "provenance"
+    ],
+    stepFields: ["action", "expected", "actual", "pass"],
+    artifactFields: ["kind", "path", "sha256"],
+    bundleIdentityFields: [
+      "bundleIdentifier", "shortVersion", "buildVersion", "sourceRevision", "sourceTree",
+      "connectionName", "executableSha256", "codeDirectoryHash", "buildProvenanceSha256"
+    ],
+    provenanceFields: [
+      "schemaVersion", "gitRevision", "worktreeClean", "installedSourceRevision", "installedSourceTree",
+      "installedBuildProvenanceSha256",
+      "installedExecutableSha256", "installedBuildVersion"
+    ],
+    provenanceScope: "Current Git revision/tree and source worktree, excluding reports/** evidence artifacts."
+  },
+  manualEvidenceValidation: {
+    contextReady: manualEvidenceContext.ready,
+    issueCodes: manualEvidenceContext.issueCodes
   },
   manualReleaseGate: "Production release is blocked until every app/case passes on supported macOS and architecture targets with screenshot or video evidence where useful.",
   missing: missing.slice(0, 100)
@@ -135,23 +153,33 @@ function evidenceFiles(app, testCase, target) {
   const derived = derivedSmokeEvidenceFiles(app, testCase, target);
   if (!existsSync(dir)) return derived;
   const caseSlug = slug(testCase);
+  const manual = manualHostEvidenceAllowedForMatrix({ production, app, testCase })
+    ? readdirSync(dir)
+      .filter((file) => file === `${caseSlug}.json` || file.startsWith(`${caseSlug}.`))
+      .filter((file) => evidenceMatchesTarget(join(dir, file), { target, app, testCase }))
+      .map((file) => join("reports", "qa", "macos-imk", slug(app), file))
+    : [];
   return [
-    ...readdirSync(dir)
-    .filter((file) => file === `${caseSlug}.json` || file.startsWith(`${caseSlug}.`))
-    .filter((file) => evidenceMatchesTarget(join(dir, file), target))
-    .map((file) => join("reports", "qa", "macos-imk", slug(app), file)),
+    ...manual,
     ...derived
   ];
 }
 
-function evidenceMatchesTarget(path, target) {
+function evidenceMatchesTarget(path, { target, app, testCase }) {
   try {
+    const metadata = lstatSync(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size <= 0 || metadata.size > 1024 * 1024) {
+      return false;
+    }
     const evidence = JSON.parse(readFileSync(path, "utf8"));
-    if (evidence.pass !== true) return false;
-    const expectedArchitecture = target.endsWith("Intel") ? "x86_64" : "arm64";
-    const expectedMajor = target.match(/^macOS (\d+)/)?.[1];
-    return evidence.architecture === expectedArchitecture &&
-      String(evidence.macOSVersion ?? "").split(".")[0] === expectedMajor;
+    return validateManualHostEvidence(evidence, {
+      root,
+      expectedApp: app,
+      expectedCase: testCase,
+      expectedTarget: target,
+      evidencePath: path,
+      context: manualEvidenceContext
+    }).valid;
   } catch {
     return false;
   }
@@ -163,7 +191,12 @@ function slug(value) {
 
 function derivedSmokeEvidenceFiles(app, testCase, target) {
   return smokeEvidence
-    .filter((item) => item.app === app && item.case === testCase && item.target === target)
+    .filter((item) =>
+      item.app === app &&
+      item.case === testCase &&
+      item.target === target &&
+      (!production || item.productionEligible === true)
+    )
     .map((item) => item.report);
 }
 
@@ -242,6 +275,32 @@ function collectTextEditSmokeEvidence(target) {
   return evidence;
 }
 
+function collectSecureFieldEvidence(target) {
+  if (!target) return [];
+  const report = "reports/macos-imk-host-secure-field.json";
+  const absolute = join(root, report);
+  if (!existsSync(absolute)) return [];
+  try {
+    const parsed = production ? null : JSON.parse(readFileSync(absolute, "utf8"));
+    const validation = production
+      ? validateSecureFieldHostEvidenceFile({ root, trustedBuildAttestation })
+      : validateSecureFieldHostEvidence(parsed, { root });
+    if (!validation.valid) return [];
+    return [{
+      target,
+      app: "Password Fields",
+      case: "secure-field-no-memory",
+      report,
+      sourceSuite: validation.evidenceMetadata?.suite ?? parsed?.suite,
+      generatedAt: validation.evidenceMetadata?.generatedAt ?? parsed?.generatedAt,
+      productionEligible: validation.trustedSourceToBinaryAttested === true,
+      note: "Derived only from the disposable AppKit NSSecureTextField proof. Local-unattested runs are development evidence; production additionally requires trusted source-to-binary attestation and separate browser/third-party password-control evidence."
+    }];
+  } catch {
+    return [];
+  }
+}
+
 function detectCurrentMacTarget() {
   if (platform() !== "darwin") return null;
   const machineArchitecture = arch() === "x64" ? "x86_64" : arch();
@@ -252,5 +311,117 @@ function detectCurrentMacTarget() {
     return `macOS ${major} ${family}`;
   } catch {
     return null;
+  }
+}
+
+function buildEvidenceIndex(rows) {
+  const issues = [];
+  const revision = gitValue(["rev-parse", "HEAD"]);
+  const tree = gitValue(["rev-parse", "HEAD^{tree}"]);
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(revision)) issues.push("evidence-index.source-revision-invalid");
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(tree)) issues.push("evidence-index.source-tree-invalid");
+  const entries = rows.map((row) => ({
+    target: row.target,
+    app: row.app,
+    case: row.case,
+    evidence: [...new Set(row.evidence)].sort().map((path) => indexedEvidenceFile(path, issues))
+  }));
+  const record = {
+    schemaVersion: 1,
+    recordType: "lekh-macos-imk-qa-evidence-index",
+    generatedAt: new Date().toISOString(),
+    sourceRevision: revision || null,
+    sourceTree: tree || null,
+    matrixPolicySha256: matrixPolicyResult.sha256,
+    installerZipSha256: trustedBuildAttestation?.verified === true
+      ? trustedBuildAttestation.installerZipSha256
+      : null,
+    expectedEntryCount: rows.length,
+    entries,
+    issues: [...new Set(issues)].sort()
+  };
+  const bytes = Buffer.from(`${JSON.stringify(record, null, 2)}\n`, "utf8");
+  const absolute = join(root, PRODUCTION_QA_EVIDENCE_INDEX_PATH);
+  mkdirSync(join(absolute, ".."), { recursive: true });
+  writeFileSync(absolute, bytes, { mode: 0o600 });
+  return {
+    record,
+    issues: record.issues,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    sizeBytes: bytes.length
+  };
+}
+
+function indexedEvidenceFile(path, issues) {
+  const file = indexedRegularFile(path, 64 * 1024 * 1024, "evidence-index.evidence", issues);
+  const artifacts = [];
+  if (file && path.endsWith(".json")) {
+    try {
+      const parsed = JSON.parse(readFileSync(file.absolute, "utf8"));
+      if (Array.isArray(parsed.artifacts)) {
+        for (const artifact of parsed.artifacts) {
+          if (typeof artifact?.path !== "string") continue;
+          const indexed = indexedRegularFile(
+            artifact.path,
+            256 * 1024 * 1024,
+            "evidence-index.artifact",
+            issues
+          );
+          if (indexed) artifacts.push({
+            path: artifact.path,
+            sha256: indexed.sha256,
+            sizeBytes: indexed.sizeBytes
+          });
+        }
+      }
+    } catch {
+      issues.push("evidence-index.evidence-json-invalid");
+    }
+  }
+  return {
+    path,
+    sha256: file?.sha256 ?? null,
+    sizeBytes: file?.sizeBytes ?? null,
+    artifacts: artifacts.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+  };
+}
+
+function indexedRegularFile(path, maximumBytes, issue, issues) {
+  if (
+    typeof path !== "string" || path.length === 0 || path.length > 1024 ||
+    path.startsWith("/") || path.includes("\\") ||
+    path.split("/").some((part) => part === "" || part === "." || part === "..")
+  ) {
+    issues.push(`${issue}-path-invalid`);
+    return null;
+  }
+  const absolute = resolve(root, path);
+  if (!absolute.startsWith(`${resolve(root)}${sep}`) || relative(root, absolute).startsWith("..")) {
+    issues.push(`${issue}-path-escape`);
+    return null;
+  }
+  try {
+    const metadata = lstatSync(absolute);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size <= 0 || metadata.size > maximumBytes) {
+      issues.push(`${issue}-file-invalid`);
+      return null;
+    }
+    const bytes = readFileSync(absolute);
+    return {
+      absolute,
+      sizeBytes: metadata.size,
+      sha256: createHash("sha256").update(bytes).digest("hex")
+    };
+  } catch {
+    issues.push(`${issue}-unreadable`);
+    return null;
+  }
+}
+
+function gitValue(args) {
+  try {
+    return execFileSync("/usr/bin/git", args, { cwd: root, encoding: "utf8" }).trim();
+  } catch {
+    return "";
   }
 }

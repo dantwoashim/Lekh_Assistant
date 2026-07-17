@@ -7,16 +7,44 @@ public struct LekhCandidateDisplayItem: Equatable {
   public let explanation: String
 }
 
+/// Content-free pointer acceptance state shared by the AppKit row and the
+/// native unit probe. A mouse-up has authority only when the same row observed
+/// the originating mouse-down inside its bounds.
+public struct LekhCandidatePointerGate: Sendable {
+  public enum Decision: Equatable, Sendable {
+    case ignored
+    case cancelled
+    case selected
+  }
+
+  public private(set) var pressBeganInside = false
+
+  public init() {}
+
+  @discardableResult
+  public mutating func beginPress(inside: Bool) -> Bool {
+    pressBeganInside = inside
+    return pressBeganInside
+  }
+
+  public mutating func endPress(inside: Bool) -> Decision {
+    guard pressBeganInside else { return .ignored }
+    pressBeganInside = false
+    return inside ? .selected : .cancelled
+  }
+}
+
 /// A nonactivating candidate row. Mouse selection happens on mouse-up inside
 /// the row so a press-drag away cannot accidentally commit text.
 private final class LekhCandidateRowView: NSView {
   let candidateIndex: Int
   let candidateText: String
   var onSelect: ((Int, String) -> Void)?
+  var onDragCancellation: (() -> Void)?
 
   private var trackingArea: NSTrackingArea?
   private var isPointerInside = false
-  private var isPressActive = false
+  private var pointerGate = LekhCandidatePointerGate()
   private let selected: Bool
   private let increaseContrast: Bool
   private let differentiateWithoutColor: Bool
@@ -51,25 +79,30 @@ private final class LekhCandidateRowView: NSView {
 
   override func mouseDown(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
-    guard bounds.contains(point) else { return }
-    isPressActive = true
+    guard pointerGate.beginPress(inside: bounds.contains(point)) else { return }
     isPointerInside = true
     updateBackground()
   }
 
   override func mouseDragged(with event: NSEvent) {
-    guard isPressActive else { return }
+    guard pointerGate.pressBeganInside else { return }
     isPointerInside = bounds.contains(convert(event.locationInWindow, from: nil))
     updateBackground()
   }
 
   override func mouseUp(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
-    let shouldCommit = isPressActive && bounds.contains(point)
-    isPressActive = false
-    isPointerInside = bounds.contains(point)
+    let releasedInside = bounds.contains(point)
+    let decision = pointerGate.endPress(inside: releasedInside)
+    isPointerInside = releasedInside
     updateBackground()
-    guard shouldCommit else { return }
+    if decision == .cancelled {
+      // This callback carries no row index or candidate text. It proves only
+      // that this row owned an inside mouse-down and received mouse-up outside.
+      onDragCancellation?()
+      return
+    }
+    guard decision == .selected else { return }
     // A validated mouse-up is already an explicit user acceptance. Commit on
     // the first click like a native macOS candidate row; the controller still
     // verifies the exact client, composition generation, row text and secure
@@ -111,7 +144,7 @@ private final class LekhCandidateRowView: NSView {
     let color: NSColor
     if selected {
       color = NSColor.controlAccentColor.withAlphaComponent(increaseContrast ? 0.34 : 0.20)
-    } else if isPressActive && isPointerInside {
+    } else if pointerGate.pressBeganInside && isPointerInside {
       color = NSColor.controlAccentColor.withAlphaComponent(increaseContrast ? 0.26 : 0.14)
     } else if isPointerInside {
       color = NSColor.labelColor.withAlphaComponent(increaseContrast ? 0.14 : 0.07)
@@ -139,6 +172,7 @@ public final class LekhCandidatePanel: NSObject {
 
   private var panel: NSPanel?
   private var onSelect: ((Int, String) -> Void)?
+  private var onDragCancellation: (() -> Void)?
   private var stableWidth: CGFloat?
   private var lastExpandedState: Bool?
   private var lastContentSignature: ContentSignature?
@@ -182,6 +216,7 @@ public final class LekhCandidatePanel: NSObject {
     expanded: Bool,
     passiveCommitText: String? = nil,
     announceSelection: Bool = false,
+    onDragCancellation: @escaping () -> Void,
     onSelect: @escaping (Int, String) -> Void
   ) -> Bool {
     guard !items.isEmpty,
@@ -190,6 +225,7 @@ public final class LekhCandidatePanel: NSObject {
       hide()
       return false
     }
+    self.onDragCancellation = onDragCancellation
     self.onSelect = onSelect
 
     let pageSize = Self.pageSize
@@ -293,6 +329,7 @@ public final class LekhCandidatePanel: NSObject {
     }
     stableWidth = nil
     lastExpandedState = nil
+    onDragCancellation = nil
     onSelect = nil
   }
 
@@ -469,6 +506,9 @@ public final class LekhCandidatePanel: NSObject {
     )
     row.onSelect = { [weak self] index, candidate in
       self?.onSelect?(index, candidate)
+    }
+    row.onDragCancellation = { [weak self] in
+      self?.onDragCancellation?()
     }
     row.toolTip = item.explanation
     row.setAccessibilityElement(true)

@@ -34,6 +34,7 @@ public struct LekhRuntimeActivationGate: Sendable {
 public enum LekhRuntimeHealth {
   public static let schemaVersion = 1
   public static let maximumGhostSuppressionCount = 10_000
+  public static let maximumCandidateDragCancellationCount = 10_000
   /// Current macOS derives the accepted third-party IMK connection identity
   /// from the bundle identifier. An arbitrary legacy name is refused by
   /// imklaunchagent before the application can publish an endpoint.
@@ -69,6 +70,8 @@ public enum LekhRuntimeHealth {
     var lastGhostOfferedAt: Date?
     var lastGhostAcceptedAt: Date?
     var ghostSuppressionCounts: [String: Int]?
+    var candidateDragCancellationCount: Int?
+    var lastCandidateDragCancellationAt: Date?
   }
 
   private static let queue = DispatchQueue(
@@ -126,6 +129,8 @@ public enum LekhRuntimeHealth {
       record.lastGhostOfferedAt = nil
       record.lastGhostAcceptedAt = nil
       record.ghostSuppressionCounts = [:]
+      record.candidateDragCancellationCount = 0
+      record.lastCandidateDragCancellationAt = nil
       return true
     }
   }
@@ -180,6 +185,27 @@ public enum LekhRuntimeHealth {
     }
   }
 
+  /// Records one mouse cancellation emitted by the active custom candidate
+  /// surface. The record is deliberately content-free: it contains no row,
+  /// candidate, key, host, document, pointer position, or gesture path. This is
+  /// persisted immediately so a host proof can bind the receipt causally to the
+  /// observed mouse-up instead of inferring cancellation from unchanged text.
+  public static func markCandidateDragCancellation(activationIdentifier: String) {
+    update { record, now in
+      guard acceptsSurfaceEvidence(record, activationIdentifier: activationIdentifier) else { return false }
+      let current = min(
+        max(record.candidateDragCancellationCount ?? 0, 0),
+        maximumCandidateDragCancellationCount
+      )
+      record.candidateDragCancellationCount = min(
+        current + 1,
+        maximumCandidateDragCancellationCount
+      )
+      record.lastCandidateDragCancellationAt = now
+      return true
+    }
+  }
+
   private static func update(
     forceNewRecord: Bool = false,
     coalesce: Bool = false,
@@ -221,7 +247,9 @@ public enum LekhRuntimeHealth {
           controllerDeactivatedAt: nil,
           lastGhostOfferedAt: nil,
           lastGhostAcceptedAt: nil,
-          ghostSuppressionCounts: [:]
+          ghostSuppressionCounts: [:],
+          candidateDragCancellationCount: 0,
+          lastCandidateDragCancellationAt: nil
         )
       }
       record.ghostSuppressionCounts = boundedSuppressionCounts(record.ghostSuppressionCounts ?? [:])

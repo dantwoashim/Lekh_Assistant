@@ -17,6 +17,8 @@ import { basename, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { verifyMacOSIMKDevArtifact } from "./lib/macos-imk-dev-release-integrity.mjs";
+import { readProductionReleasePolicy } from "./lib/macos-production-release-attestation.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -37,6 +39,8 @@ const publicUpdatesDir = join(root, "public", "updates", "macos");
 const skeletonDir = join(root, "native", "macos-imk", "skeleton");
 const iconSource = join(root, "build", "icon.icns");
 const signingIdentity = process.env.LEKH_MAC_DEVELOPER_ID || "-";
+const committedProductionTeamIdentifier = readProductionReleasePolicy(root)
+  .policy?.appleDeveloperTeamIdentifier ?? null;
 const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 const appShortVersion = process.env.LEKH_APP_SHORT_VERSION || packageVersion.match(/^\d+\.\d+\.\d+/)?.[0];
 const gitBuild = spawnSync("git", ["rev-list", "--count", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
@@ -401,6 +405,15 @@ if (signingIdentity !== "-") {
       missing
     }, 2);
   }
+  if (
+    !/^[A-Z0-9]{10}$/u.test(committedProductionTeamIdentifier ?? "") ||
+    process.env.APPLE_TEAM_ID !== committedProductionTeamIdentifier
+  ) {
+    finish("blocked-external", {
+      step: "production-team-identity",
+      reason: "APPLE_TEAM_ID must exactly match config/macos-production-release-policy.v1.json."
+    }, 2);
+  }
 }
 
 if (!existsSync(imkBundle)) {
@@ -415,6 +428,19 @@ if (!existsSync(imkBundle)) {
 mkdirSync(toolchainEnv.CLANG_MODULE_CACHE_PATH, { recursive: true });
 mkdirSync(toolchainEnv.SWIFT_MODULE_CACHE_PATH, { recursive: true });
 run("verify-imk-payload", "codesign", ["--verify", "--deep", "--strict", imkBundle]);
+const imkIntegrity = verifyMacOSIMKDevArtifact({
+  root,
+  appBundle: imkBundle,
+  packageReportPath: join(root, "reports", "macos-imk-dev-package-report.json"),
+  expectedReportArtifact: imkBundle
+});
+if (imkIntegrity.status !== "passed") {
+  finish("failed", {
+    step: "verify-imk-payload-provenance",
+    reason: "The selected IMK payload is stale, unbound to the current clean source tree, or does not match its package report.",
+    issues: imkIntegrity.issues
+  }, 1);
+}
 const payloadConnectionName = run(
   "verify-imk-connection-name",
   "/usr/bin/plutil",
@@ -463,47 +489,9 @@ SWAPPED_DEST=0
 mkdir -p "$LOG_DIR" "$BACKUP_ROOT" || exit 1
 /usr/bin/touch "$BACKUP_ROOT/.metadata_never_index"
 log() { printf '%s %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG_FILE"; }
-lekh_pid_is_running() {
-  local pid="$1"
-  local command_name
-  command_name="$(/bin/ps -p "$pid" -o comm= 2>/dev/null | /usr/bin/tr -d '[:space:]')"
-  [[ "$command_name" == "LekhInputMethodApp" ]]
-}
-remaining_lekh_pids() {
-  local pid
-  for pid in "$@"; do
-    if lekh_pid_is_running "$pid"; then
-      printf '%s ' "$pid"
-    fi
-  done
-}
 stop_lekh_input_method_for_replacement() {
-  local pids
-  local remaining
-  local attempt=0
-  pids="$(/usr/bin/pgrep -x LekhInputMethodApp 2>/dev/null || true)"
-  [[ -n "$pids" ]] || return 0
-
-  log "requesting graceful input-method termination pids=$pids"
-  /bin/kill -TERM $pids >> "$LOG_FILE" 2>&1 || true
-  while (( attempt < 30 )); do
-    remaining="$(remaining_lekh_pids $pids)"
-    [[ -z "$remaining" ]] && return 0
-    /bin/sleep 0.1
-    attempt=$((attempt + 1))
-  done
-
-  log "graceful termination timed out; forcing only remaining pids=$remaining"
-  /bin/kill -KILL $remaining >> "$LOG_FILE" 2>&1 || true
-  attempt=0
-  while (( attempt < 20 )); do
-    remaining="$(remaining_lekh_pids $remaining)"
-    [[ -z "$remaining" ]] && return 0
-    /bin/sleep 0.1
-    attempt=$((attempt + 1))
-  done
-  log "input-method termination failed pids=$remaining"
-  return 1
+  "$RESOURCE_DIR/terminate-exact-processes" --terminate-all-exact-path \
+    "$DEST/Contents/MacOS/LekhInputMethodApp" >> "$LOG_FILE" 2>&1
 }
 dialog() {
   if [[ "\${LEKH_INSTALLER_NO_DIALOG:-0}" == "1" ]]; then
@@ -669,47 +657,9 @@ CACHE_DIR="$HOME/Library/Caches/LekhKeyboardInstall"
 RUNTIME_HEALTH="$SUPPORT_DIR/runtime-health.v1.json"
 mkdir -p "$LOG_DIR" || exit 1
 log() { printf '%s %s\\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG_FILE"; }
-lekh_pid_is_running() {
-  local pid="$1"
-  local command_name
-  command_name="$(/bin/ps -p "$pid" -o comm= 2>/dev/null | /usr/bin/tr -d '[:space:]')"
-  [[ "$command_name" == "LekhInputMethodApp" ]]
-}
-remaining_lekh_pids() {
-  local pid
-  for pid in "$@"; do
-    if lekh_pid_is_running "$pid"; then
-      printf '%s ' "$pid"
-    fi
-  done
-}
 stop_lekh_input_method_for_removal() {
-  local pids
-  local remaining
-  local attempt=0
-  pids="$(/usr/bin/pgrep -x LekhInputMethodApp 2>/dev/null || true)"
-  [[ -n "$pids" ]] || return 0
-
-  log "requesting graceful input-method termination pids=$pids"
-  /bin/kill -TERM $pids >> "$LOG_FILE" 2>&1 || true
-  while (( attempt < 30 )); do
-    remaining="$(remaining_lekh_pids $pids)"
-    [[ -z "$remaining" ]] && return 0
-    /bin/sleep 0.1
-    attempt=$((attempt + 1))
-  done
-
-  log "graceful termination timed out; forcing only remaining pids=$remaining"
-  /bin/kill -KILL $remaining >> "$LOG_FILE" 2>&1 || true
-  attempt=0
-  while (( attempt < 20 )); do
-    remaining="$(remaining_lekh_pids $remaining)"
-    [[ -z "$remaining" ]] && return 0
-    /bin/sleep 0.1
-    attempt=$((attempt + 1))
-  done
-  log "input-method termination failed pids=$remaining"
-  return 1
+  "$RESOURCE_DIR/terminate-exact-processes" --terminate-all-exact-path \
+    "$DEST/Contents/MacOS/LekhInputMethodApp" >> "$LOG_FILE" 2>&1
 }
 unregister_backup_bundles() {
   for backup_root in "$LEGACY_BACKUP_ROOT" "$ARCHIVE_BACKUP_ROOT"; do
@@ -799,7 +749,8 @@ for (const appPath of [installerApp, uninstallerApp]) {
     ["register-dev.swift", "register-lekh-input-source"],
     ["restore-system-keyboard.swift", "restore-system-keyboard"],
     ["purge-lekh-input-sources.swift", "purge-lekh-input-sources"],
-    ["atomic-install-swap.swift", "atomic-install-swap"]
+    ["atomic-install-swap.swift", "atomic-install-swap"],
+    ["terminate-exact-processes.swift", "terminate-exact-processes"]
   ]) {
     compileUniversalHelper(sourceFile, join(resourcesDir, binaryName));
   }

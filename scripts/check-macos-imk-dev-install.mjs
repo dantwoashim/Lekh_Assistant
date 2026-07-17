@@ -435,7 +435,7 @@ if (logStart) {
 }
 
 if (Number.isInteger(coldTextEdit.pid)) {
-  const terminated = terminateColdTextEdit(coldTextEdit.pid);
+  const terminated = terminateColdTextEdit(coldTextEdit);
   if (terminated.status !== 0) failures.push(terminated.note);
 }
 removeProbeFile(tempTextEditFile);

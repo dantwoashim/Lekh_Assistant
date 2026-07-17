@@ -17,6 +17,9 @@ LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchS
 LEGACY_BACKUP_ROOT="$HOME/Library/Application Support/Lekh Keyboard/InstallBackups"
 ARCHIVE_BACKUP_ROOT="$HOME/Library/Application Support/Lekh Keyboard/InstallBackups.noindex"
 RUNTIME_HEALTH="$HOME/Library/Application Support/Lekh Keyboard/runtime-health.v1.json"
+PACKAGE_REPORT="$ROOT/reports/macos-imk-dev-package-report.json"
+VERIFY_ARTIFACT="$ROOT/scripts/verify-macos-imk-dev-artifact.mjs"
+TERMINATE_EXACT="$(dirname "$0")/terminate-exact-processes.swift"
 cleanup() {
   rm -rf "$TMP_DEST"
 }
@@ -33,6 +36,7 @@ verify_bundle() {
     "lekh-token-candidates.v1.json"
     "lekh-token-completions.v1.json"
     "lekh-token-completions.v1.manifest.json"
+    "LekhBuildProvenance.v1.json"
     "en.lproj/Localizable.strings"
     "ne.lproj/Localizable.strings"
   )
@@ -61,52 +65,11 @@ verify_bundle() {
   }
 }
 
-lekh_pid_is_running() {
-  local pid="$1"
-  local command_name
-  command_name="$(/bin/ps -p "$pid" -o comm= 2>/dev/null | /usr/bin/tr -d '[:space:]')"
-  command_name="${command_name##*/}"
-  [[ "$command_name" == "LekhInputMethodApp" ]]
-}
-
-remaining_lekh_pids() {
-  local pid
-  for pid in "$@"; do
-    if lekh_pid_is_running "$pid"; then
-      printf '%s ' "$pid"
-    fi
-  done
-}
-
 stop_lekh_input_method_for_replacement() {
-  local pids
-  local remaining
-  local attempt=0
-  pids="$(/usr/bin/pgrep -x LekhInputMethodApp 2>/dev/null || true)"
-  [[ -n "$pids" ]] || return 0
-
-  # SIGTERM gives AppKit one bounded opportunity to unwind the IMK server.
-  # SIGKILL is reserved for a process that would otherwise keep the bundle in
-  # use while this explicit install operation replaces it.
-  /bin/kill -TERM $pids >/dev/null 2>&1 || true
-  while (( attempt < 30 )); do
-    remaining="$(remaining_lekh_pids $pids)"
-    [[ -z "$remaining" ]] && return 0
-    /bin/sleep 0.1
-    attempt=$((attempt + 1))
-  done
-
-  echo "Lekh Keyboard did not exit after SIGTERM; forcing only the remaining process(es): $remaining" >&2
-  /bin/kill -KILL $remaining >/dev/null 2>&1 || true
-  attempt=0
-  while (( attempt < 20 )); do
-    remaining="$(remaining_lekh_pids $remaining)"
-    [[ -z "$remaining" ]] && return 0
-    /bin/sleep 0.1
-    attempt=$((attempt + 1))
-  done
-  echo "Could not stop Lekh Keyboard process(es) before bundle replacement: $remaining" >&2
-  return 1
+  /usr/bin/swift "$TERMINATE_EXACT" --terminate-all-exact-path \
+    "$DEST/Contents/MacOS/LekhInputMethodApp" >/dev/null
+  /usr/bin/swift "$TERMINATE_EXACT" --terminate-all-exact-path \
+    "$OLD_DEST/Contents/MacOS/LekhInputMethodApp" >/dev/null
 }
 
 archive_stale_lekh_bundles() {
@@ -137,6 +100,28 @@ if [[ ! -d "$APP" ]]; then
   echo "Run: npm run package:macos:imk:dev" >&2
   exit 1
 fi
+
+if [[ ! -f "$PACKAGE_REPORT" || ! -f "$VERIFY_ARTIFACT" ]]; then
+  echo "Missing current package provenance/report verifier. Re-run packaging from this checkout." >&2
+  exit 1
+fi
+NODE_BIN="${LEKH_NODE_BIN:-$(command -v node || true)}"
+if [[ -z "$NODE_BIN" && -x /opt/homebrew/opt/node@20/bin/node ]]; then
+  NODE_BIN=/opt/homebrew/opt/node@20/bin/node
+elif [[ -z "$NODE_BIN" && -x /opt/homebrew/bin/node ]]; then
+  NODE_BIN=/opt/homebrew/bin/node
+elif [[ -z "$NODE_BIN" && -x /usr/local/bin/node ]]; then
+  NODE_BIN=/usr/local/bin/node
+fi
+if [[ -z "$NODE_BIN" ]]; then
+  echo "Node.js is required to verify the exact packaged artifact before installation." >&2
+  exit 1
+fi
+"$NODE_BIN" "$VERIFY_ARTIFACT" \
+  --root "$ROOT" \
+  --bundle "$APP" \
+  --package-report "$PACKAGE_REPORT" \
+  --report-artifact "$APP" >/dev/null
 
 # Copy and verify a coherent snapshot before disabling or stopping the working
 # input method. If packaging is concurrently publishing a new artifact, a

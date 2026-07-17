@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "recordType": "lekh-macos-production-release-policy",
+  "repository": "dantwoashim/Lekh_Assistant",
+  "sourceRefPattern": "refs/tags/v<semver>",
+  "imkBuildSignerWorkflow": "dantwoashim/Lekh_Assistant/.github/workflows/trusted-macos-imk-build.yml",
+  "imkBuildSignerDigest": null,
+  "releaseSignerWorkflow": "dantwoashim/Lekh_Assistant/.github/workflows/trusted-macos-release-evidence.yml",
+  "releaseSignerDigest": null,
+  "appleDeveloperTeamIdentifier": null,
+  "githubCLISha256": {
+    "arm64": null,
+    "x86_64": null
+  }
+}

@@ -30,6 +30,7 @@ reports/*.tsv
 reports/*.json
 reports/*.jsonl
 reports/*.txt
+reports/qa/macos-imk/evidence-index.v1.json
 reports/full-audit-*/
 data/keyboard-corpus/generated/**
 data/keyboard-corpus/curated/**
