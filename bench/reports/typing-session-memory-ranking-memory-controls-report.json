@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-07-17T09:51:50.968Z",
+  "generatedAt": "2026-07-17T14:14:24.425Z",
   "command": "npm run benchmark:typing-session -- memory-ranking,memory-controls",
   "suite": "typing-session:memory-ranking,memory-controls",
   "mode": "full",
-  "durationMs": 1155,
+  "durationMs": 2921,
   "fixtureCount": 4,
   "romanized": {
     "totalSessions": 4,
@@ -36,9 +36,9 @@
     }
   },
   "latency": {
-    "candidateP50Ms": 17,
-    "candidateP95Ms": 18,
-    "updateP95Ms": 18,
+    "candidateP50Ms": 34,
+    "candidateP95Ms": 37,
+    "updateP95Ms": 37,
     "commitP95Ms": 0
   },
   "keystrokeSavingsRatioMean": 0.08333333333333333,
@@ -76,9 +76,9 @@
         "pradesh"
       ],
       "latencyMs": [
-        19
+        45
       ],
-      "commitLatencyMs": 1,
+      "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0.25,
       "warnings": [],
       "proofHintHit": false,
@@ -110,7 +110,7 @@
         "pradesh"
       ],
       "latencyMs": [
-        17
+        37
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
@@ -144,7 +144,7 @@
         "pradesh"
       ],
       "latencyMs": [
-        18
+        34
       ],
       "commitLatencyMs": 0,
       "keystrokeSavingsRatio": 0,
