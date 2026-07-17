@@ -33,6 +33,7 @@ export function defaultTypingContext(mode: KeyboardMode = "romanized"): TypingCo
               ? DEFAULT_TRADITIONAL_SURFACES
               : DEFAULT_ROMANIZED_SURFACES;
   return {
+    fieldType: "normal",
     leftTextWindow: "",
     activeDomains: [],
     preserveEnglish: true,
