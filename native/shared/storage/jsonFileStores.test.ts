@@ -150,7 +150,9 @@ describe("native JSON file keyboard stores", () => {
   });
 
   it("documents per-user platform storage directories", () => {
-    expect(nativeKeyboardDataDir("windows", "C:\\Users\\rohan")).toContain("AppData");
+    expect(nativeKeyboardDataDir("windows", "C:\\Users\\rohan")).toBe(
+      "C:\\Users\\rohan\\AppData\\Roaming\\Lekh Keyboard"
+    );
     expect(nativeKeyboardDataDir("macos", "/Users/rohan")).toBe("/Users/rohan/Library/Application Support/Lekh Keyboard");
     expect(nativeKeyboardDataDir("linux", "/home/rohan")).toBe("/home/rohan/.local/share/lekh-keyboard");
   });

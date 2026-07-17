@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, posix, win32 } from "node:path";
 import type {
   KeyboardCorrectionMemoryStore,
   KeyboardSettings,
@@ -32,9 +32,9 @@ export function defaultNativeKeyboardStorageFile(): NativeKeyboardStorageFile {
 }
 
 export function nativeKeyboardDataDir(platform: "windows" | "macos" | "linux", homeDir: string): string {
-  if (platform === "windows") return join(homeDir, "AppData", "Roaming", "Lekh Keyboard");
-  if (platform === "macos") return join(homeDir, "Library", "Application Support", "Lekh Keyboard");
-  return join(homeDir, ".local", "share", "lekh-keyboard");
+  if (platform === "windows") return win32.join(homeDir, "AppData", "Roaming", "Lekh Keyboard");
+  if (platform === "macos") return posix.join(homeDir, "Library", "Application Support", "Lekh Keyboard");
+  return posix.join(homeDir, ".local", "share", "lekh-keyboard");
 }
 
 export class JsonFileKeyboardStorage {
