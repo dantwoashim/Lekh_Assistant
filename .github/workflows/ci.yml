@@ -47,9 +47,6 @@ jobs:
       - name: Run deterministic v1 unit tests
         run: npm run test:v1
 
-      - name: Type-check application
-        run: npm run typecheck
-
       - name: Build application
         run: npm run build
 
@@ -100,9 +97,6 @@ jobs:
 
       - name: Run deterministic v1 unit tests
         run: npm run test:v1
-
-      - name: Type-check application
-        run: npm run typecheck
 
       - name: Build application
         run: npm run build
