@@ -16,6 +16,8 @@ Prompt 3 defines storage contracts in `src/engine/keyboard/storage.ts` and adds 
 
 The SQLite adapter is the production path for user lexicon and correction memory. It uses a per-user local database under `~/Library/Application Support/Lekh Keyboard/` on macOS, enables WAL mode, never enables telemetry, and suppresses correction-memory reads in secure/password/code contexts. Browser Keyboard Lab may use in-memory or browser-local adapters. Secure fields must not record correction memory.
 
+The packaged daemon opens `lekh-keyboard.sqlite3` before accepting IPC, reads at most 500 ranked correction rows, privacy-projects them, and installs them in the engine before any typing session can begin. Windows resolves the database beneath the current user's `%APPDATA%`; macOS and Linux use their conventional per-user application-data directories. Startup fails closed if SQLite is unavailable or the database cannot be validated. It never silently substitutes JSON.
+
 Persistence invariants:
 
 - SQLite schema changes advance both `PRAGMA user_version` and the singleton `storage_metadata` record.
@@ -26,6 +28,9 @@ Persistence invariants:
 - After a truncating WAL checkpoint, migration takes an exclusive SQLite write transaction and rechecks that no WAL frame appeared in the checkpoint-to-lock gap before copying.
 - Startup rejects corrupt databases and schema versions newer than the running build. It never silently replaces or downgrades them.
 - Current schema validation uses a closed-world table, index, view, trigger, column, and metadata inventory so hidden legacy data or executable schema cannot ride through an upgrade.
-- SQLite, WAL, lock, lease, backup, staging, and JSON files use private per-user permissions where the platform supports POSIX modes.
+- SQLite, WAL, lock, lease, backup, staging, and JSON files use private per-user permissions where the platform supports POSIX modes. App-owned directories created by Lekh use `0700`; an explicitly supplied pre-existing parent is never silently chmodded.
 - Correction memory persists the accepted input/output and an optional bounded domain classification, but never surrounding left/right sentence windows.
-- `JsonFileKeyboardStorage` is a development fallback and accepts only an explicit `.json` path. It cannot write a JSON document under a `.sqlite3` filename, rejects future schemas without rewriting them, and projects every accepted record onto a bounded privacy-safe shape.
+- Each acknowledged native selection is prepared without changing live ranking, written through SQLite `FULL` synchronous durability, and only then installed in memory. A failed write leaves the same opaque prepared transaction available for an idempotent retry.
+- If an irreversible durable write crosses its control deadline, the completed `memory.learn` outcome is still published and cached; an exact retry retrieves that outcome without writing or ranking twice.
+- Runtime correction storage is capped at the same 500-entry startup bound and uses deterministic pinned/frequency/recency/id ordering.
+- `JsonFileKeyboardStorage` is a development-only fallback and accepts only an explicit absolute `.json` path. It cannot write a JSON document under a `.sqlite3` filename, rejects future schemas without rewriting them, and projects every accepted record onto a bounded privacy-safe shape. Production startup never selects it automatically.

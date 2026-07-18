@@ -6,6 +6,7 @@ import {
   createIpcErrorResponse
 } from "../../shared/ipc/messages";
 import { MAX_IPC_LINE_BYTES, createDaemonLineHandler } from "./lineProtocol";
+import { createProductionDaemonLineHandler } from "./productionDaemon";
 import { defaultWindowsPipeName } from "./windowsPipeName";
 
 export const SOCKET_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -22,7 +23,7 @@ export async function startWindowsNamedPipeDaemon(pipeName?: string): Promise<Na
   }
   const resolvedPipeName = pipeName ?? defaultWindowsPipeName();
 
-  const handler = createDaemonLineHandler();
+  const handler = await createProductionDaemonLineHandler();
   const connections = new Map<Socket, OrderedResponseQueue>();
   let shuttingDown = false;
   const server = createServer((socket) => {
@@ -38,13 +39,7 @@ export async function startWindowsNamedPipeDaemon(pipeName?: string): Promise<Na
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(resolvedPipeName, () => {
-      server.off("error", reject);
-      resolve();
-    });
-  });
+  await listenNamedPipeServer(server, resolvedPipeName, () => handler.shutdown());
 
   let closePromise: Promise<void> | undefined;
   return {
@@ -67,6 +62,47 @@ export async function startWindowsNamedPipeDaemon(pipeName?: string): Promise<Na
       return closePromise;
     }
   };
+}
+
+interface NamedPipeListenServer {
+  once(event: "error", listener: (error: Error) => void): unknown;
+  off(event: "error", listener: (error: Error) => void): unknown;
+  listen(pipeName: string, listener: () => void): unknown;
+}
+
+/**
+ * Opens the public diagnostic listener without leaking the already-opened
+ * production database if binding fails (for example, when the pipe is busy).
+ */
+export async function listenNamedPipeServer(
+  server: NamedPipeListenServer,
+  pipeName: string,
+  cleanup: () => Promise<void>
+): Promise<void> {
+  let onError: ((error: Error) => void) | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const listener = (error: Error) => reject(error);
+      onError = listener;
+      server.once("error", listener);
+      server.listen(pipeName, () => {
+        server.off("error", listener);
+        onError = undefined;
+        resolve();
+      });
+    });
+  } catch (listenError) {
+    if (onError) server.off("error", onError);
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [listenError, cleanupError],
+        "Named-pipe startup and daemon-storage cleanup both failed."
+      );
+    }
+    throw listenError;
+  }
 }
 
 function wireSocket(socket: Socket, handler: ReturnType<typeof createDaemonLineHandler>): OrderedResponseQueue {

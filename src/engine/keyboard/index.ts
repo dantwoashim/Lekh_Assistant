@@ -13,6 +13,10 @@ import {
 } from "./memory";
 import { defaultTypingContext, isLearningAllowedContext, isSecureContext, surfaceForMode } from "./modes";
 import { KeyboardSessionManager } from "./session";
+import {
+  MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES,
+  installBoundedCorrectionMemoryEntry
+} from "./storage";
 import { getKeyboardSuggestions } from "./suggest";
 import { warmKeyboard } from "./warm";
 import type {
@@ -23,12 +27,14 @@ import type {
   KeyboardEngine,
   KeyboardKeyEvent,
   KeyboardMode,
+  PreparedCorrectionLearning,
   SessionId,
   TypingContext,
   WarmOptions,
   WarmResult
 } from "./types";
 import type { CorrectionMemoryEntry } from "../memory";
+import { normalizeCorrectionMemoryImportEntries } from "../memory/importNormalization";
 import { nowMs } from "../util/time";
 import { isWellFormedUtf16 } from "../util/utf16";
 
@@ -40,6 +46,7 @@ interface RefreshCacheEntry {
 interface PendingLearningSelection {
   commitEpoch: number;
   entry: CorrectionMemoryEntry;
+  prepared?: PreparedCorrectionLearning;
 }
 
 const MAXIMUM_COMPOSITION_UTF16 = engineContract.hotPathPolicy.maximumCompositionUtf16CodeUnits;
@@ -238,15 +245,61 @@ class LocalKeyboardEngine implements KeyboardEngine {
     }
   }
 
-  learnCommittedCorrection(sessionId: SessionId, commitEpoch: number): boolean {
+  preloadCorrectionMemory(entries: readonly unknown[]): number {
+    if (this.sessions.snapshot().length > 0) {
+      throw new Error("Correction memory can only be preloaded before keyboard sessions begin.");
+    }
+    if (entries.length > MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES) {
+      throw new Error(
+        `Correction-memory preload cannot exceed ${MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES} entries.`
+      );
+    }
+    const normalized = normalizeCorrectionMemoryImportEntries(Array.from(entries), {
+      requireTimestamps: true,
+      requireKnownSource: true,
+      scoringPolicy: "strict",
+      minimumFrequency: 0
+    });
+    this.memoryEntries = normalized.map(cloneMemoryEntry);
+    this.memoryVersion += 1;
+    this.refreshCache.clear();
+    return this.memoryEntries.length;
+  }
+
+  prepareCommittedCorrectionLearning(
+    sessionId: SessionId,
+    commitEpoch: number
+  ): PreparedCorrectionLearning | undefined {
     const pending = this.pendingLearning.get(sessionId);
-    if (!pending || pending.commitEpoch !== commitEpoch) return false;
-    this.pendingLearning.delete(sessionId);
-    if (!this.sessions.has(sessionId)) return false;
+    if (!pending || pending.commitEpoch !== commitEpoch) return undefined;
+    if (!this.sessions.has(sessionId)) return undefined;
     const session = this.sessions.get(sessionId);
-    if (session.commitEpoch !== commitEpoch || !isLearningAllowedContext(session.context)) return false;
+    if (session.commitEpoch !== commitEpoch || !isLearningAllowedContext(session.context)) return undefined;
     session.lastUpdateTime = nowMs();
-    return this.applyMemorySelection(pending.entry);
+    if (pending.prepared) return pending.prepared;
+
+    const nextEntries = applyKeyboardMemorySelection(this.memoryEntries, pending.entry);
+    const durableEntry = nextEntries.find((entry) => entry.id === pending.entry.id);
+    if (!durableEntry) return undefined;
+    const prepared = freezePreparedCorrectionLearning({
+      sessionId,
+      commitEpoch,
+      entry: cloneMemoryEntry(durableEntry)
+    });
+    pending.prepared = prepared;
+    return prepared;
+  }
+
+  commitPreparedCorrectionLearning(prepared: PreparedCorrectionLearning): boolean {
+    const pending = this.pendingLearning.get(prepared.sessionId);
+    if (!pending || pending.prepared !== prepared || pending.commitEpoch !== prepared.commitEpoch) return false;
+    this.pendingLearning.delete(prepared.sessionId);
+    return this.installPersistedMemoryEntry(prepared.entry);
+  }
+
+  learnCommittedCorrection(sessionId: SessionId, commitEpoch: number): boolean {
+    const prepared = this.prepareCommittedCorrectionLearning(sessionId, commitEpoch);
+    return prepared ? this.commitPreparedCorrectionLearning(prepared) : false;
   }
 
   setContext(sessionId: SessionId, patch: Partial<TypingContext>): void {
@@ -384,6 +437,16 @@ class LocalKeyboardEngine implements KeyboardEngine {
     return true;
   }
 
+  private installPersistedMemoryEntry(entry: CorrectionMemoryEntry): boolean {
+    const installed = cloneMemoryEntry(entry);
+    const next = installBoundedCorrectionMemoryEntry(this.memoryEntries, installed);
+    if (!next) return false;
+    this.memoryEntries = next;
+    this.memoryVersion += 1;
+    this.refreshCache.clear();
+    return true;
+  }
+
   private prunePendingLearning(): void {
     const liveSessionIds = new Set(this.sessions.snapshot().map((session) => session.sessionId));
     for (const sessionId of this.pendingLearning.keys()) {
@@ -504,6 +567,25 @@ function cloneCandidateUpdate(update: CandidateUpdate): CandidateUpdate {
   if (clone.consumedRange === undefined) delete clone.consumedRange;
   if (clone.latencyMs === undefined) delete clone.latencyMs;
   return clone;
+}
+
+function cloneMemoryEntry(entry: CorrectionMemoryEntry): CorrectionMemoryEntry {
+  return {
+    ...entry,
+    rejectedAlternatives: entry.rejectedAlternatives.slice(),
+    context: { ...entry.context, leftWindow: "", rightWindow: "" },
+    timestamps: { ...entry.timestamps }
+  };
+}
+
+function freezePreparedCorrectionLearning(
+  prepared: PreparedCorrectionLearning
+): PreparedCorrectionLearning {
+  Object.freeze(prepared.entry.rejectedAlternatives);
+  Object.freeze(prepared.entry.context);
+  Object.freeze(prepared.entry.timestamps);
+  Object.freeze(prepared.entry);
+  return Object.freeze(prepared);
 }
 
 export * from "./types";

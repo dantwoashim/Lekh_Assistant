@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -76,6 +76,17 @@ describe("native JSON file keyboard stores", () => {
 
     await memory.reset();
     expect(await memory.query("pra", defaultTypingContext("romanized"))).toHaveLength(0);
+  });
+
+  it("keeps the explicit JSON fallback startup preload bounded and deterministic", async () => {
+    const storage = new JsonFileKeyboardStorage(await tempStoragePath());
+    const memory = storage.correctionMemory();
+    await memory.record({ ...memoryEntry("low", "low", "कम"), frequency: 1 });
+    await memory.record({ ...memoryEntry("high", "high", "उच्च"), frequency: 4 });
+    await memory.record({ ...memoryEntry("pinned", "pinned", "स्थिर"), frequency: 1, pinned: true });
+
+    expect((await memory.loadRecent(2)).map((entry) => entry.chosenOutput)).toEqual(["स्थिर", "उच्च"]);
+    await expect(memory.loadRecent(501)).rejects.toThrow(/1 through 500/);
   });
 
   it("canonicalizes, deduplicates, and collision-isolates JSON memory imports atomically", async () => {
@@ -218,6 +229,16 @@ describe("native JSON file keyboard stores", () => {
       expect((await stat(dirname(filePath))).mode & 0o777).toBe(0o700);
       expect((await stat(filePath)).mode & 0o777).toBe(0o600);
     }
+  });
+
+  it("never changes permissions on a pre-existing storage parent", async () => {
+    if (process.platform === "win32") return;
+    const directory = await mkdtemp(join(tmpdir(), "lekh-existing-json-parent-"));
+    await chmod(directory, 0o755);
+    const storage = new JsonFileKeyboardStorage(join(directory, "keyboard-store.json"));
+    await storage.settings().updateSettings({ showRomanizedLabels: true });
+    expect((await stat(directory)).mode & 0o777).toBe(0o755);
+    expect((await stat(join(directory, "keyboard-store.json"))).mode & 0o777).toBe(0o600);
   });
 
   it("forgets correction memory by input and chosen output", async () => {

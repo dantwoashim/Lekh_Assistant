@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 import type {
   KeyboardCorrectionMemoryStore,
   KeyboardSettings,
@@ -6,7 +6,12 @@ import type {
   PersonalDictionaryEntry,
   PersonalDictionaryStore
 } from "../../../src/engine/keyboard/storage";
-import { defaultKeyboardSettings } from "../../../src/engine/keyboard/storage";
+import {
+  MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES,
+  assertMemoryLoadLimit,
+  boundedCorrectionMemoryEntries,
+  defaultKeyboardSettings
+} from "../../../src/engine/keyboard/storage";
 import { isSecureContext } from "../../../src/engine/keyboard/modes";
 import type { DictionaryResult, TypingContext } from "../../../src/engine/keyboard/types";
 import { normalizeCorrectionMemoryImportEntries } from "../../../src/engine/memory/importNormalization";
@@ -24,6 +29,7 @@ import type { SQLiteDatabase, SQLiteRow } from "./sqliteTypes";
 
 export class SQLiteKeyboardStorage {
   private readonly db: SQLiteDatabase;
+  private closed = false;
 
   constructor(dbPath: string) {
     if (!dbPath.endsWith(".sqlite3")) {
@@ -33,7 +39,10 @@ export class SQLiteKeyboardStorage {
   }
 
   static defaultPath(platform: "windows" | "macos" | "linux", homeDir: string): string {
-    return join(nativeKeyboardDataDir(platform, homeDir), "lekh-keyboard.sqlite3");
+    const directory = nativeKeyboardDataDir(platform, homeDir);
+    return platform === "windows"
+      ? win32.join(directory, "lekh-keyboard.sqlite3")
+      : posix.join(directory, "lekh-keyboard.sqlite3");
   }
 
   settings(): KeyboardSettingsStore {
@@ -49,7 +58,9 @@ export class SQLiteKeyboardStorage {
   }
 
   close(): void {
+    if (this.closed) return;
     this.db.close();
+    this.closed = true;
   }
 }
 
@@ -156,7 +167,20 @@ export class SQLiteCorrectionMemoryStore implements KeyboardCorrectionMemoryStor
   constructor(private readonly db: SQLiteDatabase) {}
 
   async record(entry: CorrectionMemoryEntry): Promise<void> {
-    this.upsert(entry);
+    withSQLiteTransaction(this.db, () => {
+      const retainedId = this.upsert(entry);
+      this.pruneToMaximumEntries(retainedId);
+    });
+  }
+
+  async loadRecent(maximumEntries: number): Promise<CorrectionMemoryEntry[]> {
+    assertMemoryLoadLimit(maximumEntries);
+    return this.db.prepare(`
+      SELECT *
+      FROM correction_memory
+      ORDER BY pinned DESC, frequency DESC, last_used DESC, id ASC
+      LIMIT ?
+    `).all(maximumEntries).map((raw) => correctionMemoryEntryFromRow(asRequiredRow(raw)));
   }
 
   async query(input: string, context: TypingContext): Promise<CorrectionMemoryEntry[]> {
@@ -201,19 +225,19 @@ export class SQLiteCorrectionMemoryStore implements KeyboardCorrectionMemoryStor
 
   async import(data: unknown): Promise<void> {
     if (!isEntryExport<CorrectionMemoryEntry>(data)) return;
-    const entries = normalizeCorrectionMemoryImportEntries(data.entries, {
+    const entries = boundedCorrectionMemoryEntries(normalizeCorrectionMemoryImportEntries(data.entries, {
       requireTimestamps: true,
       requireKnownSource: true,
       scoringPolicy: "strict",
       minimumFrequency: 0
-    });
+    }));
     withSQLiteTransaction(this.db, () => {
       this.db.exec("DELETE FROM correction_memory");
       for (const entry of entries) this.upsert(entry);
     });
   }
 
-  private upsert(entry: CorrectionMemoryEntry): void {
+  private upsert(entry: CorrectionMemoryEntry): string {
     const normalizedEntry = privacySafeCorrectionMemoryEntry(entry);
     this.db.prepare(`
       INSERT INTO correction_memory (
@@ -255,7 +279,40 @@ export class SQLiteCorrectionMemoryStore implements KeyboardCorrectionMemoryStor
       normalizedEntry.blocked ? 1 : 0,
       normalizedEntry.decayWeight ?? null
     );
+    return normalizedEntry.id;
   }
+
+  private pruneToMaximumEntries(retainedId: string): void {
+    const before = sqliteCount(this.db, "correction_memory");
+    const excess = before - MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES;
+    if (excess > 0) {
+      this.db.prepare(`
+        DELETE FROM correction_memory
+        WHERE id IN (
+          SELECT id
+          FROM correction_memory
+          WHERE id <> ? AND pinned = 0
+          ORDER BY frequency ASC, last_used ASC, id DESC
+          LIMIT ?
+        )
+      `).run(retainedId, excess);
+    }
+    if (sqliteCount(this.db, "correction_memory") > MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES) {
+      throw new Error("Correction memory is full and every retained entry is pinned.");
+    }
+    if (!this.db.prepare("SELECT id FROM correction_memory WHERE id = ?").get(retainedId)) {
+      throw new Error("Durable correction-memory record was not retained.");
+    }
+  }
+}
+
+function sqliteCount(db: SQLiteDatabase, table: "correction_memory"): number {
+  const row = asRequiredRow(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get());
+  const count = row.count;
+  if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
+    throw new Error("SQLite correction-memory count is malformed.");
+  }
+  return count;
 }
 
 function personalDictionaryEntryFromRow(row: SQLiteRow): PersonalDictionaryEntry {

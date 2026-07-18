@@ -42,6 +42,7 @@
     { "code": "IPC_TIMEOUT", "recoverable": true, "action": "passThrough" },
     { "code": "DAEMON_CLI_FAILED", "recoverable": true, "action": "restartDaemon" },
     { "code": "DAEMON_DISPATCH_FAILED", "recoverable": true, "action": "passThrough" },
+    { "code": "DAEMON_STOPPING", "recoverable": true, "action": "restartDaemon" },
     { "code": "NAMED_PIPE_REQUEST_FAILED", "recoverable": true, "action": "restartDaemon" }
   ],
   "commonDefinitions": {
@@ -418,7 +419,7 @@
     {
       "type": "session.cancel",
       "sessionBound": true,
-      "deadlineClass": "hotPath",
+      "deadlineClass": "control",
       "requestPayload": { "$ref": "#/$defs/SessionPayload" },
       "responsePayload": {
         "type": "object",
@@ -430,7 +431,7 @@
     {
       "type": "session.end",
       "sessionBound": true,
-      "deadlineClass": "hotPath",
+      "deadlineClass": "control",
       "requestPayload": { "$ref": "#/$defs/SessionPayload" },
       "responsePayload": {
         "type": "object",

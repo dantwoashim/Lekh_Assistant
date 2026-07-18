@@ -42,12 +42,15 @@ export interface PersonalDictionaryStore {
 
 export interface KeyboardCorrectionMemoryStore {
   record(entry: CorrectionMemoryEntry): Promise<void>;
+  loadRecent(maximumEntries: number): Promise<CorrectionMemoryEntry[]>;
   query(input: string, context: TypingContext): Promise<CorrectionMemoryEntry[]>;
   forget(input: string, chosenOutput?: string): Promise<void>;
   reset(): Promise<void>;
   export(): Promise<unknown>;
   import(data: unknown): Promise<void>;
 }
+
+export const MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES = 500;
 
 export function defaultKeyboardSettings(): KeyboardSettings {
   return {
@@ -122,12 +125,22 @@ export class InMemoryKeyboardCorrectionMemoryStore implements KeyboardCorrection
   private entries: CorrectionMemoryEntry[] = [];
 
   async record(entry: CorrectionMemoryEntry): Promise<void> {
-    this.entries = [...this.entries.filter((item) => item.id !== entry.id), clone(entry)];
+    const next = installBoundedCorrectionMemoryEntry(this.entries, clone(entry));
+    if (!next) throw new Error("Correction memory is full and every retained entry is pinned.");
+    this.entries = next;
+  }
+
+  async loadRecent(maximumEntries: number): Promise<CorrectionMemoryEntry[]> {
+    assertMemoryLoadLimit(maximumEntries);
+    return clone(this.entries)
+      .sort(compareStoredMemoryEntries)
+      .slice(0, maximumEntries);
   }
 
   async query(input: string, context: TypingContext): Promise<CorrectionMemoryEntry[]> {
     if (isSecureContext(context)) return [];
     const normalizedInput = input.trim().toLowerCase();
+    if (!normalizedInput) return [];
     return this.entries.filter((entry) => entry.normalizedInput.toLowerCase().startsWith(normalizedInput));
   }
 
@@ -151,12 +164,12 @@ export class InMemoryKeyboardCorrectionMemoryStore implements KeyboardCorrection
 
   async import(data: unknown): Promise<void> {
     if (!isCorrectionMemoryExport(data)) return;
-    this.entries = normalizeCorrectionMemoryImportEntries(data.entries, {
+    this.entries = boundedCorrectionMemoryEntries(normalizeCorrectionMemoryImportEntries(data.entries, {
       requireTimestamps: true,
       requireKnownSource: true,
       scoringPolicy: "strict",
       minimumFrequency: 0
-    });
+    }));
   }
 }
 
@@ -172,4 +185,65 @@ function isCorrectionMemoryExport(data: unknown): data is { schemaVersion: 1; en
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export function assertMemoryLoadLimit(maximumEntries: number): void {
+  if (!Number.isSafeInteger(maximumEntries) || maximumEntries < 1 ||
+      maximumEntries > MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES) {
+    throw new Error(
+      `Correction-memory preload limit must be a safe integer from 1 through ${MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES}.`
+    );
+  }
+}
+
+export function boundedCorrectionMemoryEntries(
+  entries: readonly CorrectionMemoryEntry[]
+): CorrectionMemoryEntry[] {
+  return entries.slice().sort(compareStoredMemoryEntries)
+    .slice(0, MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES);
+}
+
+/**
+ * Installs a just-confirmed correction without evicting a pinned entry. The
+ * new row is retained so a successful durable record can be mirrored exactly
+ * by the live engine. `undefined` means all available capacity is pinned.
+ */
+export function installBoundedCorrectionMemoryEntry(
+  entries: readonly CorrectionMemoryEntry[],
+  entry: CorrectionMemoryEntry
+): CorrectionMemoryEntry[] | undefined {
+  const existingIndex = entries.findIndex((item) => item.id === entry.id);
+  if (existingIndex >= 0) {
+    const next = entries.slice();
+    next[existingIndex] = entry;
+    return next;
+  }
+  if (entries.length < MAXIMUM_STORED_CORRECTION_MEMORY_ENTRIES) {
+    return [...entries, entry];
+  }
+
+  let evictionIndex = -1;
+  for (let index = 0; index < entries.length; index += 1) {
+    if (entries[index]!.pinned) continue;
+    if (evictionIndex < 0 || compareStoredMemoryEntries(entries[index]!, entries[evictionIndex]!) > 0) {
+      evictionIndex = index;
+    }
+  }
+  if (evictionIndex < 0) return undefined;
+  return [
+    ...entries.slice(0, evictionIndex),
+    ...entries.slice(evictionIndex + 1),
+    entry
+  ];
+}
+
+export function compareStoredMemoryEntries(left: CorrectionMemoryEntry, right: CorrectionMemoryEntry): number {
+  return Number(Boolean(right.pinned)) - Number(Boolean(left.pinned)) ||
+    right.frequency - left.frequency ||
+    compareCodeUnits(right.timestamps.lastUsed, left.timestamps.lastUsed) ||
+    compareCodeUnits(left.id, right.id);
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFile, mkdtemp, readFile, readdir, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, readdir, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -88,6 +88,68 @@ describe("native SQLite keyboard stores", () => {
     await memory.forget("niraj");
     expect(await memory.query("nir", defaultTypingContext("romanized"))).toHaveLength(0);
     storage.close();
+  });
+
+  it("loads correction memory in a deterministic bounded startup order and closes idempotently", async () => {
+    const storage = new SQLiteKeyboardStorage(await tempStoragePath());
+    const memory = storage.correctionMemory();
+    await memory.record({ ...memoryEntry("low", "low", "कम", 1), pinned: false });
+    await memory.record({ ...memoryEntry("high", "high", "उच्च", 4), pinned: false });
+    await memory.record({ ...memoryEntry("pinned", "pinned", "स्थिर", 1), pinned: true });
+
+    expect((await memory.loadRecent(2)).map((entry) => entry.chosenOutput)).toEqual(["स्थिर", "उच्च"]);
+    await expect(memory.loadRecent(0)).rejects.toThrow(/1 through 500/);
+    storage.close();
+    expect(() => storage.close()).not.toThrow();
+  });
+
+  it("keeps durable and live capacity decisions aligned at the 500-entry boundary", async () => {
+    const storage = new SQLiteKeyboardStorage(await tempStoragePath());
+    const memory = storage.correctionMemory();
+    await memory.import({
+      schemaVersion: 1,
+      entries: Array.from({ length: 500 }, (_, index) => ({
+        ...memoryEntry(`existing-${index}`, `existing${index}`, `शब्द${index}`, index + 1),
+        pinned: index < 2,
+        timestamps: {
+          firstSeen: "2026-06-12T00:00:00.000Z",
+          lastUsed: new Date(Date.UTC(2026, 5, 12, 0, 0, 0, index)).toISOString()
+        }
+      }))
+    });
+
+    await memory.record(memoryEntry("newly-confirmed", "newlyconfirmed", "नयाँ", 1));
+    const retained = await memory.loadRecent(500);
+    expect(retained).toHaveLength(500);
+    expect(retained).toEqual(expect.arrayContaining([
+      expect.objectContaining({ normalizedInput: "newlyconfirmed", chosenOutput: "नयाँ" }),
+      expect.objectContaining({ normalizedInput: "existing0", pinned: true }),
+      expect.objectContaining({ normalizedInput: "existing1", pinned: true })
+    ]));
+    expect(retained).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ normalizedInput: "existing2" })
+    ]));
+    storage.close();
+
+    const pinnedStorage = new SQLiteKeyboardStorage(await tempStoragePath());
+    const pinnedMemory = pinnedStorage.correctionMemory();
+    await pinnedMemory.import({
+      schemaVersion: 1,
+      entries: Array.from({ length: 500 }, (_, index) => ({
+        ...memoryEntry(`pinned-${index}`, `pinned${index}`, `स्थिर${index}`, 1),
+        pinned: true,
+        timestamps: {
+          firstSeen: "2026-06-12T00:00:00.000Z",
+          lastUsed: new Date(Date.UTC(2026, 5, 12, 0, 0, 0, index)).toISOString()
+        }
+      }))
+    });
+    await expect(pinnedMemory.record(
+      memoryEntry("must-not-acknowledge", "mustnotacknowledge", "अस्थायी", 1)
+    )).rejects.toThrow(/every retained entry is pinned/);
+    expect(await pinnedMemory.loadRecent(500)).toHaveLength(500);
+    expect(await pinnedMemory.query("mustnotacknowledge", defaultTypingContext("romanized"))).toEqual([]);
+    pinnedStorage.close();
   });
 
   it("persists the canonical repeated-selection decay bound across SQLite reopen", async () => {
@@ -584,6 +646,17 @@ describe("native SQLite keyboard stores", () => {
       expect((await stat(dirname(filePath))).mode & 0o777).toBe(0o700);
       expect((await stat(filePath)).mode & 0o777).toBe(0o600);
     }
+  });
+
+  it("never changes permissions on a pre-existing SQLite parent", async () => {
+    if (process.platform === "win32") return;
+    const directory = await mkdtemp(join(tmpdir(), "lekh-existing-sqlite-parent-"));
+    await chmod(directory, 0o755);
+    const filePath = join(directory, "lekh-keyboard.sqlite3");
+    const storage = new SQLiteKeyboardStorage(filePath);
+    storage.close();
+    expect((await stat(directory)).mode & 0o777).toBe(0o755);
+    expect((await stat(filePath)).mode & 0o777).toBe(0o600);
   });
 
   it("rejects header-shaped corrupt SQLite data without modifying it", async () => {

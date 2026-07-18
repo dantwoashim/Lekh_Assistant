@@ -62,12 +62,7 @@ export class IpcProtocolState {
   }
 
   preflight(request: AnyTypedIpcRequest): ProtocolPreflight {
-    this.cleanupExpiredClients();
-    this.cleanupExpiredSessions();
-    if (this.now() > request.deadlineAt) {
-      return this.reject(request, "IPC_DEADLINE_EXCEEDED", "The request deadline elapsed before dispatch.");
-    }
-
+    this.expireIdle();
     const client = this.clients.get(request.clientInstanceId);
     if (client) {
       const replay = client.replayBySequence.get(request.requestSequence);
@@ -81,6 +76,12 @@ export class IpcProtocolState {
       if (request.requestSequence <= client.lastSequence || this.hasRequestId(client, request.id)) {
         return this.reject(request, "IPC_REPLAY_DETECTED", "A stale sequence or reused request identifier was rejected.");
       }
+    }
+    // An exact completed retry is returned above even after its original
+    // deadline. It performs no new work and is how a client resolves an
+    // uncertain transport acknowledgement without duplicating a mutation.
+    if (this.now() > request.deadlineAt) {
+      return this.reject(request, "IPC_DEADLINE_EXCEEDED", "The request deadline elapsed before dispatch.");
     }
 
     if (request.type === "protocol.negotiate") {
@@ -165,6 +166,11 @@ export class IpcProtocolState {
   reset(): void {
     this.sessions.clear();
     this.clients.clear();
+  }
+
+  expireIdle(): void {
+    this.cleanupExpiredClients();
+    this.cleanupExpiredSessions();
   }
 
   get activeSessionCount(): number {

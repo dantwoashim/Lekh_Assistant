@@ -8,7 +8,13 @@ import type {
   PersonalDictionaryEntry,
   PersonalDictionaryStore
 } from "../../../src/engine/keyboard/storage";
-import { defaultKeyboardSettings } from "../../../src/engine/keyboard/storage";
+import {
+  assertMemoryLoadLimit,
+  boundedCorrectionMemoryEntries,
+  compareStoredMemoryEntries,
+  defaultKeyboardSettings,
+  installBoundedCorrectionMemoryEntry
+} from "../../../src/engine/keyboard/storage";
 import { isSecureContext } from "../../../src/engine/keyboard/modes";
 import type { DictionaryResult, TypingContext } from "../../../src/engine/keyboard/types";
 import {
@@ -76,8 +82,11 @@ export class JsonFileKeyboardStorage {
   async write(next: NativeKeyboardStorageFile): Promise<void> {
     const normalized = normalizeStorage({ ...next, updatedAt: new Date().toISOString() });
     const directory = dirname(this.filePath);
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    if (process.platform !== "win32") await chmod(directory, 0o700);
+    const createdDirectory = await mkdir(directory, { recursive: true, mode: 0o700 });
+    // A caller may deliberately place a development file beneath an existing
+    // shared parent. Restrict directories we create, never mutate an arbitrary
+    // pre-existing parent's permissions, and always keep the file itself 0600.
+    if (process.platform !== "win32" && createdDirectory !== undefined) await chmod(directory, 0o700);
     const tmpPath = `${this.filePath}.${process.pid}-${randomUUID()}.tmp`;
     try {
       await writeFile(tmpPath, `${JSON.stringify(normalized, null, 2)}\n`, {
@@ -178,13 +187,25 @@ export class JsonFileCorrectionMemoryStore implements KeyboardCorrectionMemorySt
   async record(entry: CorrectionMemoryEntry): Promise<void> {
     const current = await this.storage.read();
     const normalizedEntry = privacySafeCorrectionMemoryEntry(entry);
+    const correctionMemory = installBoundedCorrectionMemoryEntry(
+      current.correctionMemory,
+      normalizedEntry
+    );
+    if (!correctionMemory) {
+      throw new Error("Correction memory is full and every retained entry is pinned.");
+    }
     await this.storage.write({
       ...current,
-      correctionMemory: [
-        ...current.correctionMemory.filter((item) => item.id !== normalizedEntry.id),
-        normalizedEntry
-      ]
+      correctionMemory
     });
+  }
+
+  async loadRecent(maximumEntries: number): Promise<CorrectionMemoryEntry[]> {
+    assertMemoryLoadLimit(maximumEntries);
+    const current = await this.storage.read();
+    return clone(current.correctionMemory)
+      .sort(compareStoredMemoryEntries)
+      .slice(0, maximumEntries);
   }
 
   async query(input: string, context: TypingContext): Promise<CorrectionMemoryEntry[]> {
@@ -224,12 +245,12 @@ export class JsonFileCorrectionMemoryStore implements KeyboardCorrectionMemorySt
     const current = await this.storage.read();
     await this.storage.write({
       ...current,
-      correctionMemory: normalizeCorrectionMemoryImportEntries(data.entries, {
+      correctionMemory: boundedCorrectionMemoryEntries(normalizeCorrectionMemoryImportEntries(data.entries, {
         requireTimestamps: true,
         requireKnownSource: true,
         scoringPolicy: "strict",
         minimumFrequency: 0
-      })
+      }))
     });
   }
 }
@@ -245,12 +266,12 @@ function normalizeStorage(value: unknown): NativeKeyboardStorageFile {
     schemaVersion: 1,
     settings: normalizeKeyboardSettings(value.settings),
     personalDictionary: value.personalDictionary.map(normalizePersonalDictionaryEntry),
-    correctionMemory: normalizeCorrectionMemoryImportEntries(value.correctionMemory, {
+    correctionMemory: boundedCorrectionMemoryEntries(normalizeCorrectionMemoryImportEntries(value.correctionMemory, {
       requireTimestamps: true,
       requireKnownSource: true,
       scoringPolicy: "strict",
       minimumFrequency: 0
-    }),
+    })),
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date(0).toISOString()
   };
 }

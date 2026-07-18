@@ -51,6 +51,8 @@ Examples:
 
 Native integrations must treat these as separate values. The raw buffer is not always the preview.
 
+Native learning is a two-phase transaction. `prepareCommittedCorrectionLearning(sessionId, commitEpoch)` validates the one-time host receipt and returns an opaque, frozen, privacy-projected row without changing ranking. The daemon persists that exact row first. Only after durable storage succeeds may it call `commitPreparedCorrectionLearning(prepared)`. A failed write neither consumes the pending receipt nor creates in-memory-only truth. `learnCommittedCorrection` remains the explicit in-process convenience path for storage-free browser/tests.
+
 ## Native Range Semantics
 
 All public ranges use UTF-16 code units at the native boundary.

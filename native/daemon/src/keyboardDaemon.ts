@@ -1,5 +1,13 @@
 import { createKeyboardEngine } from "../../../src/engine/keyboard";
-import type { CandidateUpdate, CommitResult, KeyboardEngine } from "../../../src/engine/keyboard";
+import { isSecureContext } from "../../../src/engine/keyboard";
+import type {
+  CandidateUpdate,
+  CommitResult,
+  DictionaryResult,
+  KeyboardCorrectionMemoryStore,
+  KeyboardEngine,
+  PersonalDictionaryStore
+} from "../../../src/engine/keyboard";
 import {
   IPC_MESSAGE_DESCRIPTORS,
   IPC_PROTOCOL_LIMITS,
@@ -27,10 +35,19 @@ import { IpcProtocolState } from "./protocolState";
 const DAEMON_VERSION = "0.1.0-dev";
 const HOT_PATH_TIMEOUT_MS = 50;
 
+export interface KeyboardDaemonPersistence {
+  memoryEnabled: boolean;
+  correctionMemory: KeyboardCorrectionMemoryStore;
+  personalDictionary: PersonalDictionaryStore;
+  close(): void | Promise<void>;
+}
+
 export interface KeyboardDaemonOptions {
   engine?: KeyboardEngine;
   now?: () => number;
   serverInstanceId?: string;
+  persistence?: KeyboardDaemonPersistence;
+  expirySweepIntervalMs?: number | false;
 }
 
 export interface HotPathFallback<T> {
@@ -43,10 +60,18 @@ export class KeyboardDaemon {
   private readonly startedAt: number;
   private readonly now: () => number;
   private readonly protocol: IpcProtocolState;
+  private readonly persistence?: KeyboardDaemonPersistence;
+  private expiryTimer?: ReturnType<typeof setInterval>;
+  private expirySweepQueued = false;
+  private acceptingRequests = true;
+  private stopping = false;
+  private nextRequestTicket = 0;
+  private terminalRequestTicket?: number;
   private warmReady = false;
   private pendingRequests = 0;
   private dispatchTail: Promise<void> = Promise.resolve();
   private shutdownPromise?: Promise<void>;
+  private finalizationPromise?: Promise<void>;
   private lastError: DiagnosticsMetricsResult["lastError"];
   private readonly counters = {
     processedKeystrokes: 0,
@@ -57,6 +82,7 @@ export class KeyboardDaemon {
 
   constructor(options: KeyboardDaemonOptions = {}) {
     this.engine = options.engine ?? createKeyboardEngine();
+    this.persistence = options.persistence;
     this.now = options.now ?? Date.now;
     this.startedAt = this.now();
     this.protocol = new IpcProtocolState({
@@ -70,9 +96,17 @@ export class KeyboardDaemon {
         }
       }
     });
+    if (options.expirySweepIntervalMs !== undefined && options.expirySweepIntervalMs !== false) {
+      if (!Number.isSafeInteger(options.expirySweepIntervalMs) || options.expirySweepIntervalMs < 1) {
+        throw new Error("Daemon expiry sweep interval must be a positive safe integer.");
+      }
+      this.expiryTimer = setInterval(() => this.scheduleExpirySweep(), options.expirySweepIntervalMs);
+      this.expiryTimer.unref?.();
+    }
   }
 
   handle(value: unknown): Promise<IpcResponse> {
+    if (!this.acceptingRequests) return Promise.resolve(this.stoppingResponse(value));
     if (this.pendingRequests >= IPC_PROTOCOL_LIMITS.maximumPendingRequestsPerConnection) {
       return Promise.resolve(createIpcErrorResponse(
         requestIdentity(value),
@@ -82,8 +116,9 @@ export class KeyboardDaemon {
       ));
     }
 
+    const ticket = ++this.nextRequestTicket;
     this.pendingRequests += 1;
-    const response = this.dispatchTail.then(() => this.handleSerial(value));
+    const response = this.dispatchTail.then(() => this.handleSerial(value, ticket));
     this.dispatchTail = response.then(() => undefined, () => undefined);
     return response.finally(() => {
       this.pendingRequests = Math.max(0, this.pendingRequests - 1);
@@ -92,18 +127,20 @@ export class KeyboardDaemon {
 
   shutdown(): Promise<void> {
     if (!this.shutdownPromise) {
+      this.acceptingRequests = false;
+      this.stopExpiryTimer();
       const scheduled = this.dispatchTail.then(() => this.shutdownSerial());
-      this.shutdownPromise = scheduled.catch((error) => {
-        this.shutdownPromise = undefined;
-        throw error;
-      });
+      this.shutdownPromise = scheduled;
       this.dispatchTail = this.shutdownPromise.then(() => undefined, () => undefined);
     }
     return this.shutdownPromise;
   }
 
-  private async handleSerial(value: unknown): Promise<IpcResponse> {
+  private async handleSerial(value: unknown, ticket: number): Promise<IpcResponse> {
     const startedAt = this.now();
+    if (this.terminalRequestTicket !== undefined && ticket > this.terminalRequestTicket) {
+      return this.stoppingResponse(value, this.now() - startedAt);
+    }
     const validation = validateIpcRequest(value);
     if (!validation.ok) {
       const identity = requestIdentity(value);
@@ -121,11 +158,15 @@ export class KeyboardDaemon {
     const request = validation.request;
     const preflight = this.protocol.preflight(request);
     if (!preflight.proceed) return preflight.response;
+    if (request.type === "engine.shutdown") {
+      this.acceptingRequests = false;
+      this.terminalRequestTicket = ticket;
+    }
 
     try {
       const response = await this.dispatch(request);
       response.latencyMs = this.now() - startedAt;
-      this.protocol.remember(request, response);
+      if (!this.stopping) this.protocol.remember(request, response);
       return response;
     } catch {
       const message = "The daemon request could not be completed.";
@@ -143,7 +184,7 @@ export class KeyboardDaemon {
         this.now() - startedAt,
         { serverInstanceId: this.protocol.serverInstanceId }
       );
-      this.protocol.remember(request, response);
+      if (!this.stopping) this.protocol.remember(request, response);
       return response;
     }
   }
@@ -278,7 +319,7 @@ export class KeyboardDaemon {
           Promise.resolve().then(() => this.engine.commitCandidate(
             sessionId,
             candidateId,
-            { learning: "deferred" }
+            { learning: this.persistence?.memoryEnabled === false ? "disabled" : "deferred" }
           )),
           this.hotPathTimeout(request),
           hotPathCommitFallback(sessionId, "Candidate commit exceeded its deadline; native host should pass through."),
@@ -333,21 +374,40 @@ export class KeyboardDaemon {
       }
       case "dictionary.lookup": {
         const { query, context } = request.payload;
-        return this.success(request, this.engine.lookupDictionary(query, context));
+        if (context && isSecureContext(context)) return this.success(request, []);
+        const builtIn = this.engine.lookupDictionary(query, context);
+        const personal = this.persistence
+          ? await this.persistence.personalDictionary.lookup(query)
+          : [];
+        return this.success(request, mergeDictionaryResults(personal, builtIn));
       }
       case "memory.learn": {
-        const learned = this.engine.learnCommittedCorrection(
-          request.payload.sessionId,
-          request.payload.commitEpoch
-        );
-        return this.success(request, { learned });
+        const { sessionId, commitEpoch } = request.payload;
+        if (!this.persistence) {
+          const learned = this.engine.learnCommittedCorrection(sessionId, commitEpoch);
+          return this.success(request, { learned }, learned);
+        }
+        if (!this.persistence.memoryEnabled) return this.success(request, { learned: false });
+        const prepared = this.engine.prepareCommittedCorrectionLearning(sessionId, commitEpoch);
+        if (!prepared) return this.success(request, { learned: false });
+        await this.persistence.correctionMemory.record(prepared.entry);
+        const learned = this.engine.commitPreparedCorrectionLearning(prepared);
+        if (!learned) throw new Error("Durable correction learning could not be installed in the live engine.");
+        // Once the durable transaction has committed, publish and replay its
+        // exact result even if synchronous FULL-durability work crossed the
+        // request deadline. Returning a deadline error here would make a
+        // successful irreversible write indistinguishable from no write.
+        return this.success(request, { learned }, true);
       }
       case "diagnostics.getMetrics": {
         return this.success(request, this.metrics());
       }
       case "engine.shutdown": {
         await this.shutdownSerial();
-        const response = this.success(request, { shutdown: true });
+        // Finalization is irreversible and exactly-once. Once it completes,
+        // report the completed terminal state even if storage close crossed
+        // the request deadline; a fresh deadline failure would be false.
+        const response = this.success(request, { shutdown: true }, true);
         return response;
       }
     }
@@ -356,9 +416,9 @@ export class KeyboardDaemon {
   private success<T extends IpcMessageType>(
     request: TypedIpcRequest<T>,
     payload: IpcResultByType[T],
-    allowFailOpenAfterDeadline = false
+    allowPublicationAfterDeadline = false
   ): IpcResponse {
-    if (!allowFailOpenAfterDeadline && this.now() > request.deadlineAt) {
+    if (!allowPublicationAfterDeadline && this.now() > request.deadlineAt) {
       this.counters.ipcTimeouts += 1;
       if (IPC_MESSAGE_DESCRIPTORS[request.type].deadlineClass === "hotPath") {
         this.counters.passThroughFallbacks += 1;
@@ -390,11 +450,82 @@ export class KeyboardDaemon {
     }
   }
 
-  private async shutdownSerial(): Promise<void> {
-    await this.engine.shutdown();
-    this.warmReady = false;
-    this.protocol.reset();
+  private shutdownSerial(): Promise<void> {
+    if (!this.finalizationPromise) {
+      this.acceptingRequests = false;
+      this.stopping = true;
+      this.stopExpiryTimer();
+      this.finalizationPromise = (async () => {
+        try {
+          await this.engine.shutdown();
+        } finally {
+          try {
+            await this.persistence?.close();
+          } finally {
+            this.warmReady = false;
+            this.protocol.reset();
+          }
+        }
+      })();
+    }
+    return this.finalizationPromise;
   }
+
+  private scheduleExpirySweep(): void {
+    if (this.stopping || this.expirySweepQueued) return;
+    this.expirySweepQueued = true;
+    const sweep = this.dispatchTail.then(() => {
+      if (!this.stopping) this.protocol.expireIdle();
+    }).finally(() => {
+      this.expirySweepQueued = false;
+    });
+    this.dispatchTail = sweep.then(() => undefined, () => undefined);
+  }
+
+  private stopExpiryTimer(): void {
+    if (!this.expiryTimer) return;
+    clearInterval(this.expiryTimer);
+    this.expiryTimer = undefined;
+  }
+
+  private stoppingResponse(value: unknown, latencyMs = 0): IpcResponse {
+    return createIpcErrorResponse(
+      requestIdentity(value),
+      { code: "DAEMON_STOPPING", message: "The daemon is shutting down." },
+      latencyMs,
+      { serverInstanceId: this.protocol.serverInstanceId }
+    );
+  }
+}
+
+export function mergeDictionaryResults(
+  personal: readonly DictionaryResult[],
+  builtIn: readonly DictionaryResult[]
+): DictionaryResult[] {
+  const ordered = [
+    ...personal.map((result) => ({ result, personal: true })),
+    ...builtIn.map((result) => ({ result, personal: false }))
+  ].sort((left, right) => (
+    Number(right.personal) - Number(left.personal) ||
+    right.result.confidence - left.result.confidence ||
+    compareCodeUnits(left.result.word.normalize("NFC"), right.result.word.normalize("NFC")) ||
+    compareCodeUnits(left.result.source ?? "", right.result.source ?? "")
+  ));
+  const seen = new Set<string>();
+  const merged: DictionaryResult[] = [];
+  for (const { result } of ordered) {
+    const key = result.word.normalize("NFC");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({
+      ...result,
+      romanized: result.romanized?.slice(),
+      variants: result.variants?.slice(),
+      domains: result.domains?.slice()
+    });
+    if (merged.length === IPC_PROTOCOL_LIMITS.maximumDictionaryResults) break;
+  }
+  return merged;
 }
 
 function hotPathCandidateFallback(sessionId: string, warning: string): CandidateUpdate {
@@ -461,4 +592,8 @@ function requestIdentity(value: unknown): Pick<AnyTypedIpcRequest, "id" | "type"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -1,13 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MAXIMUM_ACTIVE_PIPE_CONNECTIONS,
   SOCKET_IDLE_TIMEOUT_MS,
   createNamedPipeFrameDecoder,
   createOrderedResponseQueue,
+  listenNamedPipeServer,
   namedPipeErrorResponse
 } from "./namedPipeServer";
 
 describe("Windows named-pipe response ordering", () => {
+  it("closes production storage when the named-pipe listener cannot bind", async () => {
+    const listenFailure = new Error("pipe already exists");
+    let errorListener: ((error: Error) => void) | undefined;
+    const cleanup = vi.fn(async () => undefined);
+    const server = {
+      once: vi.fn((_event: "error", listener: (error: Error) => void) => {
+        errorListener = listener;
+      }),
+      off: vi.fn(),
+      listen: vi.fn(() => {
+        queueMicrotask(() => errorListener?.(listenFailure));
+      })
+    };
+
+    await expect(listenNamedPipeServer(server, "\\\\.\\pipe\\lekh-test", cleanup))
+      .rejects.toBe(listenFailure);
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps requests and responses in exact arrival order despite uneven work", async () => {
     const written: string[] = [];
     const delays = new Map([

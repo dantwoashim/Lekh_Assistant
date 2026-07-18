@@ -65,6 +65,7 @@ describe("keyboard native storage contracts", () => {
     expect(await store.query("pra", defaultTypingContext("romanized"))).toHaveLength(1);
     expect(await store.query("pra", { ...defaultTypingContext("romanized"), secureInput: true })).toHaveLength(0);
     expect(await store.query("pra", { ...defaultTypingContext("romanized"), fieldType: "unknown" })).toHaveLength(0);
+    expect(await store.query("   ", defaultTypingContext("romanized"))).toEqual([]);
   });
 
   it("forgets correction memory entries by input and optional output", async () => {
@@ -79,6 +80,53 @@ describe("keyboard native storage contracts", () => {
 
     await store.forget("niraj");
     expect(await store.query("niraj", defaultTypingContext("romanized"))).toHaveLength(0);
+  });
+
+  it("loads a deterministic bounded correction-memory startup set", async () => {
+    const store = new InMemoryKeyboardCorrectionMemoryStore();
+    await store.record({ ...memoryEntry("z", "z", "जेड"), frequency: 1 });
+    await store.record({ ...memoryEntry("a", "a", "ए"), frequency: 3 });
+    await store.record({ ...memoryEntry("pinned", "p", "पी"), frequency: 1, pinned: true });
+
+    expect((await store.loadRecent(2)).map((entry) => entry.id)).toEqual(["pinned", "a"]);
+    await expect(store.loadRecent(0)).rejects.toThrow(/1 through 500/);
+    await expect(store.loadRecent(501)).rejects.toThrow(/1 through 500/);
+  });
+
+  it("retains an explicitly recorded row while evicting only the weakest unpinned row", async () => {
+    const store = new InMemoryKeyboardCorrectionMemoryStore();
+    for (let index = 0; index < 500; index += 1) {
+      await store.record({
+        ...memoryEntry(`existing-${index}`, `existing-${index}`, `शब्द${index}`),
+        frequency: index + 1,
+        pinned: index < 2
+      });
+    }
+
+    await store.record(memoryEntry("newly-confirmed", "newly-confirmed", "नयाँ"));
+    const retained = await store.loadRecent(500);
+    expect(retained).toHaveLength(500);
+    expect(retained.map((entry) => entry.id)).toContain("newly-confirmed");
+    expect(retained.map((entry) => entry.id)).toEqual(
+      expect.arrayContaining(["existing-0", "existing-1"])
+    );
+    expect(retained.map((entry) => entry.id)).not.toContain("existing-2");
+  });
+
+  it("fails atomically instead of acknowledging an in-memory-only row when capacity is fully pinned", async () => {
+    const store = new InMemoryKeyboardCorrectionMemoryStore();
+    await store.import({
+      schemaVersion: 1,
+      entries: Array.from({ length: 500 }, (_, index) => ({
+        ...memoryEntry(`pinned-${index}`, `pinned-${index}`, `स्थिर${index}`),
+        pinned: true
+      }))
+    });
+
+    await expect(store.record(memoryEntry("not-durable", "not-durable", "अस्थायी")))
+      .rejects.toThrow(/every retained entry is pinned/);
+    expect(await store.loadRecent(500)).toHaveLength(500);
+    expect((await store.loadRecent(500)).map((entry) => entry.id)).not.toContain("not-durable");
   });
 
   it("canonicalizes and deduplicates in-memory correction imports", async () => {

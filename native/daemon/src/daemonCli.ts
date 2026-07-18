@@ -4,6 +4,11 @@ import { createIpcErrorResponse } from "../../shared/ipc/messages";
 import type { IpcResponse } from "../../shared/ipc/messages";
 import { createDaemonLineHandler } from "./lineProtocol";
 import { startWindowsNamedPipeDaemon } from "./namedPipeServer";
+import {
+  createDevelopmentJsonKeyboardDaemon,
+  createProductionDaemonLineHandler,
+  isDevelopmentJsonPath
+} from "./productionDaemon";
 
 async function runDaemonCli(): Promise<void> {
   if (process.argv.includes("--named-pipe")) {
@@ -18,7 +23,10 @@ async function runDaemonCli(): Promise<void> {
     return;
   }
 
-  const handler = createDaemonLineHandler();
+  const developmentJsonPath = developmentJsonStorageArgument(process.argv.slice(2));
+  const handler = developmentJsonPath
+    ? createDaemonLineHandler(await createDevelopmentJsonKeyboardDaemon(developmentJsonPath))
+    : await createProductionDaemonLineHandler();
   const io = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -54,6 +62,18 @@ async function runDaemonCli(): Promise<void> {
   }
 
   await handler.shutdown();
+}
+
+export function developmentJsonStorageArgument(args: readonly string[]): string | undefined {
+  const prefix = "--development-json-storage=";
+  const values = args.filter((argument) => argument.startsWith(prefix));
+  if (values.length === 0) return undefined;
+  if (values.length !== 1) throw new Error("Development JSON storage may be specified only once.");
+  const value = values[0]!.slice(prefix.length);
+  if (!isDevelopmentJsonPath(value)) {
+    throw new Error("Development JSON storage requires an explicit absolute .json path.");
+  }
+  return value;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

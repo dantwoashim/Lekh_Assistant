@@ -734,6 +734,7 @@
         "IPC_TIMEOUT",
         "DAEMON_CLI_FAILED",
         "DAEMON_DISPATCH_FAILED",
+        "DAEMON_STOPPING",
         "NAMED_PIPE_REQUEST_FAILED"
       ],
       "x-wellFormedUtf16": true

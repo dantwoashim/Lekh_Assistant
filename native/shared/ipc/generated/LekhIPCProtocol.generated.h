@@ -42,7 +42,7 @@ inline constexpr std::array<std::string_view, 18> kMessageTypes = {
   "diagnostics.getMetrics",
   "engine.shutdown"
 };
-inline constexpr std::array<std::string_view, 17> kErrorCodes = {
+inline constexpr std::array<std::string_view, 18> kErrorCodes = {
   "IPC_SCHEMA_INVALID",
   "IPC_VERSION_UNSUPPORTED",
   "IPC_NEGOTIATION_REQUIRED",
@@ -59,6 +59,7 @@ inline constexpr std::array<std::string_view, 17> kErrorCodes = {
   "IPC_TIMEOUT",
   "DAEMON_CLI_FAILED",
   "DAEMON_DISPATCH_FAILED",
+  "DAEMON_STOPPING",
   "NAMED_PIPE_REQUEST_FAILED"
 };
 } // namespace lekh::ipc

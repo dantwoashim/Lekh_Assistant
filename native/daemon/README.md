@@ -13,16 +13,22 @@ Prompt 3 adds a repo-executable TypeScript daemon:
 
 It handles every IPC message, validates envelopes, tracks diagnostics, exercises timeout fallback, and is covered by `npm run test:native-scaffold`. The standalone Node named-pipe mode remains a development diagnostic. The installed Windows path runs the daemon over private inherited standard-I/O handles behind `LekhPipeBroker.exe`.
 
+Both the installed standard-I/O child and the standalone named-pipe diagnostic use the per-user SQLite adapter. Direct `KeyboardDaemon` and `createDaemonLineHandler()` construction stays storage-free for isolated unit tests; only the production factories resolve a user path. JSON storage requires the explicit development flag shown below and is never an automatic recovery path.
+
 ## Responsibilities
 
 - Load and warm the keyboard engine.
-- Maintain session TTL cleanup.
+- Preload at most 500 deterministic, privacy-projected correction rows before sessions begin.
+- Persist `memory.learn` only after the native host's explicit commit confirmation; acknowledge it only after SQLite returns from a durable write, then apply the exact prepared state to live ranking.
+- Merge personal SQLite dictionary rows ahead of duplicate built-in rows with a deterministic eight-result cap.
+- Maintain proactive timer-driven client/session TTL cleanup even when a crashed client sends no later request; the timer is unrefed and removed on shutdown.
 - Serve the IPC messages defined in `native/shared/ipc`.
 - Own crash-safe local memory and dictionary storage.
 - Return partial warm state when heavy modules are unavailable.
 - Never send typed text to the network.
 - Expire abandoned negotiated clients and retire their owned engine sessions after the generated 30-minute idle TTL.
 - Shut the engine down directly and idempotently after transport queues drain; shutdown does not consume a client slot or depend on protocol negotiation.
+- Close the SQLite connection and release its runtime lease during every shutdown path, including engine-shutdown failures.
 
 ## Failure Policy
 
@@ -39,3 +45,4 @@ The native Windows broker owns every public pipe instance. It derives the endpoi
 - `npm run build:daemon`
 - `npm run daemon:dev`
 - `npm run daemon:named-pipe` on Windows for transport diagnostics only
+- `npm run daemon:dev -- --development-json-storage=/absolute/development-only.json` for an explicit JSON development store

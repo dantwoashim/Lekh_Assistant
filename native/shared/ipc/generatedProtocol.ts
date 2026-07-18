@@ -66,12 +66,12 @@ export const IPC_MESSAGE_DESCRIPTORS = {
   "session.cancel": {
     "sessionBound": true,
     "responseSessionEpoch": true,
-    "deadlineClass": "hotPath"
+    "deadlineClass": "control"
   },
   "session.end": {
     "sessionBound": true,
     "responseSessionEpoch": true,
-    "deadlineClass": "hotPath"
+    "deadlineClass": "control"
   },
   "session.setMode": {
     "sessionBound": true,
@@ -180,6 +180,10 @@ export const IPC_ERROR_DEFINITIONS = {
   "DAEMON_DISPATCH_FAILED": {
     "recoverable": true,
     "action": "passThrough"
+  },
+  "DAEMON_STOPPING": {
+    "recoverable": true,
+    "action": "restartDaemon"
   },
   "NAMED_PIPE_REQUEST_FAILED": {
     "recoverable": true,

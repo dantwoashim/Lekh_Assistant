@@ -13,6 +13,7 @@ import type {
   KeyboardEngine,
   KeyboardKeyEvent,
   KeyboardMode,
+  PreparedCorrectionLearning,
   ProofHint,
   SessionId,
   TypingContext,
@@ -112,6 +113,18 @@ class ExperimentalPassiveCommitEngine implements KeyboardEngine {
     return this.delegate.lookupDictionary(query, context);
   }
   learnCorrection(entry: unknown): void { this.delegate.learnCorrection(entry); }
+  preloadCorrectionMemory(entries: readonly unknown[]): number {
+    return this.delegate.preloadCorrectionMemory(entries);
+  }
+  prepareCommittedCorrectionLearning(
+    sessionId: SessionId,
+    commitEpoch: number
+  ): PreparedCorrectionLearning | undefined {
+    return this.delegate.prepareCommittedCorrectionLearning(sessionId, commitEpoch);
+  }
+  commitPreparedCorrectionLearning(prepared: PreparedCorrectionLearning): boolean {
+    return this.delegate.commitPreparedCorrectionLearning(prepared);
+  }
   learnCommittedCorrection(sessionId: SessionId, commitEpoch: number): boolean {
     return this.delegate.learnCommittedCorrection(sessionId, commitEpoch);
   }

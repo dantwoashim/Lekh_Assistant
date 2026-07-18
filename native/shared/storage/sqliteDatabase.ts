@@ -467,8 +467,11 @@ function reclaimAbandonedLock(lockPath: string): boolean {
 }
 
 function preparePrivateDirectory(directory: string): void {
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  if (process.platform !== "win32") chmodSync(directory, 0o700);
+  const createdDirectory = mkdirSync(directory, { recursive: true, mode: 0o700 });
+  // Never change permissions on an arbitrary pre-existing parent supplied by
+  // a caller. Newly created app-owned directories are private; database and
+  // sidecar files are restricted independently in every case.
+  if (process.platform !== "win32" && createdDirectory !== undefined) chmodSync(directory, 0o700);
 }
 
 function syncParentDirectory(filePath: string): void {

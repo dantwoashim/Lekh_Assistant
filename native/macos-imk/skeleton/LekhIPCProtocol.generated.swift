@@ -58,5 +58,6 @@ public enum LekhIPCErrorCode: String, CaseIterable, Sendable {
   case ipcTimeout = "IPC_TIMEOUT"
   case daemonCliFailed = "DAEMON_CLI_FAILED"
   case daemonDispatchFailed = "DAEMON_DISPATCH_FAILED"
+  case daemonStopping = "DAEMON_STOPPING"
   case namedPipeRequestFailed = "NAMED_PIPE_REQUEST_FAILED"
 }

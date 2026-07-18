@@ -4,7 +4,7 @@
 
 The current Windows transport is protocol version 2, strict UTF-8 newline-delimited JSON, bounded to 65,536 bytes including the newline. The public named pipe terminates in the native broker; the daemon is a contained child behind inherited private handles. The macOS IMK does not use this protocol on its typing path because its deterministic engine is in-process.
 
-Hot-path calls have a 50 ms whole-request deadline. Timeout, malformed metadata, unknown response fields, stale epochs, and unavailable IPC fail open: the native shell preserves the host input path and reports only bounded, non-sensitive diagnostics outside the hot path.
+Engine hot-path calls have a 50 ms whole-request deadline. Terminal `session.cancel`/`session.end` are control-class messages so native shells can dispatch acknowledged lifecycle cleanup outside key callbacks. Timeout, malformed metadata, unknown response fields, stale epochs, and unavailable IPC fail open: the native shell preserves the host input path and reports only bounded, non-sensitive diagnostics outside the hot path.
 
 The canonical active-composition work bound is 128 UTF-16 code units, sourced from `data/engine/lekh-engine-contract.v1.json` and checked during protocol generation. It is not the 16,384-unit general text/output limit. Exact-bound requests remain valid; `+1` composition requests and responses are rejected, and TypeScript request validation additionally requires the cursor to be on an extended-grapheme boundary.
 

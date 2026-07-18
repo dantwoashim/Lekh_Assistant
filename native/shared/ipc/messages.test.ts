@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  IPC_MESSAGE_DESCRIPTORS,
   IPC_PROTOCOL_LIMITS,
   createIpcErrorResponse,
   createIpcRequest,
@@ -8,6 +9,15 @@ import {
 } from "./messages";
 
 describe("native IPC message contract", () => {
+  it("classifies terminal session retirement as off-hot-path control work", () => {
+    for (const type of ["session.cancel", "session.end"] as const) {
+      expect(IPC_MESSAGE_DESCRIPTORS[type].deadlineClass).toBe("control");
+      const request = createIpcRequest(type, { sessionId: "retire-1", sessionEpoch: 1 }, `${type}-control`, 100);
+      expect(request.deadlineAt - request.sentAt).toBe(IPC_PROTOCOL_LIMITS.controlDeadlineMs);
+      expect(validateIpcEnvelope(request)).toEqual({ ok: true, errors: [] });
+    }
+  });
+
   it("creates valid success and recoverable error responses", () => {
     const request = createIpcRequest("health.check", { client: "daemon-test" }, "health_1", 1);
     const success = createIpcResponse(request, {

@@ -1,3 +1,5 @@
+import type { CorrectionMemoryEntry } from "../memory/types";
+
 export type SessionId = string;
 
 export type KeyboardMode =
@@ -250,6 +252,17 @@ export interface CommitCandidateOptions {
   learning?: CandidateLearningMode;
 }
 
+/**
+ * Opaque, process-local learning transaction prepared after a native host has
+ * confirmed that its candidate edit succeeded. Callers may persist `entry`,
+ * but only the engine instance that created this object can commit it.
+ */
+export interface PreparedCorrectionLearning {
+  readonly sessionId: SessionId;
+  readonly commitEpoch: number;
+  readonly entry: CorrectionMemoryEntry;
+}
+
 export interface KeyboardEngine {
   beginSession(context: TypingContext): SessionId;
 
@@ -280,6 +293,12 @@ export interface KeyboardEngine {
   lookupDictionary(query: string, context?: TypingContext): DictionaryResult[];
 
   learnCorrection(entry: unknown): void;
+  preloadCorrectionMemory(entries: readonly unknown[]): number;
+  prepareCommittedCorrectionLearning(
+    sessionId: SessionId,
+    commitEpoch: number
+  ): PreparedCorrectionLearning | undefined;
+  commitPreparedCorrectionLearning(prepared: PreparedCorrectionLearning): boolean;
   learnCommittedCorrection(sessionId: SessionId, commitEpoch: number): boolean;
 
   setContext(sessionId: SessionId, patch: Partial<TypingContext>): void;

@@ -288,13 +288,12 @@ describe("KeyboardDaemon IPC dispatcher", () => {
     }) as never;
     const daemon = new KeyboardDaemon({ engine });
     const sessionId = await beginSession(daemon);
-    const update = await daemon.handle(createIpcRequest(
-      "session.updateComposition",
-      { ...sessionReference(sessionId), input: "prabin", cursor: 6 },
-      "timeout-learning-update"
-    ));
-    const candidates = (update.payload as { candidates: Array<{ id: string; text: string }> }).candidates;
-    const primaryText = (update.payload as { primary?: { text: string } }).primary?.text;
+    // Prepare the candidate state directly so this test measures only the
+    // intentionally delayed commit publication, not unrelated cold-start
+    // scheduling around the separate 50 ms composition deadline.
+    const update = engine.updateComposition(sessionId, "prabin", 6);
+    const candidates = update.candidates;
+    const primaryText = update.primary?.text;
     const alternate = candidates.find((candidate) => candidate.text !== primaryText);
     expect(alternate).toBeTruthy();
 

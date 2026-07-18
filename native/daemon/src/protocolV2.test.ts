@@ -107,6 +107,25 @@ describe("IPC protocol v2 security state", () => {
     expect(daemon.metrics().activeSessions).toBe(1);
   });
 
+  it("replays an exact completed response after the original request deadline", async () => {
+    let now = NOW;
+    const daemon = new KeyboardDaemon({ now: () => now, serverInstanceId: "late-replay-server" });
+    const client = new ProtocolTestClient("late-replay-client");
+    await negotiate(daemon, client, now);
+    const request = client.request(
+      "health.check",
+      { client: "daemon-test" },
+      "completed-before-deadline",
+      now + 10,
+      now
+    );
+    const first = await daemon.handle(request);
+    expect(first).toEqual(expect.objectContaining({ ok: true }));
+
+    now = request.deadlineAt + 1;
+    await expect(daemon.handle(request)).resolves.toEqual(first);
+  });
+
   it("isolates the replay cache from mutations to returned responses", async () => {
     const daemon = new KeyboardDaemon({ now: () => NOW, serverInstanceId: "server-a" });
     const client = new ProtocolTestClient("mutation-client");

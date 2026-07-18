@@ -11,9 +11,9 @@ import {
   normalizeCorrectionMemoryImportEntry
 } from "../memory/importNormalization";
 import type { CorrectionMemoryEntry } from "../memory";
+import { installBoundedCorrectionMemoryEntry } from "./storage";
 import type { Candidate, KeyboardSession } from "./types";
 
-const MAXIMUM_MEMORY_ENTRIES = 500;
 const MAXIMUM_REJECTED_ALTERNATIVES = 32;
 const MAXIMUM_INPUT_LENGTH = 1024;
 const MAXIMUM_OUTPUT_LENGTH = 2048;
@@ -113,7 +113,7 @@ export function applyKeyboardMemorySelection(
     entry.normalizedOutput === selection.normalizedOutput &&
     (entry.context.domain ?? "") === (selection.context.domain ?? "")
   );
-  if (!existing) return [...entries, selection].slice(-MAXIMUM_MEMORY_ENTRIES);
+  if (!existing) return installBoundedCorrectionMemoryEntry(entries, selection) ?? entries;
 
   return entries.map((entry) => entry === existing
     ? {
@@ -146,7 +146,7 @@ export function importKeyboardMemoryEntry(entries: CorrectionMemoryEntry[], raw:
     const semanticIndex = entries.findIndex((entry) => sameMemorySemantics(entry, imported));
     const idCollision = entries.find((entry) => entry.id === imported.id && !sameMemorySemantics(entry, imported));
     if (idCollision) return entries;
-    if (semanticIndex < 0) return [...entries, imported].slice(-MAXIMUM_MEMORY_ENTRIES);
+    if (semanticIndex < 0) return installBoundedCorrectionMemoryEntry(entries, imported) ?? entries;
 
     const existing = entries[semanticIndex]!;
     const [merged] = normalizeCorrectionMemoryImportEntries([existing, imported], {

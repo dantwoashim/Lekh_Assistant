@@ -1034,6 +1034,99 @@ describe("KeyboardEngine session API", () => {
     expect(result.followupCandidates?.some((candidate) => candidate.text === "प्रशासन")).toBe(true);
   });
 
+  it("keeps deferred learning unchanged until an opaque prepared transaction is committed", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const update = engine.updateComposition(sessionId, "prabin", 6);
+    const alternate = update.candidates.find((candidate) => candidate.text !== update.primary?.text);
+    expect(alternate).toBeTruthy();
+    const committed = engine.commitCandidate(sessionId, alternate!.id, { learning: "deferred" });
+
+    const beforeConfirmation = engine.updateComposition(
+      engine.beginSession(defaultTypingContext("romanized")),
+      "prabin",
+      6
+    );
+    expect(beforeConfirmation.candidates.some((candidate) => (
+      candidate.type === "personal" && candidate.text === alternate!.text
+    ))).toBe(false);
+
+    const prepared = engine.prepareCommittedCorrectionLearning(sessionId, committed.commitEpoch);
+    expect(prepared).toBeTruthy();
+    expect(engine.prepareCommittedCorrectionLearning(sessionId, committed.commitEpoch)).toBe(prepared);
+    expect(Object.isFrozen(prepared)).toBe(true);
+    expect(Object.isFrozen(prepared!.entry)).toBe(true);
+    expect(engine.commitPreparedCorrectionLearning({ ...prepared! })).toBe(false);
+    expect(engine.commitPreparedCorrectionLearning(prepared!)).toBe(true);
+    expect(engine.commitPreparedCorrectionLearning(prepared!)).toBe(false);
+
+    const afterConfirmation = engine.updateComposition(
+      engine.beginSession(defaultTypingContext("romanized")),
+      "prabin",
+      6
+    );
+    expect(afterConfirmation.candidates.some((candidate) => (
+      candidate.type === "personal" && candidate.text === alternate!.text
+    ))).toBe(true);
+  });
+
+  it("preloads bounded privacy-projected correction memory only before sessions begin", () => {
+    const oversized = createKeyboardEngine();
+    expect(() => oversized.preloadCorrectionMemory(Array.from({ length: 501 }, () => null)))
+      .toThrow(/cannot exceed 500 entries/);
+
+    const engine = createKeyboardEngine();
+    expect(engine.preloadCorrectionMemory([{
+      id: "caller-id-is-not-trusted",
+      inputRomanized: "prabin",
+      chosenOutput: "प्रवीण",
+      normalizedInput: "prabin",
+      normalizedOutput: "प्रवीण",
+      rejectedAlternatives: [],
+      context: { leftWindow: "private before", rightWindow: "private after", domain: "HEALTH" },
+      source: "user-accept",
+      frequency: 2,
+      confidenceAtSelection: 0.9,
+      timestamps: {
+        firstSeen: "2026-07-18T00:00:00.000Z",
+        lastUsed: "2026-07-18T00:00:00.000Z"
+      }
+    }])).toBe(1);
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    expect(engine.updateComposition(sessionId, "prabin", 6).candidates).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "personal", text: "प्रवीण" })])
+    );
+    expect(() => engine.preloadCorrectionMemory([])).toThrow(/before keyboard sessions begin/);
+  });
+
+  it("does not prepare an undurable correction when all 500 retained rows are pinned", () => {
+    const engine = createKeyboardEngine();
+    expect(engine.preloadCorrectionMemory(Array.from({ length: 500 }, (_, index) => ({
+      id: `caller-id-${index}`,
+      inputRomanized: `retained${index}`,
+      chosenOutput: `स्थिर${index}`,
+      normalizedInput: `retained${index}`,
+      normalizedOutput: `स्थिर${index}`,
+      rejectedAlternatives: [],
+      context: { leftWindow: "", rightWindow: "" },
+      source: "import",
+      frequency: 1,
+      confidenceAtSelection: 0.9,
+      timestamps: {
+        firstSeen: "2026-07-18T00:00:00.000Z",
+        lastUsed: "2026-07-18T00:00:00.000Z"
+      },
+      pinned: true
+    })))).toBe(500);
+
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const update = engine.updateComposition(sessionId, "prabin", 6);
+    const alternate = update.candidates.find((candidate) => candidate.text !== update.primary?.text);
+    expect(alternate).toBeTruthy();
+    const committed = engine.commitCandidate(sessionId, alternate!.id, { learning: "deferred" });
+    expect(engine.prepareCommittedCorrectionLearning(sessionId, committed.commitEpoch)).toBeUndefined();
+  });
+
   it("returns civil-registration next-word followups", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession(defaultTypingContext("romanized"));
