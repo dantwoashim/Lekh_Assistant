@@ -108,7 +108,7 @@ Evidence:
 
 ### 1.4 Composition, candidates, insertion, and persistence today
 
-The native session has a Latin/Devanagari string buffer keyed by UUID, a candidate list, and a Boolean `candidateSelectionExplicit`; it does not have an explicit composition-state enum (`native/macos-imk/skeleton/LekhInputController.swift:44-53`, `native/macos-imk/skeleton/LekhXpcClient.swift:484-497`).
+At the retained Level-1 audit baseline, the native session had a Latin/Devanagari string buffer keyed by UUID, a candidate list, and a Boolean `candidateSelectionExplicit`; it did not have an explicit composition-state enum. The current implementation has replaced Boolean commit authority with snapshot-bound acceptance receipts.
 
 Native candidate order is:
 
@@ -210,11 +210,11 @@ The table above is the retained Level-1 baseline. The current source no longer h
 | IDs | Status | Current implementation evidence |
 |---|---|---|
 | C10-C12 | Fixed | Host marked text now contains only the real composition (`LekhInputController.swift:1075-1116`). A same-script, prefix-only suffix is rendered by a nonactivating, mouse-ignoring overlay that is never supplied to `setMarkedText` (`LekhInputController.swift:1119-1132`; `LekhInlinePreviewPanel.swift:3-63`). |
-| C13-C14 | Fixed | Space commits raw text unless an arrow, number shortcut, click, or explicit IMK selection authorized a candidate (`LekhInputController.swift:343-375,525-560`). Candidate-list refresh resets explicit selection (`:1135-1139`). |
+| C13-C14 | Fixed | Space commits raw text unless a physical Arrow/shortcut/click minted a receipt bound to the exact candidate generation, surface generation, session, raw source, and host client. Every deterministic or asynchronous candidate-list replacement revokes that receipt; programmatic IMK selection callbacks cannot mint one. |
 | C15-C16 | Fixed | The canonical TypeScript key API makes Space and Enter `commit-raw` (`composition.ts:66-83`; `index.ts:87-95`). The typing lab accepts candidates only on explicit Tab/Enter/click and leaves Space to normal text input (`FocusedKeyboard.tsx:208-218`). |
 | C17 | Fixed | Native Return commits raw or explicitly selected text with `"\n"` (`LekhInputController.swift:315-322,556-560`). |
-| C18 | Fixed | Candidate state retains a position only when the same candidate survives; otherwise it resets to index zero (`LekhCandidateController.swift:21-40`). |
-| C19-C20 | Fixed | The panel displays all eight shortcut rows and exposes button role, label, help, and selected state (`LekhCandidatePanel.swift:36-58,133-137`). |
+| C18 | Fixed | Candidate replacement always revokes acceptance and returns to a passive `nil` selection; candidate text surviving an asynchronous refresh does not preserve commit authority. |
+| C19-C20 | Fixed | The expanded panel displays up to the exact eight-row contract maximum and exposes button role, label, help, and selected state; passive presentation exposes only its three visible shortcuts. |
 | C21-C22 | Fixed | Both Romanized and Traditional TypeScript candidate pipelines reject multi-token output for a single active token (`candidates.ts:196-217,491-495`). Context predictions require an actual context/domain match (`contextPredictor.ts:346`). Native applies the same token boundary (`LekhEngineCore.swift:831-849`). |
 | C23 | Fixed | Hard-coded native demo phrases were removed; native data comes from the verified runtime pack plus deterministic rules (`LekhEngineCore.swift:536-578,798-839`). |
 | C24 | Fixed by token design | Space remains a safe commit boundary. Previous committed tokens are retained as ephemeral session context and rank only the next active token, never an unsolicited phrase (`LekhEngineCore.swift:872-899,1013-1037`). |
@@ -252,13 +252,13 @@ This pass closes additional in-repository gaps without weakening the production 
 
 | ID | Inference | Why it is plausible | Required proof |
 |---|---|---|---|
-| I01 | `candidateSelectionChanged` may fire during panel update/show and make Space accept a candidate the user did not deliberately choose. | Callback sets `candidateSelectionExplicit=true` (`LekhInputController.swift:347-355`) and Space trusts that Boolean (`:526-531`). | Timestamped state-transition trace in TextEdit, Chrome, Word, and VS Code showing callback origin. |
+| I01 (closed) | The baseline `candidateSelectionChanged` callback could fire during panel refresh and make Space accept a row the user did not choose. | The old callback promoted a Boolean that Space trusted. Current code ignores the callback and requires a fresh physical, snapshot-bound receipt. | Adversarial unit/source probes now reject programmatic callbacks and stale candidate/surface/session/raw/client generations; host matrix evidence remains required for release confidence. |
 | I02 | Inline ghost behavior differs by host because attributed marked-text colors, cursor ranges, and replacement ranges are not handled uniformly. | Ghost is host-owned marked text (`LekhInputController.swift:1112-1167`). | Screen recording plus `markedRange`, `selectedRange`, and callback trace per host. |
 | I03 | A stale bundle can run after update because versions are static and multiple backup bundles share metadata. | Static version/build and bundle-ID registration; backups are retained by installer logic. | Record running executable URL, CDHash, build, and TIS source URL before/after update. |
 | I04 | Traditional mode latency may spike on first use and on later keystrokes. | Reverse index is built from all rows and then scanned (`LekhXpcClient.swift:556-569,811-831`). | Signposted per-stage p50/p95/p99 on packaged universal build. |
 | I05 | Grey prediction is “missing” when the first candidate equals raw input, preference is disabled, candidates are empty, or a host suppresses attributes. | Guard at `LekhInputController.swift:1170-1180`. | Per-event reason code and host screenshot. |
 
-These must remain hypotheses until reproduced. They are not release claims.
+I02-I05 must remain hypotheses until reproduced. I01 is retained only as historical audit context and is closed by the current authority design; none of these rows is a release claim.
 
 ### 2.3 Unknown because the checkout contains no adequate evidence
 
@@ -353,7 +353,7 @@ The compiler must produce:
 - generated TypeScript IDs and enums;
 - reference vectors for candidate scores and mode transitions.
 
-CI must run both Swift and TypeScript adapters over the same event JSONL and require byte-identical normalized output, candidate IDs/order, auto-commit eligibility, and failure action. A changed pack digest without regenerated conformance evidence blocks merge.
+CI must run both Swift and TypeScript adapters over the same event JSONL and require byte-identical normalized output, candidate IDs/order, delimiter authority, and failure action. Production delimiter authority is explicit selection or raw text; a changed pack digest without regenerated conformance evidence blocks merge.
 
 ## 5. Exact Level-5 state machines
 
@@ -375,8 +375,8 @@ composing
   ArrowUp/Down -> candidatesVisible(selectionOrigin=explicitKeyboard)
   digit shortcut -> committing(explicit candidate)
   Tab -> candidatesVisible unless an explicit selection already exists
-  Space -> committing(selected if explicit; else autoCommitEligible primary; else raw)
-  Return -> committing(same policy) then propagate/insert newline according to host profile
+  Space -> committing(selected if explicit; else raw) + exactly one space
+  Return -> committing(selected if explicit; else raw) then propagate/insert exactly one newline according to host profile
   Escape -> committing(raw source text, no learning)
   mode change -> committing(raw source text), then idle(new mode)
   secure-on -> clear marked/candidates, discard engine context, suspendedSecure
@@ -430,18 +430,18 @@ visible
   commit/cancel/secure/mode-change -> hidden
 ```
 
-Candidate ID must be stable: `SHA256(packVersion|mode|sourceKind|sourceKey|normalizedOutput)[0..<16]`. Index is display-only and must never carry selection across refreshes.
+Candidate identity is finalized as the first 128 bits of `SHA256(contractVersion|candidateType|NFC(output)|replacementRange)`. This supersedes the earlier source-metadata formula: pack, mode, source, rank, and index are not commit semantics and must not churn an otherwise identical choice. The ID is identity only, never freshness authority. Native acceptance also requires a one-shot physical-selection receipt bound to candidate generation, surface generation, session, raw source, and host client; any mismatch or list refresh fails closed to raw text.
 
-At most nine shortcuts may be shown; every shortcut must have a visible row. If the panel displays five rows, shortcuts 6–9 must not be active.
+Exactly eight candidates is the closed native contract maximum. Every active shortcut must have a visible row; a passive three-row surface may expose only shortcuts 1–3, while an expanded page may expose 1–8.
 
 ### 5.3 Four distinct mode pipelines
 
 | Mode | Source buffer | Candidate sources | Default marked display | Space without explicit selection | Forbidden output |
 |---|---|---|---|---|---|
-| Romanized → Nepali | Latin token only | protected policy → FST → lexicon → personal snapshot → context ranker → async neural tail | best deterministic Devanagari token; raw shown as secondary candidate-panel label | commit primary only if token-level, exact/deterministic, calibrated `p>=0.92`, margin `>=0.12`, not name/phrase/neural-only; otherwise raw Latin + space | multiword output for a single-token source |
+| Romanized → Nepali | Latin token only | protected policy → FST → lexicon → personal snapshot → context ranker → async neural tail | best deterministic Devanagari token; raw shown as secondary candidate-panel label | raw Latin + space; every candidate, including deterministic/neural output, requires a fresh explicit-selection receipt | multiword output for a single-token source |
 | Romanized → Romanized | Latin token | spelling normalization, canonical aliases, personal same-script choices | raw Latin with suffix-only grey completion | raw Latin + space; normalized form requires explicit acceptance | Devanagari committed text |
 | Traditional → Nepali | Unicode grapheme buffer produced by verified physical keymap/composer | exact word, spelling/proofread, prefix completion, personal choices | composed Unicode source; suffix-only same-script completion | source Unicode + space; phrase/word completion requires explicit acceptance | Latin committed text |
-| Traditional → Romanized | internal Unicode source from verified keymap | canonical reverse FST, accepted casual aliases, personal aliases | primary canonical Latin preview; source Unicode visible in candidate label | commit canonical reverse result only when unique/reversible; otherwise source Unicode + space | Devanagari candidate masquerading as Romanized output |
+| Traditional → Romanized | internal Unicode source from verified keymap | canonical reverse FST, accepted casual aliases, personal aliases | primary canonical Latin preview; source Unicode visible in candidate label | source Unicode + space; canonical reverse output requires a fresh explicit-selection receipt even when unique/reversible | Devanagari candidate masquerading as Romanized output |
 
 “At least three candidates” applies only when the gold lexicon declares three legitimate alternatives. The engine must not fabricate variants to satisfy a count.
 
@@ -452,7 +452,7 @@ A candidate may have `spanKind = token | typedPhrase | nextPhrase`. Rules:
 - `token` source can only produce a token candidate with the same whitespace count.
 - `typedPhrase` requires at least one source boundary already typed.
 - `nextPhrase` never replaces the active token; it has `replaceRange=[end,end]` and is accepted only with Tab/click.
-- Auto-commit eligibility is always false for `phrase`, `name`, `protected`, `proofread`, and `neuralOnly`.
+- Production passive/implicit candidate commit eligibility is false for every candidate kind. `phrase`, `name`, `protected`, `proofread`, and `neuralOnly` remain explicitly selectable alternatives only.
 - The single-token phrase-expansion test corpus must have zero failures.
 
 ## 6. File-by-file implementation changes
@@ -492,7 +492,7 @@ struct EngineUpdate: Sendable {
   let rawSource: String
   let markedDisplay: AttributedDisplay
   let candidates: [EngineCandidate]
-  let autoCommitCandidateID: CandidateID?
+  let explicitSelectionReceipt: CandidateAcceptanceReceipt?
   let action: HostAction
 }
 
@@ -535,47 +535,29 @@ Delete Electron from the macOS shipping artifact after feature parity. It may re
 
 ## 7. Representative critical patches
 
-### 7.1 Space acceptance policy
+### 7.1 Delimiter acceptance policy
 
 ```swift
-struct AutoCommitPolicy {
-  static func candidate(
-    for composition: Composition,
-    candidates: [EngineCandidate]
-  ) -> EngineCandidate? {
-    guard let first = candidates.first,
-          composition.sourceTokenCount == 1,
-          first.outputTokenCount == 1,
-          first.spanKind == .token,
-          first.source.isDeterministic,
-          !first.flags.contains(.name),
-          !first.flags.contains(.protected),
-          first.calibratedProbability >= 0.92
-    else { return nil }
-
-    let second = candidates.dropFirst().first?.calibratedProbability ?? 0
-    guard first.calibratedProbability - second >= 0.12 else { return nil }
-    return first
-  }
+struct CandidateAcceptanceReceipt: Equatable {
+  let candidateID: CandidateID
+  let candidateGeneration: UInt64
+  let surfaceGeneration: UInt64
+  let sessionID: SessionID
+  let rawSource: String
+  let clientID: ObjectIdentifier
 }
 ```
 
 Controller transition:
 
 ```diff
-- if key == " " {
--   if candidateSelectionExplicit {
--     return commitSelectedCandidate(client: client, suffix: " ")
--   }
--   return commitRawComposition(client: client, suffix: " ")
-- }
-+ if event == .space {
-+   let choice = state.userSelectedCandidate
-+     ?? AutoCommitPolicy.candidate(for: state.composition, candidates: state.candidates)
-+   return commit(choice?.text ?? state.composition.rawSource,
-+                 suffix: " ",
-+                 learning: choice.map(LearningAuthorization.explicitOrSafeAuto) ?? .none,
-+                 client: client)
+- if candidateBrowsingActive { commit(selectedCandidate) }
++ if receipt.matches(candidateGeneration, surfaceGeneration,
++                    sessionID, rawSource, clientID) {
++   commit(receipt.candidateID)
++ } else {
++   revokeReceipt()
++   commit(rawSource) // Space adds " "; Return adds "\n"
 + }
 ```
 
@@ -587,9 +569,13 @@ Controller transition:
 -   candidateSelectionExplicit = true
 - }
 + func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
-+   guard interactionTracker.isHandlingUserNavigation,
-+         let id = candidateID(for: candidateString) else { return }
-+   coordinator.send(.selectCandidate(id: id, origin: .userKeyboard))
++   // IMK emits this during programmatic row refresh; it has no authority.
++ }
++
++ func candidateSelected(_ candidateString: NSAttributedString!) {
++   guard currentEvent.isFreshPhysicalMouseUp,
++         currentSurface.matchesSessionRawAndClient else { return }
++   coordinator.send(.acceptCandidate(candidateString, origin: .physicalMouse))
 + }
 ```
 
@@ -661,7 +647,7 @@ Weights must be learned/calibrated on train/dev, frozen in `ranking/weights.json
 
 - At least 500k deduplicated Nepali Romanized↔Unicode token pairs after license review.
 - At least 50k consented/reviewed casual variants covering Nepal usage (`x`, `v/b`, vowel length, code mixing).
-- At least 25k names/places, separated from auto-commit training and evaluated as alternative sets.
+- At least 25k names/places, excluded from every passive-commit experiment and evaluated as alternative sets.
 - At least 100k mixed Nepali-English negative/protected examples: URLs, email, OTP, PIN, file paths, code, brands, acronyms.
 - At least 100k context tuples with source-document boundaries and no raw private text in runtime artifacts.
 - Full verified Traditional keymap capture for normal, Shift, Option/AltGr, punctuation, digits, halanta, matra, and conjunct sequences.
@@ -701,7 +687,7 @@ Required model manifest:
 |---|---:|---|
 | Common R→N tokens | 20,000 | top-1 ≥95%; top-3 ≥98.5% |
 | Casual/noisy R→N | 10,000 | top-1 ≥90%; top-3 ≥97% |
-| Names/places | 10,000 | acceptable-set recall@3 ≥97%; auto-commit rate = 0 |
+| Names/places | 10,000 | acceptable-set recall@3 ≥97%; implicit-commit rate = 0 |
 | R→R normalization | 8,000 | precision@1 ≥95%; no Devanagari output |
 | Traditional keymap | every key/modifier + 5,000 sequences | 100% mapping and grapheme output |
 | T→N completion/proofread | 10,000 | recall@3 ≥97%; false correction ≤0.2% |
@@ -876,7 +862,7 @@ Total realistic program: 20–24 calendar weeks, 64–82 engineer-weeks, excludi
 
 ### 13.1 Automated unit/conformance
 
-- Feed every event sequence to Swift and TypeScript reference adapters; compare state, raw source, display, candidates, IDs, order, auto-commit ID, and action.
+- Feed every event sequence to Swift and TypeScript reference adapters; compare state, raw source, display, candidates, IDs, order, explicit-selection receipt/delimiter authority, and action.
 - Property tests: arbitrary Unicode/key sequences never crash; committed output NFC; raw source recoverable; range arithmetic uses UTF-16 at IMK boundary.
 - FST round-trip acceptable-set tests.
 - Single-token whitespace invariant over all dictionary keys.
@@ -983,7 +969,7 @@ Any missing measurement is a failed gate, not “not applicable.”
 - [ ] State transitions are explicit and traced without text.
 - [ ] Space/Return/Tab/Escape never lose or unexpectedly expand text.
 - [ ] Selection origin is user-only.
-- [ ] No token→phrase auto-commit.
+- [ ] No token→phrase implicit commit.
 - [ ] Three candidates appear where three legitimate alternatives exist.
 - [ ] Candidate UI is VoiceOver, Full Keyboard Access, contrast, and localization compliant.
 

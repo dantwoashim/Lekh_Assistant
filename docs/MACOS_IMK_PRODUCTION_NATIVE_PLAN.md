@@ -217,7 +217,7 @@ Implement:
 - `didCommand(by:client:)` handles `cancelOperation`, `deleteBackward`, `insertNewline`, `insertTab`, and returns false when no composition exists.
 - `activateServer` begins a session with app bundle/context and warms engine outside the hot path.
 - `deactivateServer` commits or cancels according to active composition policy, hides candidates, ends session.
-- `commitComposition` commits active primary/raw text, clears buffer, hides candidates.
+- `commitComposition` is host-driven rather than an explicit user acceptance event, so it always commits raw text, then clears the buffer and hides candidates.
 - `composedString` returns current display marked text.
 - `originalString` returns raw typed buffer as attributed string.
 - `candidates(_:)` returns current candidate strings.
@@ -229,8 +229,8 @@ Implement:
 | Key | No active composition | Active composition |
 | --- | --- | --- |
 | printable Latin/Devanagari | start/update composition, return true | update composition, return true |
-| Space | return false | commit primary or raw plus trailing space, return true |
-| Enter | return false | commit primary/raw, return true |
+| Space | return false | commit explicit selection or raw text plus one trailing space, return true |
+| Enter | return false | commit explicit selection or raw text plus one newline, return true |
 | Tab | return false | accept/cycle candidate only if candidate panel active; otherwise return false |
 | Backspace | return false | delete one grapheme from raw buffer; clear marked text if empty |
 | Escape | return false | cancel composition, hide candidates |
@@ -256,8 +256,8 @@ Implement:
 - Show panel when candidates exist and composition is active.
 - Hide panel on cancel, commit, deactivate, secure input, and empty candidate list.
 - Use number selection keys for candidates. Tab is optional and must not break focus when no composition exists.
-- Enter commits the selected/primary candidate only while composition is active, matching normal IME behavior.
-- Space commits primary plus space while composition is active.
+- Enter commits a candidate only after visible explicit selection; otherwise it commits raw composition, always followed by one newline.
+- Space commits a candidate only after visible explicit selection; otherwise it commits raw composition plus one space.
 
 ### XPC And Daemon Strategy
 
@@ -338,7 +338,7 @@ Acceptance is exactly this:
 
 - Install input method under `~/Library/Input Methods`.
 - Select Lekh intentionally.
-- Type `swasthya ` with a real keyboard in TextEdit. Result: `स्वास्थ्य `.
+- Type `swasthya ` with a real keyboard in TextEdit. Result: raw `swasthya `; explicitly selecting `स्वास्थ्य` commits the candidate.
 - Repeat in Safari text field, Chrome text field, and VS Code editor.
 - Space commits.
 - Escape cancels active composition.
@@ -406,7 +406,7 @@ Cases:
 
 | Case | Steps | Expected |
 | --- | --- | --- |
-| Romanized word | type `swasthya ` | `स्वास्थ्य ` committed |
+| Romanized word | type `swasthya `, then repeat with explicit candidate selection | raw `swasthya ` first; `स्वास्थ्य` only after explicit selection |
 | Romanized phrase | type `mero swasthya ramro xa ` | expected Nepali phrase committed or candidate-gated per engine policy |
 | Mixed English/Nepali | type `meeting ma swasthya report ` | protected English tokens preserved according to policy |
 | Protected token | type email, URL, phone, code-like token | token not corrupted |
@@ -481,7 +481,7 @@ Do not call macOS production-ready until all are true:
 6. Add secure input detection and fail-open behavior.
 7. Remove XPC dependency from milestone 1; keep static `swasthya` proof.
 8. Create a manual QA script that prints current input source, starts log capture, asks the tester to type real hardware keys, restores ABC, and writes a report.
-9. Prove TextEdit with `swasthya ` -> `स्वास्थ्य `.
+9. Prove TextEdit raw Space behavior and explicit `swasthya` -> `स्वास्थ्य` candidate acceptance separately.
 10. Prove Safari, Chrome, and VS Code.
 11. Only after milestone 1 passes, implement XPC service and daemon bridge.
 12. Build signed/notarized installer and run fresh-machine matrix.

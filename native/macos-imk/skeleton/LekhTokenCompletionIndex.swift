@@ -6,7 +6,7 @@ import CryptoKit
 
 /// A provenance-bearing, explicit-accept completion. Ranking scores are
 /// deterministic build-time integers; they are not probabilities and must
-/// never authorize Space/Return/punctuation auto-commit.
+/// never authorize passive Space/Return/punctuation commit.
 public struct LekhTokenCompletionCandidate: Equatable {
   public let source: String
   public let target: String

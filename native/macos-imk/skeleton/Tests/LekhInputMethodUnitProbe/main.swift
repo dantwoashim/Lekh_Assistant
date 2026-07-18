@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import LekhInputMethod
 
@@ -60,99 +61,6 @@ private func verifyCandidateStateMachine() {
   require(hardened.moveSelection(delta: Int.min) != nil, "A minimum row delta must wrap without integer overflow")
 }
 
-private func verifyAutoCommitPolicy() {
-  let allowed = LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-    text: "स्वास्थ्य",
-    sourceInput: "swasthya",
-    calibratedProbability: 0.92,
-    runnerUpProbability: 0.80,
-    isExactDeterministicToken: true
-  )
-  require(allowed?.policy == .calibratedExactDeterministicToken, "Exact calibrated thresholds must authorize the forward token")
-
-  require(
-    LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-      text: "स्वास्थ्य",
-      sourceInput: "swasthya",
-      calibratedProbability: 0.919,
-      runnerUpProbability: 0.70,
-      isExactDeterministicToken: true
-    ) == nil,
-    "Forward probability below 0.92 must fail closed"
-  )
-  require(
-    LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-      text: "स्वास्थ्य",
-      sourceInput: "swasthya",
-      calibratedProbability: 0.95,
-      runnerUpProbability: 0.84,
-      isExactDeterministicToken: true
-    ) == nil,
-    "Forward margin below 0.12 must fail closed"
-  )
-
-  let blockedFlags: [(Bool, Bool, Bool, Bool, Bool)] = [
-    (true, false, false, false, false),
-    (false, true, false, false, false),
-    (false, false, true, false, false),
-    (false, false, false, true, false),
-    (false, false, false, false, true)
-  ]
-  for (isName, isPhrase, isProtected, isPersonal, isNeural) in blockedFlags {
-    require(
-      LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-        text: "स्वास्थ्य",
-        sourceInput: "swasthya",
-        calibratedProbability: 0.99,
-        runnerUpProbability: 0.10,
-        isExactDeterministicToken: true,
-        isName: isName,
-        isPhrase: isPhrase,
-        isProtected: isProtected,
-        isPersonal: isPersonal,
-        isNeural: isNeural
-      ) == nil,
-      "Names, phrases, protected, personal, and neural rows must never passively commit"
-    )
-  }
-  require(
-    LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-      text: "नेपाल राम्रो",
-      sourceInput: "nepal",
-      calibratedProbability: 0.99,
-      runnerUpProbability: 0.01,
-      isExactDeterministicToken: true
-    ) == nil,
-    "A single active token must never expand into a phrase"
-  )
-
-  let reverse = LekhNativeAutoCommitPolicy.uniqueReversibleReverseCandidate(
-    text: "swasthya",
-    sourceInput: "स्वास्थ्य",
-    isUnique: true,
-    isReversible: true
-  )
-  require(reverse?.policy == .uniqueReversibleReverse, "A unique reversible Roman output may commit")
-  require(
-    LekhNativeAutoCommitPolicy.uniqueReversibleReverseCandidate(
-      text: "swasthya",
-      sourceInput: "स्वास्थ्य",
-      isUnique: false,
-      isReversible: true
-    ) == nil,
-    "An ambiguous reverse candidate must fail closed"
-  )
-  require(
-    LekhNativeAutoCommitPolicy.uniqueReversibleReverseCandidate(
-      text: "स्वास्थ्य",
-      sourceInput: "स्वास्थ्य",
-      isUnique: true,
-      isReversible: true
-    ) == nil,
-    "Reverse auto-commit output must be Roman"
-  )
-}
-
 private func verifyFourModeContract() {
   let visible = LekhNativeTypingMode.visibleModes.map(\.rawValue)
   require(visible.count == 4, "Exactly four native modes must be visible")
@@ -164,7 +72,318 @@ private func verifyFourModeContract() {
   require(passThrough.shouldPassThrough, "Pass-through must preserve the host event")
   require(passThrough.markedText == nil && passThrough.committedText == nil, "Pass-through must not mutate text")
   require(passThrough.candidates.isEmpty, "Pass-through must not publish candidates")
-  require(passThrough.inlineSuggestion == nil && passThrough.autoCommitCandidate == nil, "Pass-through must not carry acceptance authority")
+  require(passThrough.inlineSuggestion == nil, "Pass-through must not carry acceptance authority")
+}
+
+private func verifyActiveCompositionWorkBound() {
+  let maximum = LekhIPCProtocolContract.maximumCompositionLength
+  require(maximum == 128, "The generated active-composition work bound must remain 128 UTF-16 code units")
+  require(
+    !LekhActiveCompositionWorkBound.wouldOverflow(
+      current: String(repeating: "a", count: maximum - 1),
+      appending: "a"
+    ),
+    "The exact generated composition bound must remain admissible"
+  )
+  require(
+    LekhActiveCompositionWorkBound.wouldOverflow(
+      current: String(repeating: "a", count: maximum),
+      appending: "b"
+    ),
+    "One UTF-16 unit beyond the generated composition bound must fail open"
+  )
+
+  let devanagariGrapheme = "कि"
+  require(devanagariGrapheme.count == 1 && devanagariGrapheme.utf16.count == 2, "The grapheme-boundary fixture must span two UTF-16 units")
+  require(
+    !LekhActiveCompositionWorkBound.wouldOverflow(
+      current: String(repeating: "a", count: maximum - devanagariGrapheme.utf16.count),
+      appending: devanagariGrapheme
+    ),
+    "A complete multi-unit grapheme ending exactly at the bound must be admitted"
+  )
+  require(
+    LekhActiveCompositionWorkBound.wouldOverflow(
+      current: String(repeating: "a", count: maximum - 1),
+      appending: devanagariGrapheme
+    ),
+    "A multi-unit grapheme crossing the bound must be rejected whole"
+  )
+
+  let optionSequence = "\u{094D}र"
+  let optionEngine = LekhNativeEngineClient()
+  let optionSession = "unit-option-sequence-\(UUID().uuidString)"
+  let optionDecision = optionEngine.processKey(
+    optionSequence,
+    sessionId: optionSession,
+    mode: .traditionalTraditional
+  )
+  require(
+    optionDecision.handled && !optionDecision.shouldPassThrough &&
+      optionEngine.rawBuffer(sessionId: optionSession) == optionSequence,
+    "A synthesized multi-character Option mapping must be admitted atomically"
+  )
+  optionEngine.endSession(optionSession)
+}
+
+private func verifyWholeGraphemeCompositionPolicy() {
+  require(
+    LekhCompositionInputPolicy.isCompositionSafe("कि"),
+    "A multi-scalar Devanagari grapheme must remain composition-safe"
+  )
+  require(
+    LekhCompositionInputPolicy.isCompositionSafe("\u{094D}र"),
+    "A synthesized virama-plus-ra sequence must remain composition-safe"
+  )
+  require(
+    !LekhCompositionInputPolicy.isCompositionSafe("1️⃣"),
+    "A keycap emoji must not be admitted merely because its first scalar is a digit"
+  )
+  require(
+    !LekhCompositionInputPolicy.isCompositionSafe("क\u{200D}"),
+    "A Devanagari scalar followed by an unsupported joiner must fail open whole"
+  )
+  require(
+    !LekhCompositionInputPolicy.isCompositionSafe("a🙂"),
+    "A mixed callback must not consume its composition-safe prefix"
+  )
+}
+
+private func verifyClosedEngineContract() {
+  let valid: [String: Any] = [
+    "schemaVersion": 1,
+    "modes": LekhNativeTypingMode.visibleModes.map(\.rawValue),
+    "candidatePolicy": [
+      "maximumVisible": 8,
+      "singleTokenMayExpandToPhrase": false,
+      "commitAuthority": [
+        "explicitUserSelection": true,
+        "untrustedProgrammaticSelection": false,
+        "experimentalExactSpaceAuthorization": [
+          "policyId": "lekh-experimental-passive-commit-v1",
+          "productionEligible": false,
+          "activation": "opaque-test-build-capability-only"
+        ]
+      ]
+    ],
+    "commitPolicy": [
+      "Space": "raw-with-space-unless-explicit-selection-or-test-only-experiment",
+      "Enter": "raw-with-newline-unless-explicit-selection",
+      "Tab": "pass-through-unless-explicit-selection",
+      "Escape": "preserve-raw"
+    ],
+    "hotPathPolicy": [
+      "networkAllowed": false,
+      "synchronousXpcAllowed": false,
+      "synchronousDatabaseAllowed": false,
+      "deterministicP99Milliseconds": 5,
+      "maximumCompositionUtf16CodeUnits": 128
+    ],
+    "neuralPolicy": [
+      "requiresOpenVocabulary": true,
+      "requiresProductionEligibility": true,
+      "requiresAsynchronousInvocation": true
+    ]
+  ]
+  func encoded(_ value: [String: Any]) -> Data {
+    guard let data = try? JSONSerialization.data(withJSONObject: value) else {
+      fputs("FAIL: Engine-contract fixture could not be encoded\n", stderr)
+      exit(1)
+    }
+    return data
+  }
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(valid)) == 8,
+    "The exact closed engine contract must validate"
+  )
+
+  var booleanSchemaVersion = valid
+  booleanSchemaVersion["schemaVersion"] = true
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(booleanSchemaVersion)) == nil,
+    "A JSON Boolean must not coerce into the integer schema version"
+  )
+
+  var booleanMaximum = valid
+  var candidate = booleanMaximum["candidatePolicy"] as! [String: Any]
+  candidate["maximumVisible"] = true
+  booleanMaximum["candidatePolicy"] = candidate
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(booleanMaximum)) == nil,
+    "A JSON Boolean must not coerce into the numeric candidate limit"
+  )
+
+  var nonCanonicalMaximum = valid
+  candidate = nonCanonicalMaximum["candidatePolicy"] as! [String: Any]
+  candidate["maximumVisible"] = 7
+  nonCanonicalMaximum["candidatePolicy"] = candidate
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(nonCanonicalMaximum)) == nil,
+    "The native contract must require exactly eight visible candidates"
+  )
+
+  var numericBoolean = valid
+  candidate = numericBoolean["candidatePolicy"] as! [String: Any]
+  candidate["singleTokenMayExpandToPhrase"] = 0
+  numericBoolean["candidatePolicy"] = candidate
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(numericBoolean)) == nil,
+    "A JSON number must not coerce into a Boolean candidate policy"
+  )
+
+  var numericExperimentBoolean = valid
+  candidate = numericExperimentBoolean["candidatePolicy"] as! [String: Any]
+  var authority = candidate["commitAuthority"] as! [String: Any]
+  var experiment = authority["experimentalExactSpaceAuthorization"] as! [String: Any]
+  experiment["productionEligible"] = 0
+  authority["experimentalExactSpaceAuthorization"] = experiment
+  candidate["commitAuthority"] = authority
+  numericExperimentBoolean["candidatePolicy"] = candidate
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(numericExperimentBoolean)) == nil,
+    "A numeric zero must not impersonate a false production-eligibility Boolean"
+  )
+
+  var unexpectedTop = valid
+  unexpectedTop["unexpected"] = true
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(unexpectedTop)) == nil,
+    "An additional engine-contract field must fail closed"
+  )
+
+  var unexpectedNested = valid
+  candidate = unexpectedNested["candidatePolicy"] as! [String: Any]
+  candidate["implicitSelection"] = true
+  unexpectedNested["candidatePolicy"] = candidate
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(unexpectedNested)) == nil,
+    "An additional authority field must fail closed"
+  )
+
+  var promotedExperiment = valid
+  candidate = promotedExperiment["candidatePolicy"] as! [String: Any]
+  authority = candidate["commitAuthority"] as! [String: Any]
+  experiment = authority["experimentalExactSpaceAuthorization"] as! [String: Any]
+  experiment["productionEligible"] = true
+  authority["experimentalExactSpaceAuthorization"] = experiment
+  candidate["commitAuthority"] = authority
+  promotedExperiment["candidatePolicy"] = candidate
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(promotedExperiment)) == nil,
+    "A promoted experimental passive authority must fail closed"
+  )
+
+  var weakenedBound = valid
+  var hotPath = weakenedBound["hotPathPolicy"] as! [String: Any]
+  hotPath["maximumCompositionUtf16CodeUnits"] = 129
+  weakenedBound["hotPathPolicy"] = hotPath
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(weakenedBound)) == nil,
+    "A contract that diverges from the generated composition bound must fail closed"
+  )
+
+  var missingPolicy = valid
+  missingPolicy.removeValue(forKey: "neuralPolicy")
+  require(
+    LekhEngineContractValidator.maximumVisibleIfValid(data: encoded(missingPolicy)) == nil,
+    "A missing engine-contract policy must fail closed"
+  )
+}
+
+private func verifyCandidateAcceptanceAuthority() {
+  let firstClient = NSObject()
+  let secondClient = NSObject()
+  let receipt = LekhCandidateAcceptanceReceipt(
+    candidate: "लेख",
+    candidateGeneration: 7,
+    surfaceGeneration: 11,
+    sessionId: "session-a",
+    rawBuffer: "lekh",
+    clientIdentifier: ObjectIdentifier(firstClient)
+  )
+  require(
+    receipt.matches(
+      candidate: "लेख",
+      candidateGeneration: 7,
+      surfaceGeneration: 11,
+      sessionId: "session-a",
+      rawBuffer: "lekh",
+      clientIdentifier: ObjectIdentifier(firstClient)
+    ),
+    "An acceptance receipt must match only its exact visible snapshot"
+  )
+  require(
+    !receipt.matches(
+      candidate: "लेख",
+      candidateGeneration: 8,
+      surfaceGeneration: 11,
+      sessionId: "session-a",
+      rawBuffer: "lekh",
+      clientIdentifier: ObjectIdentifier(firstClient)
+    ),
+    "An asynchronous candidate refresh must invalidate the prior receipt"
+  )
+  require(
+    !receipt.matches(
+      candidate: "लेख",
+      candidateGeneration: 7,
+      surfaceGeneration: 12,
+      sessionId: "session-a",
+      rawBuffer: "lekh",
+      clientIdentifier: ObjectIdentifier(firstClient)
+    ),
+    "A repainted or dismissed surface must invalidate the prior receipt"
+  )
+  require(
+    !receipt.matches(
+      candidate: "लेख",
+      candidateGeneration: 7,
+      surfaceGeneration: 11,
+      sessionId: "session-b",
+      rawBuffer: "lekh",
+      clientIdentifier: ObjectIdentifier(firstClient)
+    ),
+    "A session transition must invalidate the prior receipt"
+  )
+  require(
+    !receipt.matches(
+      candidate: "लेख",
+      candidateGeneration: 7,
+      surfaceGeneration: 11,
+      sessionId: "session-a",
+      rawBuffer: "lekha",
+      clientIdentifier: ObjectIdentifier(firstClient)
+    ),
+    "A changed raw composition must invalidate the prior receipt"
+  )
+  require(
+    !receipt.matches(
+      candidate: "लेख",
+      candidateGeneration: 7,
+      surfaceGeneration: 11,
+      sessionId: "session-a",
+      rawBuffer: "lekh",
+      clientIdentifier: ObjectIdentifier(secondClient)
+    ),
+    "A focus transition must invalidate the prior client's receipt"
+  )
+  require(
+    LekhPhysicalCandidateEventPolicy.acceptsMouseSelection(eventType: .leftMouseUp, age: 0) &&
+      LekhPhysicalCandidateEventPolicy.acceptsMouseSelection(
+        eventType: .leftMouseUp,
+        age: LekhPhysicalCandidateEventPolicy.maximumMouseUpAge
+      ),
+    "A current physical mouse-up must be admitted at both freshness boundaries"
+  )
+  require(
+    !LekhPhysicalCandidateEventPolicy.acceptsMouseSelection(eventType: .keyDown, age: 0) &&
+      !LekhPhysicalCandidateEventPolicy.acceptsMouseSelection(eventType: .leftMouseUp, age: -0.001) &&
+      !LekhPhysicalCandidateEventPolicy.acceptsMouseSelection(
+        eventType: .leftMouseUp,
+        age: LekhPhysicalCandidateEventPolicy.maximumMouseUpAge + 0.001
+      ),
+    "Programmatic, future-dated, and stale candidate callbacks must fail closed"
+  )
 }
 
 private func verifyRuntimeActivationGate() {
@@ -406,8 +625,11 @@ private func verifyNeuralManifestIdentityPolicy() {
 }
 
 verifyCandidateStateMachine()
-verifyAutoCommitPolicy()
 verifyFourModeContract()
+verifyActiveCompositionWorkBound()
+verifyWholeGraphemeCompositionPolicy()
+verifyClosedEngineContract()
+verifyCandidateAcceptanceAuthority()
 verifyRuntimeActivationGate()
 verifyCandidatePointerGate()
 verifyNeuralInputAdmissionPolicy()

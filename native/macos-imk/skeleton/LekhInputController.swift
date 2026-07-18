@@ -65,7 +65,6 @@ public struct LekhInputDecision: Equatable {
   public let committedText: String?
   public let candidates: [String]
   public let inlineSuggestion: LekhInlineSuggestion?
-  public let autoCommitCandidate: LekhAutoCommitCandidate?
   public let neuralTailEligible: Bool
   public let shouldCancel: Bool
   public let shouldPassThrough: Bool
@@ -76,7 +75,6 @@ public struct LekhInputDecision: Equatable {
     committedText: String?,
     candidates: [String],
     inlineSuggestion: LekhInlineSuggestion? = nil,
-    autoCommitCandidate: LekhAutoCommitCandidate? = nil,
     neuralTailEligible: Bool = false,
     shouldCancel: Bool,
     shouldPassThrough: Bool
@@ -86,7 +84,6 @@ public struct LekhInputDecision: Equatable {
     self.committedText = committedText
     self.candidates = candidates
     self.inlineSuggestion = inlineSuggestion
-    self.autoCommitCandidate = autoCommitCandidate
     self.neuralTailEligible = neuralTailEligible
     self.shouldCancel = shouldCancel
     self.shouldPassThrough = shouldPassThrough
@@ -110,6 +107,59 @@ private struct LekhMarkedCompositionDisplay {
 private struct LekhCompositionAnchor {
   let rect: NSRect
   let hostFont: NSFont?
+}
+
+/// A candidate becomes commit-authorized only from a physical interaction and
+/// only for the exact candidate list, surface, session, raw buffer, and host
+/// client that were visible during that interaction. A Boolean browsing flag
+/// cannot provide this freshness guarantee across asynchronous list refreshes.
+public struct LekhCandidateAcceptanceReceipt: Equatable {
+  public let candidate: String
+  public let candidateGeneration: Int
+  public let surfaceGeneration: Int
+  public let sessionId: String
+  public let rawBuffer: String
+  public let clientIdentifier: ObjectIdentifier
+
+  public init(
+    candidate: String,
+    candidateGeneration: Int,
+    surfaceGeneration: Int,
+    sessionId: String,
+    rawBuffer: String,
+    clientIdentifier: ObjectIdentifier
+  ) {
+    self.candidate = candidate
+    self.candidateGeneration = candidateGeneration
+    self.surfaceGeneration = surfaceGeneration
+    self.sessionId = sessionId
+    self.rawBuffer = rawBuffer
+    self.clientIdentifier = clientIdentifier
+  }
+
+  public func matches(
+    candidate: String,
+    candidateGeneration: Int,
+    surfaceGeneration: Int,
+    sessionId: String,
+    rawBuffer: String,
+    clientIdentifier: ObjectIdentifier
+  ) -> Bool {
+    self.candidate == candidate &&
+      self.candidateGeneration == candidateGeneration &&
+      self.surfaceGeneration == surfaceGeneration &&
+      self.sessionId == sessionId &&
+      self.rawBuffer == rawBuffer &&
+      self.clientIdentifier == clientIdentifier
+  }
+}
+
+public enum LekhPhysicalCandidateEventPolicy {
+  public static let maximumMouseUpAge: TimeInterval = 0.25
+
+  public static func acceptsMouseSelection(eventType: NSEvent.EventType, age: TimeInterval) -> Bool {
+    eventType == .leftMouseUp && age >= 0 && age <= maximumMouseUpAge
+  }
 }
 
 /// Computes the only document range that the unmarked fail-open path may
@@ -175,11 +225,11 @@ open class LekhInputController: IMKInputController {
   private let latencyTelemetry = LekhLatencyRingBuffer()
   private let candidateState = LekhCandidateController()
   private let neuralCandidateService = LekhNeuralCandidateService.shared
-  private var candidateSelectionExplicit = false
-  /// Engine-issued, word-snapshot-bound authorization for a passive delimiter
-  /// commit. This is deliberately separate from candidate highlighting: a
-  /// visible or top-ranked row is not sufficient evidence to change text.
-  private var activeAutoCommitCandidate: LekhAutoCommitCandidate?
+  /// Browsing state controls presentation only. Commit authority is the
+  /// snapshot-bound receipt below and is never inferred from highlighting.
+  private var candidateBrowsingActive = false
+  private var candidateGeneration = 0
+  private var candidateAcceptanceReceipt: LekhCandidateAcceptanceReceipt?
   private var pendingInlineSuggestion: LekhInlineSuggestion?
   private var activeInlineSuggestion: LekhInlineSuggestion?
   private var activeInlineSuggestionToken: LekhSurfaceToken?
@@ -344,9 +394,31 @@ open class LekhInputController: IMKInputController {
   open override func inputControllerWillClose() {
     lekhNativeLog("lifecycle.close")
     deactivateRuntimeEvidence()
+    let owner = compositionOwnerObject as? IMKTextInput
+    defer {
+      engineClient.endSession(sessionId)
+      clearCompositionOwner()
+    }
+    if secureInputActive() {
+      clearStateForSecureInput(client: owner)
+      return
+    }
+    if engineClient.hasComposition(sessionId: sessionId) {
+      // Closing a controller is host lifecycle, not candidate acceptance. A
+      // marked composition would otherwise disappear with the IMK instance,
+      // so restore the exact raw source to its owning client. In unmarked
+      // fail-open mode the source is already in the document and must not be
+      // inserted a second time.
+      if usesInlineComposition,
+         let owner,
+         isCompositionOwner(owner),
+         commitRawComposition(client: owner, suffix: "") {
+        return
+      }
+      engineClient.resetSession(sessionId)
+    }
+    replaceCandidateState([], rawBuffer: "")
     hideCandidates()
-    engineClient.endSession(sessionId)
-    clearCompositionOwner()
   }
 
   open override func hidePalettes() {
@@ -358,7 +430,6 @@ open class LekhInputController: IMKInputController {
     neuralCandidateService.cancelPending()
     compositionSurfacesDismissed = true
     revokeCandidateAcceptance()
-    activeAutoCommitCandidate = nil
     pendingInlineSuggestion = nil
     activeInlineSuggestion = nil
     activeInlineSuggestionToken = nil
@@ -368,7 +439,7 @@ open class LekhInputController: IMKInputController {
 
   open override func cancelComposition() {
     if secureInputActive() {
-      clearStateForSecureInput(client: self.client())
+      clearStateForSecureInput(client: compositionOwnerObject as? IMKTextInput)
       return
     }
     // The framework implementation replaces marked text with originalString,
@@ -377,8 +448,7 @@ open class LekhInputController: IMKInputController {
     super.cancelComposition()
     engineClient.resetSession(sessionId)
     clearCompositionOwner()
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-    candidateSelectionExplicit = false
+    replaceCandidateState([], rawBuffer: "")
     hideCandidates()
   }
 
@@ -429,10 +499,19 @@ open class LekhInputController: IMKInputController {
     // processed together; mixed paste, punctuation, whitespace, emoji, and
     // other host-owned text are passed through byte-for-byte without first
     // mutating the engine.
-    if string.count > 1, !canConsumeInputTextBatch(string) {
-      finishCompositionBeforeModifierPassThrough(client: sender as? IMKTextInput)
-      lekhNativeLog("event.passThrough route=inputText reason=nonAtomicBatch")
-      return false
+    if string.count > 1 {
+      if !canConsumeInputTextBatch(string) {
+        finishCompositionBeforeModifierPassThrough(client: sender as? IMKTextInput)
+        lekhNativeLog("event.passThrough route=inputText reason=nonAtomicBatch")
+        return false
+      }
+      if passThroughIfCompositionWouldOverflow(
+        string,
+        client: sender as? IMKTextInput,
+        route: "inputText.batch"
+      ) {
+        return false
+      }
     }
 
     var handledAll = true
@@ -533,12 +612,31 @@ open class LekhInputController: IMKInputController {
     }
 
     if let optionText = traditionalOptionText(key: key, keyCode: keyCode, modifiers: modifiers) {
+      if compositionWouldOverflow(optionText) {
+        guard finishCompositionBeforeModifierPassThrough(client: sender as? IMKTextInput) else {
+          lekhNativeLog("event.failOpen route=traditional.optionLayer reason=compositionLimitFinalizeFailed")
+          return false
+        }
+        // The physical Option-key is only a trigger; macOS cannot reproduce
+        // Lekh's synthesized Devanagari mapping if the event is returned. End
+        // the old bounded token, then consume the event by starting the exact
+        // mapped grapheme as the next composition.
+        lekhNativeLog("event.restart route=traditional.optionLayer reason=compositionLimit")
+      }
       return processKey(optionText, client: sender, route: "traditional.optionLayer")
     }
 
     if shouldPassThrough(modifiers: modifiers) {
       finishCompositionBeforeModifierPassThrough(client: sender as? IMKTextInput)
       lekhNativeLog("event.passThrough route=\(route) reason=modifier")
+      return false
+    }
+
+    if passThroughIfCompositionWouldOverflow(
+      key,
+      client: sender as? IMKTextInput,
+      route: route
+    ) {
       return false
     }
 
@@ -613,11 +711,10 @@ open class LekhInputController: IMKInputController {
       }
       guard let client = sender as? IMKTextInput else { return false }
       if let suggestion = visibleInlineSuggestion(for: client) {
-        candidateSelectionExplicit = true
         lekhNativeLog("inlineSuggestion.accept route=command.tab key=tab")
         return commitInlineSuggestion(suggestion, client: client)
       }
-      if candidateSelectionExplicit, isCurrentCandidateSurface(for: client) {
+      if candidateBrowsingActive, isCurrentCandidateSurface(for: client) {
         return commitSelectedCandidate(client: client, suffix: "")
       }
       _ = commitRawComposition(client: client, suffix: "")
@@ -669,10 +766,12 @@ open class LekhInputController: IMKInputController {
     if selector == #selector(NSResponder.moveToBeginningOfLine(_:)) ||
        selector == #selector(NSResponder.moveToEndOfLine(_:)) {
       guard engineClient.hasComposition(sessionId: sessionId) else { return false }
-      if candidateSelectionExplicit {
+      if candidateBrowsingActive {
         let first = selector == #selector(NSResponder.moveToBeginningOfLine(_:))
-        guard candidateState.selectBoundary(first: first) != nil else { return false }
-        guard refreshCandidatePanel(announceSelection: true).isVisible else {
+        guard let client = sender as? IMKTextInput,
+              let selected = candidateState.selectBoundary(first: first) else { return false }
+        guard refreshCandidatePanel(announceSelection: true).isVisible,
+              authorizeCurrentCandidate(selected, client: client) else {
           revokeCandidateAcceptance()
           return commitRawBeforeHostCommand(sender)
         }
@@ -712,17 +811,18 @@ open class LekhInputController: IMKInputController {
   /// Command/Control/Option shortcut is delivered exactly once. In the
   /// unmarked fail-open route the raw text is already in the document, so only
   /// local engine/UI state is reset—reinserting it would duplicate text.
-  private func finishCompositionBeforeModifierPassThrough(client: IMKTextInput?) {
-    guard engineClient.hasComposition(sessionId: sessionId) else { return }
-    if usesInlineComposition, let client {
-      _ = commitRawComposition(client: client, suffix: "")
-      return
+  @discardableResult
+  private func finishCompositionBeforeModifierPassThrough(client: IMKTextInput?) -> Bool {
+    guard engineClient.hasComposition(sessionId: sessionId) else { return true }
+    if usesInlineComposition {
+      guard let client else { return false }
+      return commitRawComposition(client: client, suffix: "")
     }
     engineClient.resetSession(sessionId)
     clearCompositionOwner()
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-    candidateSelectionExplicit = false
+    replaceCandidateState([], rawBuffer: "")
     hideCandidates()
+    return true
   }
 
   open override func candidates(_ sender: Any!) -> [Any]! {
@@ -731,7 +831,9 @@ open class LekhInputController: IMKInputController {
   }
 
   open override func candidateSelected(_ candidateString: NSAttributedString!) {
-    guard let text = candidateString?.string, !text.isEmpty, let client = self.client() else {
+    guard let text = candidateString?.string,
+          !text.isEmpty,
+          let client = compositionOwnerObject as? IMKTextInput else {
       return
     }
     guard !secureInputActive() else {
@@ -744,36 +846,32 @@ open class LekhInputController: IMKInputController {
       modeMenuOpen = false
       return
     }
-    // IMKCandidates may emit callbacks while refreshing its internal row
-    // model. A callback is acceptance only after a physical navigation command
-    // made selection explicit and the value still belongs to this snapshot.
-    guard candidateSelectionExplicit,
-          isCurrentCandidateSurface(for: client),
-          candidateState.currentState().candidates.contains(text) else { return }
-    candidateSelectionExplicit = true
-    commitCandidateText(text, client: client, suffix: "")
+    // IMKCandidates also emits programmatic callbacks while rebuilding rows.
+    // Accept this callback only while a fresh physical mouse-up is still the
+    // current AppKit event, then bind acceptance to the exact live snapshot.
+    guard let event = NSApp.currentEvent else { return }
+    let eventAge = ProcessInfo.processInfo.systemUptime - event.timestamp
+    guard LekhPhysicalCandidateEventPolicy.acceptsMouseSelection(
+      eventType: event.type,
+      age: eventAge
+    ),
+      isCurrentCandidateSurface(for: client),
+      let index = candidateState.currentState().candidates.firstIndex(of: text),
+      candidateState.select(index: index) != nil else { return }
+    candidateBrowsingActive = true
+    guard authorizeCurrentCandidate(text, client: client) else { return }
+    _ = commitSelectedCandidate(client: client, suffix: "")
   }
 
   open override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
     guard !secureInputActive() else {
-      clearStateForSecureInput(client: self.client())
-      return
-    }
-    guard let text = candidateString?.string, !text.isEmpty else {
+      clearStateForSecureInput(client: compositionOwnerObject as? IMKTextInput)
       return
     }
     // IMK may emit this callback just by refreshing its own panel. It cannot
-    // promote a passive row into an accepted selection; only a physical
-    // navigation command may do that.
-    if candidateSelectionExplicit,
-       let client = self.client(),
-       isCurrentCandidateSurface(for: client),
-       let index = candidateState.currentState().candidates.firstIndex(of: text) {
-      candidateState.select(index: index)
-      if !refreshCandidatePanel().isVisible {
-        revokeCandidateAcceptance()
-      }
-    }
+    // change native selection or mint acceptance authority. Keyboard commands
+    // update state synchronously; mouse acceptance is verified above.
+    _ = candidateString
   }
 
   open override func menu() -> NSMenu! {
@@ -832,22 +930,23 @@ open class LekhInputController: IMKInputController {
           let mode = LekhNativeTypingMode(rawValue: rawValue) else {
       return
     }
-    guard finishCompositionBeforeModeSwitch(client: self.client()) else { return }
+    guard finishCompositionBeforeModeSwitch(
+      client: compositionOwnerObject as? IMKTextInput
+    ) else { return }
     selectNativeMode(mode)
     modeMenuOpen = false
   }
 
   @objc private func forgetCurrentCandidateFromInputMenu(_ item: NSMenuItem) {
     guard !secureInputActive() else {
-      clearStateForSecureInput(client: self.client())
+      clearStateForSecureInput(client: compositionOwnerObject as? IMKTextInput)
       return
     }
     guard let candidate = item.representedObject as? String else { return }
     engineClient.forgetCandidate(sessionId: sessionId, chosenOutput: candidate)
-    candidateState.updateCandidates(
+    replaceCandidateState(
       candidateState.currentState().candidates.filter { $0 != candidate },
-      rawBuffer: engineClient.rawBuffer(sessionId: sessionId),
-      modeLabel: nativeMode.menuLabel
+      rawBuffer: engineClient.rawBuffer(sessionId: sessionId)
     )
     hideCandidates()
     lekhNativeLog("candidate.forget length=\(candidate.utf16.count)")
@@ -965,7 +1064,7 @@ open class LekhInputController: IMKInputController {
     if key == lekhArrowDownKey || key == lekhArrowUpKey || modifiers.contains(.option) {
       let state = candidateState.currentState()
       lekhHostProbeLog(
-        "surface.command route=\(route) composition=\(engineClient.hasComposition(sessionId: sessionId) ? 1 : 0) candidates=\(state.candidates.count) explicit=\(candidateSelectionExplicit ? 1 : 0)"
+        "surface.command route=\(route) composition=\(engineClient.hasComposition(sessionId: sessionId) ? 1 : 0) candidates=\(state.candidates.count) explicit=\(candidateBrowsingActive ? 1 : 0)"
       )
     }
     guard usesInlineComposition,
@@ -987,10 +1086,11 @@ open class LekhInputController: IMKInputController {
 
     if key == lekhArrowDownKey {
       dismissInlineSuggestion()
-      guard candidateState.moveSelection(delta: 1) != nil else { return false }
-      candidateSelectionExplicit = true
+      guard let selected = candidateState.moveSelection(delta: 1) else { return false }
+      candidateBrowsingActive = true
       compositionSurfacesDismissed = false
-      guard refreshCandidatePanel(announceSelection: true).isVisible else {
+      guard refreshCandidatePanel(announceSelection: true).isVisible,
+            authorizeCurrentCandidate(selected, client: client) else {
         revokeCandidateAcceptance()
         lekhHostProbeLog("surface.command down handled=0 reason=unavailable")
         return false
@@ -1002,10 +1102,11 @@ open class LekhInputController: IMKInputController {
 
     if key == lekhArrowUpKey {
       dismissInlineSuggestion()
-      guard candidateState.moveSelection(delta: -1) != nil else { return false }
-      candidateSelectionExplicit = true
+      guard let selected = candidateState.moveSelection(delta: -1) else { return false }
+      candidateBrowsingActive = true
       compositionSurfacesDismissed = false
-      guard refreshCandidatePanel(announceSelection: true).isVisible else {
+      guard refreshCandidatePanel(announceSelection: true).isVisible,
+            authorizeCurrentCandidate(selected, client: client) else {
         revokeCandidateAcceptance()
         lekhHostProbeLog("surface.command up handled=0 reason=unavailable")
         return false
@@ -1017,10 +1118,14 @@ open class LekhInputController: IMKInputController {
     if key == lekhPageDownKey || key == lekhPageUpKey {
       dismissInlineSuggestion()
       let delta = key == lekhPageDownKey ? 1 : -1
-      guard candidateState.movePage(delta: delta, pageSize: LekhCandidatePanel.pageSize) != nil else { return false }
-      candidateSelectionExplicit = true
+      guard let selected = candidateState.movePage(
+        delta: delta,
+        pageSize: LekhCandidatePanel.pageSize
+      ) else { return false }
+      candidateBrowsingActive = true
       compositionSurfacesDismissed = false
-      guard refreshCandidatePanel(announceSelection: true).isVisible else {
+      guard refreshCandidatePanel(announceSelection: true).isVisible,
+            authorizeCurrentCandidate(selected, client: client) else {
         revokeCandidateAcceptance()
         return false
       }
@@ -1028,9 +1133,10 @@ open class LekhInputController: IMKInputController {
       return true
     }
 
-    if candidateSelectionExplicit, (key == lekhHomeKey || key == lekhEndKey) {
-      guard candidateState.selectBoundary(first: key == lekhHomeKey) != nil else { return false }
-      guard refreshCandidatePanel(announceSelection: true).isVisible else {
+    if candidateBrowsingActive, (key == lekhHomeKey || key == lekhEndKey) {
+      guard let selected = candidateState.selectBoundary(first: key == lekhHomeKey) else { return false }
+      guard refreshCandidatePanel(announceSelection: true).isVisible,
+            authorizeCurrentCandidate(selected, client: client) else {
         revokeCandidateAcceptance()
         return false
       }
@@ -1038,20 +1144,20 @@ open class LekhInputController: IMKInputController {
     }
 
     let candidateSurfaceIsVisible = isCurrentCandidateSurface(for: client)
-    // Once the user has entered candidate browsing with an Arrow key, the
-    // synchronous selection state is authoritative even if AppKit has not yet
-    // painted the panel. Before browsing, Option-number is accepted only for a
-    // row that is actually visible; this prevents invisible candidate commits.
+    // A shortcut is actionable only while its snapshot-bound panel is visible.
+    // Before browsing, Option-number is limited to the passive rows that are
+    // actually on screen; after browsing it addresses the visible page.
     let explicitShortcut = candidateSurfaceIsVisible &&
-      (candidateSelectionExplicit || modifiers.contains(.option))
+      (candidateBrowsingActive || modifiers.contains(.option))
     if explicitShortcut,
        let shortcutNumber = candidateShortcutIndex(key: key, keyCode: keyCode),
-       shortcutNumber <= (candidateSelectionExplicit ? LekhCandidatePanel.pageSize : LekhCandidatePanel.passiveVisibleRows),
+       shortcutNumber <= (candidateBrowsingActive ? LekhCandidatePanel.pageSize : LekhCandidatePanel.passiveVisibleRows),
        let candidateIndex = candidateState.indexForShortcut(shortcutNumber, pageSize: LekhCandidatePanel.pageSize),
        let candidate = candidateState.select(index: candidateIndex) {
-      candidateSelectionExplicit = true
+      candidateBrowsingActive = true
+      guard authorizeCurrentCandidate(candidate, client: client) else { return false }
       lekhNativeLog("candidate.shortcut route=\(route) index=\(candidateIndex)")
-      return commitCandidateText(candidate, client: client, suffix: "")
+      return commitSelectedCandidate(client: client, suffix: "")
     }
 
     // Option is reserved for the explicit candidate shortcut above (and the
@@ -1061,7 +1167,7 @@ open class LekhInputController: IMKInputController {
       return false
     }
 
-    if candidateSelectionExplicit,
+    if candidateBrowsingActive,
        isPunctuationKey(key),
        isCurrentCandidateSurface(for: client) {
       let punctuation = engineClient.normalizedPunctuation(key, mode: nativeMode)
@@ -1070,7 +1176,6 @@ open class LekhInputController: IMKInputController {
     }
 
     if key == lekhArrowRightKey, let suggestion = visibleInlineSuggestion(for: client) {
-      candidateSelectionExplicit = true
       lekhNativeLog("inlineSuggestion.accept route=\(route) key=right")
       return commitInlineSuggestion(suggestion, client: client)
     }
@@ -1085,11 +1190,10 @@ open class LekhInputController: IMKInputController {
 
     if key == "\t", !modifiers.contains(.shift) {
       if let suggestion = visibleInlineSuggestion(for: client) {
-        candidateSelectionExplicit = true
         lekhNativeLog("inlineSuggestion.accept route=\(route) key=tab")
         return commitInlineSuggestion(suggestion, client: client)
       }
-      if candidateSelectionExplicit {
+      if candidateBrowsingActive {
         return commitSelectedCandidate(client: client, suffix: "")
       }
       // Preserve the composition as raw text and let the host receive Tab.
@@ -1125,16 +1229,12 @@ open class LekhInputController: IMKInputController {
   }
 
   private func isPunctuationKey(_ key: String) -> Bool {
-    guard key.count == 1, let scalar = key.unicodeScalars.first else { return false }
+    guard key.unicodeScalars.count == 1, let scalar = key.unicodeScalars.first else { return false }
     return CharacterSet.punctuationCharacters.contains(scalar)
   }
 
   private func commitSelectedCandidate(client: IMKTextInput, suffix: String) -> Bool {
-    guard candidateSelectionExplicit,
-          isCurrentCandidateSurface(for: client),
-          let selected = candidateState.selectedCandidate() else {
-      return false
-    }
+    guard let selected = authorizedSelectedCandidate(for: client) else { return false }
     return commitCandidateText(selected, client: client, suffix: suffix)
   }
 
@@ -1155,90 +1255,16 @@ open class LekhInputController: IMKInputController {
     client.insertText(raw + suffix, replacementRange: replacementRange(for: client))
     engineClient.resetSession(sessionId)
     clearCompositionOwner()
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-    candidateSelectionExplicit = false
+    replaceCandidateState([], rawBuffer: "")
     hideCandidates()
     lekhNativeLog("composition.commitRaw length=\((raw + suffix).utf16.count)")
     return true
   }
 
-  /// Performs a passive delimiter commit only from evidence produced for the
-  /// exact current raw token. The controller repeats the release-critical
-  /// invariants as defense in depth; malformed or stale metadata fails open to
-  /// `commitRawComposition` rather than changing what the user typed.
-  private func commitAutoCommitCandidate(
-    _ candidate: LekhAutoCommitCandidate,
-    client: IMKTextInput,
-    suffix: String
-  ) -> Bool {
-    guard !secureInputActive() else {
-      clearStateForSecureInput(client: client)
-      return false
-    }
-    guard mayMutateComposition(client) else { return false }
-    let raw = engineClient.rawBuffer(sessionId: sessionId)
-    guard isValidAutoCommitCandidate(candidate, rawBuffer: raw) else {
-      activeAutoCommitCandidate = nil
-      return commitRawComposition(client: client, suffix: suffix)
-    }
-
-    // Passive auto-commit must never train personalization. Only an explicit
-    // Tab/arrow/mouse/shortcut acceptance reaches commitCandidateText.
-    engineClient.observeCommit(
-      sessionId: sessionId,
-      rawInput: raw,
-      chosenOutput: candidate.text,
-      allowPersonalization: false
-    )
-    client.insertText(candidate.text + suffix, replacementRange: replacementRange(for: client))
-    engineClient.resetSession(sessionId)
-    clearCompositionOwner()
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-    candidateSelectionExplicit = false
-    hideCandidates()
-    lekhNativeLog(
-      "composition.autoCommit policy=\(candidate.policy.rawValue) length=\((candidate.text + suffix).utf16.count)"
-    )
-    return true
-  }
-
-  private func isValidAutoCommitCandidate(
-    _ candidate: LekhAutoCommitCandidate,
-    rawBuffer: String
-  ) -> Bool {
-    guard !rawBuffer.isEmpty,
-          candidate.sourceInput == rawBuffer,
-          !candidate.text.isEmpty,
-          !candidate.sourceInput.unicodeScalars.contains(where: {
-            CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0)
-          }),
-          !candidate.text.unicodeScalars.contains(where: {
-            CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0)
-          }) else {
-      return false
-    }
-
-    let targetHasDevanagari = candidate.text.range(
-      of: #"\p{Devanagari}"#,
-      options: .regularExpression
-    ) != nil
-    let targetHasLatin = candidate.text.range(of: #"[A-Za-z]"#, options: .regularExpression) != nil
-
-    switch candidate.policy {
-    case .calibratedExactDeterministicToken:
-      guard nativeMode == .romanizedTraditional,
-            let probability = candidate.calibratedProbability,
-            let margin = candidate.margin else { return false }
-      return probability >= 0.92 && margin >= 0.12 && targetHasDevanagari && !targetHasLatin
-    case .uniqueReversibleReverse:
-      return nativeMode == .traditionalRomanized && !targetHasDevanagari
-    }
-  }
-
   private func processFailOpenKey(_ key: String, keyCode: Int, client sender: Any!, route: String) -> Bool {
     if key == "\u{1b}" {
       engineClient.resetSession(sessionId)
-      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
+      replaceCandidateState([], rawBuffer: "")
       hideCandidates()
       lekhNativeLog("failOpen route=\(route) action=escape")
       return false
@@ -1246,10 +1272,9 @@ open class LekhInputController: IMKInputController {
 
     if key == "\u{7f}" {
       let decision = engineDecision(for: key, route: route)
-      candidateState.updateCandidates(
+      replaceCandidateState(
         decision.candidates,
-        rawBuffer: engineClient.rawBuffer(sessionId: sessionId),
-        modeLabel: nativeMode.menuLabel
+        rawBuffer: engineClient.rawBuffer(sessionId: sessionId)
       )
       if decision.shouldCancel {
         hideCandidates()
@@ -1260,11 +1285,19 @@ open class LekhInputController: IMKInputController {
 
     if shouldAppendToFailOpenBuffer(key) {
       let decision = engineDecision(for: key, route: route)
-      candidateState.updateCandidates(decision.candidates, rawBuffer: engineClient.rawBuffer(sessionId: sessionId), modeLabel: nativeMode.menuLabel)
+      replaceCandidateState(
+        decision.candidates,
+        rawBuffer: engineClient.rawBuffer(sessionId: sessionId)
+      )
       guard let client = sender as? IMKTextInput else {
         lekhNativeLog("failOpen route=\(route) action=bufferNoClient")
         return false
       }
+      // The unmarked route still has a client-owned engine composition even
+      // though the raw character is already in the document. Bind that owner
+      // so the next callback continues the same bounded token; a real client
+      // transition will then discard only local state as intended.
+      bindCompositionOwner(to: client)
       client.insertText(key, replacementRange: notFoundRange())
       lekhNativeLog("failOpen route=\(route) action=insertRaw")
       return true
@@ -1285,8 +1318,7 @@ open class LekhInputController: IMKInputController {
     // A delimiter decision ends the engine composition even when the host
     // cannot safely expose a document range. Revoke all stale candidate UI
     // before returning the delimiter to the host.
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-    candidateSelectionExplicit = false
+    replaceCandidateState([], rawBuffer: "")
     hideCandidates()
 
     guard let client = sender as? IMKTextInput else {
@@ -1509,12 +1541,35 @@ open class LekhInputController: IMKInputController {
   }
 
   private func canConsumeInputTextBatch(_ string: String) -> Bool {
-    string.allSatisfy { character in
-      let key = String(character)
-      guard key.count == 1, let scalar = key.unicodeScalars.first else { return false }
-      return CharacterSet.alphanumerics.contains(scalar) ||
-        (scalar.value >= 0x0900 && scalar.value <= 0x097F)
+    LekhCompositionInputPolicy.isCompositionSafe(string)
+  }
+
+  /// Ends the bounded active composition without consuming any part of the
+  /// new host callback. Inline hosts receive the exact prior raw text as a
+  /// commit; unmarked fail-open hosts already contain it, so their local state
+  /// is only reset. Returning false then leaves the complete new grapheme or
+  /// batch to macOS exactly once.
+  private func passThroughIfCompositionWouldOverflow(
+    _ input: String,
+    client: IMKTextInput?,
+    route: String
+  ) -> Bool {
+    guard compositionWouldOverflow(input) else {
+      return false
     }
+    guard finishCompositionBeforeModifierPassThrough(client: client) else {
+      lekhNativeLog("event.failOpen route=\(route) reason=compositionLimitFinalizeFailed")
+      return false
+    }
+    lekhNativeLog("event.passThrough route=\(route) reason=compositionLimit")
+    return true
+  }
+
+  private func compositionWouldOverflow(_ input: String) -> Bool {
+    canConsumeInputTextBatch(input) && LekhActiveCompositionWorkBound.wouldOverflow(
+      current: engineClient.rawBuffer(sessionId: sessionId),
+      appending: input
+    )
   }
 
   private func traditionalOptionText(key: String, keyCode: Int, modifiers: NSEvent.ModifierFlags) -> String? {
@@ -1540,32 +1595,29 @@ open class LekhInputController: IMKInputController {
   private func shouldPassThroughWithoutComposition(key: String) -> Bool {
     guard !engineClient.hasComposition(sessionId: sessionId) else { return false }
     if key == " " || key == "\n" || key == "\t" || key == "\u{7f}" || key == "\u{1b}" { return true }
-    if key.count == 1, let scalar = key.unicodeScalars.first {
-      return !CharacterSet.alphanumerics.contains(scalar) && !(scalar.value >= 0x0900 && scalar.value <= 0x097F)
-    }
-    return false
+    return !LekhCompositionInputPolicy.isCompositionSafe(key)
   }
 
   private func shouldCommitBeforePassingThrough(key: String) -> Bool {
     guard engineClient.hasComposition(sessionId: sessionId) else { return false }
-    guard key.count == 1, let scalar = key.unicodeScalars.first else { return false }
-    if CharacterSet.alphanumerics.contains(scalar) { return false }
-    if scalar.value >= 0x0900 && scalar.value <= 0x097F { return false }
-    if CharacterSet.punctuationCharacters.contains(scalar) { return false }
-    if CharacterSet.whitespacesAndNewlines.contains(scalar) { return false }
+    if LekhCompositionInputPolicy.isCompositionSafe(key) { return false }
+    if key == "\u{7f}" || key == "\u{1b}" { return false }
+    if key.unicodeScalars.count == 1, let scalar = key.unicodeScalars.first {
+      if CharacterSet.punctuationCharacters.contains(scalar) { return false }
+      if CharacterSet.whitespacesAndNewlines.contains(scalar) { return false }
+    }
     return true
   }
 
   private func shouldAppendToFailOpenBuffer(_ key: String) -> Bool {
-    guard key.count == 1, let scalar = key.unicodeScalars.first else { return false }
-    return CharacterSet.alphanumerics.contains(scalar) || (scalar.value >= 0x0900 && scalar.value <= 0x097F)
+    LekhCompositionInputPolicy.isCompositionSafe(key)
   }
 
   public func resetSession() {
     engineClient.endSession(sessionId)
     sessionId = UUID().uuidString
     clearCompositionOwner()
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
+    replaceCandidateState([], rawBuffer: "")
     hideCandidates()
   }
 
@@ -1609,7 +1661,7 @@ open class LekhInputController: IMKInputController {
     }
     engineClient.endSession(sessionId)
     clearCompositionOwner()
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: mode.menuLabel)
+    replaceCandidateState([], rawBuffer: "")
     hideCandidates()
     setKeyboardLayoutOverride()
     lekhNativeLog("mode.selected \(mode.rawValue)")
@@ -1718,13 +1770,17 @@ open class LekhInputController: IMKInputController {
   }
 
   private func showModePicker() {
-    guard finishCompositionBeforeModeSwitch(client: self.client()) else { return }
+    guard finishCompositionBeforeModeSwitch(
+      client: compositionOwnerObject as? IMKTextInput
+    ) else { return }
     modeMenuOpen = false
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       LekhModePickerWindowController.shared.show(current: self.nativeMode) { [weak self] mode in
         guard let self,
-              self.finishCompositionBeforeModeSwitch(client: self.client()) else { return }
+              self.finishCompositionBeforeModeSwitch(
+                client: self.compositionOwnerObject as? IMKTextInput
+              ) else { return }
         self.selectNativeMode(mode)
       }
     }
@@ -1744,18 +1800,13 @@ open class LekhInputController: IMKInputController {
   private func commitCurrentComposition(client: IMKTextInput, suffix: String) -> Bool {
     let raw = engineClient.rawBuffer(sessionId: sessionId)
     guard !raw.isEmpty else { return false }
-    if candidateSelectionExplicit,
-       isCurrentCandidateSurface(for: client),
-       let selected = candidateState.selectedCandidate() {
+    if let selected = authorizedSelectedCandidate(for: client) {
       return commitCandidateText(selected, client: client, suffix: suffix)
     }
     // A palette may disappear between key-down and commit. Once visibility or
     // client binding is lost, the selected row is no longer authority; Space
-    // and Return fail open to the engine-authorized candidate or exact raw text.
+    // and Return fail open to exact raw text.
     revokeCandidateAcceptance()
-    if let autoCommitCandidate = activeAutoCommitCandidate {
-      return commitAutoCommitCandidate(autoCommitCandidate, client: client, suffix: suffix)
-    }
     return commitRawComposition(client: client, suffix: suffix)
   }
 
@@ -1795,9 +1846,7 @@ open class LekhInputController: IMKInputController {
     let hadComposition = engineClient.hasComposition(sessionId: sessionId)
     let clientOwnsComposition = isCompositionOwner(client)
     engineClient.endSession(sessionId)
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-    candidateSelectionExplicit = false
-    activeAutoCommitCandidate = nil
+    replaceCandidateState([], rawBuffer: "")
     pendingInlineSuggestion = nil
     activeInlineSuggestion = nil
     hideCandidates()
@@ -1817,9 +1866,7 @@ open class LekhInputController: IMKInputController {
   private func cancelLocalComposition(client: IMKTextInput?) {
     let clientOwnsComposition = isCompositionOwner(client)
     engineClient.endSession(sessionId)
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-    candidateSelectionExplicit = false
-    activeAutoCommitCandidate = nil
+    replaceCandidateState([], rawBuffer: "")
     pendingInlineSuggestion = nil
     activeInlineSuggestion = nil
     hideCandidates()
@@ -1837,7 +1884,7 @@ open class LekhInputController: IMKInputController {
     guard let client = sender as? IMKTextInput else {
       engineClient.resetSession(sessionId)
       clearCompositionOwner()
-      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
+      replaceCandidateState([], rawBuffer: "")
       hideCandidates()
       lekhNativeLog("apply route=\(route) failOpen=noClient")
       return false
@@ -1851,9 +1898,7 @@ open class LekhInputController: IMKInputController {
     if let committedText = decision.committedText {
       guard mayMutateComposition(client) else { return false }
       client.insertText(committedText, replacementRange: replacementRange(for: client))
-      candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-      candidateSelectionExplicit = false
-      activeAutoCommitCandidate = nil
+      replaceCandidateState([], rawBuffer: "")
       presentedMarkedText = nil
       clearCompositionOwner()
       hideCandidates()
@@ -1871,9 +1916,6 @@ open class LekhInputController: IMKInputController {
       presentedMarkedText = markedText
       compositionSurfacesDismissed = false
       let rawBuffer = engineClient.rawBuffer(sessionId: sessionId)
-      activeAutoCommitCandidate = decision.autoCommitCandidate.flatMap {
-        isValidAutoCommitCandidate($0, rawBuffer: rawBuffer) ? $0 : nil
-      }
       let inlinePreviewEnabled = LekhNativePreferences.inlinePreviewEnabled
       let hadPresentedGhost = inlinePreviewPanel.isVisible && activeInlineSuggestion != nil
       if inlinePreviewEnabled {
@@ -1930,9 +1972,7 @@ open class LekhInputController: IMKInputController {
 
   private func updateCandidates(_ candidates: [String], neuralTailEligible: Bool) {
     let rawBuffer = engineClient.rawBuffer(sessionId: sessionId)
-    revokeCandidateAcceptance()
-    candidateState.updateCandidates(candidates, rawBuffer: rawBuffer, modeLabel: nativeMode.menuLabel)
-    candidateState.clearSelection()
+    replaceCandidateState(candidates, rawBuffer: rawBuffer)
     if neuralTailEligible {
       requestAsyncNeuralCandidates(rawBuffer: rawBuffer, deterministicCandidates: candidates)
     } else {
@@ -1969,7 +2009,9 @@ open class LekhInputController: IMKInputController {
       // render but before AppKit supplies caret geometry. Re-check here so no
       // stale completion surface or evidence crosses that boundary.
       guard !self.secureInputActive() else {
-        self.clearStateForSecureInput(client: self.client())
+        self.clearStateForSecureInput(
+          client: self.compositionOwnerObject as? IMKTextInput
+        )
         return
       }
       guard self.surfaceRenderGeneration == generation,
@@ -1977,7 +2019,8 @@ open class LekhInputController: IMKInputController {
             self.engineClient.rawBuffer(sessionId: sessionSnapshot) == rawBuffer,
             !self.compositionSurfacesDismissed else { return }
 
-      guard let surfaceClient = self.client(), self.isCompositionOwner(surfaceClient) else {
+      guard let surfaceClient = self.compositionOwnerObject as? IMKTextInput,
+            self.isCompositionOwner(surfaceClient) else {
         // A delayed render must never follow focus to a different responder.
         // Keep the old marked range untouched; only its auxiliary UI is stale.
         if self.pendingInlineSuggestion != nil {
@@ -2087,13 +2130,15 @@ open class LekhInputController: IMKInputController {
             !self.secureInputActive(),
             self.sessionId == sessionSnapshot,
             self.engineClient.rawBuffer(sessionId: sessionSnapshot) == rawBuffer,
-            let client = self.client(),
+            let client = self.compositionOwnerObject as? IMKTextInput,
             self.isCompositionOwner(client),
             !neuralCandidates.isEmpty else { return }
       let merged = Self.uniqueCandidates(deterministicCandidates + neuralCandidates, limit: 8)
-      self.candidateState.updateCandidates(merged, rawBuffer: rawBuffer, modeLabel: self.nativeMode.menuLabel)
+      // Even when the selected text survives, this is a different candidate
+      // generation. Revoke the old physical receipt before presenting it.
+      self.replaceCandidateState(merged, rawBuffer: rawBuffer)
       if !self.compositionSurfacesDismissed,
-         self.visibleInlineSuggestion(for: self.client()) == nil {
+         self.visibleInlineSuggestion(for: client) == nil {
         self.refreshCandidatePanel()
       }
     }
@@ -2116,7 +2161,7 @@ open class LekhInputController: IMKInputController {
     anchorRect: NSRect? = nil,
     announceSelection: Bool = false
   ) -> LekhCandidatePresentation {
-    guard let presentationClient = self.client(),
+    guard let presentationClient = compositionOwnerObject as? IMKTextInput,
           isCompositionOwner(presentationClient) else {
       hideCandidateWindow()
       return .unavailable
@@ -2134,9 +2179,9 @@ open class LekhInputController: IMKInputController {
     }
     // A passive one-row panel repeats the marked-text preview without giving
     // the user a decision. Suppress that visual churn while typing prefixes;
-    // an explicit Arrow command sets `candidateSelectionExplicit` first and
+    // an explicit Arrow command enters browsing before requesting presentation
     // still opens the single available row when the user asks for choices.
-    if !candidateSelectionExplicit, candidates.count < 2 {
+    if !candidateBrowsingActive, candidates.count < 2 {
       hideCandidateWindow()
       lekhHostProbeLog("surface.candidates suppressed=singlePassive count=\(candidates.count)")
       return .unavailable
@@ -2164,12 +2209,11 @@ open class LekhInputController: IMKInputController {
         sourceText: presentationToken?.rawBuffer,
         selectedIndex: state.selectedIndex,
         anchorRect: freshAnchor ?? cachedAnchor,
-        expanded: candidateSelectionExplicit,
-        passiveCommitText: activeAutoCommitCandidate?.text,
+        expanded: candidateBrowsingActive,
         announceSelection: announceSelection,
         onDragCancellation: { [weak self] in
           guard let self,
-                let client = self.client(),
+                let client = self.compositionOwnerObject as? IMKTextInput,
                 let presentationActivationIdentifier,
                 !self.secureInputActive(),
                 self.runtimeActivationIdentifier == presentationActivationIdentifier,
@@ -2183,7 +2227,8 @@ open class LekhInputController: IMKInputController {
           )
         },
         onSelect: { [weak self] selectedIndex, selectedText in
-          guard let self, let client = self.client() else { return }
+          guard let self,
+                let client = self.compositionOwnerObject as? IMKTextInput else { return }
           guard !self.secureInputActive(),
                 self.isCurrentSurfaceToken(presentationToken, client: client),
                 self.candidatePresentationToken == presentationToken,
@@ -2194,8 +2239,9 @@ open class LekhInputController: IMKInputController {
           guard currentCandidates.indices.contains(selectedIndex),
                 currentCandidates[selectedIndex] == selectedText else { return }
           self.candidateState.select(index: selectedIndex)
-          self.candidateSelectionExplicit = true
-          self.commitCandidateText(selectedText, client: client, suffix: "")
+          self.candidateBrowsingActive = true
+          guard self.authorizeCurrentCandidate(selectedText, client: client) else { return }
+          _ = self.commitSelectedCandidate(client: client, suffix: "")
         }
       )
       lekhHostProbeLog(
@@ -2210,7 +2256,7 @@ open class LekhInputController: IMKInputController {
       // A passive list is optional. An explicit Arrow command is not: when
       // custom geometry is unavailable, request the system candidate surface
       // and authorize the navigation only if that surface is truly visible.
-      if !candidateSelectionExplicit {
+      if !candidateBrowsingActive {
         return .unavailable
       }
     }
@@ -2218,7 +2264,7 @@ open class LekhInputController: IMKInputController {
     // IMKCandidates visually selects its first row automatically. Do not show
     // it during the passive state because passive delimiter authorization is
     // independent of list selection; show it only after Arrow navigation.
-    guard candidateSelectionExplicit else {
+    guard candidateBrowsingActive else {
       candidatePanel?.hide()
       candidatePresentationToken = nil
       lekhHostProbeLog("surface.candidates custom=0 explicit=0 shown=0")
@@ -2241,7 +2287,6 @@ open class LekhInputController: IMKInputController {
     lekhHostProbeLog("surface.hide all")
     surfaceRenderGeneration += 1
     neuralCandidateService.cancelPending()
-    activeAutoCommitCandidate = nil
     pendingInlineSuggestion = nil
     activeInlineSuggestion = nil
     activeInlineSuggestionToken = nil
@@ -2287,10 +2332,19 @@ open class LekhInputController: IMKInputController {
     inlineAnnouncementGeneration += 1
     let announcementGeneration = inlineAnnouncementGeneration
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-      guard let self,
-            self.inlineAnnouncementGeneration == announcementGeneration,
+      guard let self else { return }
+      // Secure Event Input can begin after this announcement was scheduled.
+      // Purge the old nonsecure composition instead of speaking it later.
+      guard !self.secureInputActive() else {
+        self.clearStateForSecureInput(
+          client: self.compositionOwnerObject as? IMKTextInput
+        )
+        return
+      }
+      let owner = self.compositionOwnerObject as? IMKTextInput
+      guard self.inlineAnnouncementGeneration == announcementGeneration,
             self.inlinePreviewPanel.isVisible,
-            self.isCurrentSurfaceToken(token, client: self.client()),
+            self.isCurrentSurfaceToken(token, client: owner),
             self.activeInlineSuggestion?.acceptedText == suggestion.acceptedText,
             self.lastAnnouncedInlineAcceptedText != suggestion.acceptedText else { return }
       self.lastAnnouncedInlineAcceptedText = suggestion.acceptedText
@@ -2345,8 +2399,62 @@ open class LekhInputController: IMKInputController {
     return true
   }
 
+  private func replaceCandidateState(_ candidates: [String], rawBuffer: String) {
+    candidateGeneration = candidateGeneration == Int.max ? 0 : candidateGeneration + 1
+    revokeCandidateAcceptance()
+    candidateState.updateCandidates(
+      candidates,
+      rawBuffer: rawBuffer,
+      modeLabel: nativeMode.menuLabel
+    )
+    candidateState.clearSelection()
+  }
+
+  @discardableResult
+  private func authorizeCurrentCandidate(
+    _ candidate: String,
+    client: IMKTextInput
+  ) -> Bool {
+    guard candidateBrowsingActive,
+          candidateState.selectedCandidate() == candidate,
+          candidateState.currentState().candidates.contains(candidate),
+          isCurrentCandidateSurface(for: client) else {
+      revokeCandidateAcceptance()
+      return false
+    }
+    candidateAcceptanceReceipt = LekhCandidateAcceptanceReceipt(
+      candidate: candidate,
+      candidateGeneration: candidateGeneration,
+      surfaceGeneration: surfaceRenderGeneration,
+      sessionId: sessionId,
+      rawBuffer: engineClient.rawBuffer(sessionId: sessionId),
+      clientIdentifier: ObjectIdentifier(client as AnyObject)
+    )
+    return true
+  }
+
+  private func authorizedSelectedCandidate(for client: IMKTextInput) -> String? {
+    guard candidateBrowsingActive,
+          isCurrentCandidateSurface(for: client),
+          let selected = candidateState.selectedCandidate(),
+          let receipt = candidateAcceptanceReceipt,
+          receipt.matches(
+            candidate: selected,
+            candidateGeneration: candidateGeneration,
+            surfaceGeneration: surfaceRenderGeneration,
+            sessionId: sessionId,
+            rawBuffer: engineClient.rawBuffer(sessionId: sessionId),
+            clientIdentifier: ObjectIdentifier(client as AnyObject)
+          ) else {
+      revokeCandidateAcceptance()
+      return nil
+    }
+    return selected
+  }
+
   private func revokeCandidateAcceptance() {
-    candidateSelectionExplicit = false
+    candidateBrowsingActive = false
+    candidateAcceptanceReceipt = nil
     candidateState.clearSelection()
     candidatePresentationToken = nil
   }
@@ -2381,7 +2489,7 @@ open class LekhInputController: IMKInputController {
 
     engineClient.endSession(sessionId)
     sessionId = UUID().uuidString
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
+    replaceCandidateState([], rawBuffer: "")
     clearCompositionOwner()
     hideCandidates()
     lekhNativeLog("composition.abandon reason=clientTransition")
@@ -2517,8 +2625,7 @@ open class LekhInputController: IMKInputController {
     client.insertText(text + suffix, replacementRange: replacementRange(for: client))
     engineClient.resetSession(sessionId)
     clearCompositionOwner()
-    candidateState.updateCandidates([], rawBuffer: "", modeLabel: nativeMode.menuLabel)
-    candidateSelectionExplicit = false
+    replaceCandidateState([], rawBuffer: "")
     hideCandidates()
     return true
   }

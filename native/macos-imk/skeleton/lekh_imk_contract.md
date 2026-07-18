@@ -12,8 +12,10 @@ The IMK bundle must be thin:
 
 The minimum native behavior is:
 
-- `swasthya ` commits `स्वास्थ्य `;
-- Enter/Space commit the selected composition;
+- `swasthya ` commits raw `swasthya ` unless the user explicitly accepts `स्वास्थ्य`;
+- Enter commits raw composition plus one newline, or an explicitly authorized candidate plus one newline;
+- Space commits raw composition plus one space, or an explicitly authorized candidate plus one space;
+- candidate authorization is a fresh physical-selection receipt bound to the exact candidate/surface generation, session, raw source, and host client; programmatic selection callbacks and asynchronous refreshes cannot reuse it;
 - Backspace edits composition;
 - Escape cancels marked text;
 - Command/Control/Option shortcuts pass through.
@@ -22,6 +24,9 @@ Hot path requirements:
 
 - binary lexicon ready target: under 5 ms from mmap open/header parse;
 - candidate lookup target: under 1 ms p99;
+- active composition is capped by the generated protocol contract at 128 UTF-16 code units;
+- exactly 128 units remain composable, while any append crossing that bound is rejected before candidate, proofread, or neural work;
+- a crossing grapheme or multi-character callback is never split: the prior raw composition is finalized (or its unmarked host text is retained), and the complete new callback returns to macOS once;
 - steady-state keyboard RSS target: under 25 MB;
 - no per-keystroke XPC, network, daemon launch, or synchronous file decoding;
 - any XPC/file-watching mechanism is allowed only for signed dictionary-pack hot-swap outside the key event path;

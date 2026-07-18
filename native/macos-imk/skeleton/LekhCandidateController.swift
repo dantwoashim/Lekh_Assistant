@@ -6,8 +6,8 @@ public struct LekhCandidateState: Equatable {
   public let displayItems: [LekhCandidateDisplayItem]
   /// `nil` is the intentional passive state: candidates are available, but the
   /// user has not navigated to or explicitly chosen one. A passive first row
-  /// must never look selected because delimiter behavior is engine-authorized
-  /// independently of visual list position.
+  /// must never look selected because a delimiter may commit a row only with a
+  /// fresh snapshot-bound physical-selection receipt.
   public let selectedIndex: Int?
 
   public static let empty = LekhCandidateState(candidates: [], displayItems: [], selectedIndex: nil)

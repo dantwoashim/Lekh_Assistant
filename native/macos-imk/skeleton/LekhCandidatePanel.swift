@@ -193,7 +193,6 @@ public final class LekhCandidatePanel: NSObject {
     let pageCount: Int
     let totalCount: Int
     let expanded: Bool
-    let passiveCommitText: String?
     let appearance: AccessibilityAppearance
   }
 
@@ -214,7 +213,6 @@ public final class LekhCandidatePanel: NSObject {
     selectedIndex: Int?,
     anchorRect: NSRect?,
     expanded: Bool,
-    passiveCommitText: String? = nil,
     announceSelection: Bool = false,
     onDragCancellation: @escaping () -> Void,
     onSelect: @escaping (Int, String) -> Void
@@ -251,7 +249,6 @@ public final class LekhCandidatePanel: NSObject {
       pageCount: pageCount,
       totalCount: items.count,
       expanded: expanded,
-      passiveCommitText: passiveCommitText,
       appearance: appearance
     )
 
@@ -268,7 +265,6 @@ public final class LekhCandidatePanel: NSObject {
         pageCount: pageCount,
         totalCount: items.count,
         expanded: expanded,
-        passiveCommitText: passiveCommitText,
         appearance: appearance
       )
       lastContentSignature = contentSignature
@@ -375,7 +371,6 @@ public final class LekhCandidatePanel: NSObject {
     pageCount: Int,
     totalCount: Int,
     expanded: Bool,
-    passiveCommitText: String?,
     appearance: AccessibilityAppearance
   ) -> NSView {
     let reduceTransparency = appearance.reduceTransparency
@@ -463,14 +458,9 @@ public final class LekhCandidatePanel: NSObject {
       )
     }
 
-    let hintText: String
-    if expanded {
-      hintText = LekhL10n.text("candidate.hint.active")
-    } else if let passiveCommitText, !passiveCommitText.isEmpty {
-      hintText = LekhL10n.text("candidate.hint.passiveAuto", passiveCommitText)
-    } else {
-      hintText = LekhL10n.text("candidate.hint.passive")
-    }
+    let hintText = expanded
+      ? LekhL10n.text("candidate.hint.active")
+      : LekhL10n.text("candidate.hint.passive")
     let hint = NSTextField(labelWithString: hintText)
     hint.font = .systemFont(ofSize: 10, weight: .medium)
     hint.textColor = increaseContrast ? .secondaryLabelColor : .tertiaryLabelColor

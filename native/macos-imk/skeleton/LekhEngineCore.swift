@@ -35,105 +35,6 @@ public enum LekhNativeTypingMode: String, CaseIterable {
   }
 }
 
-public enum LekhAutoCommitPolicyKind: String, Equatable {
-  case calibratedExactDeterministicToken = "calibrated-exact-deterministic-token"
-  case uniqueReversibleReverse = "unique-reversible-reverse"
-}
-
-/// Engine-owned evidence for a passive Space commit. Presence is authorization
-/// to commit this token, never authorization to personalize it. The raw source
-/// snapshot lets the controller reject stale metadata after any host/session
-/// transition.
-public struct LekhAutoCommitCandidate: Equatable {
-  public let text: String
-  public let sourceInput: String
-  public let policy: LekhAutoCommitPolicyKind
-  public let calibratedProbability: Double?
-  public let margin: Double?
-
-  public init(
-    text: String,
-    sourceInput: String,
-    policy: LekhAutoCommitPolicyKind,
-    calibratedProbability: Double? = nil,
-    margin: Double? = nil
-  ) {
-    self.text = text
-    self.sourceInput = sourceInput
-    self.policy = policy
-    self.calibratedProbability = calibratedProbability
-    self.margin = margin
-  }
-}
-
-public enum LekhNativeAutoCommitPolicy {
-  public static func calibratedForwardCandidate(
-    text: String,
-    sourceInput: String,
-    calibratedProbability: Double,
-    runnerUpProbability: Double,
-    isExactDeterministicToken: Bool,
-    isName: Bool = false,
-    isPhrase: Bool = false,
-    isProtected: Bool = false,
-    isPersonal: Bool = false,
-    isNeural: Bool = false
-  ) -> LekhAutoCommitCandidate? {
-    let margin = calibratedProbability - runnerUpProbability
-    guard isExactDeterministicToken,
-          !isName,
-          !isPhrase,
-          !isProtected,
-          !isPersonal,
-          !isNeural,
-          isSingleToken(sourceInput),
-          isSingleToken(text),
-          calibratedProbability >= 0.92,
-          margin + 1e-12 >= 0.12 else {
-      return nil
-    }
-    return LekhAutoCommitCandidate(
-      text: text,
-      sourceInput: sourceInput,
-      policy: .calibratedExactDeterministicToken,
-      calibratedProbability: calibratedProbability,
-      margin: margin
-    )
-  }
-
-  public static func uniqueReversibleReverseCandidate(
-    text: String,
-    sourceInput: String,
-    isUnique: Bool,
-    isReversible: Bool,
-    isName: Bool = false
-  ) -> LekhAutoCommitCandidate? {
-    guard isUnique,
-          isReversible,
-          !isName,
-          isSingleToken(sourceInput),
-          isSingleToken(text),
-          text.range(of: #"\p{Devanagari}"#, options: .regularExpression) == nil else {
-      return nil
-    }
-    return LekhAutoCommitCandidate(
-      text: text,
-      sourceInput: sourceInput,
-      policy: .uniqueReversibleReverse
-    )
-  }
-
-  private static func isSingleToken(_ value: String) -> Bool {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    return !trimmed.isEmpty &&
-      trimmed.count <= 64 &&
-      trimmed.unicodeScalars.allSatisfy {
-        !CharacterSet.whitespacesAndNewlines.contains($0) &&
-          !CharacterSet.controlCharacters.contains($0)
-      }
-  }
-}
-
 public protocol LekhEngineClient {
   func processKey(_ key: String, sessionId: String, mode: LekhNativeTypingMode) -> LekhInputDecision
   func normalizedPunctuation(_ key: String, mode: LekhNativeTypingMode) -> String
@@ -155,6 +56,123 @@ public protocol LekhEngineClient {
   func endSession(_ sessionId: String)
   func diagnosticsSummary() -> String
   func securityWarning() -> String?
+}
+
+/// The synchronous native typing path must remain bounded independently of
+/// candidate, proofread, or neural implementation details. Length is measured
+/// in UTF-16 code units because that is the coordinate system shared by IMK,
+/// NSString, and the generated native protocol contract.
+public enum LekhActiveCompositionWorkBound {
+  public static let maximumUTF16Length = LekhIPCProtocolContract.maximumCompositionLength
+
+  public static func wouldOverflow(current: String, appending input: String) -> Bool {
+    let currentLength = current.utf16.count
+    let inputLength = input.utf16.count
+    guard currentLength <= maximumUTF16Length else { return true }
+    return inputLength > maximumUTF16Length - currentLength
+  }
+}
+
+/// A callback is composition-safe only when every scalar belongs to the
+/// supported typed alphabets. Inspecting only the first scalar of an extended
+/// grapheme misclassifies keycap emoji such as `1️⃣` as a digit and lets an
+/// otherwise host-owned callback enter marked-text state.
+public enum LekhCompositionInputPolicy {
+  public static func isCompositionSafe(_ input: String) -> Bool {
+    !input.isEmpty && input.unicodeScalars.allSatisfy { scalar in
+      if scalar.value >= 0x0900 && scalar.value <= 0x097F {
+        return true
+      }
+      switch scalar.properties.generalCategory {
+      case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter,
+           .modifierLetter, .otherLetter,
+           .decimalNumber, .letterNumber, .otherNumber:
+        return true
+      default:
+        return false
+      }
+    }
+  }
+}
+
+/// Closed-world validator for the engine policy bundled into the native
+/// process. Swift's default Codable behavior ignores unknown JSON keys, which
+/// is unsafe for a release authority contract; this validator rejects every
+/// missing, additional, mistyped, or semantically incompatible field.
+public enum LekhEngineContractValidator {
+  public static func maximumVisibleIfValid(data: Data) -> Int? {
+    guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          exactKeys(root, ["schemaVersion", "modes", "candidatePolicy", "commitPolicy", "hotPathPolicy", "neuralPolicy"]),
+          strictInteger(root["schemaVersion"]) == 1,
+          let modes = root["modes"] as? [String],
+          modes.count == LekhNativeTypingMode.visibleModes.count,
+          Set(modes) == Set(LekhNativeTypingMode.visibleModes.map(\.rawValue)),
+          let candidate = root["candidatePolicy"] as? [String: Any],
+          exactKeys(candidate, ["maximumVisible", "singleTokenMayExpandToPhrase", "commitAuthority"]),
+          let maximumVisible = strictInteger(candidate["maximumVisible"]),
+          maximumVisible == 8,
+          strictBoolean(candidate["singleTokenMayExpandToPhrase"]) == false,
+          let authority = candidate["commitAuthority"] as? [String: Any],
+          exactKeys(authority, ["explicitUserSelection", "untrustedProgrammaticSelection", "experimentalExactSpaceAuthorization"]),
+          strictBoolean(authority["explicitUserSelection"]) == true,
+          strictBoolean(authority["untrustedProgrammaticSelection"]) == false,
+          let experiment = authority["experimentalExactSpaceAuthorization"] as? [String: Any],
+          exactKeys(experiment, ["policyId", "productionEligible", "activation"]),
+          experiment["policyId"] as? String == "lekh-experimental-passive-commit-v1",
+          strictBoolean(experiment["productionEligible"]) == false,
+          experiment["activation"] as? String == "opaque-test-build-capability-only",
+          let commit = root["commitPolicy"] as? [String: Any],
+          exactKeys(commit, ["Space", "Enter", "Tab", "Escape"]),
+          commit["Space"] as? String == "raw-with-space-unless-explicit-selection-or-test-only-experiment",
+          commit["Enter"] as? String == "raw-with-newline-unless-explicit-selection",
+          commit["Tab"] as? String == "pass-through-unless-explicit-selection",
+          commit["Escape"] as? String == "preserve-raw",
+          let hotPath = root["hotPathPolicy"] as? [String: Any],
+          exactKeys(hotPath, [
+            "networkAllowed", "synchronousXpcAllowed", "synchronousDatabaseAllowed",
+            "deterministicP99Milliseconds", "maximumCompositionUtf16CodeUnits"
+          ]),
+          strictBoolean(hotPath["networkAllowed"]) == false,
+          strictBoolean(hotPath["synchronousXpcAllowed"]) == false,
+          strictBoolean(hotPath["synchronousDatabaseAllowed"]) == false,
+          strictInteger(hotPath["deterministicP99Milliseconds"]) == 5,
+          strictInteger(hotPath["maximumCompositionUtf16CodeUnits"]) == LekhIPCProtocolContract.maximumCompositionLength,
+          let neural = root["neuralPolicy"] as? [String: Any],
+          exactKeys(neural, ["requiresOpenVocabulary", "requiresProductionEligibility", "requiresAsynchronousInvocation"]),
+          strictBoolean(neural["requiresOpenVocabulary"]) == true,
+          strictBoolean(neural["requiresProductionEligibility"]) == true,
+          strictBoolean(neural["requiresAsynchronousInvocation"]) == true else {
+      return nil
+    }
+    return maximumVisible
+  }
+
+  private static func exactKeys(_ value: [String: Any], _ expected: Set<String>) -> Bool {
+    Set(value.keys) == expected
+  }
+
+  /// JSONSerialization represents both JSON booleans and numbers as NSNumber.
+  /// Swift conditional casts intentionally coerce between those types, so a
+  /// security contract must inspect the Core Foundation identity first.
+  private static func strictBoolean(_ value: Any?) -> Bool? {
+    guard let number = value as? NSNumber,
+          CFGetTypeID(number) == CFBooleanGetTypeID() else {
+      return nil
+    }
+    return number.boolValue
+  }
+
+  private static func strictInteger(_ value: Any?) -> Int? {
+    guard let number = value as? NSNumber,
+          CFGetTypeID(number) != CFBooleanGetTypeID() else {
+      return nil
+    }
+    let integerObjectiveCTypes: Set<String> = ["c", "s", "i", "l", "q", "C", "S", "I", "L", "Q"]
+    guard integerObjectiveCTypes.contains(String(cString: number.objCType)) else {
+      return nil
+    }
+    return number.intValue
+  }
 }
 
 private enum NativeCandidateKind: UInt8 {
@@ -580,18 +598,6 @@ private enum LekhRomanizationTolerance {
 }
 
 public final class LekhNativeEngineClient: LekhEngineClient {
-  private struct EngineContract: Decodable {
-    struct CandidatePolicy: Decodable {
-      let maximumVisible: Int
-      let singleTokenMayExpandToPhrase: Bool
-      let programmaticSelectionMayCommit: Bool
-    }
-
-    let schemaVersion: Int
-    let modes: [String]
-    let candidatePolicy: CandidatePolicy
-  }
-
   private struct RuntimeSuggestionPack: Decodable {
     let words: [RuntimeSuggestionRow]
     let phrases: [RuntimeSuggestionRow]
@@ -748,17 +754,11 @@ public final class LekhNativeEngineClient: LekhEngineClient {
   public func processKey(_ key: String, sessionId: String, mode: LekhNativeTypingMode) -> LekhInputDecision {
     if key == " " {
       let rawBuffer = buffers[sessionId] ?? ""
-      let passiveAutoCommit = autoCommitCandidate(
-        rawBuffer: rawBuffer,
-        candidates: candidatesFor(rawBuffer, sessionId: sessionId, mode: mode),
-        mode: mode
-      )
-      let committedBody = passiveAutoCommit?.text ?? rawBuffer
       if !rawBuffer.isEmpty {
         observeCommit(
           sessionId: sessionId,
           rawBuffer: rawBuffer,
-          chosenOutput: committedBody,
+          chosenOutput: rawBuffer,
           allowPersonalization: false
         )
       }
@@ -766,7 +766,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       return LekhInputDecision(
         handled: true,
         markedText: nil,
-        committedText: rawBuffer.isEmpty ? " " : "\(committedBody) ",
+        committedText: rawBuffer.isEmpty ? " " : "\(rawBuffer) ",
         candidates: [],
         shouldCancel: false,
         shouldPassThrough: false
@@ -776,16 +776,10 @@ public final class LekhNativeEngineClient: LekhEngineClient {
     if key == "\r" || key == "\n" || key == "\t" {
       let rawBuffer = buffers[sessionId] ?? ""
       guard !rawBuffer.isEmpty else { return .passThrough }
-      let passiveAutoCommit = autoCommitCandidate(
-        rawBuffer: rawBuffer,
-        candidates: candidatesFor(rawBuffer, sessionId: sessionId, mode: mode),
-        mode: mode
-      )
-      let committed = passiveAutoCommit?.text ?? rawBuffer
       observeCommit(
         sessionId: sessionId,
         rawBuffer: rawBuffer,
-        chosenOutput: committed,
+        chosenOutput: rawBuffer,
         allowPersonalization: false
       )
       buffers[sessionId] = ""
@@ -796,7 +790,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       return LekhInputDecision(
         handled: true,
         markedText: nil,
-        committedText: "\(committed)\(suffix)",
+        committedText: "\(rawBuffer)\(suffix)",
         candidates: [],
         shouldCancel: false,
         shouldPassThrough: false
@@ -821,24 +815,36 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       return decision(for: buffers[sessionId] ?? "", sessionId: sessionId, mode: mode)
     }
 
-    if key.count == 1, shouldAppendToComposition(key) {
-      buffers[sessionId, default: ""].append(key)
-      return decision(for: buffers[sessionId] ?? "", sessionId: sessionId, mode: mode)
+    // Some documented Option-layer mappings are synthesized as a short
+    // Devanagari sequence (for example virama + ra). Admit the complete safe
+    // sequence atomically so the physical Option event is never partially
+    // consumed or returned to the host as an unrelated symbol.
+    if shouldAppendToComposition(key) {
+      let current = buffers[sessionId] ?? ""
+      // Reject before mutating the buffer or starting candidate, proofread, or
+      // neural work. The controller will finalize the prior raw composition
+      // and return this complete grapheme to the host; direct engine clients
+      // receive the same lossless pass-through signal.
+      guard !LekhActiveCompositionWorkBound.wouldOverflow(
+        current: current,
+        appending: key
+      ) else {
+        return .passThrough
+      }
+      let updated = current + key
+      buffers[sessionId] = updated
+      return decision(for: updated, sessionId: sessionId, mode: mode)
     }
 
-    if key.count == 1, let scalar = key.unicodeScalars.first, CharacterSet.punctuationCharacters.contains(scalar) {
+    if key.unicodeScalars.count == 1,
+       let scalar = key.unicodeScalars.first,
+       CharacterSet.punctuationCharacters.contains(scalar) {
       let rawBuffer = buffers[sessionId] ?? ""
-      let passiveAutoCommit = autoCommitCandidate(
-        rawBuffer: rawBuffer,
-        candidates: candidatesFor(rawBuffer, sessionId: sessionId, mode: mode),
-        mode: mode
-      )
-      let committed = passiveAutoCommit?.text ?? rawBuffer
-      if !committed.isEmpty {
+      if !rawBuffer.isEmpty {
         observeCommit(
           sessionId: sessionId,
           rawBuffer: rawBuffer,
-          chosenOutput: committed,
+          chosenOutput: rawBuffer,
           allowPersonalization: false
         )
       }
@@ -847,7 +853,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       return LekhInputDecision(
         handled: true,
         markedText: nil,
-        committedText: "\(committed)\(punctuation)",
+        committedText: "\(rawBuffer)\(punctuation)",
         candidates: [],
         shouldCancel: false,
         shouldPassThrough: false
@@ -933,11 +939,6 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       candidates: candidates,
       mode: mode
     )
-    let autoCommitCandidate = autoCommitCandidate(
-      rawBuffer: buffer,
-      candidates: candidates,
-      mode: mode
-    )
     let neuralTailEligible = isNeuralTailEligible(
       rawBuffer: rawBuffer,
       sessionId: sessionId,
@@ -949,7 +950,6 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       committedText: nil,
       candidates: candidates,
       inlineSuggestion: inlineSuggestion,
-      autoCommitCandidate: autoCommitCandidate,
       neuralTailEligible: neuralTailEligible,
       shouldCancel: false,
       shouldPassThrough: false
@@ -973,63 +973,6 @@ public final class LekhNativeEngineClient: LekhEngineClient {
       return false
     }
     return true
-  }
-
-  private func autoCommitCandidate(
-    rawBuffer: String,
-    candidates: [String],
-    mode: LekhNativeTypingMode
-  ) -> LekhAutoCommitCandidate? {
-    let source = rawBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-      .precomposedStringWithCanonicalMapping
-    guard !source.isEmpty, !Self.containsWhitespace(source) else { return nil }
-
-    switch mode {
-    case .romanizedTraditional:
-      // Runtime-pack confidence is a corpus heuristic, not a probability
-      // calibrated on a human-rated production holdout. Until that artifact
-      // exists, forward conversion is preview/explicit-accept only. It would
-      // be unsafe to relabel heuristic scores as the >= .92 authorization
-      // required by LekhNativeAutoCommitPolicy.
-      return nil
-
-    case .traditionalRomanized:
-      let reverse = reverseCandidatesSnapshot().exact[source] ?? []
-      guard reverse.count == 1,
-            let romanized = reverse.first,
-            candidates.first == romanized else {
-        return nil
-      }
-
-      // Reversibility is proven against the exact deterministic lexicon, not
-      // against a permissive phonetic romanizer. Every exact source row for
-      // this spelling must be the same non-name word and map back to the same
-      // Devanagari token. Names require explicit acceptance even when unique.
-      let forwardRows = runtimeRows(for: Self.normalize(romanized), exactOnly: true, limit: 64)
-      let canonicalOutputs = Set(
-        forwardRows
-          .filter { $0.kind == .word }
-          .map { $0.unicode.precomposedStringWithCanonicalMapping }
-      )
-      let hasExcludedRow = forwardRows.contains {
-        $0.kind != .word || $0.unicode.precomposedStringWithCanonicalMapping != source
-      }
-      guard !forwardRows.isEmpty,
-            !hasExcludedRow,
-            canonicalOutputs == [source] else {
-        return nil
-      }
-      return LekhNativeAutoCommitPolicy.uniqueReversibleReverseCandidate(
-        text: romanized,
-        sourceInput: source,
-        isUnique: true,
-        isReversible: true,
-        isName: false
-      )
-
-    case .romanizedRomanized, .traditionalTraditional:
-      return nil
-    }
   }
 
   private func previewText(
@@ -1539,10 +1482,7 @@ public final class LekhNativeEngineClient: LekhEngineClient {
   }
 
   private func shouldAppendToComposition(_ key: String) -> Bool {
-    guard key.count == 1, let scalar = key.unicodeScalars.first else { return false }
-    if CharacterSet.alphanumerics.contains(scalar) { return true }
-    if scalar.value >= 0x0900 && scalar.value <= 0x097F { return true }
-    return false
+    LekhCompositionInputPolicy.isCompositionSafe(key)
   }
 
   private static func buildReverseCandidates(rows: [NativeCandidateRow]) -> [String: [String]] {
@@ -1700,18 +1640,10 @@ public final class LekhNativeEngineClient: LekhEngineClient {
   private static func loadEngineContract() -> (maximumVisible: Int, warning: String?) {
     guard let url = Bundle.main.url(forResource: "lekh-engine-contract.v1", withExtension: "json"),
           let data = try? Data(contentsOf: url),
-          let contract = try? JSONDecoder().decode(EngineContract.self, from: data) else {
+          let maximumVisible = LekhEngineContractValidator.maximumVisibleIfValid(data: data) else {
       return (8, "engine-contract-fallback")
     }
-    let expectedModes = Set(LekhNativeTypingMode.visibleModes.map(\.rawValue))
-    guard contract.schemaVersion == 1,
-          Set(contract.modes) == expectedModes,
-          (1...8).contains(contract.candidatePolicy.maximumVisible),
-          !contract.candidatePolicy.singleTokenMayExpandToPhrase,
-          !contract.candidatePolicy.programmaticSelectionMayCommit else {
-      return (8, "engine-contract-rejected")
-    }
-    return (contract.candidatePolicy.maximumVisible, nil)
+    return (maximumVisible, nil)
   }
 
   private static func bucketKey(_ value: String) -> String {

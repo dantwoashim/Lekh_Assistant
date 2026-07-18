@@ -200,7 +200,9 @@ describe("native macOS companion", () => {
     expect(packager).toContain("public.app-category.utilities");
     expect(packager).not.toContain("electron-builder");
     expect(packager).toContain("presentForbiddenUsageKeys");
-    expect(packageJson).toContain('"package:macos": "node scripts/package-native-macos-companion.mjs --signed"');
+    expect(packageJson).toContain(
+      '"package:macos": "npm run check:experimental-passive-commit && npm run check:ipc-schema && node scripts/package-native-macos-companion.mjs --signed"'
+    );
     expect(packageJson).toContain('"recover:macos-companion-publication": "node scripts/package-native-macos-companion.mjs --recover-publication"');
     expect(packageJson).toContain('"check:macos-companion-package:production": "node scripts/check-native-macos-companion.mjs --production"');
     expect(packageJson).toContain('"check:macos-companion-package": "node scripts/check-native-macos-companion.mjs"');

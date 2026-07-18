@@ -8,6 +8,7 @@ const startedAt = performance.now();
 const sourceDir = join(ROOT, "native", "macos-imk", "skeleton");
 const reportPath = join(ROOT, "reports", "native-imk-privacy-security-report.json");
 const swiftFiles = collectFiles(sourceDir).filter((file) => file.endsWith(".swift"));
+const generatedProtocolFile = join(sourceDir, "LekhIPCProtocol.generated.swift");
 const violations = [];
 const requiredMarkers = [
   ["LekhInputController.swift", "IsSecureEventInputEnabled"],
@@ -54,6 +55,10 @@ for (const file of swiftFiles) {
     violations.push(`${relative(ROOT, file)}: diagnostic log must not include physical key codes`);
   }
   for (const forbidden of ["LekhXpcEngineClient", "EngineXPC", "makeProcessKeyStrokeRequest", "session.processKeyStroke"]) {
+    // The generated cross-platform protocol inventory names every wire method.
+    // A method identifier is data, not evidence that the IMK transports keys
+    // over XPC; every other Swift occurrence remains forbidden.
+    if (forbidden === "session.processKeyStroke" && file === generatedProtocolFile) continue;
     if (source.includes(forbidden)) {
       violations.push(`${relative(ROOT, file)}: forbidden per-keystroke XPC marker ${forbidden}`);
     }

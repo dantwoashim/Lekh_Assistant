@@ -134,6 +134,58 @@ private final class ProbeTextInputClient: NSObject, IMKTextInput {
   }
 }
 
+/// Keeps controller-boundary tests focused on IMK ownership and pass-through
+/// semantics without scheduling hundreds of AppKit surface renders from a
+/// manually constructed controller that has no backing IMKServer client.
+private final class CompositionBoundProbeEngineClient: LekhEngineClient {
+  private var buffer = ""
+
+  func prime(_ rawBuffer: String) {
+    buffer = rawBuffer
+  }
+
+  func processKey(_ key: String, sessionId: String, mode: LekhNativeTypingMode) -> LekhInputDecision {
+    guard !LekhActiveCompositionWorkBound.wouldOverflow(
+      current: buffer,
+      appending: key
+    ) else {
+      return .passThrough
+    }
+    buffer += key
+    return LekhInputDecision(
+      handled: true,
+      markedText: buffer,
+      committedText: nil,
+      candidates: [],
+      shouldCancel: false,
+      shouldPassThrough: false
+    )
+  }
+
+  func normalizedPunctuation(_ key: String, mode: LekhNativeTypingMode) -> String { key }
+  func hasComposition(sessionId: String) -> Bool { !buffer.isEmpty }
+  func rawBuffer(sessionId: String) -> String { buffer }
+
+  func observeCommit(
+    sessionId: String,
+    rawInput: String,
+    chosenOutput: String,
+    allowPersonalization: Bool
+  ) {}
+
+  func mayPersonalizeExplicitChoice(
+    rawInput: String,
+    chosenOutput: String,
+    mode: LekhNativeTypingMode
+  ) -> Bool { false }
+
+  func forgetCandidate(sessionId: String, chosenOutput: String) {}
+  func resetSession(_ sessionId: String) { buffer = "" }
+  func endSession(_ sessionId: String) { buffer = "" }
+  func diagnosticsSummary() -> String { "composition-bound-probe" }
+  func securityWarning() -> String? { nil }
+}
+
 @discardableResult
 private func require(_ condition: @autoclosure () -> Bool, _ message: String) -> Bool {
   if !condition() {
@@ -434,7 +486,6 @@ private func assertProtectedLatinTokensStayByteExactAndBypassNeuralTail() {
     require(decision.candidates.first == token, "Protected Latin token \(token) must keep raw as its primary candidate")
     require(decision.neuralTailEligible == false, "Protected Latin token \(token) must bypass the neural tail")
     require(decision.inlineSuggestion == nil, "Protected Latin token \(token) must not show a transliteration ghost")
-    require(decision.autoCommitCandidate == nil, "Protected Latin token \(token) must never auto-convert")
   }
 
   let exact = type(
@@ -501,7 +552,6 @@ private func assertTokenCompletionArtifactIsVerifiedAndExplicitOnly() {
     romanized.inlineSuggestion?.acceptedText == "dhanyabad",
     "R→R ghost acceptance must be an exact single-token extension"
   )
-  require(romanized.autoCommitCandidate == nil, "A completion score must never authorize auto-commit")
 
   let allCaps = type(
     "LEKH",
@@ -520,7 +570,6 @@ private func assertTokenCompletionArtifactIsVerifiedAndExplicitOnly() {
     allCaps.inlineSuggestion == LekhInlineSuggestion(suffix: "HARU", acceptedText: "LEKHHARU"),
     "ALL CAPS R→R input must receive a case-preserving suffix-only ghost"
   )
-  require(allCaps.autoCommitCandidate == nil, "A case-preserving completion must remain explicit-only")
 
   let leadingCapital = type(
     "Lekh",
@@ -722,134 +771,70 @@ private func assertTraditionalRomanizedModeShowsRomanizedTargetPreview() {
   )
 }
 
-private func assertPassiveSpaceAutoCommitPolicyIsEvidenceBounded() {
-  let boundary = LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-    text: "स्वास्थ्य",
-    sourceInput: "swasthya",
-    calibratedProbability: 0.92,
-    runnerUpProbability: 0.80,
-    isExactDeterministicToken: true
-  )
-  require(boundary != nil, "A calibrated exact token at both policy boundaries must be eligible")
-  require(boundary?.calibratedProbability == 0.92, "Eligibility metadata must retain calibrated probability")
-  require(abs((boundary?.margin ?? 0) - 0.12) < 0.000_001, "Eligibility metadata must retain the margin")
-
-  require(
-    LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-      text: "स्वास्थ्य",
-      sourceInput: "swasthya",
-      calibratedProbability: 0.919,
-      runnerUpProbability: 0.70,
-      isExactDeterministicToken: true
-    ) == nil,
-    "Forward auto-commit must reject probability below .92"
-  )
-  require(
-    LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-      text: "स्वास्थ्य",
-      sourceInput: "swasthya",
-      calibratedProbability: 0.95,
-      runnerUpProbability: 0.831,
-      isExactDeterministicToken: true
-    ) == nil,
-    "Forward auto-commit must reject margin below .12"
-  )
-
-  let excludedFlags: [(String, (Bool, Bool, Bool, Bool, Bool))] = [
-    ("name", (true, false, false, false, false)),
-    ("phrase", (false, true, false, false, false)),
-    ("protected", (false, false, true, false, false)),
-    ("personal", (false, false, false, true, false)),
-    ("neural", (false, false, false, false, true))
-  ]
-  for (label, flags) in excludedFlags {
-    require(
-      LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-        text: "स्वास्थ्य",
-        sourceInput: "swasthya",
-        calibratedProbability: 0.99,
-        runnerUpProbability: 0.10,
-        isExactDeterministicToken: true,
-        isName: flags.0,
-        isPhrase: flags.1,
-        isProtected: flags.2,
-        isPersonal: flags.3,
-        isNeural: flags.4
-      ) == nil,
-      "Forward auto-commit must reject a \(label) candidate"
-    )
-  }
-  require(
-    LekhNativeAutoCommitPolicy.calibratedForwardCandidate(
-      text: "स्वास्थ्य सेवा",
-      sourceInput: "swasthya",
-      calibratedProbability: 0.99,
-      runnerUpProbability: 0.10,
-      isExactDeterministicToken: true
-    ) == nil,
-    "Forward auto-commit must never expand one token into a phrase"
-  )
-
-  let forward = type(
+private func assertPassiveDelimitersRemainRawWithoutExplicitSelection() {
+  let forwardSession = "probe-forward-raw-space-\(UUID().uuidString)"
+  _ = type(
     "namaste",
     engine: behaviorEngine,
-    sessionId: "probe-forward-autocommit-\(UUID().uuidString)",
+    sessionId: forwardSession,
     mode: .romanizedTraditional
   )
   require(
-    forward.autoCommitCandidate == nil,
-    "Uncalibrated repository confidence must not authorize Romanized to Nepali Space conversion"
+    behaviorEngine.processKey(" ", sessionId: forwardSession, mode: .romanizedTraditional).committedText == "namaste ",
+    "Repository candidate confidence must not authorize Romanized to Nepali Space conversion"
   )
 
-  let reversibleSession = "probe-reversible-autocommit-\(UUID().uuidString)"
+  let reversibleSession = "probe-reversible-raw-space-\(UUID().uuidString)"
   let reversible = type(
     "हजुर",
     engine: behaviorEngine,
     sessionId: reversibleSession,
     mode: .traditionalRomanized
   )
-  require(reversible.autoCommitCandidate?.text == "hajur", "Unique reversible word हजुर must authorize hajur")
-  require(
-    reversible.autoCommitCandidate?.policy == .uniqueReversibleReverse,
-    "Reverse authorization must carry the unique reversible policy"
-  )
+  require(reversible.candidates.contains("hajur"), "Unique reversible word हजुर must remain an explicit candidate")
   let reversibleSpace = behaviorEngine.processKey(
     " ",
     sessionId: reversibleSession,
     mode: .traditionalRomanized
   )
-  require(reversibleSpace.committedText == "hajur ", "Passive Space must commit a proven unique reverse mapping")
+  require(reversibleSpace.committedText == "हजुर ", "Space must keep reverse-mode source text raw without explicit acceptance")
 
-  let ambiguous = type(
+  _ = type(
     "नेपाल",
     engine: behaviorEngine,
-    sessionId: "probe-ambiguous-autocommit-\(UUID().uuidString)",
+    sessionId: "probe-ambiguous-reverse-candidate-\(UUID().uuidString)",
     mode: .traditionalRomanized
   )
-  require(ambiguous.autoCommitCandidate == nil, "Ambiguous reverse aliases nepal/nepaal must require explicit acceptance")
 
-  let nameOnly = type(
+  _ = type(
     "तामाङ",
     engine: behaviorEngine,
-    sessionId: "probe-name-autocommit-\(UUID().uuidString)",
+    sessionId: "probe-name-reverse-candidate-\(UUID().uuidString)",
     mode: .traditionalRomanized
   )
-  require(nameOnly.autoCommitCandidate == nil, "A name-only reverse mapping must require explicit acceptance")
 
-  let romanizedRaw = type(
+  let romanizedSession = "probe-romanized-raw-space-\(UUID().uuidString)"
+  _ = type(
     "lekh",
     engine: behaviorEngine,
-    sessionId: "probe-romanized-raw-autocommit-\(UUID().uuidString)",
+    sessionId: romanizedSession,
     mode: .romanizedRomanized
   )
-  let traditionalRaw = type(
+  let traditionalSession = "probe-traditional-raw-space-\(UUID().uuidString)"
+  _ = type(
     "लेख",
     engine: behaviorEngine,
-    sessionId: "probe-traditional-raw-autocommit-\(UUID().uuidString)",
+    sessionId: traditionalSession,
     mode: .traditionalTraditional
   )
-  require(romanizedRaw.autoCommitCandidate == nil, "Romanized to Romanized Space must remain raw")
-  require(traditionalRaw.autoCommitCandidate == nil, "Traditional to Traditional Space must remain raw")
+  require(
+    behaviorEngine.processKey(" ", sessionId: romanizedSession, mode: .romanizedRomanized).committedText == "lekh ",
+    "Romanized to Romanized Space must remain raw"
+  )
+  require(
+    behaviorEngine.processKey(" ", sessionId: traditionalSession, mode: .traditionalTraditional).committedText == "लेख ",
+    "Traditional to Traditional Space must remain raw"
+  )
 }
 
 private func assertEscapeCancelsAndBackspaceEditsComposition() {
@@ -1325,6 +1310,35 @@ private func assertInputTextBatchesAndOptionLayerAreLossless() {
     "A mixed batch must finalize only the prior raw composition and consume none of the new callback"
   )
 
+  let keycapController = LekhInputController(engineClient: LekhNativeEngineClient())
+  let keycapClient = ProbeTextInputClient()
+  let keycap = "1️⃣"
+  require(
+    !keycapController.inputText(keycap, client: keycapClient),
+    "A keycap emoji must pass through even though its first scalar is a digit"
+  )
+  require(
+    keycapClient.markedTextMutations.isEmpty && keycapClient.committedTextMutations.isEmpty &&
+      (keycapController.composedString(keycapClient) as? String) == "",
+    "A host-owned keycap must not start or mutate Lekh composition"
+  )
+  require(
+    keycapController.inputText("ab", client: keycapClient),
+    "The keycap boundary probe must establish a prior raw composition"
+  )
+  let markedBeforeKeycap = keycapClient.markedTextMutations.count
+  require(
+    !keycapController.inputText(keycap, client: keycapClient),
+    "A keycap following composition must remain wholly owned by the host"
+  )
+  require(
+    keycapClient.markedTextMutations.count == markedBeforeKeycap &&
+      keycapClient.committedTextMutations.last == "ab" &&
+      keycapClient.text == "ab" &&
+      (keycapController.composedString(keycapClient) as? String) == "",
+    "A keycap must finalize only the exact prior raw token and consume none of itself"
+  )
+
   UserDefaults.standard.set(LekhNativeTypingMode.traditionalTraditional.rawValue, forKey: modeKey)
   UserDefaults.standard.synchronize()
   let optionController = LekhInputController(engineClient: LekhNativeEngineClient())
@@ -1348,7 +1362,365 @@ private func assertInputTextBatchesAndOptionLayerAreLossless() {
     "Option-H must produce exactly the explicit halanta mapping"
   )
   batchController.resetSession()
+  keycapController.resetSession()
   optionController.resetSession()
+}
+
+private func assertControllerCloseRestoresRawSource() {
+  let modeKey = LekhNativePreferences.Keys.nativeTypingMode
+  let previousMode = UserDefaults.standard.object(forKey: modeKey)
+  let previousInlineComposition = ProcessInfo.processInfo.environment["LEKH_IMK_INLINE_COMPOSITION"]
+  defer {
+    if let previousMode {
+      UserDefaults.standard.set(previousMode, forKey: modeKey)
+    } else {
+      UserDefaults.standard.removeObject(forKey: modeKey)
+    }
+    if let previousInlineComposition {
+      setenv("LEKH_IMK_INLINE_COMPOSITION", previousInlineComposition, 1)
+    } else {
+      unsetenv("LEKH_IMK_INLINE_COMPOSITION")
+    }
+    UserDefaults.standard.synchronize()
+  }
+
+  UserDefaults.standard.set(LekhNativeTypingMode.romanizedTraditional.rawValue, forKey: modeKey)
+  UserDefaults.standard.synchronize()
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "1", 1)
+  let inlineController = LekhInputController(engineClient: LekhNativeEngineClient())
+  let inlineClient = ProbeTextInputClient()
+  let raw = "swasthya"
+  require(
+    inlineController.inputText(raw, client: inlineClient),
+    "The controller-close probe must establish marked composition"
+  )
+  require(
+    inlineClient.markedRange().location != NSNotFound,
+    "The controller-close probe must own a live marked range"
+  )
+  inlineController.inputControllerWillClose()
+  require(
+    inlineClient.committedTextMutations.last == raw &&
+      inlineClient.text == raw &&
+      inlineClient.markedRange().location == NSNotFound &&
+      (inlineController.composedString(inlineClient) as? String) == "" &&
+      inlineController.candidates(inlineClient).isEmpty,
+    "Closing an inline controller must restore exact raw source and clear every local surface"
+  )
+
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "0", 1)
+  let unmarkedController = LekhInputController(engineClient: LekhNativeEngineClient())
+  let unmarkedClient = ProbeTextInputClient()
+  require(
+    unmarkedController.inputText(raw, client: unmarkedClient),
+    "The unmarked controller-close probe must insert raw host text"
+  )
+  let commitCountBeforeClose = unmarkedClient.committedTextMutations.count
+  unmarkedController.inputControllerWillClose()
+  require(
+    unmarkedClient.text == raw &&
+      unmarkedClient.committedTextMutations.count == commitCountBeforeClose &&
+      (unmarkedController.composedString(unmarkedClient) as? String) == "" &&
+      unmarkedController.candidates(unmarkedClient).isEmpty,
+    "Closing an unmarked controller must clear only local state without duplicating raw text"
+  )
+}
+
+private func assertMultipleNativeControllersRemainIndependent() {
+  let modeKey = LekhNativePreferences.Keys.nativeTypingMode
+  let previousMode = UserDefaults.standard.object(forKey: modeKey)
+  let previousInlineComposition = ProcessInfo.processInfo.environment["LEKH_IMK_INLINE_COMPOSITION"]
+  defer {
+    if let previousMode {
+      UserDefaults.standard.set(previousMode, forKey: modeKey)
+    } else {
+      UserDefaults.standard.removeObject(forKey: modeKey)
+    }
+    if let previousInlineComposition {
+      setenv("LEKH_IMK_INLINE_COMPOSITION", previousInlineComposition, 1)
+    } else {
+      unsetenv("LEKH_IMK_INLINE_COMPOSITION")
+    }
+    UserDefaults.standard.synchronize()
+  }
+
+  UserDefaults.standard.set(LekhNativeTypingMode.romanizedTraditional.rawValue, forKey: modeKey)
+  UserDefaults.standard.synchronize()
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "1", 1)
+
+  let controllers = (0..<3).map { _ in
+    LekhInputController(engineClient: LekhNativeEngineClient())
+  }
+  let clients = (0..<3).map { _ in ProbeTextInputClient() }
+  let rawInputs = ["lekh", "swasthya", "karyalaya"]
+  for index in controllers.indices {
+    require(
+      controllers[index].inputText(rawInputs[index], client: clients[index]),
+      "Every ordinary native controller must accept its own composition"
+    )
+  }
+  for index in controllers.indices {
+    require(
+      (controllers[index].composedString(clients[index]) as? String) == rawInputs[index],
+      "Native controller sessions must not share or overwrite raw composition"
+    )
+  }
+
+  controllers[0].inputControllerWillClose()
+  require(
+    clients[0].text == rawInputs[0] &&
+      (controllers[0].composedString(clients[0]) as? String) == "",
+    "Closing one native controller must restore only its own raw source"
+  )
+  for index in 1..<controllers.count {
+    require(
+      (controllers[index].composedString(clients[index]) as? String) == rawInputs[index],
+      "Closing one controller must not end another controller's composition"
+    )
+    controllers[index].inputControllerWillClose()
+    require(
+      clients[index].text == rawInputs[index],
+      "Every independently closed controller must restore its exact raw source"
+    )
+  }
+}
+
+private func assertActiveCompositionWorkBoundIsLossless() {
+  let maximum = LekhIPCProtocolContract.maximumCompositionLength
+  let rawAtLimit = String(repeating: "a", count: maximum)
+
+  let engine = LekhNativeEngineClient()
+  let exactSession = "probe-composition-bound-exact-\(UUID().uuidString)"
+  let exact = type(
+    rawAtLimit,
+    engine: engine,
+    sessionId: exactSession,
+    mode: .romanizedTraditional
+  )
+  require(exact.handled && !exact.shouldPassThrough, "Exactly 128 UTF-16 units must remain an active composition")
+  require(
+    engine.rawBuffer(sessionId: exactSession) == rawAtLimit &&
+      engine.rawBuffer(sessionId: exactSession).utf16.count == maximum,
+    "The exact-bound engine composition must preserve every raw input unit"
+  )
+
+  let overflow = engine.processKey(
+    "b",
+    sessionId: exactSession,
+    mode: .romanizedTraditional
+  )
+  require(!overflow.handled && overflow.shouldPassThrough, "The 129th UTF-16 unit must fail open")
+  require(
+    overflow.markedText == nil && overflow.committedText == nil &&
+      overflow.candidates.isEmpty && overflow.inlineSuggestion == nil &&
+      !overflow.neuralTailEligible,
+    "Overflow must return before candidate, proofread, inline, or neural work"
+  )
+  require(
+    engine.rawBuffer(sessionId: exactSession) == rawAtLimit,
+    "Overflow must not mutate the exact-bound raw engine composition"
+  )
+
+  let devanagariGrapheme = "कि"
+  let graphemeExactSession = "probe-composition-grapheme-exact-\(UUID().uuidString)"
+  _ = type(
+    String(repeating: "a", count: maximum - devanagariGrapheme.utf16.count),
+    engine: engine,
+    sessionId: graphemeExactSession,
+    mode: .traditionalTraditional
+  )
+  let exactGrapheme = engine.processKey(
+    devanagariGrapheme,
+    sessionId: graphemeExactSession,
+    mode: .traditionalTraditional
+  )
+  require(exactGrapheme.handled, "A complete grapheme ending at the exact UTF-16 bound must be handled")
+  require(
+    engine.rawBuffer(sessionId: graphemeExactSession).hasSuffix(devanagariGrapheme) &&
+      engine.rawBuffer(sessionId: graphemeExactSession).utf16.count == maximum,
+    "The exact-bound path must append the complete multi-unit grapheme"
+  )
+  _ = engine.processKey(
+    "\u{7f}",
+    sessionId: graphemeExactSession,
+    mode: .traditionalTraditional
+  )
+  require(
+    engine.rawBuffer(sessionId: graphemeExactSession).utf16.count == maximum - devanagariGrapheme.utf16.count,
+    "Backspace after an exact-bound append must remove the complete grapheme"
+  )
+
+  let graphemeOverflowSession = "probe-composition-grapheme-overflow-\(UUID().uuidString)"
+  let beforeOverflowGrapheme = String(repeating: "a", count: maximum - 1)
+  _ = type(
+    beforeOverflowGrapheme,
+    engine: engine,
+    sessionId: graphemeOverflowSession,
+    mode: .traditionalTraditional
+  )
+  let graphemeOverflow = engine.processKey(
+    devanagariGrapheme,
+    sessionId: graphemeOverflowSession,
+    mode: .traditionalTraditional
+  )
+  require(
+    !graphemeOverflow.handled && graphemeOverflow.shouldPassThrough &&
+      engine.rawBuffer(sessionId: graphemeOverflowSession) == beforeOverflowGrapheme,
+    "A grapheme crossing the bound must fail open as one indivisible host input"
+  )
+
+  let modeKey = LekhNativePreferences.Keys.nativeTypingMode
+  let previousMode = UserDefaults.standard.object(forKey: modeKey)
+  let previousInlineComposition = ProcessInfo.processInfo.environment["LEKH_IMK_INLINE_COMPOSITION"]
+  defer {
+    if let previousMode {
+      UserDefaults.standard.set(previousMode, forKey: modeKey)
+    } else {
+      UserDefaults.standard.removeObject(forKey: modeKey)
+    }
+    if let previousInlineComposition {
+      setenv("LEKH_IMK_INLINE_COMPOSITION", previousInlineComposition, 1)
+    } else {
+      unsetenv("LEKH_IMK_INLINE_COMPOSITION")
+    }
+    UserDefaults.standard.synchronize()
+  }
+
+  UserDefaults.standard.set(LekhNativeTypingMode.romanizedTraditional.rawValue, forKey: modeKey)
+  UserDefaults.standard.synchronize()
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "1", 1)
+
+  let inlineEngine = CompositionBoundProbeEngineClient()
+  let inlineController = LekhInputController(engineClient: inlineEngine)
+  let inlineClient = ProbeTextInputClient()
+  require(
+    inlineController.inputText("a", client: inlineClient),
+    "The inline bound probe must establish client ownership"
+  )
+  inlineEngine.prime(String(repeating: "a", count: maximum - 1))
+  require(
+    inlineController.inputText("a", client: inlineClient),
+    "The IMK controller must accept input ending exactly at 128 UTF-16 units"
+  )
+  let inlineMarkedMutationCount = inlineClient.markedTextMutations.count
+  require(
+    (inlineController.composedString(inlineClient) as? String) == rawAtLimit,
+    "The inline controller must retain the exact-bound raw composition"
+  )
+  require(
+    !inlineController.inputText("b", client: inlineClient),
+    "The inline controller must return the 129th unit to the host"
+  )
+  require(
+    inlineClient.markedTextMutations.count == inlineMarkedMutationCount &&
+      inlineClient.committedTextMutations.last == rawAtLimit &&
+      inlineClient.text == rawAtLimit &&
+      (inlineController.composedString(inlineClient) as? String) == "",
+    "Inline overflow must commit only the prior raw composition and consume none of the new callback"
+  )
+
+  let batchEngine = CompositionBoundProbeEngineClient()
+  let batchController = LekhInputController(engineClient: batchEngine)
+  let batchClient = ProbeTextInputClient()
+  let prefix = String(repeating: "a", count: maximum - 1)
+  require(batchController.inputText("a", client: batchClient), "The overflow batch probe must establish client ownership")
+  batchEngine.prime(prefix)
+  let batchMarkedMutationCount = batchClient.markedTextMutations.count
+  require(
+    !batchController.inputText("bc", client: batchClient),
+    "A safe-looking batch crossing the bound must be returned to the host atomically"
+  )
+  require(
+    batchClient.markedTextMutations.count == batchMarkedMutationCount &&
+      batchClient.committedTextMutations.last == prefix &&
+      batchClient.text == prefix &&
+      (batchController.composedString(batchClient) as? String) == "",
+    "A crossing batch must consume neither its admissible prefix nor its overflowing suffix"
+  )
+
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "0", 1)
+  let failOpenController = LekhInputController(engineClient: LekhNativeEngineClient())
+  let failOpenClient = ProbeTextInputClient()
+  require(
+    failOpenController.inputText(rawAtLimit, client: failOpenClient),
+    "The unmarked fail-open route must admit exactly 128 raw UTF-16 units"
+  )
+  let failOpenMutationCount = failOpenClient.committedTextMutations.count
+  require(
+    failOpenClient.text == rawAtLimit &&
+      (failOpenController.composedString(failOpenClient) as? String) == rawAtLimit,
+    "The unmarked route must preserve its exact-bound raw host text and engine snapshot"
+  )
+  require(
+    !failOpenController.inputText("b", client: failOpenClient),
+    "The unmarked route must return the 129th unit to the host"
+  )
+  require(
+    failOpenClient.committedTextMutations.count == failOpenMutationCount &&
+      failOpenClient.text == rawAtLimit &&
+      (failOpenController.composedString(failOpenClient) as? String) == "" &&
+      failOpenController.candidates(failOpenClient).isEmpty,
+    "Unmarked overflow must reset only local composition state and leave all host text untouched"
+  )
+
+  UserDefaults.standard.set(LekhNativeTypingMode.traditionalTraditional.rawValue, forKey: modeKey)
+  UserDefaults.standard.synchronize()
+  let optionFlags = Int(NSEvent.ModifierFlags.option.rawValue)
+  let mappedOptionText = "\u{094D}र"
+
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "1", 1)
+  let inlineOptionEngine = CompositionBoundProbeEngineClient()
+  let inlineOptionController = LekhInputController(engineClient: inlineOptionEngine)
+  let inlineOptionClient = ProbeTextInputClient()
+  require(
+    inlineOptionController.inputText("a", client: inlineOptionClient),
+    "The inline Option-bound probe must establish client ownership"
+  )
+  inlineOptionEngine.prime(String(repeating: "a", count: maximum - 1))
+  require(
+    inlineOptionController.inputText("a", client: inlineOptionClient),
+    "The inline Option-bound probe must reach the exact bound"
+  )
+  require(
+    inlineOptionController.inputText("®", key: 15, modifiers: optionFlags, client: inlineOptionClient),
+    "An overflowing mapped Option event must be consumed after restarting composition"
+  )
+  require(
+    inlineOptionClient.committedTextMutations.last == rawAtLimit &&
+      inlineOptionClient.markedTextMutations.last == mappedOptionText &&
+      inlineOptionClient.text == rawAtLimit + mappedOptionText &&
+      (inlineOptionController.composedString(inlineOptionClient) as? String) == mappedOptionText,
+    "Inline Option overflow must commit the exact prior raw token and start the synthesized mapping once"
+  )
+
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "0", 1)
+  let unmarkedOptionController = LekhInputController(engineClient: LekhNativeEngineClient())
+  let unmarkedOptionClient = ProbeTextInputClient()
+  require(
+    unmarkedOptionController.inputText(rawAtLimit, client: unmarkedOptionClient),
+    "The unmarked Option-bound probe must retain the exact-bound host text"
+  )
+  let unmarkedCommitCount = unmarkedOptionClient.committedTextMutations.count
+  require(
+    unmarkedOptionController.inputText("®", key: 15, modifiers: optionFlags, client: unmarkedOptionClient),
+    "An unmarked overflowing Option mapping must be consumed by Lekh"
+  )
+  require(
+    unmarkedOptionClient.committedTextMutations.count == unmarkedCommitCount &&
+      unmarkedOptionClient.text == rawAtLimit + mappedOptionText &&
+      unmarkedOptionClient.markedTextMutations.last == mappedOptionText &&
+      (unmarkedOptionController.composedString(unmarkedOptionClient) as? String) == mappedOptionText,
+    "Unmarked Option overflow must preserve old host text and synthesize the mapped grapheme exactly once"
+  )
+
+  inlineController.resetSession()
+  batchController.resetSession()
+  failOpenController.resetSession()
+  inlineOptionController.resetSession()
+  unmarkedOptionController.resetSession()
+  engine.endSession(exactSession)
+  engine.endSession(graphemeExactSession)
+  engine.endSession(graphemeOverflowSession)
 }
 
 private func assertDeterministicHotPathP99() {
@@ -1383,7 +1755,7 @@ assertPrimaryModeEmitsSafeTargetScriptGhostCompletion()
 assertTokenCompletionArtifactIsVerifiedAndExplicitOnly()
 assertCompletionAcceptanceCannotPoisonExactPersonalization()
 assertTraditionalRomanizedModeShowsRomanizedTargetPreview()
-assertPassiveSpaceAutoCommitPolicyIsEvidenceBounded()
+assertPassiveDelimitersRemainRawWithoutExplicitSelection()
 assertEscapeCancelsAndBackspaceEditsComposition()
 assertCompositionOwnershipAndHostPassThroughSafety()
 assertPersonalizationResetClearsLiveRankingState()
@@ -1392,6 +1764,9 @@ assertSharedTokenPackNativeConformance()
 assertCandidateInteractionStartsPassiveAndPagesSafely()
 assertEveryControllerCallbackFailsOpenUnderSecureInput()
 assertInputTextBatchesAndOptionLayerAreLossless()
+assertControllerCloseRestoresRawSource()
+assertMultipleNativeControllersRemainIndependent()
+assertActiveCompositionWorkBoundIsLossless()
 assertDeterministicHotPathP99()
 dumpCandidateDiagnosticsIfRequested()
 benchmarkNeuralServiceIfRequested()

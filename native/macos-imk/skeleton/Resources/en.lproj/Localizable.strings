@@ -28,7 +28,6 @@
 "candidate.count" = "%d suggestions";
 "candidate.page" = "Page %d of %d";
 "candidate.hint.passive" = "↓ More choices · ⌥1–⌥3 choose";
-"candidate.hint.passiveAuto" = "Space inserts %@ · ↓ more choices";
 "candidate.hint.active" = "↑↓ Move · Return choose · Esc raw text";
 "inline.preview.accessibility" = "Inline completion preview";
 "inline.preview.suggestedEnding" = "Suggested ending: %@";

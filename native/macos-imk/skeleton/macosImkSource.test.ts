@@ -30,6 +30,37 @@ describe("macOS IMK proof target source", () => {
     expect(source).toContain("return .passThrough");
   });
 
+  it("enforces the generated active-composition bound before expensive native work", () => {
+    const generated = readFileSync(join(root, "native/macos-imk/skeleton/LekhIPCProtocol.generated.swift"), "utf8");
+    const engine = readFileSync(join(root, "native/macos-imk/skeleton/LekhEngineCore.swift"), "utf8");
+    const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
+    const behaviorProbe = readFileSync(
+      join(root, "native/macos-imk/skeleton/Tests/LekhInputMethodBehaviorProbe/main.swift"),
+      "utf8"
+    );
+
+    expect(generated).toContain("public static let maximumCompositionLength = 128");
+    expect(engine).toContain("LekhIPCProtocolContract.maximumCompositionLength");
+    const boundGuard = engine.indexOf("guard !LekhActiveCompositionWorkBound.wouldOverflow(");
+    const candidateWork = engine.indexOf("return decision(for: updated", boundGuard);
+    expect(boundGuard).toBeGreaterThan(-1);
+    expect(candidateWork).toBeGreaterThan(boundGuard);
+    expect(controller).toContain("passThroughIfCompositionWouldOverflow(");
+    expect(controller).toContain('route: "inputText.batch"');
+    expect(controller).toContain('reason=compositionLimit');
+    expect(controller).toContain('event.restart route=traditional.optionLayer reason=compositionLimit');
+    expect(engine).toContain("public enum LekhCompositionInputPolicy");
+    expect(engine).toContain("input.unicodeScalars.allSatisfy");
+    expect(controller).toContain("LekhCompositionInputPolicy.isCompositionSafe(string)");
+    expect(controller).toContain("return !LekhCompositionInputPolicy.isCompositionSafe(key)");
+    expect(behaviorProbe).toContain("assertActiveCompositionWorkBoundIsLossless()");
+    expect(behaviorProbe).toContain("A keycap emoji must pass through even though its first scalar is a digit");
+    expect(behaviorProbe).toContain("A grapheme crossing the bound must fail open as one indivisible host input");
+    expect(behaviorProbe).toContain("A crossing batch must consume neither its admissible prefix nor its overflowing suffix");
+    expect(behaviorProbe).toContain("Inline Option overflow must commit the exact prior raw token and start the synthesized mapping once");
+    expect(behaviorProbe).toContain("Unmarked Option overflow must preserve old host text and synthesize the mapped grapheme exactly once");
+  });
+
   it("loads the packaged native runtime suggestion pack for flagship Romanized typing", () => {
     const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
     const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhEngineCore.swift"), "utf8");
@@ -244,12 +275,14 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("attributes?.values.lazy.compactMap { $0 as? NSFont }.first");
     expect(controller).toContain("hostFont: hostFont");
     expect(controller).not.toContain("attributes(forCharacterIndex: selectedRange.location");
-    expect(selectionChangedBlock).toContain("candidateState.select(index: index)");
-    expect(selectionChangedBlock).toContain("refreshCandidatePanel()");
+    expect(selectionChangedBlock).toContain("_ = candidateString");
+    expect(selectionChangedBlock).not.toContain("candidateState.select(");
+    expect(selectionChangedBlock).not.toContain("refreshCandidatePanel(");
     expect(selectionChangedBlock).not.toContain("setMarkedText");
     expect(selectionChangedBlock).not.toContain("visiblePreviewText");
-    expect(candidateSelectedBlock).toContain("guard candidateSelectionExplicit");
-    expect(candidateSelectedBlock).toContain("candidateState.currentState().candidates.contains(text)");
+    expect(candidateSelectedBlock).toContain("LekhPhysicalCandidateEventPolicy.acceptsMouseSelection(");
+    expect(candidateSelectedBlock).toContain("candidates.firstIndex(of: text)");
+    expect(candidateSelectedBlock).toContain("authorizeCurrentCandidate(text, client: client)");
     expect(modifierPassThroughBlock).not.toContain("commitCurrentComposition");
     expect(controller).toContain("showModePicker()");
     expect(controller).not.toContain("apply(modeMenuDecision()");
@@ -296,6 +329,18 @@ describe("macOS IMK proof target source", () => {
       controller.indexOf("private func commitInlineSuggestion"),
       controller.indexOf("private func commitCandidateText")
     );
+    const closeBlock = controller.slice(
+      controller.indexOf("open override func inputControllerWillClose()"),
+      controller.indexOf("open override func hidePalettes()")
+    );
+    const announcementBlock = controller.slice(
+      controller.indexOf("private func scheduleInlineSuggestionAnnouncement("),
+      controller.indexOf("private func visibleInlineSuggestion(")
+    );
+    const behaviorProbe = readFileSync(
+      join(root, "native/macos-imk/skeleton/Tests/LekhInputMethodBehaviorProbe/main.swift"),
+      "utf8"
+    );
 
     expect(runtimeHealth).toContain("var lastGhostOfferedAt: Date?");
     expect(runtimeHealth).toContain("var lastGhostAcceptedAt: Date?");
@@ -330,6 +375,16 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("override func inputControllerWillClose()")
     expect(controller).toContain("deactivateRuntimeEvidence()")
     expect(controller).toContain("Secure Event Input can turn on after a nonsecure key scheduled this");
+    expect(closeBlock).toContain("defer {");
+    expect(closeBlock).toContain('commitRawComposition(client: owner, suffix: "")');
+    expect(controller).not.toContain("self.client()");
+    expect(announcementBlock).toContain("guard !self.secureInputActive() else");
+    expect(announcementBlock).toContain("self.clearStateForSecureInput(");
+    expect(announcementBlock).toContain("client: self.compositionOwnerObject as? IMKTextInput");
+    expect(behaviorProbe).toContain("assertControllerCloseRestoresRawSource()");
+    expect(behaviorProbe).toContain("Closing an inline controller must restore exact raw source");
+    expect(behaviorProbe).toContain("assertMultipleNativeControllersRemainIndependent()");
+    expect(behaviorProbe).toContain("Closing one controller must not end another controller's composition");
     expect(secureBlock).not.toContain("LekhRuntimeHealth.markGhost");
     expect(acceptanceBlock.indexOf("let dispatched = commitCandidateText")).toBeLessThan(
       acceptanceBlock.indexOf("recordGhostAcceptanceHandled()")
@@ -346,12 +401,12 @@ describe("macOS IMK proof target source", () => {
     expect(candidateController).toContain("(0..<candidateCount).contains(selectedIndex)");
     expect(controller).toContain("let candidateSurfaceIsVisible = isCurrentCandidateSurface(for: client)");
     expect(controller).toContain("let explicitShortcut = candidateSurfaceIsVisible &&");
-    expect(controller).toContain("candidateSelectionExplicit || modifiers.contains(.option)");
+    expect(controller).toContain("candidateBrowsingActive || modifiers.contains(.option)");
     expect(controller).toContain("candidateState.indexForShortcut");
-    expect(controller).toContain("guard candidateSelectionExplicit else");
+    expect(controller).toContain("guard candidateBrowsingActive else");
     expect(controller).toContain("pendingInlineSuggestion");
     expect(controller).toContain("activeInlineSuggestion = ghostIsVisible ? suggestion : nil");
-    expect(controller).toContain("if !candidateSelectionExplicit, candidates.count < 2");
+    expect(controller).toContain("if !candidateBrowsingActive, candidates.count < 2");
     expect(controller).toContain('surface.candidates suppressed=singlePassive');
     expect(controller).toContain("private static let compositionSurfaceRetryDelays");
     expect(controller).toContain("Self.compositionSurfaceRetryDelays.indices.contains(attempt + 1)");
@@ -367,14 +422,21 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("clientIdentifier: ObjectIdentifier");
     expect(controller).toContain("private func isCurrentCandidateSurface(for client: IMKTextInput)");
     expect(controller).toContain("private func revokeCandidateAcceptance()");
+    expect(controller).toContain("public struct LekhCandidateAcceptanceReceipt: Equatable");
+    expect(controller).toContain("private var candidateGeneration = 0");
+    expect(controller).toContain("private func replaceCandidateState(_ candidates: [String], rawBuffer: String)");
+    expect(controller).toContain("private func authorizeCurrentCandidate(");
+    expect(controller).toContain("private func authorizedSelectedCandidate(for client: IMKTextInput)");
+    expect(controller).toContain("candidateAcceptanceReceipt = nil");
+    expect(controller.match(/candidateState\.updateCandidates/g)).toHaveLength(1);
     expect(controller).toContain("candidateState.clearSelection()");
-    expect(controller).toContain("guard refreshCandidatePanel(announceSelection: true).isVisible else");
+    expect(controller).toContain("refreshCandidatePanel(announceSelection: true).isVisible,");
     expect(controller).toContain("return .visibleCustom");
     expect(controller).toContain("return .visibleSystem");
     expect(candidatePanel).toContain("return isVisible");
     expect(candidatePanel).toContain("expanded: Bool");
-    expect(candidatePanel).toContain("passiveCommitText: String?");
-    expect(candidatePanel).toContain('LekhL10n.text("candidate.hint.passiveAuto", passiveCommitText)');
+    expect(candidatePanel).not.toContain("passiveCommitText");
+    expect(candidatePanel).not.toContain("candidate.hint.passiveAuto");
     expect(candidatePanel).toContain("public static let passiveVisibleRows = 3");
     expect(candidatePanel).toContain("override func mouseDown(with event:");
     expect(candidatePanel).toContain("override func acceptsFirstMouse(for event:");
@@ -469,40 +531,24 @@ describe("macOS IMK proof target source", () => {
     expect(nepali).toContain('"menu.privateMode" = "निजी मोड";');
   });
 
-  it("orders delimiter acceptance as explicit choice, eligible engine authorization, then exact raw", () => {
+  it("allows delimiter commits only for an explicit current choice or exact raw text", () => {
     const controller = readFileSync(join(root, "native/macos-imk/skeleton/LekhInputController.swift"), "utf8");
     const source = readFileSync(join(root, "native/macos-imk/skeleton/LekhEngineCore.swift"), "utf8");
     const commitBlock = controller.slice(
       controller.indexOf("private func commitCurrentComposition"),
       controller.indexOf("private func handleEscape")
     );
-    const validationBlock = controller.slice(
-      controller.indexOf("private func isValidAutoCommitCandidate"),
-      controller.indexOf("private func processFailOpenKey")
-    );
-
     expect(controller).toContain('if key == " " {\n      return commitCurrentComposition(client: client, suffix: " ")');
     expect(controller).toContain('if key == "\\n" {\n      return commitCurrentComposition(client: client, suffix: "\\n")');
-    expect(commitBlock).toContain("if candidateSelectionExplicit,");
-    expect(commitBlock).toContain("isCurrentCandidateSurface(for: client),");
-    expect(commitBlock).toContain("let selected = candidateState.selectedCandidate()");
+    expect(commitBlock).toContain("if let selected = authorizedSelectedCandidate(for: client)");
     expect(commitBlock).toContain("revokeCandidateAcceptance()");
-    expect(commitBlock).toContain("if let autoCommitCandidate = activeAutoCommitCandidate");
     expect(commitBlock).toContain("return commitRawComposition(client: client, suffix: suffix)");
-    expect(commitBlock.indexOf("candidateSelectionExplicit")).toBeLessThan(commitBlock.indexOf("activeAutoCommitCandidate"));
-    expect(commitBlock.indexOf("activeAutoCommitCandidate")).toBeLessThan(commitBlock.lastIndexOf("commitRawComposition"));
-    expect(controller).toContain("decision.autoCommitCandidate.flatMap");
-    expect(validationBlock).toContain("candidate.sourceInput == rawBuffer");
-    expect(validationBlock).toContain("probability >= 0.92 && margin >= 0.12");
-    expect(validationBlock).toContain("nativeMode == .traditionalRomanized && !targetHasDevanagari");
-    expect(controller).toContain("allowPersonalization: false");
-    expect(controller).toContain("activeAutoCommitCandidate = nil\n      return commitRawComposition");
-    expect(source).toContain("LekhNativeAutoCommitPolicy");
-    expect(source).toContain("let passiveAutoCommit = autoCommitCandidate(");
-    expect(source).toContain("let committedBody = passiveAutoCommit?.text ?? rawBuffer");
-    expect(source).toContain("case .romanizedRomanized, .traditionalTraditional:\n      return nil");
-    expect(source).toContain("isAllowedActiveTokenCandidate(input: normalized, candidate: $0, mode: mode)");
-    expect(source).toContain("if !containsWhitespace(trimmedInput), containsWhitespace(trimmedCandidate)");
+    expect(commitBlock.indexOf("authorizedSelectedCandidate")).toBeLessThan(commitBlock.lastIndexOf("commitRawComposition"));
+    expect(controller).not.toContain("activeAutoCommitCandidate");
+    expect(controller).not.toContain("autoCommitCandidate");
+    expect(source).not.toContain("LekhNativeAutoCommitPolicy");
+    expect(source).not.toContain("passiveAutoCommit");
+    expect(source).not.toContain("uniqueReversibleReverse");
     expect(controller).toContain("engineClient.normalizedPunctuation(key, mode: nativeMode)");
     expect(source).toContain("func normalizedPunctuation(_ key: String, mode: LekhNativeTypingMode) -> String");
   });

@@ -28,7 +28,6 @@
 "candidate.count" = "%d सुझाव";
 "candidate.page" = "पृष्ठ %d / %d";
 "candidate.hint.passive" = "↓ थप सुझाव · ⌥1–⌥3 छान्नुहोस्";
-"candidate.hint.passiveAuto" = "Space ले %@ लेख्छ · ↓ थप सुझाव";
 "candidate.hint.active" = "↑↓ सार्नुहोस् · Return छान्नुहोस् · Esc मूल पाठ";
 "inline.preview.accessibility" = "इनलाइन पूर्णता पूर्वावलोकन";
 "inline.preview.suggestedEnding" = "सुझाइएको अन्त्य: %@";
