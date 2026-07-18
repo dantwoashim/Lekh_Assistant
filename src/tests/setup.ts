@@ -1,8 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 
-Object.assign(navigator, {
-  clipboard: {
-    writeText: vi.fn().mockResolvedValue(undefined)
-  }
-});
+if (typeof navigator !== "undefined") {
+  Object.assign(navigator, {
+    clipboard: {
+      writeText: vi.fn().mockResolvedValue(undefined)
+    }
+  });
+}
