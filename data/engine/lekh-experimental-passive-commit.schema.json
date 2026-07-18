@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekh.local/schema/lekh-experimental-passive-commit.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordType",
+    "id",
+    "sourceContract",
+    "productionEligible",
+    "activation",
+    "policy",
+    "notes",
+    "normalization",
+    "delimiter",
+    "minimumConfidence",
+    "minimumInputCodePoints",
+    "evidenceRequirements",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "recordType": { "const": "lekh-experimental-passive-commit-policy" },
+    "id": { "const": "lekh-experimental-passive-commit-v1" },
+    "sourceContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "sha256", "canonicalJsonSha256"],
+      "properties": {
+        "id": { "const": "lekh-token-candidates-v1" },
+        "path": { "const": "data/engine/lekh-token-candidates.v1.json" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "canonicalJsonSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "productionEligible": { "const": false },
+    "activation": { "const": "opaque-test-build-capability-only" },
+    "policy": { "const": "exact-single-output-repository-contract" },
+    "notes": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "normalization": { "const": "NFC-lowercase-ascii-input" },
+    "delimiter": { "const": " " },
+    "minimumConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "minimumInputCodePoints": { "type": "integer", "minimum": 4, "maximum": 64 },
+    "evidenceRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "humanRatedSamplesPerEntry",
+        "maximumAmbiguityRate",
+        "maximumUndoRate",
+        "requiredNegativeCorpora"
+      ],
+      "properties": {
+        "humanRatedSamplesPerEntry": { "type": "integer", "minimum": 1 },
+        "maximumAmbiguityRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximumUndoRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "requiredNegativeCorpora": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "prefixItems": [
+            { "const": "english" },
+            { "const": "names" },
+            { "const": "mixed-language" }
+          ],
+          "items": false
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["input", "output", "evidence"],
+        "properties": {
+          "input": { "type": "string", "pattern": "^[a-z]{4,64}$" },
+          "output": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["provenance", "humanRatedSamples", "observedAmbiguityRate", "observedUndoRate"],
+            "properties": {
+              "provenance": { "const": "repository-curated-contract" },
+              "humanRatedSamples": { "const": 0 },
+              "observedAmbiguityRate": { "type": "null" },
+              "observedUndoRate": { "type": "null" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -239,6 +239,17 @@ export interface WarmOptions {
   timeoutMs?: number;
 }
 
+export type CandidateLearningMode = "immediate" | "deferred" | "disabled";
+
+export interface CommitCandidateOptions {
+  /**
+   * immediate is the explicit in-process/browser path. Native IPC must use
+   * deferred so memory changes only after the host confirms a successful
+   * commit with memory.learn.
+   */
+  learning?: CandidateLearningMode;
+}
+
 export interface KeyboardEngine {
   beginSession(context: TypingContext): SessionId;
 
@@ -255,7 +266,11 @@ export interface KeyboardEngine {
    */
   processKeyStroke(sessionId: SessionId, key: KeyboardKeyEvent): CandidateUpdate;
 
-  commitCandidate(sessionId: SessionId, candidateId: string): CommitResult;
+  commitCandidate(
+    sessionId: SessionId,
+    candidateId: string,
+    options?: CommitCandidateOptions
+  ): CommitResult;
   commitRaw(sessionId: SessionId): CommitResult;
   cancelComposition(sessionId: SessionId): void;
   endSession(sessionId: SessionId): void;

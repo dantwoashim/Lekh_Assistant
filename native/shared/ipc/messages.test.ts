@@ -14,7 +14,7 @@ describe("native IPC message contract", () => {
       status: "ok",
       engineReady: true,
       warnings: []
-    });
+    }, undefined, { serverInstanceId: "server-1" });
     expect(validateIpcEnvelope(success)).toEqual({ ok: true, errors: [] });
 
     const failure = createIpcErrorResponse(request, {
@@ -61,6 +61,24 @@ describe("native IPC message contract", () => {
     expect(validateIpcEnvelope({ ...response, latencyMs: Number.POSITIVE_INFINITY }).ok).toBe(false);
   });
 
+  it("rejects malformed UTF-16 in request and response envelope strings", () => {
+    const request = createIpcRequest("health.check", { client: "daemon-test" }, "well-formed", 1);
+    const failure = createIpcErrorResponse(request, {
+      code: "IPC_SCHEMA_INVALID",
+      message: "invalid"
+    }, undefined, { serverInstanceId: "server-1" });
+
+    for (const malformed of [
+      { ...request, id: "\ud800" },
+      { ...request, clientInstanceId: "\udc00" },
+      { ...failure, id: "response-\ud800" },
+      { ...failure, serverInstanceId: "server-\udc00" },
+      { ...failure, error: { ...failure.error, message: "broken-\ud800" } }
+    ]) {
+      expect(validateIpcEnvelope(malformed).ok).toBe(false);
+    }
+  });
+
   it("binds negotiated server identity and session epochs without response ambiguity", () => {
     const negotiation = createIpcRequest("protocol.negotiate", {
       client: "daemon-test",
@@ -71,9 +89,11 @@ describe("native IPC message contract", () => {
       serverInstanceId: "payload-server",
       limits: {
         maximumFrameBytes: 65536,
+        maximumCompositionLength: IPC_PROTOCOL_LIMITS.maximumCompositionLength,
         hotPathDeadlineMs: 50,
         maximumPendingRequestsPerConnection: 32,
         maximumClientInstances: 64,
+        maximumActiveSessions: 64,
         clientIdleTtlMs: 1_800_000
       }
     }, undefined, { serverInstanceId: "envelope-server" });
@@ -96,7 +116,45 @@ describe("native IPC message contract", () => {
     expect(validateIpcEnvelope(sessionSuccessWithoutEpoch)).toEqual(expect.objectContaining({
       ok: false,
       errors: expect.arrayContaining([
-        "session-bound success response must include a positive sessionEpoch."
+        "session-bearing success response must include a positive sessionEpoch."
+      ])
+    }));
+
+    expect(validateIpcEnvelope({
+      ...successEnvelopeFixture("health.check"),
+      sessionEpoch: 1,
+      payload: { status: "ok", engineReady: true, warnings: [] }
+    })).toEqual(expect.objectContaining({
+      ok: false,
+      errors: expect.arrayContaining([
+        "non-session success response must not include sessionEpoch."
+      ])
+    }));
+
+    expect(validateIpcEnvelope({
+      ...successEnvelopeFixture("health.check"),
+      requestSequence: 0,
+      payload: { status: "ok", engineReady: true, warnings: [] }
+    })).toEqual(expect.objectContaining({
+      ok: false,
+      errors: expect.arrayContaining([
+        "success response requestSequence must be a positive safe integer."
+      ])
+    }));
+
+    const beginSuccessWithoutEpoch = {
+      id: "begin-1",
+      type: "session.begin",
+      version: 2,
+      ok: true,
+      serverInstanceId: "server-1",
+      requestSequence: 2,
+      payload: { sessionId: "session-1", sessionEpoch: 1 }
+    };
+    expect(validateIpcEnvelope(beginSuccessWithoutEpoch)).toEqual(expect.objectContaining({
+      ok: false,
+      errors: expect.arrayContaining([
+        "session-bearing success response must include a positive sessionEpoch."
       ])
     }));
 
@@ -113,3 +171,14 @@ describe("native IPC message contract", () => {
     }));
   });
 });
+
+function successEnvelopeFixture(type: "health.check") {
+  return {
+    id: "success-fixture",
+    type,
+    version: 2,
+    ok: true,
+    serverInstanceId: "server-1",
+    requestSequence: 1
+  } as const;
+}

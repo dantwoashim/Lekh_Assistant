@@ -15,7 +15,9 @@
     "SessionId": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 256
+      "maxLength": 256,
+      "x-wellFormedUtf16": true,
+      "x-maxUtf16CodeUnits": 256
     },
     "KeyboardMode": {
       "type": "string",
@@ -29,7 +31,8 @@
         "unicode-proofread",
         "dictionary-lookup",
         "diagnostic"
-      ]
+      ],
+      "x-wellFormedUtf16": true
     },
     "SuggestionSurface": {
       "type": "string",
@@ -40,7 +43,8 @@
         "traditional-to-unicode",
         "traditional-to-romanized-helper",
         "traditional-to-traditional-proofread"
-      ]
+      ],
+      "x-wellFormedUtf16": true
     },
     "TypingContext": {
       "type": "object",
@@ -56,11 +60,15 @@
       "properties": {
         "appId": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "appName": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "fieldType": {
           "type": "string",
@@ -70,26 +78,35 @@
             "search",
             "code",
             "unknown"
-          ]
+          ],
+          "x-wellFormedUtf16": true
         },
         "leftTextWindow": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "rightTextWindow": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "locale": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "activeDomains": {
           "type": "array",
           "maxItems": 32,
           "items": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 256,
+            "x-wellFormedUtf16": true,
+            "x-maxUtf16CodeUnits": 256
           }
         },
         "preserveEnglish": {
@@ -103,7 +120,9 @@
         },
         "layoutId": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "enabledSurfaces": {
           "type": "array",
@@ -133,12 +152,16 @@
         "key": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         },
         "code": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         },
         "modifiers": {
           "type": "object",
@@ -168,7 +191,9 @@
           "type": "boolean"
         },
         "timestamp": {
-          "type": "number"
+          "type": "number",
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "platform": {
           "type": "string",
@@ -177,16 +202,21 @@
             "windows-tsf",
             "macos-imk",
             "test"
-          ]
+          ],
+          "x-wellFormedUtf16": true
         },
         "nativeCode": {
           "oneOf": [
             {
-              "type": "number"
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             {
               "type": "string",
-              "maxLength": 256
+              "maxLength": 256,
+              "x-wellFormedUtf16": true,
+              "x-maxUtf16CodeUnits": 256
             }
           ]
         }
@@ -218,7 +248,8 @@
         "commit",
         "cancel",
         "errorFallback"
-      ]
+      ],
+      "x-wellFormedUtf16": true
     },
     "Candidate": {
       "type": "object",
@@ -234,15 +265,21 @@
         "id": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         },
         "text": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "label": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "type": {
           "type": "string",
@@ -255,7 +292,8 @@
             "personal",
             "protected",
             "romanized-helper"
-          ]
+          ],
+          "x-wellFormedUtf16": true
         },
         "confidence": {
           "type": "number",
@@ -267,12 +305,16 @@
           "maxItems": 16,
           "items": {
             "type": "string",
-            "maxLength": 16384
+            "maxLength": 16384,
+            "x-wellFormedUtf16": true,
+            "x-maxUtf16CodeUnits": 16384
           }
         },
         "shortcut": {
           "type": "string",
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         },
         "replaceRange": {
           "$ref": "#/$defs/Utf16Range"
@@ -294,15 +336,21 @@
       "properties": {
         "text": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "displayText": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "contextText": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "candidate": {
           "$ref": "#/$defs/Candidate"
@@ -317,7 +365,8 @@
           "enum": [
             "active-candidate",
             "ngram-lm"
-          ]
+          ],
+          "x-wellFormedUtf16": true
         },
         "acceptKeys": {
           "type": "array",
@@ -329,7 +378,8 @@
             "enum": [
               "Tab",
               "Enter"
-            ]
+            ],
+            "x-wellFormedUtf16": true
           }
         }
       }
@@ -352,11 +402,15 @@
         },
         "original": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "suggestion": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "type": {
           "type": "string",
@@ -370,7 +424,8 @@
             "name-variant",
             "agreement",
             "honorific"
-          ]
+          ],
+          "x-wellFormedUtf16": true
         },
         "confidence": {
           "type": "number",
@@ -383,11 +438,14 @@
             "auto-suggest",
             "hint-only",
             "ask"
-          ]
+          ],
+          "x-wellFormedUtf16": true
         },
         "explanation": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         }
       }
     },
@@ -402,18 +460,24 @@
       "properties": {
         "query": {
           "type": "string",
-          "maxLength": 1024
+          "maxLength": 1024,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 1024
         },
         "word": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "romanized": {
           "type": "array",
           "maxItems": 32,
           "items": {
             "type": "string",
-            "maxLength": 16384
+            "maxLength": 16384,
+            "x-wellFormedUtf16": true,
+            "x-maxUtf16CodeUnits": 16384
           }
         },
         "variants": {
@@ -421,7 +485,9 @@
           "maxItems": 32,
           "items": {
             "type": "string",
-            "maxLength": 16384
+            "maxLength": 16384,
+            "x-wellFormedUtf16": true,
+            "x-maxUtf16CodeUnits": 16384
           }
         },
         "domains": {
@@ -429,16 +495,22 @@
           "maxItems": 32,
           "items": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 256,
+            "x-wellFormedUtf16": true,
+            "x-maxUtf16CodeUnits": 256
           }
         },
         "source": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "meaning": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "confidence": {
           "type": "number",
@@ -480,16 +552,20 @@
         },
         "compositionText": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 128,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 128
         },
         "displayText": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "caret": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 16384
+          "maximum": 128
         },
         "candidates": {
           "type": "array",
@@ -513,7 +589,9 @@
         },
         "committedText": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "consumedRange": {
           "$ref": "#/$defs/Utf16Range"
@@ -531,7 +609,9 @@
           "maxItems": 32,
           "items": {
             "type": "string",
-            "maxLength": 16384
+            "maxLength": 16384,
+            "x-wellFormedUtf16": true,
+            "x-maxUtf16CodeUnits": 16384
           }
         },
         "latencyMs": {
@@ -563,11 +643,13 @@
         },
         "committedText": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         },
         "commitEpoch": {
           "type": "integer",
-          "minimum": 1,
+          "minimum": 0,
           "maximum": 9007199254740991
         },
         "consumedRange": {
@@ -630,7 +712,8 @@
         "memory.learn",
         "diagnostics.getMetrics",
         "engine.shutdown"
-      ]
+      ],
+      "x-wellFormedUtf16": true
     },
     "ErrorCode": {
       "type": "string",
@@ -652,7 +735,8 @@
         "DAEMON_CLI_FAILED",
         "DAEMON_DISPATCH_FAILED",
         "NAMED_PIPE_REQUEST_FAILED"
-      ]
+      ],
+      "x-wellFormedUtf16": true
     },
     "RecoveryAction": {
       "type": "string",
@@ -662,7 +746,8 @@
         "passThrough",
         "restartSession",
         "restartDaemon"
-      ]
+      ],
+      "x-wellFormedUtf16": true
     },
     "IpcRequest": {
       "type": "object",
@@ -681,7 +766,9 @@
         "id": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         },
         "type": {
           "$ref": "#/$defs/MessageType"
@@ -702,7 +789,9 @@
         "clientInstanceId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         },
         "requestSequence": {
           "type": "integer",
@@ -740,7 +829,8 @@
                       "macos-imk",
                       "companion",
                       "daemon-test"
-                    ]
+                    ],
+                    "x-wellFormedUtf16": true
                   },
                   "supportedVersions": {
                     "type": "array",
@@ -785,7 +875,8 @@
                       "macos-imk",
                       "companion",
                       "daemon-test"
-                    ]
+                    ],
+                    "x-wellFormedUtf16": true
                   }
                 }
               }
@@ -920,12 +1011,14 @@
                   },
                   "input": {
                     "type": "string",
-                    "maxLength": 16384
+                    "maxLength": 128,
+                    "x-wellFormedUtf16": true,
+                    "x-maxUtf16CodeUnits": 128
                   },
                   "cursor": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 16384
+                    "maximum": 128
                   },
                   "sessionEpoch": {
                     "type": "integer",
@@ -965,7 +1058,9 @@
                   "candidateId": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 256
+                    "maxLength": 256,
+                    "x-wellFormedUtf16": true,
+                    "x-maxUtf16CodeUnits": 256
                   },
                   "sessionEpoch": {
                     "type": "integer",
@@ -1100,7 +1195,9 @@
                   "layoutId": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 256
+                    "maxLength": 256,
+                    "x-wellFormedUtf16": true,
+                    "x-maxUtf16CodeUnits": 256
                   },
                   "sessionEpoch": {
                     "type": "integer",
@@ -1162,7 +1259,9 @@
                 "properties": {
                   "textWindow": {
                     "type": "string",
-                    "maxLength": 16384
+                    "maxLength": 16384,
+                    "x-wellFormedUtf16": true,
+                    "x-maxUtf16CodeUnits": 16384
                   },
                   "context": {
                     "$ref": "#/$defs/TypingContext"
@@ -1195,7 +1294,9 @@
                   "query": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 1024
+                    "maxLength": 1024,
+                    "x-wellFormedUtf16": true,
+                    "x-maxUtf16CodeUnits": 1024
                   },
                   "context": {
                     "$ref": "#/$defs/TypingContext"
@@ -1300,7 +1401,9 @@
         "id": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         },
         "type": {
           "$ref": "#/$defs/MessageType"
@@ -1314,7 +1417,9 @@
         "serverInstanceId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         },
         "requestSequence": {
           "type": "integer",
@@ -1343,7 +1448,9 @@
             "message": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 16384
+              "maxLength": 16384,
+              "x-wellFormedUtf16": true,
+              "x-maxUtf16CodeUnits": 16384
             },
             "recoverable": {
               "type": "boolean"
@@ -1378,6 +1485,13 @@
               "required": [
                 "error"
               ]
+            },
+            "properties": {
+              "requestSequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
             }
           },
           "else": {
@@ -1425,48 +1539,71 @@
                   "serverInstanceId": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 256
+                    "maxLength": 256,
+                    "x-wellFormedUtf16": true,
+                    "x-maxUtf16CodeUnits": 256
                   },
                   "limits": {
                     "type": "object",
                     "additionalProperties": false,
                     "required": [
                       "maximumFrameBytes",
+                      "maximumCompositionLength",
                       "hotPathDeadlineMs",
                       "maximumPendingRequestsPerConnection",
                       "maximumClientInstances",
+                      "maximumActiveSessions",
                       "clientIdleTtlMs"
                     ],
                     "properties": {
                       "maximumFrameBytes": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9007199254740991
+                        "const": 65536
+                      },
+                      "maximumCompositionLength": {
+                        "const": 128
                       },
                       "hotPathDeadlineMs": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9007199254740991
+                        "const": 50
                       },
                       "maximumPendingRequestsPerConnection": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9007199254740991
+                        "const": 32
                       },
                       "maximumClientInstances": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9007199254740991
+                        "const": 64
+                      },
+                      "maximumActiveSessions": {
+                        "const": 64
                       },
                       "clientIdleTtlMs": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9007199254740991
+                        "const": 1800000
                       }
                     }
                   }
                 }
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "protocol.negotiate"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "sessionEpoch"
+              ]
             }
           }
         },
@@ -1501,11 +1638,14 @@
                     "enum": [
                       "ok",
                       "degraded"
-                    ]
+                    ],
+                    "x-wellFormedUtf16": true
                   },
                   "daemonVersion": {
                     "type": "string",
-                    "maxLength": 256
+                    "maxLength": 256,
+                    "x-wellFormedUtf16": true,
+                    "x-maxUtf16CodeUnits": 256
                   },
                   "engineReady": {
                     "type": "boolean"
@@ -1515,11 +1655,36 @@
                     "maxItems": 32,
                     "items": {
                       "type": "string",
-                      "maxLength": 16384
+                      "maxLength": 16384,
+                      "x-wellFormedUtf16": true,
+                      "x-maxUtf16CodeUnits": 16384
                     }
                   }
                 }
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "health.check"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "sessionEpoch"
+              ]
             }
           }
         },
@@ -1563,7 +1728,9 @@
                     "maxItems": 32,
                     "items": {
                       "type": "string",
-                      "maxLength": 256
+                      "maxLength": 256,
+                      "x-wellFormedUtf16": true,
+                      "x-maxUtf16CodeUnits": 256
                     }
                   },
                   "unavailableModules": {
@@ -1571,7 +1738,9 @@
                     "maxItems": 32,
                     "items": {
                       "type": "string",
-                      "maxLength": 256
+                      "maxLength": 256,
+                      "x-wellFormedUtf16": true,
+                      "x-maxUtf16CodeUnits": 256
                     }
                   },
                   "warmTimeMs": {
@@ -1583,11 +1752,36 @@
                     "maxItems": 32,
                     "items": {
                       "type": "string",
-                      "maxLength": 16384
+                      "maxLength": 16384,
+                      "x-wellFormedUtf16": true,
+                      "x-maxUtf16CodeUnits": 16384
                     }
                   }
                 }
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "engine.warm"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "sessionEpoch"
+              ]
             }
           }
         },
@@ -1627,6 +1821,27 @@
                 }
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.begin"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionEpoch"
+            ]
           }
         },
         {
@@ -1991,7 +2206,9 @@
                   "layoutId": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 256
+                    "maxLength": 256,
+                    "x-wellFormedUtf16": true,
+                    "x-maxUtf16CodeUnits": 256
                   }
                 }
               }
@@ -2050,6 +2267,29 @@
           "if": {
             "properties": {
               "type": {
+                "const": "suggestions.get"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "sessionEpoch"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "proofHints.get"
               },
               "ok": {
@@ -2077,6 +2317,29 @@
           "if": {
             "properties": {
               "type": {
+                "const": "proofHints.get"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "sessionEpoch"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "dictionary.lookup"
               },
               "ok": {
@@ -2097,6 +2360,29 @@
                   "$ref": "#/$defs/DictionaryResult"
                 }
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "dictionary.lookup"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "sessionEpoch"
+              ]
             }
           }
         },
@@ -2204,12 +2490,16 @@
                       "code": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 256
+                        "maxLength": 256,
+                        "x-wellFormedUtf16": true,
+                        "x-maxUtf16CodeUnits": 256
                       },
                       "message": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 16384
+                        "maxLength": 16384,
+                        "x-wellFormedUtf16": true,
+                        "x-maxUtf16CodeUnits": 16384
                       },
                       "at": {
                         "type": "integer",
@@ -2259,6 +2549,29 @@
           "if": {
             "properties": {
               "type": {
+                "const": "diagnostics.getMetrics"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "sessionEpoch"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "engine.shutdown"
               },
               "ok": {
@@ -2284,6 +2597,29 @@
                   }
                 }
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "engine.shutdown"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "ok"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "sessionEpoch"
+              ]
             }
           }
         }

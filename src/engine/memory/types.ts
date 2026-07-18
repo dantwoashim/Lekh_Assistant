@@ -5,6 +5,15 @@ export type CorrectionMemorySource =
   | "proofread-accept"
   | "import";
 
+export const MIN_CORRECTION_MEMORY_DECAY_WEIGHT = 0.2;
+export const MAX_CORRECTION_MEMORY_DECAY_WEIGHT = 2;
+
+export function privacySafeCorrectionMemoryDomain(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9._:-]{0,63}$/.test(normalized) ? normalized : undefined;
+}
+
 export interface CorrectionMemoryEntry {
   id: string;
   inputRomanized?: string;

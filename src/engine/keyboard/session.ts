@@ -1,6 +1,6 @@
 import { nowMs } from "../util/time";
 import { unknownSessionError } from "./errors";
-import { isLearningAllowedContext, isSecureContext } from "./modes";
+import { isSecureContext } from "./modes";
 import { clampCaret } from "./ranges";
 import type { Candidate, KeyboardMode, KeyboardSession, SessionId, TypingContext } from "./types";
 
@@ -8,22 +8,20 @@ let nextSessionCounter = 0;
 const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_SESSIONS = 64;
 
-export interface CorrectionLearningGrant {
-  commitEpoch: number;
-}
-
 export class KeyboardSessionManager {
   private readonly sessions = new Map<SessionId, KeyboardSession>();
-  private readonly correctionLearningGrants = new Map<SessionId, CorrectionLearningGrant>();
 
   constructor(
     private readonly sessionTtlMs = DEFAULT_SESSION_TTL_MS,
-    private readonly maxSessions = DEFAULT_MAX_SESSIONS
+    private readonly maxSessions = DEFAULT_MAX_SESSIONS,
+    private readonly onSessionsRemoved?: (sessionIds: SessionId[]) => void
   ) {}
 
   beginSession(context: TypingContext): SessionId {
     this.cleanupExpired();
-    this.evictLeastRecentlyUsedIfNeeded();
+    if (this.sessions.size >= this.maxSessions) {
+      throw new Error(`Keyboard session capacity of ${this.maxSessions} has been reached.`);
+    }
     const sessionId = `kbd-${Date.now().toString(36)}-${(nextSessionCounter += 1).toString(36)}`;
     const secure = isSecureContext(context);
     this.sessions.set(sessionId, {
@@ -66,7 +64,6 @@ export class KeyboardSessionManager {
 
   updateComposition(sessionId: SessionId, compositionText: string, caret: number): KeyboardSession {
     const session = this.get(sessionId);
-    this.correctionLearningGrants.delete(sessionId);
     if (isSecureContext(session.context)) {
       purgeSensitiveSessionState(session);
       session.lastUpdateTime = nowMs();
@@ -80,7 +77,6 @@ export class KeyboardSessionManager {
 
   updateContext(sessionId: SessionId, patch: Partial<TypingContext>): KeyboardSession {
     const session = this.get(sessionId);
-    this.correctionLearningGrants.delete(sessionId);
     const mergedContext: TypingContext = {
       ...session.context,
       ...patch,
@@ -135,7 +131,6 @@ export class KeyboardSessionManager {
 
   setMode(sessionId: SessionId, mode: KeyboardMode): void {
     const session = this.get(sessionId);
-    this.correctionLearningGrants.delete(sessionId);
     session.mode = mode;
     session.context.mode = mode;
     session.compositionText = "";
@@ -149,16 +144,13 @@ export class KeyboardSessionManager {
 
   setLayout(sessionId: SessionId, layoutId: string): void {
     const session = this.get(sessionId);
-    this.correctionLearningGrants.delete(sessionId);
     session.layoutId = layoutId;
     session.context.layoutId = layoutId;
     session.lastUpdateTime = nowMs();
   }
 
-  recordCommit(sessionId: SessionId, committedText: string, learnable = false): number {
+  recordCommit(sessionId: SessionId, committedText: string): number {
     const session = this.get(sessionId);
-    const hadComposition = session.compositionText.length > 0;
-    this.correctionLearningGrants.delete(sessionId);
     if (isSecureContext(session.context)) {
       purgeSensitiveSessionState(session);
       session.lastUpdateTime = nowMs();
@@ -168,11 +160,6 @@ export class KeyboardSessionManager {
     if (committedText) {
       session.commitEpoch += 1;
       session.committedHistory = [...session.committedHistory, committedText].slice(-24);
-      if (learnable && isLearningAllowedContext(session.context) && hadComposition) {
-        this.correctionLearningGrants.set(sessionId, {
-          commitEpoch: session.commitEpoch
-        });
-      }
     }
     session.compositionText = "";
     session.caret = 0;
@@ -182,22 +169,8 @@ export class KeyboardSessionManager {
     return session.commitEpoch;
   }
 
-  consumeCorrectionLearningGrant(sessionId: SessionId, commitEpoch: number): CorrectionLearningGrant | undefined {
-    if (!this.has(sessionId)) return undefined;
-    const session = this.get(sessionId);
-    if (!isLearningAllowedContext(session.context)) {
-      this.correctionLearningGrants.delete(sessionId);
-      return undefined;
-    }
-    const grant = this.correctionLearningGrants.get(sessionId);
-    if (!grant || grant.commitEpoch !== commitEpoch || session.commitEpoch !== commitEpoch) return undefined;
-    this.correctionLearningGrants.delete(sessionId);
-    return { ...grant };
-  }
-
   cancelComposition(sessionId: SessionId): void {
     const session = this.get(sessionId);
-    this.correctionLearningGrants.delete(sessionId);
     session.compositionText = "";
     session.caret = 0;
     session.candidates = [];
@@ -206,25 +179,25 @@ export class KeyboardSessionManager {
   }
 
   endSession(sessionId: SessionId): void {
-    this.sessions.delete(sessionId);
-    this.correctionLearningGrants.delete(sessionId);
+    if (this.sessions.delete(sessionId)) this.onSessionsRemoved?.([sessionId]);
   }
 
   shutdown(): void {
+    const removedSessionIds = Array.from(this.sessions.keys());
     this.sessions.clear();
-    this.correctionLearningGrants.clear();
+    if (removedSessionIds.length > 0) this.onSessionsRemoved?.(removedSessionIds);
   }
 
   cleanupExpired(now = nowMs()): number {
-    let removed = 0;
+    const removedSessionIds: SessionId[] = [];
     for (const [sessionId, session] of this.sessions) {
       if (now - session.lastUpdateTime > this.sessionTtlMs) {
         this.sessions.delete(sessionId);
-        this.correctionLearningGrants.delete(sessionId);
-        removed += 1;
+        removedSessionIds.push(sessionId);
       }
     }
-    return removed;
+    if (removedSessionIds.length > 0) this.onSessionsRemoved?.(removedSessionIds);
+    return removedSessionIds.length;
   }
 
   snapshot(): KeyboardSession[] {
@@ -239,14 +212,6 @@ export class KeyboardSessionManager {
     }));
   }
 
-  private evictLeastRecentlyUsedIfNeeded(): void {
-    if (this.sessions.size < this.maxSessions) return;
-    const [oldestSessionId] = Array.from(this.sessions.entries()).sort(
-      ([, a], [, b]) => a.lastUpdateTime - b.lastUpdateTime
-    )[0] ?? [];
-    if (oldestSessionId) this.sessions.delete(oldestSessionId);
-    if (oldestSessionId) this.correctionLearningGrants.delete(oldestSessionId);
-  }
 }
 
 function purgeSensitiveSessionState(session: KeyboardSession): void {

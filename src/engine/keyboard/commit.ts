@@ -1,7 +1,11 @@
 import { isLearningAllowedContext } from "./modes";
 import type { Candidate, CommitResult, KeyboardSession, SessionId } from "./types";
 
-export function commitCandidateResult(session: KeyboardSession, candidate: Candidate): CommitResult {
+export function commitCandidateResult(
+  session: KeyboardSession,
+  candidate: Candidate,
+  memoryRecorded = isLearningAllowedContext(session.context)
+): CommitResult {
   return {
     sessionId: session.sessionId,
     action: "commit",
@@ -9,7 +13,7 @@ export function commitCandidateResult(session: KeyboardSession, candidate: Candi
     commitEpoch: session.commitEpoch + 1,
     consumedRange: candidate.replaceRange ?? [0, session.compositionText.length],
     followupCandidates: [],
-    memoryRecorded: isLearningAllowedContext(session.context),
+    memoryRecorded,
     schemaVersion: 1
   };
 }

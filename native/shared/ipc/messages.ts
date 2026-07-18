@@ -24,6 +24,7 @@ import type {
   IpcErrorCode,
   IpcRecoveryAction
 } from "./generatedProtocol";
+import { isWellFormedUtf16 } from "./utf16";
 
 export {
   IPC_COMPATIBLE_SCHEMA_VERSIONS,
@@ -48,23 +49,36 @@ export interface IpcRequest<T = unknown> {
   payload: T;
 }
 
-export interface IpcResponse<T = unknown> {
+interface IpcResponseEnvelope {
   id: string;
   type: IpcMessageType;
   version: typeof IPC_SCHEMA_VERSION;
-  ok: boolean;
   serverInstanceId: string;
   requestSequence: number;
   sessionEpoch?: number;
-  payload?: T;
-  error?: {
-    code: IpcErrorCode;
-    message: string;
-    recoverable: boolean;
-    action?: IpcRecoveryAction;
-  };
   latencyMs?: number;
 }
+
+export interface IpcErrorDetails {
+  code: IpcErrorCode;
+  message: string;
+  recoverable: boolean;
+  action?: IpcRecoveryAction;
+}
+
+export interface IpcSuccessResponse<T = unknown> extends IpcResponseEnvelope {
+  ok: true;
+  payload: T;
+  error?: never;
+}
+
+export interface IpcErrorResponse extends IpcResponseEnvelope {
+  ok: false;
+  payload?: never;
+  error: IpcErrorDetails;
+}
+
+export type IpcResponse<T = unknown> = IpcSuccessResponse<T> | IpcErrorResponse;
 
 export interface ProtocolNegotiatePayload {
   client: "windows-tsf" | "macos-imk" | "companion" | "daemon-test";
@@ -76,9 +90,11 @@ export interface ProtocolNegotiateResult {
   serverInstanceId: string;
   limits: {
     maximumFrameBytes: number;
+    maximumCompositionLength: number;
     hotPathDeadlineMs: number;
     maximumPendingRequestsPerConnection: number;
     maximumClientInstances: number;
+    maximumActiveSessions: number;
     clientIdleTtlMs: number;
   };
 }
@@ -216,9 +232,15 @@ export type AnyTypedIpcRequest = {
   [T in IpcMessageType]: TypedIpcRequest<T>;
 }[IpcMessageType];
 
-export type TypedIpcResponse<T extends IpcMessageType> = IpcResponse<IpcResultByType[T]> & {
-  type: T;
-};
+type ResponseSessionEpoch<T extends IpcMessageType> =
+  (typeof IPC_MESSAGE_DESCRIPTORS)[T]["responseSessionEpoch"] extends true
+    ? { sessionEpoch: number }
+    : { sessionEpoch?: never };
+
+export type TypedIpcResponse<T extends IpcMessageType> =
+  Omit<IpcSuccessResponse<IpcResultByType[T]>, "type" | "sessionEpoch"> &
+  { type: T } &
+  ResponseSessionEpoch<T>;
 
 export interface IpcRequestMetadata {
   clientInstanceId?: string;
@@ -226,7 +248,13 @@ export interface IpcRequestMetadata {
   deadlineAt?: number;
 }
 
-export interface IpcResponseMetadata {
+export type IpcResponseMetadata<T extends IpcMessageType> = {
+  serverInstanceId: string;
+} & ((typeof IPC_MESSAGE_DESCRIPTORS)[T]["responseSessionEpoch"] extends true
+  ? { sessionEpoch?: number }
+  : { sessionEpoch?: never });
+
+export interface IpcErrorResponseMetadata {
   serverInstanceId: string;
   sessionEpoch?: number;
 }
@@ -257,33 +285,41 @@ export function createIpcRequest<T extends IpcMessageType>(
 }
 
 export function createIpcResponse<T extends IpcMessageType>(
-  request: Pick<TypedIpcRequest<T>, "id" | "type" | "version">,
+  request: Pick<TypedIpcRequest<T>, "id" | "type" | "version" | "requestSequence" | "payload">,
   payload: IpcResultByType[T],
-  latencyMs?: number,
-  metadata: IpcResponseMetadata = { serverInstanceId: "unbound_server" }
+  latencyMs: number | undefined,
+  metadata: IpcResponseMetadata<T>
 ): TypedIpcResponse<T> {
-  const requestWithMetadata = request as Partial<Pick<IpcRequest, "requestSequence" | "payload">>;
-  const sessionEpoch = metadata.sessionEpoch ?? sessionEpochFrom(requestWithMetadata.payload) ?? sessionEpochFrom(payload);
+  const requiresSessionEpoch = IPC_MESSAGE_DESCRIPTORS[request.type].responseSessionEpoch;
+  if (!requiresSessionEpoch && metadata.sessionEpoch !== undefined) {
+    throw new Error(`${request.type} success responses must not carry a session epoch.`);
+  }
+  const sessionEpoch = requiresSessionEpoch
+    ? metadata.sessionEpoch ?? sessionEpochFrom(request.payload) ?? sessionEpochFrom(payload)
+    : undefined;
+  if (requiresSessionEpoch && sessionEpoch === undefined) {
+    throw new Error(`${request.type} success responses require a positive session epoch.`);
+  }
   return {
     id: request.id,
     type: request.type,
     version: IPC_SCHEMA_VERSION,
     ok: true,
     serverInstanceId: metadata.serverInstanceId,
-    requestSequence: requestWithMetadata.requestSequence ?? 0,
+    requestSequence: request.requestSequence,
     ...(sessionEpoch === undefined ? {} : { sessionEpoch }),
     payload,
     ...(latencyMs === undefined ? {} : { latencyMs })
-  };
+  } as TypedIpcResponse<T>;
 }
 
 export function createIpcErrorResponse(
   request: Pick<IpcRequest, "id" | "type"> & Partial<Pick<IpcRequest, "requestSequence" | "payload">>,
-  error: Pick<NonNullable<IpcResponse["error"]>, "code" | "message"> &
-    Partial<Pick<NonNullable<IpcResponse["error"]>, "recoverable" | "action">>,
+  error: Pick<IpcErrorDetails, "code" | "message"> &
+    Partial<Pick<IpcErrorDetails, "recoverable" | "action">>,
   latencyMs?: number,
-  metadata: IpcResponseMetadata = { serverInstanceId: "transport_error" }
-): IpcResponse {
+  metadata: IpcErrorResponseMetadata = { serverInstanceId: "transport_error" }
+): IpcErrorResponse {
   const definition = IPC_ERROR_DEFINITIONS[error.code];
   const sessionEpoch = metadata.sessionEpoch ?? sessionEpochFrom(request.payload);
   return {
@@ -318,7 +354,7 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
   if (!isRecord(value)) {
     return { ok: false, errors: ["Envelope must be an object."] };
   }
-  if (typeof value.id !== "string" || value.id.length === 0 ||
+  if (typeof value.id !== "string" || value.id.length === 0 || !isWellFormedUtf16(value.id) ||
       value.id.length > IPC_PROTOCOL_LIMITS.maximumIdentifierLength) {
     errors.push("id must be a bounded non-empty string.");
   }
@@ -346,6 +382,7 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
       }
     }
     if (typeof value.clientInstanceId !== "string" || value.clientInstanceId.length === 0 ||
+        !isWellFormedUtf16(value.clientInstanceId) ||
         value.clientInstanceId.length > IPC_PROTOCOL_LIMITS.maximumIdentifierLength) {
       errors.push("clientInstanceId must be a bounded non-empty string.");
     }
@@ -364,6 +401,7 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
     }
     if (typeof value.ok !== "boolean") errors.push("ok must be a boolean.");
     if (typeof value.serverInstanceId !== "string" || value.serverInstanceId.length === 0 ||
+        !isWellFormedUtf16(value.serverInstanceId) ||
         value.serverInstanceId.length > IPC_PROTOCOL_LIMITS.maximumIdentifierLength) {
       errors.push("serverInstanceId must be a bounded non-empty string.");
     }
@@ -390,6 +428,7 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
           if (value.error.action !== definition.action) errors.push("error.action must match the protocol definition.");
         }
         if (typeof value.error.message !== "string" || !value.error.message ||
+            !isWellFormedUtf16(value.error.message) ||
             value.error.message.length > IPC_PROTOCOL_LIMITS.maximumTextLength) {
           errors.push("error.message must be a bounded non-empty string.");
         }
@@ -397,9 +436,17 @@ export function validateIpcEnvelope(value: unknown): IpcValidationResult {
     } else {
       if (!("payload" in value)) errors.push("success response must include payload.");
       if ("error" in value) errors.push("success response must not include error.");
-      if (isIpcMessageType(value.type) && IPC_MESSAGE_DESCRIPTORS[value.type].sessionBound &&
-          (!Number.isSafeInteger(value.sessionEpoch) || (value.sessionEpoch as number) < 1)) {
-        errors.push("session-bound success response must include a positive sessionEpoch.");
+      if (!Number.isSafeInteger(value.requestSequence) || (value.requestSequence as number) < 1) {
+        errors.push("success response requestSequence must be a positive safe integer.");
+      }
+      if (isIpcMessageType(value.type)) {
+        if (IPC_MESSAGE_DESCRIPTORS[value.type].responseSessionEpoch &&
+            (!Number.isSafeInteger(value.sessionEpoch) || (value.sessionEpoch as number) < 1)) {
+          errors.push("session-bearing success response must include a positive sessionEpoch.");
+        }
+        if (!IPC_MESSAGE_DESCRIPTORS[value.type].responseSessionEpoch && "sessionEpoch" in value) {
+          errors.push("non-session success response must not include sessionEpoch.");
+        }
       }
       if (value.type === "protocol.negotiate") {
         if (!isRecord(value.payload) || value.payload.selectedVersion !== IPC_SCHEMA_VERSION ||

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const specPath = resolve(root, "native/shared/ipc/lekh-keyboard-protocol.json");
+const engineContractPath = resolve(root, "data/engine/lekh-engine-contract.v1.json");
 const outputs = {
   schema: resolve(root, "native/shared/ipc/lekh-keyboard-ipc.schema.json"),
   typescript: resolve(root, "native/shared/ipc/generatedProtocol.ts"),
@@ -12,8 +13,11 @@ const outputs = {
 };
 
 const checkOnly = process.argv.includes("--check");
-const spec = JSON.parse(await readFile(specPath, "utf8"));
-validateSpec(spec);
+const [spec, engineContract] = await Promise.all([
+  readFile(specPath, "utf8").then(JSON.parse),
+  readFile(engineContractPath, "utf8").then(JSON.parse)
+]);
+validateSpec(spec, engineContract);
 
 const generated = {
   schema: `${JSON.stringify(generateSchema(spec), null, 2)}\n`,
@@ -45,7 +49,7 @@ if (checkOnly) {
   console.log(JSON.stringify({ status: "generated", version: spec.currentVersion, outputs }, null, 2));
 }
 
-function validateSpec(value) {
+function validateSpec(value, engineContractValue) {
   const fail = (message) => { throw new Error(`Invalid IPC protocol specification: ${message}`); };
   if (!Number.isSafeInteger(value.currentVersion) || value.currentVersion < 1) fail("currentVersion must be positive");
   if (!Array.isArray(value.compatibleVersions) || !value.compatibleVersions.includes(value.currentVersion)) {
@@ -59,13 +63,49 @@ function validateSpec(value) {
   for (const [name, limit] of Object.entries(value.limits)) {
     if (!Number.isSafeInteger(limit) || limit < 1) fail(`limits.${name} must be a positive safe integer`);
   }
+  const canonicalCompositionLength = engineContractValue?.hotPathPolicy?.maximumCompositionUtf16CodeUnits;
+  if (!Number.isSafeInteger(canonicalCompositionLength) || canonicalCompositionLength < 1) {
+    fail("engine hotPathPolicy.maximumCompositionUtf16CodeUnits must be a positive safe integer");
+  }
+  if (value.limits.maximumCompositionLength !== canonicalCompositionLength) {
+    fail("limits.maximumCompositionLength must equal the canonical engine hot-path composition bound");
+  }
+  const candidateUpdateProperties = value.commonDefinitions?.CandidateUpdate?.properties;
+  if (candidateUpdateProperties?.compositionText?.maxLength !== canonicalCompositionLength ||
+      candidateUpdateProperties?.caret?.maximum !== canonicalCompositionLength) {
+    fail("CandidateUpdate compositionText and caret must use the canonical composition bound");
+  }
   const types = value.messages.map((message) => message.type);
   if (types.some((type) => typeof type !== "string" || !type)) fail("every message needs a type");
   if (new Set(types).size !== types.length) fail("message types must be unique");
   for (const message of value.messages) {
     if (typeof message.sessionBound !== "boolean") fail(`${message.type}.sessionBound must be boolean`);
+    if ("responseSessionEpoch" in message && typeof message.responseSessionEpoch !== "boolean") {
+      fail(`${message.type}.responseSessionEpoch must be boolean when present`);
+    }
     if (!message.requestPayload || typeof message.requestPayload !== "object") fail(`${message.type} needs requestPayload`);
     if (!message.responsePayload || typeof message.responsePayload !== "object") fail(`${message.type} needs responsePayload`);
+  }
+  const negotiation = value.messages.find((message) => message.type === "protocol.negotiate");
+  const negotiatedLimits = negotiation?.responsePayload?.properties?.limits?.properties;
+  for (const name of [
+    "maximumFrameBytes",
+    "maximumCompositionLength",
+    "hotPathDeadlineMs",
+    "maximumPendingRequestsPerConnection",
+    "maximumClientInstances",
+    "maximumActiveSessions",
+    "clientIdleTtlMs"
+  ]) {
+    if (negotiatedLimits?.[name]?.const !== value.limits[name]) {
+      fail(`protocol.negotiate response limit ${name} must equal limits.${name}`);
+    }
+  }
+  const compositionUpdate = value.messages.find((message) => message.type === "session.updateComposition");
+  const compositionRequestProperties = compositionUpdate?.requestPayload?.properties;
+  if (compositionRequestProperties?.input?.maxLength !== canonicalCompositionLength ||
+      compositionRequestProperties?.cursor?.maximum !== canonicalCompositionLength) {
+    fail("session.updateComposition input and cursor must use the canonical composition bound");
   }
   const codes = value.errors.map((error) => error.code);
   if (new Set(codes).size !== codes.length) fail("error codes must be unique");
@@ -91,13 +131,21 @@ function generateSchema(value) {
         then: { properties: { payload: message.responsePayload } }
       });
     }
-    if (message.sessionBound) {
+    if (message.sessionBound || message.responseSessionEpoch === true) {
       conditions.push({
         if: {
           properties: { type: { const: message.type }, ok: { const: true } },
           required: ["type", "ok"]
         },
         then: { required: ["sessionEpoch"] }
+      });
+    } else {
+      conditions.push({
+        if: {
+          properties: { type: { const: message.type }, ok: { const: true } },
+          required: ["type", "ok"]
+        },
+        then: { not: { required: ["sessionEpoch"] } }
       });
     }
     return conditions;
@@ -167,7 +215,11 @@ function generateSchema(value) {
         allOf: [
           {
             if: { properties: { ok: { const: true } }, required: ["ok"] },
-            then: { required: ["payload"], not: { required: ["error"] } },
+            then: {
+              required: ["payload"],
+              not: { required: ["error"] },
+              properties: { requestSequence: { type: "integer", minimum: 1 } }
+            },
             else: { required: ["error"], not: { required: ["payload"] } }
           },
           ...responseConditions
@@ -185,6 +237,10 @@ function addSafeIntegerBounds(value) {
   );
   if (bounded.type === "integer" && bounded.maximum === undefined) {
     bounded.maximum = Number.MAX_SAFE_INTEGER;
+  }
+  if (bounded.type === "string") {
+    bounded["x-wellFormedUtf16"] = true;
+    if (bounded.maxLength !== undefined) bounded["x-maxUtf16CodeUnits"] = bounded.maxLength;
   }
   return bounded;
 }
@@ -204,6 +260,7 @@ function requestPayloadSchema(message) {
 function generateTypeScript(value) {
   const descriptors = Object.fromEntries(value.messages.map((message) => [message.type, {
     sessionBound: message.sessionBound,
+    responseSessionEpoch: message.sessionBound || message.responseSessionEpoch === true,
     deadlineClass: message.deadlineClass
   }]));
   return `// Generated from lekh-keyboard-protocol.json. Do not edit.\n` +
@@ -239,10 +296,14 @@ function generateSwift(value) {
     `  public static let schemaVersion = ${value.currentVersion}\n` +
     `  public static let compatibleVersions = ${JSON.stringify(value.compatibleVersions)}\n` +
     `  public static let maximumFrameBytes = ${value.limits.maximumFrameBytes}\n` +
+    `  public static let maximumIdentifierLength = ${value.limits.maximumIdentifierLength}\n` +
+    `  public static let maximumTextLength = ${value.limits.maximumTextLength}\n` +
+    `  public static let maximumCompositionLength = ${value.limits.maximumCompositionLength}\n` +
     `  public static let hotPathDeadlineMilliseconds = ${value.limits.hotPathDeadlineMs}\n` +
     `  public static let maximumActiveConnections = ${value.limits.maximumActiveConnections}\n` +
     `  public static let maximumPendingRequestsPerConnection = ${value.limits.maximumPendingRequestsPerConnection}\n` +
     `  public static let maximumClientInstances = ${value.limits.maximumClientInstances}\n` +
+    `  public static let maximumActiveSessions = ${value.limits.maximumActiveSessions}\n` +
     `  public static let clientIdleTtlMilliseconds = ${value.limits.clientIdleTtlMs}\n` +
     `  public static let maximumCandidateResults = ${value.limits.maximumCandidateResults}\n` +
     `  public static let maximumProofHints = ${value.limits.maximumProofHints}\n` +
@@ -258,10 +319,14 @@ function generateCpp(value) {
   return `// Generated from lekh-keyboard-protocol.json. Do not edit.\n#pragma once\n\n#include <array>\n#include <cstddef>\n#include <cstdint>\n#include <string_view>\n\nnamespace lekh::ipc {\n` +
     `inline constexpr std::uint32_t kSchemaVersion = ${value.currentVersion};\n` +
     `inline constexpr std::size_t kMaximumFrameBytes = ${value.limits.maximumFrameBytes};\n` +
+    `inline constexpr std::size_t kMaximumIdentifierLength = ${value.limits.maximumIdentifierLength};\n` +
+    `inline constexpr std::size_t kMaximumTextLength = ${value.limits.maximumTextLength};\n` +
+    `inline constexpr std::size_t kMaximumCompositionLength = ${value.limits.maximumCompositionLength};\n` +
     `inline constexpr std::uint32_t kHotPathDeadlineMilliseconds = ${value.limits.hotPathDeadlineMs};\n` +
     `inline constexpr std::size_t kMaximumActiveConnections = ${value.limits.maximumActiveConnections};\n` +
     `inline constexpr std::size_t kMaximumPendingRequestsPerConnection = ${value.limits.maximumPendingRequestsPerConnection};\n` +
     `inline constexpr std::size_t kMaximumClientInstances = ${value.limits.maximumClientInstances};\n` +
+    `inline constexpr std::size_t kMaximumActiveSessions = ${value.limits.maximumActiveSessions};\n` +
     `inline constexpr std::uint64_t kClientIdleTtlMilliseconds = ${value.limits.clientIdleTtlMs};\n` +
     `inline constexpr std::size_t kMaximumCandidateResults = ${value.limits.maximumCandidateResults};\n` +
     `inline constexpr std::size_t kMaximumProofHints = ${value.limits.maximumProofHints};\n` +

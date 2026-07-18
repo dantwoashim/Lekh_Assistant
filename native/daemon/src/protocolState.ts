@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   IPC_MESSAGE_DESCRIPTORS,
   IPC_PROTOCOL_LIMITS,
@@ -14,6 +14,7 @@ import type {
 interface ReplayEntry {
   id: string;
   type: AnyTypedIpcRequest["type"];
+  fingerprint: string;
   response: IpcResponse;
 }
 
@@ -27,6 +28,7 @@ interface ClientState {
 interface SessionState {
   clientInstanceId: string;
   epoch: number;
+  lastSeenAt: number;
 }
 
 export type ProtocolPreflight =
@@ -61,6 +63,7 @@ export class IpcProtocolState {
 
   preflight(request: AnyTypedIpcRequest): ProtocolPreflight {
     this.cleanupExpiredClients();
+    this.cleanupExpiredSessions();
     if (this.now() > request.deadlineAt) {
       return this.reject(request, "IPC_DEADLINE_EXCEEDED", "The request deadline elapsed before dispatch.");
     }
@@ -69,7 +72,8 @@ export class IpcProtocolState {
     if (client) {
       const replay = client.replayBySequence.get(request.requestSequence);
       if (replay) {
-        if (replay.id === request.id && replay.type === request.type) {
+        if (replay.id === request.id && replay.type === request.type &&
+            replay.fingerprint === requestFingerprint(request)) {
           return { proceed: false, response: replay.response, replayed: true };
         }
         return this.reject(request, "IPC_REPLAY_DETECTED", "A request sequence was reused with different content.");
@@ -105,6 +109,7 @@ export class IpcProtocolState {
       if (session.epoch !== payload.sessionEpoch) {
         return this.reject(request, "IPC_SESSION_STALE", "The session epoch is stale.");
       }
+      session.lastSeenAt = this.now();
     }
 
     return { proceed: true };
@@ -120,6 +125,9 @@ export class IpcProtocolState {
         replayBySequence: new Map()
       };
       this.clients.set(request.clientInstanceId, client);
+    } else if (client && request.type === "protocol.negotiate" && response.ok) {
+      this.retireClientSessions(request.clientInstanceId);
+      client.replayBySequence.clear();
     }
     if (!client) return;
 
@@ -128,6 +136,7 @@ export class IpcProtocolState {
     client.replayBySequence.set(request.requestSequence, {
       id: request.id,
       type: request.type,
+      fingerprint: requestFingerprint(request),
       response
     });
     while (client.replayBySequence.size > IPC_PROTOCOL_LIMITS.maximumReplayEntriesPerClient) {
@@ -139,9 +148,13 @@ export class IpcProtocolState {
 
   openSession(clientInstanceId: string, sessionId: string): number {
     if (!this.clients.has(clientInstanceId)) throw new Error("Cannot open a session for an unnegotiated client.");
+    if (this.sessions.size >= IPC_PROTOCOL_LIMITS.maximumActiveSessions) {
+      throw new Error("IPC active-session capacity is exhausted.");
+    }
+    if (this.sessions.has(sessionId)) throw new Error("IPC engine returned a duplicate live session identifier.");
     if (this.nextSessionEpoch >= Number.MAX_SAFE_INTEGER) throw new Error("Session epoch space is exhausted.");
     const epoch = this.nextSessionEpoch++;
-    this.sessions.set(sessionId, { clientInstanceId, epoch });
+    this.sessions.set(sessionId, { clientInstanceId, epoch, lastSeenAt: this.now() });
     return epoch;
   }
 
@@ -158,6 +171,10 @@ export class IpcProtocolState {
     return this.sessions.size;
   }
 
+  get hasSessionCapacity(): boolean {
+    return this.sessions.size < IPC_PROTOCOL_LIMITS.maximumActiveSessions;
+  }
+
   private cleanupExpiredClients(): void {
     const now = this.now();
     const expiredClients = new Set<string>();
@@ -168,8 +185,27 @@ export class IpcProtocolState {
       }
     }
     if (expiredClients.size === 0) return;
+    for (const clientInstanceId of expiredClients) {
+      this.retireClientSessions(clientInstanceId);
+    }
+  }
+
+  private cleanupExpiredSessions(): void {
+    const now = this.now();
     for (const [sessionId, session] of this.sessions) {
-      if (!expiredClients.has(session.clientInstanceId)) continue;
+      if (now - session.lastSeenAt < this.clientIdleTtlMs) continue;
+      this.sessions.delete(sessionId);
+      try {
+        this.onSessionExpired?.(sessionId);
+      } catch {
+        // Protocol state is already retired; engine cleanup cannot restore it.
+      }
+    }
+  }
+
+  private retireClientSessions(clientInstanceId: string): void {
+    for (const [sessionId, session] of this.sessions) {
+      if (session.clientInstanceId !== clientInstanceId) continue;
       this.sessions.delete(sessionId);
       try {
         this.onSessionExpired?.(sessionId);
@@ -195,4 +231,17 @@ export class IpcProtocolState {
       })
     };
   }
+}
+
+function requestFingerprint(request: AnyTypedIpcRequest): string {
+  return createHash("sha256").update(canonicalJson(request)).digest("hex");
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) =>
+    `${JSON.stringify(key)}:${canonicalJson(record[key])}`
+  ).join(",")}}`;
 }

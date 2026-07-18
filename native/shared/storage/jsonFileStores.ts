@@ -12,6 +12,11 @@ import { defaultKeyboardSettings } from "../../../src/engine/keyboard/storage";
 import { isSecureContext } from "../../../src/engine/keyboard/modes";
 import type { DictionaryResult, TypingContext } from "../../../src/engine/keyboard/types";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
+import {
+  MAX_CORRECTION_MEMORY_DECAY_WEIGHT,
+  MIN_CORRECTION_MEMORY_DECAY_WEIGHT,
+  privacySafeCorrectionMemoryDomain
+} from "../../../src/engine/memory/types";
 
 export interface NativeKeyboardStorageFile {
   schemaVersion: 1;
@@ -299,15 +304,18 @@ export function privacySafeCorrectionMemoryEntry(value: unknown): CorrectionMemo
     throw new Error("JSON keyboard storage contains a malformed correction-memory entry.");
   }
   const context = isRecord(value.context) ? value.context : {};
-  const candidateDomain = typeof context.domain === "string" ? context.domain.trim() : "";
-  const domain = /^[\p{L}\p{N}._:-]{1,64}$/u.test(candidateDomain) ? candidateDomain : "";
+  const domain = privacySafeCorrectionMemoryDomain(context.domain);
   const frequency = requiredFiniteNumber(value.frequency, "correction-memory frequency");
   const confidence = requiredFiniteNumber(value.confidenceAtSelection, "correction-memory confidence");
   if (!Number.isInteger(frequency) || frequency < 0 || confidence < 0 || confidence > 1) {
     throw new Error("JSON keyboard storage contains out-of-range correction-memory scoring values.");
   }
   const decayWeight = optionalFiniteNumber(value.decayWeight);
-  if (decayWeight !== undefined && (decayWeight < 0 || decayWeight > 1)) {
+  if (
+    decayWeight !== undefined &&
+    (decayWeight < MIN_CORRECTION_MEMORY_DECAY_WEIGHT ||
+      decayWeight > MAX_CORRECTION_MEMORY_DECAY_WEIGHT)
+  ) {
     throw new Error("JSON keyboard storage contains an out-of-range correction-memory decay weight.");
   }
   return {

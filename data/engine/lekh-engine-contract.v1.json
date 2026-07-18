@@ -9,10 +9,18 @@
   "candidatePolicy": {
     "maximumVisible": 8,
     "singleTokenMayExpandToPhrase": false,
-    "programmaticSelectionMayCommit": false
+    "commitAuthority": {
+      "explicitUserSelection": true,
+      "untrustedProgrammaticSelection": false,
+      "experimentalExactSpaceAuthorization": {
+        "policyId": "lekh-experimental-passive-commit-v1",
+        "productionEligible": false,
+        "activation": "opaque-test-build-capability-only"
+      }
+    }
   },
   "commitPolicy": {
-    "Space": "engine-authorized-safe-auto-else-raw-with-space",
+    "Space": "raw-with-space-unless-explicit-selection-or-test-only-experiment",
     "Enter": "raw-with-newline-unless-explicit-selection",
     "Tab": "pass-through-unless-explicit-selection",
     "Escape": "preserve-raw"
@@ -21,7 +29,8 @@
     "networkAllowed": false,
     "synchronousXpcAllowed": false,
     "synchronousDatabaseAllowed": false,
-    "deterministicP99Milliseconds": 5
+    "deterministicP99Milliseconds": 5,
+    "maximumCompositionUtf16CodeUnits": 128
   },
   "neuralPolicy": {
     "requiresOpenVocabulary": true,

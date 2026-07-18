@@ -57,6 +57,7 @@ describe("native IPC request validation", () => {
       ["health.check", { client: "browser" }],
       ["engine.warm", { timeoutMs: "fast" }],
       ["session.begin", { context: { ...context, secureInput: "no" } }],
+      ["session.begin", { context: { ...context, passiveDelimiterPolicy: "experimental-exact-token" } }],
       ["session.processKeyStroke", { sessionId: "session-1", key: { key: "r", code: "KeyR", modifiers: {} } }],
       ["session.updateComposition", { sessionId: "session-1", input: "abc", cursor: 4 }],
       ["session.commitCandidate", { sessionId: "session-1", candidateId: "" }],
@@ -107,5 +108,130 @@ describe("native IPC request validation", () => {
     for (const request of invalidRequests) {
       expect(validateIpcRequest(request).ok).toBe(false);
     }
+  });
+
+  it("rejects malformed UTF-16 in required, optional, and array request strings", () => {
+    const processKey = createIpcRequest("session.processKeyStroke", {
+      ...validPayloads["session.processKeyStroke"],
+      key: {
+        ...validPayloads["session.processKeyStroke"].key,
+        nativeCode: "scan-😀"
+      }
+    }, "utf16-key", 1);
+    const malformedRequests = [
+      {
+        ...processKey,
+        payload: { ...processKey.payload, key: { ...processKey.payload.key, key: "\ud800" } }
+      },
+      {
+        ...processKey,
+        payload: { ...processKey.payload, key: { ...processKey.payload.key, code: "\udc00" } }
+      },
+      {
+        ...processKey,
+        payload: { ...processKey.payload, key: { ...processKey.payload.key, nativeCode: "\ud800" } }
+      },
+      {
+        ...createIpcRequest("session.updateComposition", validPayloads["session.updateComposition"], "utf16-input", 1),
+        payload: { ...validPayloads["session.updateComposition"], input: "\udc00" }
+      },
+      {
+        ...createIpcRequest("session.begin", validPayloads["session.begin"], "utf16-context", 1),
+        payload: {
+          context: {
+            ...context,
+            leftTextWindow: "\ud800",
+            activeDomains: ["general", "\udc00"]
+          }
+        }
+      },
+      {
+        ...createIpcRequest("dictionary.lookup", validPayloads["dictionary.lookup"], "utf16-query", 1),
+        payload: { query: "bad\ud800query" }
+      }
+    ];
+
+    for (const request of malformedRequests) {
+      expect(validateIpcRequest(request).ok).toBe(false);
+    }
+    expect(validateIpcRequest(processKey)).toEqual(expect.objectContaining({ ok: true, errors: [] }));
+  });
+
+  it("enforces the canonical composition bound and grapheme-safe cursor on the JSON wire", () => {
+    const prefix = "a".repeat(IPC_PROTOCOL_LIMITS.maximumCompositionLength - 2);
+    const exact = `${prefix}😀`;
+    expect(exact.length).toBe(IPC_PROTOCOL_LIMITS.maximumCompositionLength);
+
+    const exactRequest = JSON.parse(JSON.stringify(createIpcRequest("session.updateComposition", {
+      sessionId: "session-1",
+      sessionEpoch: 1,
+      input: exact,
+      cursor: exact.length
+    }, "composition-exact", 1)));
+    expect(validateIpcRequest(exactRequest)).toEqual(expect.objectContaining({ ok: true, errors: [] }));
+
+    const splitGrapheme = {
+      ...exactRequest,
+      payload: { ...exactRequest.payload, cursor: exact.length - 1 }
+    };
+    expect(validateIpcRequest(splitGrapheme)).toEqual(expect.objectContaining({ ok: false }));
+
+    const overLimit = JSON.parse(JSON.stringify(createIpcRequest("session.updateComposition", {
+      sessionId: "session-1",
+      sessionEpoch: 1,
+      input: `${exact}b`,
+      cursor: exact.length + 1
+    }, "composition-overflow", 2)));
+    expect(validateIpcRequest(overLimit)).toEqual(expect.objectContaining({ ok: false }));
+  });
+
+  it("accepts omitted optional key metadata after JSON serialization removes undefined fields", () => {
+    const request = createIpcRequest("session.processKeyStroke", {
+      sessionId: "session-1",
+      sessionEpoch: 1,
+      key: {
+        key: "r",
+        code: "KeyR",
+        modifiers: { shift: false, ctrl: false, alt: false, meta: false },
+        timestamp: 1,
+        platform: "test",
+        isRepeat: undefined,
+        nativeCode: undefined
+      }
+    }, "optional-wire-fields", 1);
+    const wireRequest = JSON.parse(JSON.stringify(request));
+    expect(wireRequest.payload.key).not.toHaveProperty("isRepeat");
+    expect(wireRequest.payload.key).not.toHaveProperty("nativeCode");
+    expect(validateIpcRequest(wireRequest)).toEqual(expect.objectContaining({ ok: true, errors: [] }));
+  });
+
+  it("bounds native key timestamps and numeric platform codes to portable JSON values", () => {
+    const base = createIpcRequest("session.processKeyStroke", validPayloads["session.processKeyStroke"], "numeric-key", 1);
+    const invalidValues = [
+      { timestamp: -1 },
+      { timestamp: Number.MAX_SAFE_INTEGER + 1 },
+      { nativeCode: -1 },
+      { nativeCode: 1.5 },
+      { nativeCode: Number.MAX_SAFE_INTEGER + 1 }
+    ];
+
+    for (const patch of invalidValues) {
+      const request = {
+        ...base,
+        payload: {
+          ...base.payload,
+          key: { ...base.payload.key, ...patch }
+        }
+      };
+      expect(validateIpcRequest(request).ok).toBe(false);
+    }
+
+    expect(validateIpcRequest({
+      ...base,
+      payload: {
+        ...base.payload,
+        key: { ...base.payload.key, timestamp: 1.25, nativeCode: Number.MAX_SAFE_INTEGER }
+      }
+    })).toEqual(expect.objectContaining({ ok: true, errors: [] }));
   });
 });

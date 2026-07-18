@@ -3,7 +3,9 @@ export const IPC_COMMON_DEFINITIONS = {
   "SessionId": {
     "type": "string",
     "minLength": 1,
-    "maxLength": 256
+    "maxLength": 256,
+    "x-wellFormedUtf16": true,
+    "x-maxUtf16CodeUnits": 256
   },
   "KeyboardMode": {
     "type": "string",
@@ -17,7 +19,8 @@ export const IPC_COMMON_DEFINITIONS = {
       "unicode-proofread",
       "dictionary-lookup",
       "diagnostic"
-    ]
+    ],
+    "x-wellFormedUtf16": true
   },
   "SuggestionSurface": {
     "type": "string",
@@ -28,7 +31,8 @@ export const IPC_COMMON_DEFINITIONS = {
       "traditional-to-unicode",
       "traditional-to-romanized-helper",
       "traditional-to-traditional-proofread"
-    ]
+    ],
+    "x-wellFormedUtf16": true
   },
   "TypingContext": {
     "type": "object",
@@ -44,11 +48,15 @@ export const IPC_COMMON_DEFINITIONS = {
     "properties": {
       "appId": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "appName": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "fieldType": {
         "type": "string",
@@ -58,26 +66,35 @@ export const IPC_COMMON_DEFINITIONS = {
           "search",
           "code",
           "unknown"
-        ]
+        ],
+        "x-wellFormedUtf16": true
       },
       "leftTextWindow": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "rightTextWindow": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "locale": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "activeDomains": {
         "type": "array",
         "maxItems": 32,
         "items": {
           "type": "string",
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         }
       },
       "preserveEnglish": {
@@ -91,7 +108,9 @@ export const IPC_COMMON_DEFINITIONS = {
       },
       "layoutId": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "enabledSurfaces": {
         "type": "array",
@@ -121,12 +140,16 @@ export const IPC_COMMON_DEFINITIONS = {
       "key": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 256
+        "maxLength": 256,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 256
       },
       "code": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 256
+        "maxLength": 256,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 256
       },
       "modifiers": {
         "type": "object",
@@ -156,7 +179,9 @@ export const IPC_COMMON_DEFINITIONS = {
         "type": "boolean"
       },
       "timestamp": {
-        "type": "number"
+        "type": "number",
+        "minimum": 0,
+        "maximum": 9007199254740991
       },
       "platform": {
         "type": "string",
@@ -165,16 +190,21 @@ export const IPC_COMMON_DEFINITIONS = {
           "windows-tsf",
           "macos-imk",
           "test"
-        ]
+        ],
+        "x-wellFormedUtf16": true
       },
       "nativeCode": {
         "oneOf": [
           {
-            "type": "number"
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 256,
+            "x-wellFormedUtf16": true,
+            "x-maxUtf16CodeUnits": 256
           }
         ]
       }
@@ -206,7 +236,8 @@ export const IPC_COMMON_DEFINITIONS = {
       "commit",
       "cancel",
       "errorFallback"
-    ]
+    ],
+    "x-wellFormedUtf16": true
   },
   "Candidate": {
     "type": "object",
@@ -222,15 +253,21 @@ export const IPC_COMMON_DEFINITIONS = {
       "id": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 256
+        "maxLength": 256,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 256
       },
       "text": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "label": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "type": {
         "type": "string",
@@ -243,7 +280,8 @@ export const IPC_COMMON_DEFINITIONS = {
           "personal",
           "protected",
           "romanized-helper"
-        ]
+        ],
+        "x-wellFormedUtf16": true
       },
       "confidence": {
         "type": "number",
@@ -255,12 +293,16 @@ export const IPC_COMMON_DEFINITIONS = {
         "maxItems": 16,
         "items": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         }
       },
       "shortcut": {
         "type": "string",
-        "maxLength": 256
+        "maxLength": 256,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 256
       },
       "replaceRange": {
         "$ref": "#/$defs/Utf16Range"
@@ -282,15 +324,21 @@ export const IPC_COMMON_DEFINITIONS = {
     "properties": {
       "text": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "displayText": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "contextText": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "candidate": {
         "$ref": "#/$defs/Candidate"
@@ -305,7 +353,8 @@ export const IPC_COMMON_DEFINITIONS = {
         "enum": [
           "active-candidate",
           "ngram-lm"
-        ]
+        ],
+        "x-wellFormedUtf16": true
       },
       "acceptKeys": {
         "type": "array",
@@ -317,7 +366,8 @@ export const IPC_COMMON_DEFINITIONS = {
           "enum": [
             "Tab",
             "Enter"
-          ]
+          ],
+          "x-wellFormedUtf16": true
         }
       }
     }
@@ -340,11 +390,15 @@ export const IPC_COMMON_DEFINITIONS = {
       },
       "original": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "suggestion": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "type": {
         "type": "string",
@@ -358,7 +412,8 @@ export const IPC_COMMON_DEFINITIONS = {
           "name-variant",
           "agreement",
           "honorific"
-        ]
+        ],
+        "x-wellFormedUtf16": true
       },
       "confidence": {
         "type": "number",
@@ -371,11 +426,14 @@ export const IPC_COMMON_DEFINITIONS = {
           "auto-suggest",
           "hint-only",
           "ask"
-        ]
+        ],
+        "x-wellFormedUtf16": true
       },
       "explanation": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       }
     }
   },
@@ -390,18 +448,24 @@ export const IPC_COMMON_DEFINITIONS = {
     "properties": {
       "query": {
         "type": "string",
-        "maxLength": 1024
+        "maxLength": 1024,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 1024
       },
       "word": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "romanized": {
         "type": "array",
         "maxItems": 32,
         "items": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         }
       },
       "variants": {
@@ -409,7 +473,9 @@ export const IPC_COMMON_DEFINITIONS = {
         "maxItems": 32,
         "items": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         }
       },
       "domains": {
@@ -417,16 +483,22 @@ export const IPC_COMMON_DEFINITIONS = {
         "maxItems": 32,
         "items": {
           "type": "string",
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         }
       },
       "source": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "meaning": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "confidence": {
         "type": "number",
@@ -468,16 +540,20 @@ export const IPC_COMMON_DEFINITIONS = {
       },
       "compositionText": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 128,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 128
       },
       "displayText": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "caret": {
         "type": "integer",
         "minimum": 0,
-        "maximum": 16384
+        "maximum": 128
       },
       "candidates": {
         "type": "array",
@@ -501,7 +577,9 @@ export const IPC_COMMON_DEFINITIONS = {
       },
       "committedText": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "consumedRange": {
         "$ref": "#/$defs/Utf16Range"
@@ -519,7 +597,9 @@ export const IPC_COMMON_DEFINITIONS = {
         "maxItems": 32,
         "items": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         }
       },
       "latencyMs": {
@@ -551,11 +631,13 @@ export const IPC_COMMON_DEFINITIONS = {
       },
       "committedText": {
         "type": "string",
-        "maxLength": 16384
+        "maxLength": 16384,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 16384
       },
       "commitEpoch": {
         "type": "integer",
-        "minimum": 1,
+        "minimum": 0,
         "maximum": 9007199254740991
       },
       "consumedRange": {
@@ -598,43 +680,43 @@ export const IPC_RESPONSE_PAYLOAD_SCHEMAS = {
       "serverInstanceId": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 256
+        "maxLength": 256,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 256
       },
       "limits": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "maximumFrameBytes",
+          "maximumCompositionLength",
           "hotPathDeadlineMs",
           "maximumPendingRequestsPerConnection",
           "maximumClientInstances",
+          "maximumActiveSessions",
           "clientIdleTtlMs"
         ],
         "properties": {
           "maximumFrameBytes": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "const": 65536
+          },
+          "maximumCompositionLength": {
+            "const": 128
           },
           "hotPathDeadlineMs": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "const": 50
           },
           "maximumPendingRequestsPerConnection": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "const": 32
           },
           "maximumClientInstances": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "const": 64
+          },
+          "maximumActiveSessions": {
+            "const": 64
           },
           "clientIdleTtlMs": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
+            "const": 1800000
           }
         }
       }
@@ -654,11 +736,14 @@ export const IPC_RESPONSE_PAYLOAD_SCHEMAS = {
         "enum": [
           "ok",
           "degraded"
-        ]
+        ],
+        "x-wellFormedUtf16": true
       },
       "daemonVersion": {
         "type": "string",
-        "maxLength": 256
+        "maxLength": 256,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 256
       },
       "engineReady": {
         "type": "boolean"
@@ -668,7 +753,9 @@ export const IPC_RESPONSE_PAYLOAD_SCHEMAS = {
         "maxItems": 32,
         "items": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         }
       }
     }
@@ -696,7 +783,9 @@ export const IPC_RESPONSE_PAYLOAD_SCHEMAS = {
         "maxItems": 32,
         "items": {
           "type": "string",
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         }
       },
       "unavailableModules": {
@@ -704,7 +793,9 @@ export const IPC_RESPONSE_PAYLOAD_SCHEMAS = {
         "maxItems": 32,
         "items": {
           "type": "string",
-          "maxLength": 256
+          "maxLength": 256,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 256
         }
       },
       "warmTimeMs": {
@@ -716,7 +807,9 @@ export const IPC_RESPONSE_PAYLOAD_SCHEMAS = {
         "maxItems": 32,
         "items": {
           "type": "string",
-          "maxLength": 16384
+          "maxLength": 16384,
+          "x-wellFormedUtf16": true,
+          "x-maxUtf16CodeUnits": 16384
         }
       }
     }
@@ -797,7 +890,9 @@ export const IPC_RESPONSE_PAYLOAD_SCHEMAS = {
       "layoutId": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 256
+        "maxLength": 256,
+        "x-wellFormedUtf16": true,
+        "x-maxUtf16CodeUnits": 256
       }
     }
   },
@@ -868,12 +963,16 @@ export const IPC_RESPONSE_PAYLOAD_SCHEMAS = {
           "code": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 256
+            "maxLength": 256,
+            "x-wellFormedUtf16": true,
+            "x-maxUtf16CodeUnits": 256
           },
           "message": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 16384
+            "maxLength": 16384,
+            "x-wellFormedUtf16": true,
+            "x-maxUtf16CodeUnits": 16384
           },
           "at": {
             "type": "integer",

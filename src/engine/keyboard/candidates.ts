@@ -3,6 +3,7 @@ import engineContract from "../../../data/engine/lekh-engine-contract.v1.json";
 import tokenCandidatePack from "../../../data/engine/lekh-token-candidates.v1.json";
 import { convertRomanized } from "../romanized";
 import { nowMs } from "../util/time";
+import { sha256Hex } from "../util/sha256";
 import { contextualPredictionCandidates } from "./contextPredictor";
 import { canonicalRomanizedLabel, romanizedHelperCandidates } from "./helpers";
 import { keyboardBlockedCandidateTexts, keyboardMemoryCandidates } from "./memory";
@@ -139,8 +140,8 @@ export function buildCandidateUpdate(session: KeyboardSession, options: Candidat
     displayText,
     caret: session.caret,
     candidates,
-    primary,
-    inlineCompletion,
+    ...(primary ? { primary } : {}),
+    ...(inlineCompletion ? { inlineCompletion } : {}),
     proofHints: session.proofHints,
     shouldShowCandidateUI: candidates.length > 0 || session.proofHints.length > 0,
     confidence: primary?.confidence ?? 0,
@@ -266,8 +267,8 @@ function traditionalUpdate(session: KeyboardSession, start: number): CandidateUp
     displayText: primary?.text ?? session.compositionText,
     caret: session.caret,
     candidates: unicodeCandidates,
-    primary,
-    inlineCompletion,
+    ...(primary ? { primary } : {}),
+    ...(inlineCompletion ? { inlineCompletion } : {}),
     proofHints: session.proofHints,
     shouldShowCandidateUI: unicodeCandidates.length > 0 || session.proofHints.length > 0 || warnings.length > 0,
     confidence: primary?.confidence ?? (warnings.length > 0 ? 0.5 : 0.82),
@@ -326,11 +327,18 @@ export function finalizeCandidates(candidates: Candidate[], max = MAX_CANDIDATES
   return Array.from(merged.values())
     .sort(compareCandidates)
     .slice(0, max)
-    .map((candidate, index) => ({
-      ...candidate,
-      id: stableCandidateId(candidate, index),
-      shortcut: String(index + 1)
-    }));
+    .map((candidate, index) => canonicalCandidate(candidate, index));
+}
+
+function canonicalCandidate(candidate: Candidate, index: number): Candidate {
+  const canonical: Candidate = {
+    ...candidate,
+    id: candidateSelectionId(candidate),
+    shortcut: String(index + 1)
+  };
+  if (canonical.label === undefined) delete canonical.label;
+  if (canonical.replaceRange === undefined) delete canonical.replaceRange;
+  return canonical;
 }
 
 function prefixCandidates(input: string, rangeEnd: number, context?: TypingContext): Candidate[] {
@@ -900,9 +908,15 @@ function compareCandidates(a: Candidate, b: Candidate): number {
     a.text.localeCompare(b.text, "ne");
 }
 
-function stableCandidateId(candidate: Candidate, index: number): string {
-  const normalized = candidateDedupeKey(candidate).replace(/\s+/g, "-");
-  return `candidate-${index + 1}-${candidate.type}-${normalized}`;
+function candidateSelectionId(candidate: Candidate): string {
+  const commitIdentity = JSON.stringify([
+    "lekh-candidate-selection-v1",
+    engineContract.schemaVersion,
+    candidate.type,
+    candidate.text.normalize("NFC"),
+    candidate.replaceRange ?? null
+  ]);
+  return `candidate-${sha256Hex(commitIdentity).slice(0, 32)}`;
 }
 
 function dedupeReasons(reasons: string[]): string[] {

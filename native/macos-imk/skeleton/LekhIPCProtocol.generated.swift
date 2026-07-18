@@ -5,10 +5,14 @@ public enum LekhIPCProtocolContract {
   public static let schemaVersion = 2
   public static let compatibleVersions = [2]
   public static let maximumFrameBytes = 65536
+  public static let maximumIdentifierLength = 256
+  public static let maximumTextLength = 16384
+  public static let maximumCompositionLength = 128
   public static let hotPathDeadlineMilliseconds = 50
   public static let maximumActiveConnections = 16
   public static let maximumPendingRequestsPerConnection = 32
   public static let maximumClientInstances = 64
+  public static let maximumActiveSessions = 64
   public static let clientIdleTtlMilliseconds = 1800000
   public static let maximumCandidateResults = 8
   public static let maximumProofHints = 8

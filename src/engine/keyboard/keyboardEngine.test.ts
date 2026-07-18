@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
+import engineContract from "../../../data/engine/lekh-engine-contract.v1.json";
 import ngramModel from "../../data/keyboard-packs/v0.1/ngram-lm.json";
 import predictionModel from "../../data/keyboard-packs/v0.1/prediction-model.json";
 import { createKeyboardEngine, defaultTypingContext } from "./index";
 import type { KeyboardKeyEvent } from "./types";
 import { finalizeCandidates } from "./candidates";
+import { buildKeyboardMemorySelection, importKeyboardMemoryEntry } from "./memory";
 import { KeyboardSessionManager } from "./session";
+
+const MAXIMUM_COMPOSITION_UTF16 = engineContract.hotPathPolicy.maximumCompositionUtf16CodeUnits;
 
 function key(value: string): KeyboardKeyEvent {
   return {
@@ -172,6 +176,143 @@ describe("KeyboardEngine session API", () => {
     expect(update.candidates.some((candidate) => candidate.text.startsWith("स्व"))).toBe(true);
   });
 
+  it("keeps candidate selection identifiers bounded for long admissible compositions", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const input = "a".repeat(MAXIMUM_COMPOSITION_UTF16);
+    const update = engine.updateComposition(sessionId, input, input.length);
+    expect(update.candidates.length).toBeGreaterThan(0);
+    expect(update.candidates.every((candidate) => candidate.id.length <= 256)).toBe(true);
+    expect(new Set(update.candidates.map((candidate) => candidate.id)).size).toBe(update.candidates.length);
+  });
+
+  it("accepts the exact composition bound and rejects +1 without mutating cached state", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const maximum = "a".repeat(MAXIMUM_COMPOSITION_UTF16);
+    const atLimit = engine.updateComposition(sessionId, maximum, maximum.length);
+    expect(atLimit.compositionText).toBe(maximum);
+    const candidateIds = atLimit.candidates.map((candidate) => candidate.id);
+
+    const overflow = engine.processKeyStroke(sessionId, key("b"));
+    expect(overflow.action).toBe("passThrough");
+    expect(overflow.compositionText).toBe(maximum);
+    expect(overflow.caret).toBe(maximum.length);
+    expect(overflow.candidates).toEqual([]);
+    expect(overflow.proofHints).toEqual([]);
+
+    const overflowWire = JSON.parse(JSON.stringify(overflow)) as Record<string, unknown>;
+    for (const optionalKey of ["primary", "inlineCompletion", "committedText", "consumedRange"]) {
+      expect(overflowWire).not.toHaveProperty(optionalKey);
+    }
+
+    const rejectedBulkUpdate = engine.updateComposition(sessionId, `${maximum}c`, maximum.length + 1);
+    expect(rejectedBulkUpdate.action).toBe("errorFallback");
+    expect(rejectedBulkUpdate.compositionText).toBe(maximum);
+    expect(rejectedBulkUpdate.candidates).toEqual([]);
+
+    const unchanged = engine.updateComposition(sessionId, maximum, maximum.length);
+    expect(unchanged.candidates.map((candidate) => candidate.id)).toEqual(candidateIds);
+
+    const committed = engine.processKeyStroke(sessionId, key("Enter"));
+    expect(committed.action).toBe("commit");
+    expect(committed.committedText).toBe(`${maximum}\n`);
+    expect(committed.committedText?.length).toBe(MAXIMUM_COMPOSITION_UTF16 + 1);
+    expect(committed.compositionText).toBe("");
+  });
+
+  it("keeps exact-bound edits on extended grapheme boundaries", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const prefix = "a".repeat(MAXIMUM_COMPOSITION_UTF16 - 2);
+    const maximum = `${prefix}😀`;
+    expect(maximum.length).toBe(MAXIMUM_COMPOSITION_UTF16);
+
+    const atLimit = engine.updateComposition(sessionId, maximum, maximum.length);
+    expect(atLimit.compositionText).toBe(maximum);
+    expect(atLimit.caret).toBe(maximum.length);
+
+    const overflow = engine.processKeyStroke(sessionId, key("b"));
+    expect(overflow.action).toBe("passThrough");
+    expect(overflow.compositionText).toBe(maximum);
+
+    const deleted = engine.processKeyStroke(sessionId, key("Backspace"));
+    expect(deleted.compositionText).toBe(prefix);
+    expect(deleted.caret).toBe(prefix.length);
+  });
+
+  it("never reuses a candidate selection identifier across colliding legacy hash inputs", () => {
+    const costarring = {
+      id: "first",
+      text: "costarring",
+      type: "word" as const,
+      confidence: 1,
+      reason: []
+    };
+    const liquid = {
+      id: "second",
+      text: "liquid",
+      type: "word" as const,
+      confidence: 1,
+      reason: []
+    };
+    const first = finalizeCandidates([costarring]);
+    const second = finalizeCandidates([liquid]);
+    expect(first[0]?.id).not.toBe(second[0]?.id);
+    expect(finalizeCandidates([costarring])[0]?.id).toBe(first[0]?.id);
+    expect(first[0]?.id).toMatch(/^candidate-[a-f0-9]{32}$/u);
+  });
+
+  it("keeps candidate identifiers stable across input order, rank changes, and engine instances", () => {
+    const health = {
+      id: "health-source",
+      text: "स्वास्थ्य",
+      type: "word" as const,
+      confidence: 0.9,
+      reason: ["health"]
+    };
+    const welcome = {
+      id: "welcome-source",
+      text: "स्वागत",
+      type: "word" as const,
+      confidence: 0.8,
+      reason: ["welcome"]
+    };
+    const first = finalizeCandidates([health, welcome]);
+    const reordered = finalizeCandidates([
+      { ...welcome, confidence: 0.99 },
+      { ...health, confidence: 0.1 }
+    ]);
+    const firstIds = new Map(first.map((candidate) => [candidate.text, candidate.id]));
+    const reorderedIds = new Map(reordered.map((candidate) => [candidate.text, candidate.id]));
+    expect(reorderedIds).toEqual(firstIds);
+
+    const firstEngine = createKeyboardEngine();
+    const secondEngine = createKeyboardEngine();
+    const firstSession = firstEngine.beginSession(defaultTypingContext("romanized"));
+    const secondSession = secondEngine.beginSession(defaultTypingContext("romanized"));
+    const firstUpdate = firstEngine.updateComposition(firstSession, "swas", 4);
+    const secondUpdate = secondEngine.updateComposition(secondSession, "swas", 4);
+    expect(secondUpdate.candidates.map(({ id }) => id)).toEqual(firstUpdate.candidates.map(({ id }) => id));
+  });
+
+  it("rejects a semantic candidate ID after it leaves the current composition generation", () => {
+    const engine = createKeyboardEngine();
+    const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const first = engine.updateComposition(sessionId, "swas", 4);
+    const staleCandidate = first.candidates.find((candidate) => candidate.text === "स्वास्थ्य");
+    expect(staleCandidate).toBeDefined();
+
+    const current = engine.updateComposition(sessionId, "ramro", 5);
+    expect(current.candidates.some((candidate) => candidate.id === staleCandidate!.id)).toBe(false);
+    const rejected = engine.commitCandidate(sessionId, staleCandidate!.id);
+
+    expect(rejected.action).toBe("errorFallback");
+    expect(rejected.committedText).toBe("");
+    expect(rejected.commitEpoch).toBe(0);
+    expect(engine.updateComposition(sessionId, "ramro", 5).compositionText).toBe("ramro");
+  });
+
   it("passes through malformed native key events without corrupting composition", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession(defaultTypingContext("romanized"));
@@ -180,6 +321,13 @@ describe("KeyboardEngine session API", () => {
     expect(update.action).toBe("passThrough");
     expect(update.compositionText).toBe("swas");
     expect(update.warnings.join(" ")).toMatch(/Malformed key event/);
+    const malformedUtf16 = engine.processKeyStroke(sessionId, { ...key("x"), key: "\ud800" });
+    expect(malformedUtf16.action).toBe("passThrough");
+    expect(malformedUtf16.compositionText).toBe("swas");
+
+    const rejectedBulkUpdate = engine.updateComposition(sessionId, "broken-\udc00", 8);
+    expect(rejectedBulkUpdate.action).toBe("errorFallback");
+    expect(rejectedBulkUpdate.compositionText).toBe("swas");
   });
 
   it("passes native secure-field keys through without mutating composition", () => {
@@ -205,6 +353,10 @@ describe("KeyboardEngine session API", () => {
     expect(spaceCommit.compositionText).toBe("");
     const emptyBackspace = engine.processKeyStroke(sessionId, key("Backspace"));
     expect(emptyBackspace.action).toBe("passThrough");
+    const emptyEnter = engine.processKeyStroke(sessionId, key("Enter"));
+    expect(emptyEnter.action).toBe("passThrough");
+    expect(emptyEnter.committedText).toBeUndefined();
+    expect(emptyEnter.compositionText).toBe("");
     expect(engine.processKeyStroke(sessionId, key("Escape")).action).toBe("cancel");
 
     engine.updateComposition(sessionId, "swasthya", 8);
@@ -252,12 +404,18 @@ describe("KeyboardEngine session API", () => {
   it("refines composition when a Romanized helper is selected", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession(defaultTypingContext("romanized"));
+    const prior = engine.updateComposition(sessionId, "swasthya", 8);
+    const priorCommit = engine.commitCandidate(sessionId, prior.primary?.id ?? "");
+    expect(priorCommit.action).toBe("commit");
+    expect(priorCommit.commitEpoch).toBe(1);
+
     const update = engine.updateComposition(sessionId, "pra", 3);
     const helper = update.candidates.find((candidate) => candidate.type === "romanized-helper" && candidate.text === "prashasan");
     expect(helper).toBeTruthy();
     const result = engine.commitCandidate(sessionId, helper!.id);
     expect(result.action).toBe("compose");
     expect(result.committedText).toBe("");
+    expect(result.commitEpoch).toBe(0);
     expect(result.memoryRecorded).toBe(false);
     const refined = engine.updateComposition(sessionId, "prashasan", 9);
     expect(refined.compositionText).toBe("prashasan");
@@ -673,6 +831,121 @@ describe("KeyboardEngine session API", () => {
     expect(secure.candidates).toHaveLength(0);
   });
 
+  it("defers native selection learning until one exact host confirmation", () => {
+    const engine = createKeyboardEngine();
+    const committingSession = engine.beginSession({
+      ...defaultTypingContext("romanized"),
+      fieldType: "normal"
+    });
+    const beforeCommit = engine.updateComposition(committingSession, "prabin", 6);
+    const alternate = beforeCommit.candidates.find((candidate) => candidate.text !== beforeCommit.primary?.text);
+    expect(alternate).toBeTruthy();
+
+    const commit = engine.commitCandidate(
+      committingSession,
+      alternate!.id,
+      { learning: "deferred" }
+    );
+    expect(commit.memoryRecorded).toBe(false);
+
+    const observingSession = engine.beginSession({
+      ...defaultTypingContext("romanized"),
+      fieldType: "normal"
+    });
+    const beforeConfirmation = engine.updateComposition(observingSession, "prabin", 6);
+    expect(beforeConfirmation.candidates.some((candidate) => (
+      candidate.type === "personal" && candidate.text === alternate!.text
+    ))).toBe(false);
+
+    expect(engine.learnCommittedCorrection(committingSession, commit.commitEpoch)).toBe(true);
+    expect(engine.learnCommittedCorrection(committingSession, commit.commitEpoch)).toBe(false);
+    const afterConfirmation = engine.updateComposition(observingSession, "prabin", 6);
+    expect(afterConfirmation.candidates[0]).toEqual(expect.objectContaining({
+      text: alternate!.text,
+      type: "personal"
+    }));
+  });
+
+  it("purges deferred learning on secure and stale session transitions", () => {
+    const assertTransitionRejectsLearning = (
+      transition: (engine: ReturnType<typeof createKeyboardEngine>, sessionId: string) => void
+    ) => {
+      const engine = createKeyboardEngine();
+      const sessionId = engine.beginSession({
+        ...defaultTypingContext("romanized"),
+        fieldType: "normal"
+      });
+      const update = engine.updateComposition(sessionId, "prabin", 6);
+      const alternate = update.candidates.find((candidate) => candidate.text !== update.primary?.text);
+      expect(alternate).toBeTruthy();
+      const commit = engine.commitCandidate(sessionId, alternate!.id, { learning: "deferred" });
+
+      transition(engine, sessionId);
+      expect(engine.learnCommittedCorrection(sessionId, commit.commitEpoch)).toBe(false);
+      const fresh = engine.beginSession({ ...defaultTypingContext("romanized"), fieldType: "normal" });
+      expect(engine.updateComposition(fresh, "prabin", 6).candidates.some((candidate) => (
+        candidate.type === "personal" && candidate.text === alternate!.text
+      ))).toBe(false);
+    };
+
+    assertTransitionRejectsLearning((engine, sessionId) => {
+      engine.setContext(sessionId, { fieldType: "password", secureInput: true });
+    });
+    assertTransitionRejectsLearning((engine, sessionId) => {
+      engine.updateComposition(sessionId, "next", 4);
+    });
+  });
+
+  it("privacy-projects pending and imported memory before retention", () => {
+    const manager = new KeyboardSessionManager();
+    const sessionId = manager.beginSession({
+      ...defaultTypingContext("romanized"),
+      fieldType: "normal",
+      leftTextWindow: "private sentence before",
+      rightTextWindow: "private sentence after",
+      activeDomains: ["health", "ignored"]
+    });
+    manager.updateComposition(sessionId, "prabin", 6);
+    const candidate = {
+      id: "candidate",
+      text: "प्रवीण",
+      type: "word" as const,
+      confidence: 0.9,
+      reason: ["test"]
+    };
+    manager.updateCandidates(sessionId, [candidate]);
+
+    expect(buildKeyboardMemorySelection(manager.get(sessionId), candidate)?.context).toEqual({
+      leftWindow: "",
+      rightWindow: "",
+      domain: "health"
+    });
+    const firstId = buildKeyboardMemorySelection(manager.get(sessionId), candidate)?.id;
+    const concurrentSessionId = manager.beginSession({
+      ...defaultTypingContext("romanized"),
+      fieldType: "normal",
+      activeDomains: ["health"]
+    });
+    manager.updateComposition(concurrentSessionId, "prabin", 6);
+    const differentOutputId = buildKeyboardMemorySelection(manager.get(concurrentSessionId), {
+      ...candidate,
+      id: "different-candidate",
+      text: "प्रबिन"
+    })?.id;
+    expect(firstId).toMatch(/^kbd-memory-[a-f0-9]{40}$/);
+    expect(differentOutputId).not.toBe(firstId);
+    expect(importKeyboardMemoryEntry([], {
+      id: "imported",
+      inputRomanized: "prabin",
+      chosenOutput: "प्रवीण",
+      context: {
+        leftWindow: "private imported left",
+        rightWindow: "private imported right",
+        domain: "health"
+      }
+    })[0]?.context).toEqual({ leftWindow: "", rightWindow: "", domain: "health" });
+  });
+
   it("honors pinned personal memory and never-suggest blocks safely", () => {
     const engine = createKeyboardEngine();
     engine.learnCorrection({
@@ -797,7 +1070,12 @@ describe("KeyboardEngine session API", () => {
     engine.setMode(sessionId, "traditional");
     expect(engine.updateComposition(sessionId, "x", 1).warnings.join(" ")).toMatch(/Traditional/);
     const warm = await engine.warm({ timeoutMs: 50 });
-    expect(warm.loadedModules.length).toBeGreaterThan(0);
+    expect(warm.ready).toBe(true);
+    expect(warm.loadedModules).toEqual(expect.arrayContaining([
+      "candidate-pipeline",
+      "proofread-index",
+      "dictionary-index"
+    ]));
   });
 
   it("handles unknown sessions with safe results instead of crashing native callers", () => {
@@ -822,7 +1100,8 @@ describe("KeyboardEngine session API", () => {
   });
 
   it("evicts idle sessions with TTL cleanup for daemon lifecycle safety", () => {
-    const manager = new KeyboardSessionManager(1, 2);
+    const removed: string[] = [];
+    const manager = new KeyboardSessionManager(1, 2, (sessionIds) => removed.push(...sessionIds));
     const first = manager.beginSession(defaultTypingContext("romanized"));
     const second = manager.beginSession(defaultTypingContext("romanized"));
     manager.updateComposition(second, "swas", 4);
@@ -830,6 +1109,19 @@ describe("KeyboardEngine session API", () => {
     expect(manager.cleanupExpired(Date.now() + 10)).toBeGreaterThan(0);
     expect(manager.has(first)).toBe(false);
     expect(manager.has(second)).toBe(false);
+    expect(new Set(removed)).toEqual(new Set([first, second]));
+  });
+
+  it("rejects session overflow instead of silently evicting live state", () => {
+    const removed: string[] = [];
+    const manager = new KeyboardSessionManager(60_000, 2, (sessionIds) => removed.push(...sessionIds));
+    const first = manager.beginSession(defaultTypingContext("romanized"));
+    const second = manager.beginSession(defaultTypingContext("romanized"));
+
+    expect(() => manager.beginSession(defaultTypingContext("romanized"))).toThrow(/capacity/);
+    expect(manager.has(first)).toBe(true);
+    expect(manager.has(second)).toBe(true);
+    expect(removed).toEqual([]);
   });
 
   it("atomically purges retained text and assistance when a session becomes secure", () => {

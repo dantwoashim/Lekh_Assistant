@@ -1,10 +1,11 @@
 import { deleteAfterCaret, deleteBeforeCaret, insertAtCaret } from "./ranges";
 import type { KeyboardKeyEvent } from "./types";
+import { isWellFormedUtf16 } from "../util/utf16";
 
 export interface CompositionMutation {
   text: string;
   caret: number;
-  command?: "commit-primary" | "commit-raw" | "cancel" | "expand-candidates" | "pass-through";
+  command?: "commit-raw" | "cancel" | "expand-candidates" | "pass-through";
   warning?: string;
 }
 
@@ -17,7 +18,7 @@ export function applyKeyToComposition(input: string, caret: number, key: Keyboar
     meta: Boolean(key?.modifiers?.meta)
   };
 
-  if (!safeKey) {
+  if (!safeKey || !isWellFormedUtf16(safeKey)) {
     return {
       text: input,
       caret,
@@ -64,6 +65,14 @@ export function applyKeyToComposition(input: string, caret: number, key: Keyboar
   }
 
   if (safeKey === "Enter") {
+    if (input.length === 0) {
+      return {
+        text: input,
+        caret,
+        command: "pass-through",
+        warning: "Enter passed through because there is no active composition."
+      };
+    }
     return { text: input, caret, command: "commit-raw" };
   }
 

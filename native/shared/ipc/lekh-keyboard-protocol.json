@@ -8,6 +8,7 @@
     "maximumFrameBytes": 65536,
     "maximumIdentifierLength": 256,
     "maximumTextLength": 16384,
+    "maximumCompositionLength": 128,
     "maximumQueryLength": 1024,
     "maximumContextDomains": 32,
     "hotPathDeadlineMs": 50,
@@ -16,6 +17,7 @@
     "maximumPendingRequestsPerConnection": 32,
     "maximumReplayEntriesPerClient": 256,
     "maximumClientInstances": 64,
+    "maximumActiveSessions": 64,
     "clientIdleTtlMs": 1800000,
     "maximumCandidateResults": 8,
     "maximumProofHints": 8,
@@ -109,9 +111,14 @@
           }
         },
         "isRepeat": { "type": "boolean" },
-        "timestamp": { "type": "number" },
+        "timestamp": { "type": "number", "minimum": 0, "maximum": 9007199254740991 },
         "platform": { "type": "string", "enum": ["web", "windows-tsf", "macos-imk", "test"] },
-        "nativeCode": { "oneOf": [{ "type": "number" }, { "type": "string", "maxLength": 256 }] }
+        "nativeCode": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            { "type": "string", "maxLength": 256 }
+          ]
+        }
       }
     },
     "Utf16Range": {
@@ -207,9 +214,9 @@
         "mode": { "$ref": "#/$defs/KeyboardMode" },
         "surface": { "$ref": "#/$defs/SuggestionSurface" },
         "action": { "$ref": "#/$defs/KeyboardHostAction" },
-        "compositionText": { "type": "string", "maxLength": 16384 },
+        "compositionText": { "type": "string", "maxLength": 128 },
         "displayText": { "type": "string", "maxLength": 16384 },
-        "caret": { "type": "integer", "minimum": 0, "maximum": 16384 },
+        "caret": { "type": "integer", "minimum": 0, "maximum": 128 },
         "candidates": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/Candidate" } },
         "primary": { "$ref": "#/$defs/Candidate" },
         "inlineCompletion": { "$ref": "#/$defs/InlineCompletion" },
@@ -231,7 +238,7 @@
         "sessionId": { "$ref": "#/$defs/SessionId" },
         "action": { "$ref": "#/$defs/KeyboardHostAction" },
         "committedText": { "type": "string", "maxLength": 16384 },
-        "commitEpoch": { "type": "integer", "minimum": 1 },
+        "commitEpoch": { "type": "integer", "minimum": 0 },
         "consumedRange": { "$ref": "#/$defs/Utf16Range" },
         "replacementRange": { "$ref": "#/$defs/Utf16Range" },
         "followupCandidates": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/Candidate" } },
@@ -270,13 +277,15 @@
           "limits": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["maximumFrameBytes", "hotPathDeadlineMs", "maximumPendingRequestsPerConnection", "maximumClientInstances", "clientIdleTtlMs"],
+            "required": ["maximumFrameBytes", "maximumCompositionLength", "hotPathDeadlineMs", "maximumPendingRequestsPerConnection", "maximumClientInstances", "maximumActiveSessions", "clientIdleTtlMs"],
             "properties": {
-              "maximumFrameBytes": { "type": "integer", "minimum": 1 },
-              "hotPathDeadlineMs": { "type": "integer", "minimum": 1 },
-              "maximumPendingRequestsPerConnection": { "type": "integer", "minimum": 1 },
-              "maximumClientInstances": { "type": "integer", "minimum": 1 },
-              "clientIdleTtlMs": { "type": "integer", "minimum": 1 }
+              "maximumFrameBytes": { "const": 65536 },
+              "maximumCompositionLength": { "const": 128 },
+              "hotPathDeadlineMs": { "const": 50 },
+              "maximumPendingRequestsPerConnection": { "const": 32 },
+              "maximumClientInstances": { "const": 64 },
+              "maximumActiveSessions": { "const": 64 },
+              "clientIdleTtlMs": { "const": 1800000 }
             }
           }
         }
@@ -335,6 +344,7 @@
     {
       "type": "session.begin",
       "sessionBound": false,
+      "responseSessionEpoch": true,
       "deadlineClass": "hotPath",
       "requestPayload": {
         "type": "object",
@@ -377,8 +387,8 @@
         "required": ["sessionId", "input", "cursor"],
         "properties": {
           "sessionId": { "$ref": "#/$defs/SessionId" },
-          "input": { "type": "string", "maxLength": 16384 },
-          "cursor": { "type": "integer", "minimum": 0, "maximum": 16384 }
+          "input": { "type": "string", "maxLength": 128 },
+          "cursor": { "type": "integer", "minimum": 0, "maximum": 128 }
         }
       },
       "responsePayload": { "$ref": "#/$defs/CandidateUpdate" }

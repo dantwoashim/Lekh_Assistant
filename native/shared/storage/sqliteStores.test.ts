@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { defaultTypingContext } from "../../../src/engine/keyboard";
+import { applyKeyboardMemorySelection } from "../../../src/engine/keyboard/memory";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
 import { SQLiteKeyboardStorage } from "./sqliteStores";
 
@@ -86,6 +87,25 @@ describe("native SQLite keyboard stores", () => {
     await memory.forget("niraj");
     expect(await memory.query("nir", defaultTypingContext("romanized"))).toHaveLength(0);
     storage.close();
+  });
+
+  it("persists the canonical repeated-selection decay bound across SQLite reopen", async () => {
+    const filePath = await tempStoragePath();
+    const selection = { ...memoryEntry("repeat", "prabin", "प्रवीण", 1), decayWeight: 1 };
+    let entries: CorrectionMemoryEntry[] = [selection];
+    for (let index = 0; index < 20; index += 1) {
+      entries = applyKeyboardMemorySelection(entries, selection);
+    }
+    expect(entries[0]).toEqual(expect.objectContaining({ frequency: 21, decayWeight: 2 }));
+
+    const storage = new SQLiteKeyboardStorage(filePath);
+    await storage.correctionMemory().record(entries[0]!);
+    storage.close();
+    const reopened = new SQLiteKeyboardStorage(filePath);
+    expect(await reopened.correctionMemory().query("prabin", defaultTypingContext("romanized"))).toEqual([
+      expect.objectContaining({ frequency: 21, decayWeight: 2 })
+    ]);
+    reopened.close();
   });
 
   it("treats SQLite wildcard characters as literal correction-memory input", async () => {

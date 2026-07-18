@@ -6,6 +6,7 @@ export const IPC_PROTOCOL_LIMITS = {
   "maximumFrameBytes": 65536,
   "maximumIdentifierLength": 256,
   "maximumTextLength": 16384,
+  "maximumCompositionLength": 128,
   "maximumQueryLength": 1024,
   "maximumContextDomains": 32,
   "hotPathDeadlineMs": 50,
@@ -14,6 +15,7 @@ export const IPC_PROTOCOL_LIMITS = {
   "maximumPendingRequestsPerConnection": 32,
   "maximumReplayEntriesPerClient": 256,
   "maximumClientInstances": 64,
+  "maximumActiveSessions": 64,
   "clientIdleTtlMs": 1800000,
   "maximumCandidateResults": 8,
   "maximumProofHints": 8,
@@ -23,74 +25,92 @@ export const IPC_PROTOCOL_LIMITS = {
 export const IPC_MESSAGE_DESCRIPTORS = {
   "protocol.negotiate": {
     "sessionBound": false,
+    "responseSessionEpoch": false,
     "deadlineClass": "control"
   },
   "health.check": {
     "sessionBound": false,
+    "responseSessionEpoch": false,
     "deadlineClass": "control"
   },
   "engine.warm": {
     "sessionBound": false,
+    "responseSessionEpoch": false,
     "deadlineClass": "control"
   },
   "session.begin": {
     "sessionBound": false,
+    "responseSessionEpoch": true,
     "deadlineClass": "hotPath"
   },
   "session.processKeyStroke": {
     "sessionBound": true,
+    "responseSessionEpoch": true,
     "deadlineClass": "hotPath"
   },
   "session.updateComposition": {
     "sessionBound": true,
+    "responseSessionEpoch": true,
     "deadlineClass": "hotPath"
   },
   "session.commitCandidate": {
     "sessionBound": true,
+    "responseSessionEpoch": true,
     "deadlineClass": "hotPath"
   },
   "session.commitRaw": {
     "sessionBound": true,
+    "responseSessionEpoch": true,
     "deadlineClass": "hotPath"
   },
   "session.cancel": {
     "sessionBound": true,
+    "responseSessionEpoch": true,
     "deadlineClass": "hotPath"
   },
   "session.end": {
     "sessionBound": true,
+    "responseSessionEpoch": true,
     "deadlineClass": "hotPath"
   },
   "session.setMode": {
     "sessionBound": true,
+    "responseSessionEpoch": true,
     "deadlineClass": "control"
   },
   "session.setLayout": {
     "sessionBound": true,
+    "responseSessionEpoch": true,
     "deadlineClass": "control"
   },
   "suggestions.get": {
     "sessionBound": false,
+    "responseSessionEpoch": false,
     "deadlineClass": "control"
   },
   "proofHints.get": {
     "sessionBound": false,
+    "responseSessionEpoch": false,
     "deadlineClass": "control"
   },
   "dictionary.lookup": {
     "sessionBound": false,
+    "responseSessionEpoch": false,
     "deadlineClass": "control"
   },
   "memory.learn": {
     "sessionBound": true,
+    "responseSessionEpoch": true,
     "deadlineClass": "control"
   },
   "diagnostics.getMetrics": {
     "sessionBound": false,
+    "responseSessionEpoch": false,
     "deadlineClass": "control"
   },
   "engine.shutdown": {
     "sessionBound": false,
+    "responseSessionEpoch": false,
     "deadlineClass": "control"
   }
 } as const;

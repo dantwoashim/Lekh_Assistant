@@ -78,7 +78,7 @@ export function insertAtCaret(input: string, caret: number, value: string): { te
   };
 }
 
-function graphemeBoundaries(input: string): number[] {
+export function graphemeBoundaries(input: string): number[] {
   if (graphemeSegmenter) {
     const boundaries = [0];
     for (const segment of graphemeSegmenter.segment(input)) {

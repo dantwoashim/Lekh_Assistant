@@ -1,5 +1,6 @@
 import type { KeyboardMode, SuggestionSurface } from "../../../src/engine/keyboard/types";
 import {
+  IPC_PROTOCOL_LIMITS,
   isIpcMessageType,
   validateIpcEnvelope
 } from "./messages";
@@ -7,6 +8,8 @@ import type {
   AnyTypedIpcRequest,
   IpcMessageType
 } from "./messages";
+import { isWellFormedUtf16 } from "./utf16";
+import { validateRange } from "../../../src/engine/keyboard/ranges";
 
 export type IpcRequestValidationResult =
   | { ok: true; errors: []; request: AnyTypedIpcRequest }
@@ -93,11 +96,6 @@ const SUGGESTION_SURFACES: Readonly<Record<SuggestionSurface, true>> = {
   "traditional-to-traditional-proofread": true
 };
 
-const MAX_IDENTIFIER_LENGTH = 256;
-const MAX_TEXT_LENGTH = 16 * 1024;
-const MAX_QUERY_LENGTH = 1_024;
-const MAX_CONTEXT_DOMAINS = 32;
-
 function validateProtocolNegotiatePayload(value: unknown): string[] {
   const errors: string[] = [];
   const record = requireRecord(value, "payload", errors);
@@ -162,10 +160,13 @@ function validateUpdateCompositionPayload(value: unknown): string[] {
   if (!record) return errors;
   rejectUnexpectedKeys(record, ["sessionId", "sessionEpoch", "input", "cursor"], "payload", errors);
   validateSessionReference(record, errors);
-  requireString(record.input, "payload.input", MAX_TEXT_LENGTH, errors);
+  requireString(record.input, "payload.input", IPC_PROTOCOL_LIMITS.maximumCompositionLength, errors);
   if (!Number.isSafeInteger(record.cursor) || (record.cursor as number) < 0 ||
       (typeof record.input === "string" && (record.cursor as number) > record.input.length)) {
     errors.push("payload.cursor must be a safe integer within the UTF-16 input range.");
+  } else if (typeof record.input === "string" &&
+      !validateRange(record.input, [record.cursor as number, record.cursor as number])) {
+    errors.push("payload.cursor must align with an extended grapheme boundary.");
   }
   return errors;
 }
@@ -176,7 +177,7 @@ function validateCommitCandidatePayload(value: unknown): string[] {
   if (!record) return errors;
   rejectUnexpectedKeys(record, ["sessionId", "sessionEpoch", "candidateId"], "payload", errors);
   validateSessionReference(record, errors);
-  requireNonEmptyString(record.candidateId, "payload.candidateId", MAX_IDENTIFIER_LENGTH, errors);
+  requireNonEmptyString(record.candidateId, "payload.candidateId", IPC_PROTOCOL_LIMITS.maximumIdentifierLength, errors);
   return errors;
 }
 
@@ -201,7 +202,7 @@ function validateSetModePayload(value: unknown): string[] {
 function validateSetLayoutPayload(value: unknown): string[] {
   const errors = validateSessionFields(value, ["sessionId", "sessionEpoch", "layoutId"]);
   if (!isRecord(value)) return errors;
-  requireNonEmptyString(value.layoutId, "payload.layoutId", MAX_IDENTIFIER_LENGTH, errors);
+  requireNonEmptyString(value.layoutId, "payload.layoutId", IPC_PROTOCOL_LIMITS.maximumIdentifierLength, errors);
   return errors;
 }
 
@@ -228,9 +229,9 @@ function validateTextAndOptionalContextPayload(value: unknown, key: "textWindow"
   if (!record) return errors;
   rejectUnexpectedKeys(record, [key, "context"], "payload", errors);
   if (allowEmpty) {
-    requireString(record[key], `payload.${key}`, MAX_TEXT_LENGTH, errors);
+    requireString(record[key], `payload.${key}`, IPC_PROTOCOL_LIMITS.maximumTextLength, errors);
   } else {
-    requireNonEmptyString(record[key], `payload.${key}`, MAX_QUERY_LENGTH, errors);
+    requireNonEmptyString(record[key], `payload.${key}`, IPC_PROTOCOL_LIMITS.maximumQueryLength, errors);
   }
   if ("context" in record) validateTypingContext(record.context, "payload.context", errors);
   return errors;
@@ -249,7 +250,7 @@ function validateMemoryLearnPayload(value: unknown): string[] {
 }
 
 function validateSessionReference(record: Record<string, unknown>, errors: string[]): void {
-  requireNonEmptyString(record.sessionId, "payload.sessionId", MAX_IDENTIFIER_LENGTH, errors);
+  requireNonEmptyString(record.sessionId, "payload.sessionId", IPC_PROTOCOL_LIMITS.maximumIdentifierLength, errors);
   if (!Number.isSafeInteger(record.sessionEpoch) || (record.sessionEpoch as number) < 1) {
     errors.push("payload.sessionEpoch must be a positive safe integer.");
   }
@@ -265,13 +266,19 @@ function validateTypingContext(value: unknown, path: string, errors: string[]): 
   ], path, errors);
 
   for (const key of ["appId", "appName", "rightTextWindow", "locale", "layoutId"] as const) {
-    if (key in record) requireString(record[key], `${path}.${key}`, MAX_TEXT_LENGTH, errors);
+    if (key in record) requireString(record[key], `${path}.${key}`, IPC_PROTOCOL_LIMITS.maximumTextLength, errors);
   }
   if ("fieldType" in record && !isOneOf(record.fieldType, ["normal", "password", "search", "code", "unknown"])) {
     errors.push(`${path}.fieldType must be a known field type.`);
   }
-  requireString(record.leftTextWindow, `${path}.leftTextWindow`, MAX_TEXT_LENGTH, errors);
-  validateStringArray(record.activeDomains, `${path}.activeDomains`, MAX_CONTEXT_DOMAINS, MAX_IDENTIFIER_LENGTH, errors);
+  requireString(record.leftTextWindow, `${path}.leftTextWindow`, IPC_PROTOCOL_LIMITS.maximumTextLength, errors);
+  validateStringArray(
+    record.activeDomains,
+    `${path}.activeDomains`,
+    IPC_PROTOCOL_LIMITS.maximumContextDomains,
+    IPC_PROTOCOL_LIMITS.maximumIdentifierLength,
+    errors
+  );
   requireBoolean(record.preserveEnglish, `${path}.preserveEnglish`, errors);
   requireBoolean(record.secureInput, `${path}.secureInput`, errors);
   if (typeof record.mode !== "string" || !Object.hasOwn(KEYBOARD_MODES, record.mode)) {
@@ -290,8 +297,8 @@ function validateKeyboardKeyEvent(value: unknown, path: string, errors: string[]
   const record = requireRecord(value, path, errors);
   if (!record) return;
   rejectUnexpectedKeys(record, ["key", "code", "modifiers", "isRepeat", "timestamp", "platform", "nativeCode"], path, errors);
-  requireNonEmptyString(record.key, `${path}.key`, MAX_IDENTIFIER_LENGTH, errors);
-  requireNonEmptyString(record.code, `${path}.code`, MAX_IDENTIFIER_LENGTH, errors);
+  requireNonEmptyString(record.key, `${path}.key`, IPC_PROTOCOL_LIMITS.maximumIdentifierLength, errors);
+  requireNonEmptyString(record.code, `${path}.code`, IPC_PROTOCOL_LIMITS.maximumIdentifierLength, errors);
 
   const modifiers = requireRecord(record.modifiers, `${path}.modifiers`, errors);
   if (modifiers) {
@@ -301,17 +308,19 @@ function validateKeyboardKeyEvent(value: unknown, path: string, errors: string[]
     }
   }
   if ("isRepeat" in record) requireBoolean(record.isRepeat, `${path}.isRepeat`, errors);
-  if (typeof record.timestamp !== "number" || !Number.isFinite(record.timestamp)) {
-    errors.push(`${path}.timestamp must be a finite number.`);
+  if (typeof record.timestamp !== "number" || !Number.isFinite(record.timestamp) ||
+      record.timestamp < 0 || record.timestamp > Number.MAX_SAFE_INTEGER) {
+    errors.push(`${path}.timestamp must be a non-negative finite number within the JSON-safe range.`);
   }
   if ("platform" in record && !isOneOf(record.platform, ["web", "windows-tsf", "macos-imk", "test"])) {
     errors.push(`${path}.platform must be a known keyboard platform.`);
   }
-  if ("nativeCode" in record && !(
-    (typeof record.nativeCode === "number" && Number.isFinite(record.nativeCode)) ||
-    (typeof record.nativeCode === "string" && record.nativeCode.length <= MAX_IDENTIFIER_LENGTH)
-  )) {
-    errors.push(`${path}.nativeCode must be a finite number or bounded string.`);
+  if ("nativeCode" in record) {
+    if (typeof record.nativeCode === "string") {
+      requireString(record.nativeCode, `${path}.nativeCode`, IPC_PROTOCOL_LIMITS.maximumIdentifierLength, errors);
+    } else if (!Number.isSafeInteger(record.nativeCode) || (record.nativeCode as number) < 0) {
+      errors.push(`${path}.nativeCode must be a non-negative safe integer or bounded well-formed string.`);
+    }
   }
 }
 
@@ -332,13 +341,13 @@ function rejectUnexpectedKeys(record: Record<string, unknown>, allowed: readonly
 }
 
 function requireString(value: unknown, path: string, maxLength: number, errors: string[]): void {
-  if (typeof value !== "string" || value.length > maxLength) {
+  if (typeof value !== "string" || value.length > maxLength || !isWellFormedUtf16(value)) {
     errors.push(`${path} must be a string no longer than ${maxLength} UTF-16 code units.`);
   }
 }
 
 function requireNonEmptyString(value: unknown, path: string, maxLength: number, errors: string[]): void {
-  if (typeof value !== "string" || value.length === 0 || value.length > maxLength) {
+  if (typeof value !== "string" || value.length === 0 || value.length > maxLength || !isWellFormedUtf16(value)) {
     errors.push(`${path} must be a non-empty string no longer than ${maxLength} UTF-16 code units.`);
   }
 }
@@ -349,7 +358,7 @@ function requireBoolean(value: unknown, path: string, errors: string[]): void {
 
 function validateStringArray(value: unknown, path: string, maxItems: number, maxStringLength: number, errors: string[]): void {
   if (!Array.isArray(value) || value.length > maxItems ||
-      value.some((item) => typeof item !== "string" || item.length > maxStringLength)) {
+      value.some((item) => typeof item !== "string" || item.length > maxStringLength || !isWellFormedUtf16(item))) {
     errors.push(`${path} must contain at most ${maxItems} bounded strings.`);
   }
 }

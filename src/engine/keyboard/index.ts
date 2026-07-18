@@ -1,3 +1,4 @@
+import engineContract from "../../../data/engine/lekh-engine-contract.v1.json";
 import { CandidateCache } from "./cache";
 import { buildCandidateUpdate } from "./candidates";
 import { applyKeyToComposition } from "./composition";
@@ -5,14 +6,19 @@ import { commitCandidateResult, commitRawResult, emptyCommitResult } from "./com
 import { nextWordCandidates } from "./followups";
 import { getKeyboardProofHints } from "./proofHints";
 import { lookupKeyboardDictionary } from "./dictionary";
-import { importKeyboardMemoryEntry, recordKeyboardMemorySelection } from "./memory";
-import { isSecureContext } from "./modes";
+import {
+  applyKeyboardMemorySelection,
+  buildKeyboardMemorySelection,
+  importKeyboardMemoryEntry
+} from "./memory";
+import { defaultTypingContext, isLearningAllowedContext, isSecureContext, surfaceForMode } from "./modes";
 import { KeyboardSessionManager } from "./session";
 import { getKeyboardSuggestions } from "./suggest";
 import { warmKeyboard } from "./warm";
 import type {
   Candidate,
   CandidateUpdate,
+  CommitCandidateOptions,
   CommitResult,
   KeyboardEngine,
   KeyboardKeyEvent,
@@ -23,32 +29,65 @@ import type {
   WarmResult
 } from "./types";
 import type { CorrectionMemoryEntry } from "../memory";
+import { nowMs } from "../util/time";
+import { isWellFormedUtf16 } from "../util/utf16";
 
 interface RefreshCacheEntry {
   key: string;
   update: CandidateUpdate;
 }
 
-export class LocalKeyboardEngine implements KeyboardEngine {
-  private readonly sessions = new KeyboardSessionManager();
+interface PendingLearningSelection {
+  commitEpoch: number;
+  entry: CorrectionMemoryEntry;
+}
+
+const MAXIMUM_COMPOSITION_UTF16 = engineContract.hotPathPolicy.maximumCompositionUtf16CodeUnits;
+class LocalKeyboardEngine implements KeyboardEngine {
+  private readonly sessions = new KeyboardSessionManager(
+    undefined,
+    undefined,
+    (sessionIds) => {
+      for (const sessionId of sessionIds) this.purgeSessionState(sessionId);
+    }
+  );
   private readonly cache = new CandidateCache();
   private readonly refreshCache = new Map<SessionId, RefreshCacheEntry>();
+  private readonly pendingLearning = new Map<SessionId, PendingLearningSelection>();
   private memoryEntries: CorrectionMemoryEntry[] = [];
   private memoryVersion = 0;
-
   beginSession(context: TypingContext): SessionId {
-    return this.sessions.beginSession(context);
+    const sessionId = this.sessions.beginSession(context);
+    this.prunePendingLearning();
+    return sessionId;
   }
 
   updateComposition(sessionId: SessionId, input: string, cursor: number): CandidateUpdate {
+    this.pendingLearning.delete(sessionId);
     if (!this.sessions.has(sessionId)) return unknownSessionUpdate(sessionId, input, cursor);
+    const session = this.sessions.get(sessionId);
+    if (!isWellFormedUtf16(input) || input.length > MAXIMUM_COMPOSITION_UTF16) {
+      return failOpenCandidateUpdate(
+        session,
+        "errorFallback",
+        "Composition was malformed or exceeded the canonical UTF-16 limit; preserving the previous bounded state."
+      );
+    }
     this.sessions.updateComposition(sessionId, input, cursor);
     return this.refresh(sessionId);
   }
 
   processKeyStroke(sessionId: SessionId, key: KeyboardKeyEvent): CandidateUpdate {
+    this.pendingLearning.delete(sessionId);
     if (!this.sessions.has(sessionId)) return unknownSessionUpdate(sessionId, "", 0);
     const session = this.sessions.get(sessionId);
+    if (session.compositionText.length > MAXIMUM_COMPOSITION_UTF16) {
+      return failOpenCandidateUpdate(
+        session,
+        "errorFallback",
+        "Composition state exceeded the canonical UTF-16 limit; preserving host input."
+      );
+    }
     if (isSecureContext(session.context)) {
       return withAction(this.refresh(sessionId), "passThrough", "Secure/uncertain field: native key passed through without composition.");
     }
@@ -56,7 +95,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
       const update = this.refresh(sessionId);
       const candidate = update.candidates.find((item) => item.shortcut === key.key);
       if (candidate) {
-        const commitResult = this.commitCandidate(sessionId, candidate.id);
+        const commitResult = this.commitCandidate(sessionId, candidate.id, { learning: "disabled" });
         return withCommit(this.refresh(sessionId), commitResult, commitResult.committedText);
       }
       return withAction(update, "compose", `Candidate shortcut ${key.key} had no matching candidate.`);
@@ -69,28 +108,23 @@ export class LocalKeyboardEngine implements KeyboardEngine {
       this.cancelComposition(sessionId);
       return withAction(this.refresh(sessionId), "cancel");
     }
-    if (mutation.command === "commit-primary") {
-      const update = this.refresh(sessionId);
-      let commitResult: CommitResult;
-      if (update.primary && update.primary.confidence >= 0.86) {
-        commitResult = this.commitCandidate(sessionId, update.primary.id);
-      } else if (key.key === "Enter") {
-        commitResult = this.commitRaw(sessionId);
-      } else {
-        commitResult = this.commitRaw(sessionId);
-      }
-      const committedText = key.key === " " && commitResult.committedText
-        ? `${commitResult.committedText} `
-        : commitResult.committedText;
-      return withCommit(this.refresh(sessionId), commitResult, committedText);
-    }
     if (mutation.command === "commit-raw") {
-      const commitResult = this.commitRaw(sessionId);
       const suffix = key.key === " " ? " " : key.key === "Enter" ? "\n" : "";
+      const commitResult = this.commitRaw(sessionId);
+      if (commitResult.action !== "commit") {
+        return withAction(this.refresh(sessionId), commitResult.action);
+      }
       return withCommit(
         this.refresh(sessionId),
         commitResult,
-        commitResult.committedText ? `${commitResult.committedText}${suffix}` : suffix
+        `${commitResult.committedText}${suffix}`
+      );
+    }
+    if (mutation.text.length > MAXIMUM_COMPOSITION_UTF16) {
+      return failOpenCandidateUpdate(
+        session,
+        "passThrough",
+        "Composition reached the canonical UTF-16 limit; passing the key through without growing native state."
       );
     }
     this.sessions.updateComposition(sessionId, mutation.text, mutation.caret);
@@ -104,19 +138,26 @@ export class LocalKeyboardEngine implements KeyboardEngine {
     return update;
   }
 
-  commitCandidate(sessionId: SessionId, candidateId: string): CommitResult {
+  commitCandidate(
+    sessionId: SessionId,
+    candidateId: string,
+    options: CommitCandidateOptions = {}
+  ): CommitResult {
+    this.pendingLearning.delete(sessionId);
     if (!this.sessions.has(sessionId)) return emptyCommitResult(sessionId);
     const session = this.sessions.get(sessionId);
+    if (session.compositionText.length > MAXIMUM_COMPOSITION_UTF16) return emptyCommitResult(sessionId);
     const candidate = this.cache.find(sessionId, candidateId) ?? session.candidates.find((item) => item.id === candidateId);
     if (!candidate) return emptyCommitResult(sessionId);
     if (candidate.type === "romanized-helper") {
+      if (candidate.text.length > MAXIMUM_COMPOSITION_UTF16) return emptyCommitResult(sessionId);
       this.sessions.updateComposition(sessionId, candidate.text, candidate.text.length);
       this.cache.set(sessionId, this.refresh(sessionId).candidates);
       return {
         sessionId,
         action: "compose",
         committedText: "",
-        commitEpoch: session.commitEpoch,
+        commitEpoch: 0,
         consumedRange: candidate.replaceRange ?? [0, session.compositionText.length],
         followupCandidates: [],
         memoryRecorded: false,
@@ -124,28 +165,30 @@ export class LocalKeyboardEngine implements KeyboardEngine {
       };
     }
     const result = commitCandidateResult(session, candidate);
-    if (result.memoryRecorded) {
-      const nextEntries = recordKeyboardMemorySelection(this.memoryEntries, session, candidate);
-      result.memoryRecorded = nextEntries !== this.memoryEntries;
-      if (result.memoryRecorded) {
-        this.memoryEntries = nextEntries;
-        this.memoryVersion += 1;
+    const selection = result.memoryRecorded
+      ? buildKeyboardMemorySelection(session, candidate)
+      : undefined;
+    result.memoryRecorded = false;
+    result.followupCandidates = nextWordCandidates(result.committedText, session);
+    result.commitEpoch = this.sessions.recordCommit(sessionId, result.committedText);
+    if (selection && options.learning !== "disabled") {
+      if (options.learning === "deferred") {
+        this.pendingLearning.set(sessionId, { commitEpoch: result.commitEpoch, entry: selection });
+      } else {
+        result.memoryRecorded = this.applyMemorySelection(selection);
       }
     }
-    result.followupCandidates = nextWordCandidates(result.committedText, session);
-    result.commitEpoch = this.sessions.recordCommit(
-      sessionId,
-      result.committedText,
-      result.memoryRecorded && candidate.type !== "protected"
-    );
     this.cache.clear(sessionId);
     this.refreshCache.delete(sessionId);
     return result;
   }
 
   commitRaw(sessionId: SessionId): CommitResult {
+    this.pendingLearning.delete(sessionId);
     if (!this.sessions.has(sessionId)) return emptyCommitResult(sessionId);
     const session = this.sessions.get(sessionId);
+    if (session.compositionText.length > MAXIMUM_COMPOSITION_UTF16) return emptyCommitResult(sessionId);
+    if (!session.compositionText) return emptyCommitResult(sessionId);
     const result = commitRawResult(session);
     result.followupCandidates = nextWordCandidates(result.committedText, session);
     result.commitEpoch = this.sessions.recordCommit(sessionId, result.committedText);
@@ -155,6 +198,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
   }
 
   cancelComposition(sessionId: SessionId): void {
+    this.pendingLearning.delete(sessionId);
     if (!this.sessions.has(sessionId)) return;
     this.sessions.cancelComposition(sessionId);
     this.cache.clear(sessionId);
@@ -162,6 +206,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
   }
 
   endSession(sessionId: SessionId): void {
+    this.pendingLearning.delete(sessionId);
     if (!this.sessions.has(sessionId)) return;
     this.sessions.endSession(sessionId);
     this.cache.clear(sessionId);
@@ -181,16 +226,27 @@ export class LocalKeyboardEngine implements KeyboardEngine {
   }
 
   learnCorrection(entry: unknown): void {
-    this.memoryEntries = importKeyboardMemoryEntry(this.memoryEntries, entry);
-    this.memoryVersion += 1;
-    this.refreshCache.clear();
+    const nextEntries = importKeyboardMemoryEntry(this.memoryEntries, entry);
+    if (nextEntries !== this.memoryEntries) {
+      this.memoryEntries = nextEntries;
+      this.memoryVersion += 1;
+      this.refreshCache.clear();
+    }
   }
 
   learnCommittedCorrection(sessionId: SessionId, commitEpoch: number): boolean {
-    return this.sessions.consumeCorrectionLearningGrant(sessionId, commitEpoch) !== undefined;
+    const pending = this.pendingLearning.get(sessionId);
+    if (!pending || pending.commitEpoch !== commitEpoch) return false;
+    this.pendingLearning.delete(sessionId);
+    if (!this.sessions.has(sessionId)) return false;
+    const session = this.sessions.get(sessionId);
+    if (session.commitEpoch !== commitEpoch || !isLearningAllowedContext(session.context)) return false;
+    session.lastUpdateTime = nowMs();
+    return this.applyMemorySelection(pending.entry);
   }
 
   setContext(sessionId: SessionId, patch: Partial<TypingContext>): void {
+    this.pendingLearning.delete(sessionId);
     if (!this.sessions.has(sessionId)) return;
     this.sessions.updateContext(sessionId, patch);
     this.cache.clear(sessionId);
@@ -198,6 +254,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
   }
 
   setMode(sessionId: SessionId, mode: KeyboardMode): void {
+    this.pendingLearning.delete(sessionId);
     if (!this.sessions.has(sessionId)) return;
     this.sessions.setMode(sessionId, mode);
     this.cache.clear(sessionId);
@@ -205,6 +262,7 @@ export class LocalKeyboardEngine implements KeyboardEngine {
   }
 
   setLayout(sessionId: SessionId, layoutId: string): void {
+    this.pendingLearning.delete(sessionId);
     if (!this.sessions.has(sessionId)) return;
     this.sessions.setLayout(sessionId, layoutId);
     this.cache.clear(sessionId);
@@ -212,25 +270,75 @@ export class LocalKeyboardEngine implements KeyboardEngine {
   }
 
   warm(options?: WarmOptions): Promise<WarmResult> {
-    return warmKeyboard(options);
+    return this.warmAllPipelines(options);
   }
 
   async shutdown(): Promise<void> {
     this.sessions.shutdown();
     this.cache.clearAll();
     this.refreshCache.clear();
+    this.pendingLearning.clear();
     this.memoryEntries = [];
     this.memoryVersion = 0;
   }
 
+  private async warmAllPipelines(options: WarmOptions = {}): Promise<WarmResult> {
+    const base = await warmKeyboard(options);
+    const startedAt = nowMs();
+    const modules = ["candidate-pipeline", "proofread-index", "dictionary-index"];
+    let warmSession: SessionId | undefined;
+    try {
+      warmSession = this.beginSession(defaultTypingContext("romanized"));
+      this.updateComposition(warmSession, "ramro", 5);
+      this.getSuggestions({ ...defaultTypingContext("romanized"), leftTextWindow: "swas" });
+      this.getProofHints("सवस्थ्य", defaultTypingContext("unicode-proofread"));
+      this.lookupDictionary("swasthya", defaultTypingContext("dictionary-lookup"));
+    } catch {
+      return {
+        ready: false,
+        partial: true,
+        loadedModules: base.loadedModules,
+        unavailableModules: Array.from(new Set([...base.unavailableModules, ...modules])),
+        warmTimeMs: base.warmTimeMs + (nowMs() - startedAt),
+        warnings: [...base.warnings, "One or more local keyboard pipelines could not be warmed."]
+      };
+    } finally {
+      if (warmSession) this.endSession(warmSession);
+    }
+
+    const elapsed = base.warmTimeMs + (nowMs() - startedAt);
+    const exceededRequestedBudget = typeof options.timeoutMs === "number" && elapsed > options.timeoutMs;
+    return {
+      ready: base.unavailableModules.length === 0,
+      partial: base.unavailableModules.length > 0,
+      loadedModules: Array.from(new Set([...base.loadedModules, ...modules])),
+      unavailableModules: base.unavailableModules,
+      warmTimeMs: elapsed,
+      warnings: [
+        ...base.warnings,
+        ...(exceededRequestedBudget
+          ? [`Warm-up completed after the requested ${options.timeoutMs}ms advisory budget.`]
+          : [])
+      ]
+    };
+  }
+
   private refresh(sessionId: SessionId): CandidateUpdate {
     const session = this.sessions.get(sessionId);
+    if (session.compositionText.length > MAXIMUM_COMPOSITION_UTF16) {
+      return failOpenCandidateUpdate(
+        session,
+        "errorFallback",
+        "Composition state exceeded the canonical UTF-16 limit; preserving host input."
+      );
+    }
     const cacheKey = this.refreshCacheKey(session);
     const cached = this.refreshCache.get(sessionId);
     if (cached?.key === cacheKey) return cloneCandidateUpdate(cached.update);
 
-    const textWindow = `${session.context.leftTextWindow}${session.compositionText}`;
-    const proofHints = getKeyboardProofHints(textWindow, session.context);
+    // CandidateUpdate ranges are composition-relative. Surrounding-context
+    // proofing uses the explicit proofHints.get text-window request instead.
+    const proofHints = getKeyboardProofHints(session.compositionText, session.context);
     this.sessions.updateProofHints(sessionId, proofHints);
     const update = buildCandidateUpdate(this.sessions.get(sessionId), { memoryEntries: this.memoryEntries });
     this.sessions.updateCandidates(sessionId, update.candidates, update.warnings);
@@ -262,6 +370,28 @@ export class LocalKeyboardEngine implements KeyboardEngine {
       warnings: session.warnings
     });
   }
+
+  private applyMemorySelection(selection: CorrectionMemoryEntry): boolean {
+    const nextEntries = applyKeyboardMemorySelection(this.memoryEntries, selection);
+    if (nextEntries === this.memoryEntries) return false;
+    this.memoryEntries = nextEntries;
+    this.memoryVersion += 1;
+    this.refreshCache.clear();
+    return true;
+  }
+
+  private prunePendingLearning(): void {
+    const liveSessionIds = new Set(this.sessions.snapshot().map((session) => session.sessionId));
+    for (const sessionId of this.pendingLearning.keys()) {
+      if (!liveSessionIds.has(sessionId)) this.pendingLearning.delete(sessionId);
+    }
+  }
+
+  private purgeSessionState(sessionId: SessionId): void {
+    this.cache.clear(sessionId);
+    this.refreshCache.delete(sessionId);
+    this.pendingLearning.delete(sessionId);
+  }
 }
 
 function isCandidateShortcutKey(key: KeyboardKeyEvent): boolean {
@@ -270,19 +400,46 @@ function isCandidateShortcutKey(key: KeyboardKeyEvent): boolean {
 }
 
 function unknownSessionUpdate(sessionId: SessionId, input: string, cursor: number): CandidateUpdate {
+  const boundedInput = input.length <= MAXIMUM_COMPOSITION_UTF16 && isWellFormedUtf16(input) ? input : "";
   return {
     sessionId,
     mode: "diagnostic",
     surface: "romanized-to-unicode",
     action: "errorFallback",
-    compositionText: input,
-    displayText: input,
-    caret: Math.max(0, Math.min(input.length, Math.trunc(cursor))),
+    compositionText: boundedInput,
+    displayText: boundedInput,
+    caret: Math.max(0, Math.min(boundedInput.length, Math.trunc(cursor))),
     candidates: [],
     proofHints: [],
     shouldShowCandidateUI: false,
     confidence: 0,
     warnings: [`Unknown keyboard session: ${sessionId}; preserving input.`],
+    latencyMs: 0,
+    schemaVersion: 1
+  };
+}
+
+function failOpenCandidateUpdate(
+  session: ReturnType<KeyboardSessionManager["get"]>,
+  action: "passThrough" | "errorFallback",
+  warning: string
+): CandidateUpdate {
+  const compositionText = session.compositionText.length <= MAXIMUM_COMPOSITION_UTF16
+    ? session.compositionText
+    : "";
+  return {
+    sessionId: session.sessionId,
+    mode: session.mode,
+    surface: surfaceForMode(session.mode),
+    action,
+    compositionText,
+    displayText: compositionText,
+    caret: Math.max(0, Math.min(compositionText.length, session.caret)),
+    candidates: [],
+    proofHints: [],
+    shouldShowCandidateUI: false,
+    confidence: 0,
+    warnings: Array.from(new Set([...session.warnings, warning])),
     latencyMs: 0,
     schemaVersion: 1
   };
@@ -297,13 +454,20 @@ function withAction(update: CandidateUpdate, action: CandidateUpdate["action"], 
 }
 
 function withCommit(update: CandidateUpdate, result: CommitResult, committedText: string): CandidateUpdate {
-  return {
+  const terminalUpdate: CandidateUpdate = {
     ...update,
     action: result.action === "commit" ? "commit" : result.action,
-    committedText,
-    consumedRange: result.consumedRange,
-    shouldShowCandidateUI: false
+    shouldShowCandidateUI: false,
+    ...(result.action === "commit" ? { committedText } : {}),
+    ...(result.action === "commit" && result.consumedRange
+      ? { consumedRange: result.consumedRange }
+      : {})
   };
+  if (result.action !== "commit") {
+    delete terminalUpdate.committedText;
+    delete terminalUpdate.consumedRange;
+  }
+  return terminalUpdate;
 }
 
 export function createKeyboardEngine(): KeyboardEngine {
@@ -311,23 +475,31 @@ export function createKeyboardEngine(): KeyboardEngine {
 }
 
 function cloneCandidateUpdate(update: CandidateUpdate): CandidateUpdate {
-  return {
+  const clone: CandidateUpdate = {
     ...update,
     candidates: update.candidates.map((candidate) => ({ ...candidate, reason: candidate.reason.slice() })),
-    primary: update.primary ? { ...update.primary, reason: update.primary.reason.slice() } : undefined,
-    inlineCompletion: update.inlineCompletion
-      ? {
+    ...(update.primary ? { primary: { ...update.primary, reason: update.primary.reason.slice() } } : {}),
+    ...(update.inlineCompletion
+      ? { inlineCompletion: {
         ...update.inlineCompletion,
         candidate: {
           ...update.inlineCompletion.candidate,
           reason: update.inlineCompletion.candidate.reason.slice()
         }
-      }
-      : undefined,
+      } }
+      : {}),
     proofHints: update.proofHints.map((hint) => ({ ...hint, range: [hint.range[0], hint.range[1]] })),
     warnings: update.warnings.slice(),
-    consumedRange: update.consumedRange ? [update.consumedRange[0], update.consumedRange[1]] : undefined
+    ...(update.consumedRange
+      ? { consumedRange: [update.consumedRange[0], update.consumedRange[1]] as [number, number] }
+      : {})
   };
+  if (clone.primary === undefined) delete clone.primary;
+  if (clone.inlineCompletion === undefined) delete clone.inlineCompletion;
+  if (clone.committedText === undefined) delete clone.committedText;
+  if (clone.consumedRange === undefined) delete clone.consumedRange;
+  if (clone.latencyMs === undefined) delete clone.latencyMs;
+  return clone;
 }
 
 export * from "./types";

@@ -10,6 +10,7 @@ import { defaultKeyboardSettings } from "../../../src/engine/keyboard/storage";
 import { isSecureContext } from "../../../src/engine/keyboard/modes";
 import type { DictionaryResult, TypingContext } from "../../../src/engine/keyboard/types";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
+import { privacySafeCorrectionMemoryDomain } from "../../../src/engine/memory/types";
 import {
   nativeKeyboardDataDir,
   normalizeKeyboardSettings,
@@ -306,9 +307,7 @@ function parseJson(value: unknown, fallback: unknown): unknown {
 }
 
 function sanitizedContextDomain(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return /^[\p{L}\p{N}._:-]{1,64}$/u.test(normalized) ? normalized : null;
+  return privacySafeCorrectionMemoryDomain(value) ?? null;
 }
 
 function isEntryExport<T>(value: unknown): value is { schemaVersion: 1; entries: T[] } {

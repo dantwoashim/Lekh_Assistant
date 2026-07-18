@@ -139,7 +139,7 @@ export * from "./router";
 export * from "./lattice";
 export * from "./verify";
 export * from "./traditional";
-export { LocalKeyboardEngine, createKeyboardEngine, defaultTypingContext, surfaceForMode, isSecureContext, warmKeyboard } from "./keyboard";
+export { createKeyboardEngine, defaultTypingContext, surfaceForMode, isSecureContext, warmKeyboard } from "./keyboard";
 export {
   validateRange,
   clampRange,

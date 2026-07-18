@@ -1,5 +1,9 @@
 import { normalizeCorrectionInput } from "../../core/transliteration/localCorrectionMemory";
 import type { Candidate } from "../types";
+import {
+  MAX_CORRECTION_MEMORY_DECAY_WEIGHT,
+  MIN_CORRECTION_MEMORY_DECAY_WEIGHT
+} from "./types";
 import type { CorrectionMemoryEntry, MemoryScoringContext } from "./types";
 
 export function correctionMemoryCandidates(entries: CorrectionMemoryEntry[], context: MemoryScoringContext): Candidate[] {
@@ -49,14 +53,13 @@ export function scoreCorrection(entry: CorrectionMemoryEntry, context: MemorySco
   const contextScore = contextSimilarity(entry, context);
   const repeatedBoost = Math.min(120, entry.frequency * 12);
   const pinBoost = entry.pinned ? 180 : 0;
-  const decay = entry.decayWeight ?? 1;
+  const decay = Math.max(
+    MIN_CORRECTION_MEMORY_DECAY_WEIGHT,
+    Math.min(MAX_CORRECTION_MEMORY_DECAY_WEIGHT, entry.decayWeight ?? 1)
+  );
   return Math.round((1450 + repeatedBoost + pinBoost + contextScore * 120) * decay);
 }
 
 function contextSimilarity(entry: CorrectionMemoryEntry, context: MemoryScoringContext): number {
-  let score = 0;
-  if ((context.leftWindow ?? "") === entry.context.leftWindow) score += 0.45;
-  if ((context.rightWindow ?? "") === entry.context.rightWindow) score += 0.45;
-  if (context.domain && context.domain === entry.context.domain) score += 0.1;
-  return score;
+  return context.domain && context.domain === entry.context.domain ? 1 : 0;
 }

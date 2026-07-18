@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { defaultTypingContext } from "../../../src/engine/keyboard";
+import { applyKeyboardMemorySelection } from "../../../src/engine/keyboard/memory";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
 import { JsonFileKeyboardStorage, nativeKeyboardDataDir } from "./jsonFileStores";
 
@@ -71,6 +72,22 @@ describe("native JSON file keyboard stores", () => {
 
     await memory.reset();
     expect(await memory.query("pra", defaultTypingContext("romanized"))).toHaveLength(0);
+  });
+
+  it("persists the canonical repeated-selection decay bound across reopen", async () => {
+    const filePath = await tempStoragePath();
+    const selection = { ...memoryEntry("repeat", "prabin", "प्रवीण"), decayWeight: 1 };
+    let entries: CorrectionMemoryEntry[] = [selection];
+    for (let index = 0; index < 20; index += 1) {
+      entries = applyKeyboardMemorySelection(entries, selection);
+    }
+    expect(entries[0]).toEqual(expect.objectContaining({ frequency: 21, decayWeight: 2 }));
+
+    await new JsonFileKeyboardStorage(filePath).correctionMemory().record(entries[0]!);
+    const reopened = new JsonFileKeyboardStorage(filePath);
+    expect(await reopened.correctionMemory().query("prabin", defaultTypingContext("romanized"))).toEqual([
+      expect.objectContaining({ frequency: 21, decayWeight: 2 })
+    ]);
   });
 
   it("strips reconstructable context windows from new and legacy JSON storage", async () => {
