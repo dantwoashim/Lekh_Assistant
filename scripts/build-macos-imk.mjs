@@ -57,7 +57,11 @@ if (existsSync(placeholder) && readFileSync(placeholder, "utf8").includes("place
   );
 }
 
-const swift = spawnSync("swift", ["build"], { cwd: skeletonDir, encoding: "utf8", stdio: "pipe" });
+const swift = spawnSync("swift", ["build", "--configuration", "release", "--product", "LekhInputMethodApp"], {
+  cwd: skeletonDir,
+  encoding: "utf8",
+  stdio: "pipe"
+});
 if (swift.status !== 0) {
   finish("failed", { step: "swift-build", stdout: swift.stdout, stderr: swift.stderr }, swift.status ?? 1);
 }

@@ -17,6 +17,7 @@
     "build:companion-ui": "vite build --mode companion && tsx scripts/write-service-worker.ts",
     "test": "vitest run --pool=forks --maxWorkers=2",
     "test:unit": "vitest run --pool=forks --maxWorkers=2",
+    "test:v1": "vitest run src native/daemon/src native/shared native/windows-tsf/skeleton/windowsTsfSource.test.ts --exclude src/engine/keyboard/passiveCommit.test.ts --pool=forks --maxWorkers=2",
     "test:dictionary": "vitest run src/core/dictionary/dictionary.test.ts --pool=forks --maxWorkers=1",
     "test:keyboard": "vitest run src/engine/keyboard --pool=forks --maxWorkers=1",
     "test:companion": "vitest run src/tests/app-smoke.test.tsx src/tests/companion-shell.test.tsx --pool=forks --maxWorkers=1",

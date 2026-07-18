@@ -53,7 +53,8 @@ class DaemonClient {
 describe("production daemon persistence", () => {
   it("survives a process crash, preloads learned memory, and never stores surrounding windows", async () => {
     const databasePath = await tempDatabasePath();
-    await execFileAsync(join(process.cwd(), "node_modules/.bin/vite-node"), [
+    await execFileAsync(process.execPath, [
+      join(process.cwd(), "node_modules/vite-node/vite-node.mjs"),
       "native/daemon/src/productionDaemonCrashFixture.ts",
       databasePath
     ], {
