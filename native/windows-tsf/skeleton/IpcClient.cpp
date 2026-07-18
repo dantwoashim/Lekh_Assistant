@@ -90,23 +90,6 @@ std::optional<DWORD> waitForOverlappedBytes(HANDLE handle, OVERLAPPED& overlappe
   return bytes;
 }
 
-bool writeFileWithTimeout(HANDLE pipe, const char* data, DWORD bytesToWrite, DWORD timeoutMs) {
-  OVERLAPPED overlapped = {};
-  overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-  if (!overlapped.hEvent) return false;
-
-  DWORD bytesWritten = 0;
-  BOOL wrote = WriteFile(pipe, data, bytesToWrite, &bytesWritten, &overlapped);
-  if (!wrote && GetLastError() == ERROR_IO_PENDING) {
-    const std::optional<DWORD> completedBytes = waitForOverlappedBytes(pipe, overlapped, timeoutMs);
-    CloseHandle(overlapped.hEvent);
-    return completedBytes.has_value() && *completedBytes == bytesToWrite;
-  }
-
-  CloseHandle(overlapped.hEvent);
-  return wrote && bytesWritten == bytesToWrite;
-}
-
 std::optional<DWORD> readFileWithTimeout(HANDLE pipe, char* data, DWORD bufferSize, DWORD timeoutMs) {
   OVERLAPPED overlapped = {};
   overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -117,7 +100,7 @@ std::optional<DWORD> readFileWithTimeout(HANDLE pipe, char* data, DWORD bufferSi
   if (!read && GetLastError() == ERROR_IO_PENDING) {
     const std::optional<DWORD> completedBytes = waitForOverlappedBytes(pipe, overlapped, timeoutMs);
     CloseHandle(overlapped.hEvent);
-    return completedBytes;
+    return completedBytes && *completedBytes > 0 ? completedBytes : std::nullopt;
   }
 
   CloseHandle(overlapped.hEvent);
@@ -131,6 +114,54 @@ std::optional<DWORD> remainingTimeout(ULONGLONG startedAt, DWORD timeoutMs) {
   return timeoutMs - static_cast<DWORD>(elapsed);
 }
 
+bool writeAllWithDeadline(
+  HANDLE pipe,
+  const char* data,
+  DWORD bytesToWrite,
+  ULONGLONG startedAt,
+  DWORD timeoutMs
+) {
+  DWORD offset = 0;
+  while (offset < bytesToWrite) {
+    const std::optional<DWORD> remaining = remainingTimeout(startedAt, timeoutMs);
+    if (!remaining) return false;
+    OVERLAPPED overlapped = {};
+    overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!overlapped.hEvent) return false;
+
+    DWORD synchronousBytes = 0;
+    const DWORD requested = bytesToWrite - offset;
+    const BOOL wrote = WriteFile(
+      pipe,
+      data + offset,
+      requested,
+      &synchronousBytes,
+      &overlapped
+    );
+    DWORD completedBytes = synchronousBytes;
+    if (!wrote) {
+      if (GetLastError() != ERROR_IO_PENDING) {
+        CloseHandle(overlapped.hEvent);
+        return false;
+      }
+      const std::optional<DWORD> asynchronousBytes = waitForOverlappedBytes(
+        pipe,
+        overlapped,
+        *remaining
+      );
+      if (!asynchronousBytes) {
+        CloseHandle(overlapped.hEvent);
+        return false;
+      }
+      completedBytes = *asynchronousBytes;
+    }
+    CloseHandle(overlapped.hEvent);
+    if (completedBytes == 0 || completedBytes > requested) return false;
+    offset += completedBytes;
+  }
+  return true;
+}
+
 std::optional<std::string> readLineWithDeadline(
   HANDLE pipe,
   ULONGLONG startedAt,
@@ -140,20 +171,26 @@ std::optional<std::string> readLineWithDeadline(
   frame.reserve(4096);
   std::array<char, 4096> chunk = {};
 
-  while (frame.size() <= kMaximumFrameBytes) {
+  while (frame.size() < kMaximumFrameBytes) {
     const std::optional<DWORD> remaining = remainingTimeout(startedAt, timeoutMs);
     if (!remaining) return std::nullopt;
+    const DWORD readCapacity = static_cast<DWORD>(
+      std::min<std::size_t>(chunk.size(), kMaximumFrameBytes - frame.size())
+    );
     const std::optional<DWORD> bytesRead = readFileWithTimeout(
       pipe,
       chunk.data(),
-      static_cast<DWORD>(chunk.size()),
+      readCapacity,
       *remaining
     );
     if (!bytesRead) return std::nullopt;
 
     const auto newline = std::find(chunk.begin(), chunk.begin() + *bytesRead, '\n');
     const std::size_t contentBytes = static_cast<std::size_t>(newline - chunk.begin());
-    if (frame.size() + contentBytes > kMaximumFrameBytes) return std::nullopt;
+    if (frame.size() + contentBytes +
+        (newline != chunk.begin() + *bytesRead ? 1 : 0) > kMaximumFrameBytes) {
+      return std::nullopt;
+    }
     frame.append(chunk.data(), contentBytes);
 
     if (newline != chunk.begin() + *bytesRead) {
@@ -211,8 +248,7 @@ std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine,
     return std::nullopt;
   }
   const DWORD bytesToWrite = static_cast<DWORD>(payload.size());
-  const std::optional<DWORD> writeTimeout = remainingTimeout(startedAt, timeoutMs);
-  if (!writeTimeout || !writeFileWithTimeout(pipe, payload.data(), bytesToWrite, *writeTimeout)) {
+  if (!writeAllWithDeadline(pipe, payload.data(), bytesToWrite, startedAt, timeoutMs)) {
     CloseHandle(pipe);
     return std::nullopt;
   }

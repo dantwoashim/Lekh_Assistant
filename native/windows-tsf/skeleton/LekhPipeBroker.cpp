@@ -1,4 +1,5 @@
 #include "Guids.h"
+#include "DaemonRetirement.h"
 #include "LekhDaemonBackend.h"
 #include "LekhPipeSecurity.h"
 #include "LekhWindowsIdentity.h"
@@ -23,6 +24,8 @@ namespace {
 
 constexpr std::size_t kMaximumFrameBytes = lekh::ipc::kMaximumFrameBytes;
 constexpr DWORD kClientDeadlineMilliseconds = static_cast<DWORD>(lekh::ipc::kHotPathDeadlineMilliseconds);
+constexpr DWORD kRetirementControlDeadlineMilliseconds =
+  lekh::tsf::kRetirementAttemptTimeoutMilliseconds;
 constexpr std::size_t kMaximumConnections = lekh::ipc::kMaximumActiveConnections;
 constexpr std::size_t kWorkerCount = 8;
 static_assert(kMaximumConnections > kWorkerCount + 1);
@@ -348,13 +351,21 @@ bool verifyBackendReadiness(lekh::pipe::DaemonBackend& backend) {
 }
 
 void serveClient(HANDLE pipe, lekh::pipe::DaemonBackend& backend) {
-  const Deadline deadline = std::chrono::steady_clock::now() +
+  const Deadline readDeadline = std::chrono::steady_clock::now() +
     std::chrono::milliseconds(kClientDeadlineMilliseconds);
-  const std::optional<std::string> request = readClientFrame(pipe, deadline);
-  const std::optional<DWORD> backendTimeout = remainingMilliseconds(deadline);
+  const std::optional<std::string> request = readClientFrame(pipe, readDeadline);
+  const bool retirementControl = request && (
+    request->find("\"type\":\"session.cancel\"") != std::string::npos ||
+    request->find("\"type\":\"session.end\"") != std::string::npos ||
+    request->find("\"type\":\"protocol.negotiate\"") != std::string::npos
+  );
+  const Deadline dispatchDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(
+    retirementControl ? kRetirementControlDeadlineMilliseconds : kClientDeadlineMilliseconds
+  );
+  const std::optional<DWORD> backendTimeout = remainingMilliseconds(dispatchDeadline);
   if (request && backendTimeout) {
     const std::optional<std::string> response = backend.request(*request + "\n", *backendTimeout);
-    if (response) writeClientFrame(pipe, *response, deadline);
+    if (response) writeClientFrame(pipe, *response, dispatchDeadline);
   }
   closeConnectedPipe(pipe);
 }

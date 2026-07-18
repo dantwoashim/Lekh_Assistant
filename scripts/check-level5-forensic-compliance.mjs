@@ -85,7 +85,11 @@ if (contract) {
     if (!modes.has(mode)) failures.push(`Engine contract missing mode ${mode}.`);
   }
   if (contract.candidatePolicy?.singleTokenMayExpandToPhrase !== false) failures.push("Engine contract must forbid single-token phrase expansion.");
-  if (contract.candidatePolicy?.programmaticSelectionMayCommit !== false) failures.push("Engine contract must forbid programmatic candidate commit.");
+  if (contract.candidatePolicy?.commitAuthority?.explicitUserSelection !== true) failures.push("Engine contract must authorize explicit user selection.");
+  if (contract.candidatePolicy?.commitAuthority?.untrustedProgrammaticSelection !== false) failures.push("Engine contract must forbid untrusted programmatic candidate commit.");
+  if (contract.candidatePolicy?.commitAuthority?.experimentalExactSpaceAuthorization?.productionEligible !== false) {
+    failures.push("Engine contract must keep experimental exact-Space authorization out of production.");
+  }
 }
 if (Number(neuralDataset?.totalRows) < 1_000_000) failures.push("Level-5 neural data gate requires >=1,000,000 generated rows.");
 if (neuralSota?.status !== "passed-phase10-sota-worldclass-guard" && !production) {

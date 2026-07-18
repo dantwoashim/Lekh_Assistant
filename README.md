@@ -94,7 +94,7 @@ Current macOS IMK test-build behavior includes:
 - four native modes: Romanized-Romanized, Romanized-Traditional, Traditional-Traditional, and Traditional-Romanized
 - first-selection mode chooser plus a first-run `namaste` to `नमस्ते` tutorial
 - underlined inline marked-text preview before commit
-- Space commit, Escape cancel, Backspace composition edit, and Command/Control shortcut pass-through
+- exact-raw Space commit, first-Escape raw preservation and dismissal, Backspace composition editing, and Command/Control shortcut pass-through
 - a custom non-activating candidate window with Devanagari font sizing, badges, and correction explainers
 - proofread suggestions for active Traditional/Unicode composition using the bundled correction pairs
 - smart Nepali punctuation for danda commit in Nepali output modes

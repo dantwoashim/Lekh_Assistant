@@ -25,6 +25,7 @@ module.exports = {
       to: "native/windows-tsf",
       filter: [
         "build/bin/Release/LekhTextService.dll",
+        "build-Win32/bin/Release/LekhTextService.dll",
         "build/bin/Release/LekhPipeBroker.exe"
       ]
     },
@@ -42,6 +43,7 @@ module.exports = {
   win: {
     executableName: "Lekh Keyboard Companion",
     artifactName: "Lekh-Keyboard-Companion-${version}-Setup-${arch}.${ext}",
+    signExts: [".dll", ".node"],
     icon: "build/icon.ico",
     target: [
       {

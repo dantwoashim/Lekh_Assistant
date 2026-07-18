@@ -43,6 +43,11 @@ struct NegotiatedProtocol {
   std::uint32_t selectedVersion = 0;
 };
 
+struct EngineWarmResult {
+  bool ready = false;
+  bool partial = false;
+};
+
 struct SessionHandle {
   std::wstring sessionId;
   std::uint64_t sessionEpoch = 0;
@@ -57,6 +62,8 @@ struct EngineDecision {
 };
 
 std::wstring makeProtocolNegotiationRequest(const RequestMetadata& metadata);
+
+std::wstring makeEngineWarmRequest(const RequestMetadata& metadata);
 
 std::wstring makeBeginSessionRequest(const RequestMetadata& metadata);
 
@@ -77,6 +84,12 @@ std::optional<NegotiatedProtocol> parseProtocolNegotiationResponse(
   const RequestMetadata& request
 );
 
+std::optional<EngineWarmResult> parseEngineWarmResponse(
+  const std::wstring& response,
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId
+);
+
 std::optional<SessionHandle> parseBeginSessionResponse(
   const std::wstring& response,
   const RequestMetadata& request,
@@ -87,7 +100,9 @@ std::optional<EngineDecision> parseProcessKeyResponse(
   const std::wstring& response,
   const RequestMetadata& request,
   const std::wstring& expectedServerInstanceId,
-  const SessionHandle& expectedSession
+  const SessionHandle& expectedSession,
+  const KeyEvent& expectedKey,
+  const std::wstring& expectedCompositionText
 );
 
 bool parseSessionResponse(

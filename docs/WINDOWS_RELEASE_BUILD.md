@@ -24,12 +24,17 @@ cd native\windows-tsf\skeleton
 .\register-dev.ps1
 ```
 
-Unsigned companion installer from any host supported by electron-builder:
+Unsigned companion installer on Windows:
 
 ```bash
 npm run package:windows:unsigned
 npm run check:windows-release
 ```
+
+Cross-packaging is an explicit development-only escape hatch: set
+`LEKH_ALLOW_CROSS_WINDOWS_PACKAGE=1` before `package:windows:unsigned`. It can
+never produce signed release evidence, and it does not replace native build,
+registration, installer, or host-application validation on Windows.
 
 Daemon-only development:
 
@@ -50,15 +55,18 @@ Signed installer on the release host:
 ```bash
 export CSC_LINK=/secure/path/windows-authenticode.pfx
 export CSC_KEY_PASSWORD=...
+export LEKH_WINDOWS_SIGNER_SHA256=<64-hex SHA-256 of the expected publisher certificate>
 npm run package:windows
+npm run check:windows-release
 ```
 
-The unsigned `.exe` is a dev artifact. Public release requires Authenticode signing and Windows host-app validation.
+The unsigned `.exe` is a dev artifact. Its report discovers every packaged Windows PE payload by file magic and binds the resulting closed-world inventory by path, byte length, modification time, and SHA-256, but it is not public-release evidence. Signed packaging is Windows-only, requires the source revision to remain clean and unchanged through final verification, and requires timestamp-aware `signtool verify /pa /all /v /tw` success for every inventoried PE. The NSIS installer, companion executable, TSF DLL, and native broker must also match the independently pinned publisher-certificate SHA-256; valid third-party Electron runtime binaries retain their own verified publisher identities.
 
 ## Signed Release Build Requirements
 
 - Windows TSF DLL builds, registers, and unregisters cleanly.
-- Companion starts the native broker at login; the broker contains and supervises the daemon.
+- Raw-in-range key conservation, first-Escape fail-open behavior, secure-field fail-open behavior, COM-identity focus-stack handling, terminal End acknowledgement/purge, and stale/reactivated completion-token rejection pass in real TSF hosts.
+- Companion starts hidden at login and keeps the native broker alive when the settings window closes; relaunching the shortcut reopens settings in the single background instance.
 - The named pipe uses the explicit protected logon-session DACL and the TSF verifies the exact installed broker image.
 - The package and NSIS installer fail closed if either the TSF DLL or broker is absent.
 - Companion app installs with the daemon.

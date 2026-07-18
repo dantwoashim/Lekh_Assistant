@@ -1,0 +1,233 @@
+name: Unsigned macOS community preview provenance
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: community-preview-provenance-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  LEKH_BUILD_NUMBER: ${{ github.run_number }}
+  LEKH_EXPERIMENTAL_NEURAL_TYPING: "0"
+  LEKH_MACOS_IMK_BUILD_DIR: ${{ runner.temp }}/lekh-macos-build
+  LEKH_PACKAGE_NEURAL_MODEL: "0"
+  PREVIEW_ARTIFACT_NAME: Lekh-Keyboard-macOS-Community-Preview-UNSIGNED.zip
+  PREVIEW_DISTRIBUTION_NAME: Lekh Keyboard macOS Community Preview
+  PREVIEW_SBOM_NAME: Lekh-Keyboard-macOS-Community-Preview.spdx.json
+
+jobs:
+  build-preview:
+    name: Build unsigned deterministic preview and SPDX SBOM
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Validate supply-chain workflow contracts
+        run: |
+          node .github/scripts/validate-workflows.mjs
+          node --test .github/scripts/*.test.mjs
+
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Build ad-hoc-signed deterministic input-method preview
+        run: npm run package:macos:imk:dev
+
+      - name: Enforce deterministic-only package truth
+        shell: bash
+        run: |
+          bundle_path="$LEKH_MACOS_IMK_BUILD_DIR/Lekh Keyboard.imkdevbundle"
+          test -d "$bundle_path"
+          node .github/scripts/validate-community-preview-bundle.mjs \
+            --bundle "$bundle_path" \
+            --report reports/macos-imk-dev-package-report.json \
+            --expected-build-number "$LEKH_BUILD_NUMBER"
+          /usr/bin/codesign --verify --deep --strict "$bundle_path"
+          if /usr/libexec/PlistBuddy \
+            -c "Print :LekhExperimentalNeuralTypingEnabled" \
+            "$bundle_path/Contents/Info.plist" >/dev/null 2>&1; then
+            echo "Deterministic-only preview unexpectedly enables experimental neural typing." >&2
+            exit 1
+          fi
+
+      - name: Package, extract, and bind the closed-world distribution
+        shell: bash
+        run: |
+          bundle_path="$LEKH_MACOS_IMK_BUILD_DIR/Lekh Keyboard.imkdevbundle"
+          preview_work_root="$(mktemp -d "$RUNNER_TEMP/lekh-community-preview.XXXXXX")"
+          distribution_root="$preview_work_root/$PREVIEW_DISTRIBUTION_NAME"
+          extracted_parent="$preview_work_root/extracted"
+          extracted_root="$extracted_parent/$PREVIEW_DISTRIBUTION_NAME"
+          artifact_path="$GITHUB_WORKSPACE/artifacts/$PREVIEW_ARTIFACT_NAME"
+          sbom_path="$GITHUB_WORKSPACE/artifacts/$PREVIEW_SBOM_NAME"
+
+          mkdir -p \
+            "$distribution_root/BuildEvidence" \
+            "$distribution_root/Licenses" \
+            "$extracted_parent" \
+            "$GITHUB_WORKSPACE/artifacts"
+          /usr/bin/ditto --norsrc --noextattr --noacl \
+            "$bundle_path" \
+            "$distribution_root/Lekh Keyboard.imkdevbundle"
+          cp .github/COMMUNITY_PREVIEW_TRUST.md \
+            "$distribution_root/COMMUNITY_PREVIEW_TRUST.md"
+          cp LICENSE "$distribution_root/Licenses/LICENSE.txt"
+          cp public/THIRD_PARTY_NOTICES.txt \
+            "$distribution_root/Licenses/THIRD_PARTY_NOTICES.txt"
+          cp reports/macos-imk-dev-package-report.json \
+            "$distribution_root/BuildEvidence/macos-imk-dev-package-report.json"
+
+          /usr/bin/codesign --verify --deep --strict \
+            "$distribution_root/Lekh Keyboard.imkdevbundle"
+          /usr/bin/ditto -c -k --norsrc --noextattr --noacl --keepParent \
+            "$distribution_root" \
+            "$artifact_path"
+          /usr/bin/ditto -x -k --norsrc --noextattr --noacl \
+            "$artifact_path" \
+            "$extracted_parent"
+          test -d "$extracted_root"
+          /usr/bin/codesign --verify --deep --strict \
+            "$extracted_root/Lekh Keyboard.imkdevbundle"
+
+          preview_version="$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleShortVersionString" \
+            "$extracted_root/Lekh Keyboard.imkdevbundle/Contents/Info.plist")"
+          preview_build="$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleVersion" \
+            "$extracted_root/Lekh Keyboard.imkdevbundle/Contents/Info.plist")"
+          test "$preview_build" = "$LEKH_BUILD_NUMBER"
+          node .github/scripts/generate-community-preview-sbom.mjs \
+            --inventory-root "$extracted_root" \
+            --artifact "$artifact_path" \
+            --output "$sbom_path" \
+            --version-info "$preview_version+build.$preview_build"
+          node .github/scripts/verify-community-preview-artifact.mjs \
+            --source-root "$distribution_root" \
+            --inventory-root "$extracted_root" \
+            --artifact "$artifact_path" \
+            --sbom "$sbom_path" \
+            --expected-build-number "$LEKH_BUILD_NUMBER"
+
+          cp .github/COMMUNITY_PREVIEW_TRUST.md \
+            "$GITHUB_WORKSPACE/artifacts/COMMUNITY_PREVIEW_TRUST.md"
+          cd "$GITHUB_WORKSPACE/artifacts"
+          shasum -a 256 "$PREVIEW_ARTIFACT_NAME" > SHA256SUMS.txt
+
+      - name: Upload immutable preview inputs for independent verification
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lekh-macos-community-preview-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-preview:
+    name: Independently verify extracted ZIP and SPDX binding
+    needs: build-preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Check out the attested source revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+
+      - name: Download immutable preview inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: lekh-macos-community-preview-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verification-input
+
+      - name: Verify checksum, safe ZIP root, and extracted SPDX inventory
+        shell: bash
+        run: |
+          cd verification-input
+          test "$(wc -l < SHA256SUMS.txt | tr -d ' ')" = "1"
+          sha256sum -c SHA256SUMS.txt
+          unzip -Z1 "$PREVIEW_ARTIFACT_NAME" > "$RUNNER_TEMP/preview-zip-entries.txt"
+          cd "$GITHUB_WORKSPACE"
+          node .github/scripts/check-community-preview-zip-entries.mjs \
+            --expected-root "$PREVIEW_DISTRIBUTION_NAME" \
+            < "$RUNNER_TEMP/preview-zip-entries.txt"
+          mkdir "$RUNNER_TEMP/preview-extracted"
+          unzip -q \
+            "$GITHUB_WORKSPACE/verification-input/$PREVIEW_ARTIFACT_NAME" \
+            -d "$RUNNER_TEMP/preview-extracted"
+          node .github/scripts/verify-community-preview-artifact.mjs \
+            --inventory-root "$RUNNER_TEMP/preview-extracted/$PREVIEW_DISTRIBUTION_NAME" \
+            --artifact "$GITHUB_WORKSPACE/verification-input/$PREVIEW_ARTIFACT_NAME" \
+            --sbom "$GITHUB_WORKSPACE/verification-input/$PREVIEW_SBOM_NAME" \
+            --expected-build-number "$LEKH_BUILD_NUMBER"
+
+  attest-preview:
+    name: Attest independently verified preview provenance and SBOM
+    needs: verify-preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download independently verified preview inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: lekh-macos-community-preview-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: attestation-input
+
+      - name: Recheck immutable subject checksum and SPDX subject digest
+        shell: bash
+        run: |
+          cd attestation-input
+          test "$(wc -l < SHA256SUMS.txt | tr -d ' ')" = "1"
+          sha256sum -c SHA256SUMS.txt
+          subject_sha256="$(sha256sum "$PREVIEW_ARTIFACT_NAME" | cut -d ' ' -f 1)"
+          sbom_sha256="$(jq -er \
+            '[.packages[]?.checksums[]? | select(.algorithm == "SHA256") | .checksumValue]
+             | if length == 1 then .[0] else error("expected one package SHA256") end' \
+            "$PREVIEW_SBOM_NAME")"
+          test "$subject_sha256" = "$sbom_sha256"
+
+      - name: Attest build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: attestation-input/Lekh-Keyboard-macOS-Community-Preview-UNSIGNED.zip
+
+      - name: Attest SPDX SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: attestation-input/Lekh-Keyboard-macOS-Community-Preview-UNSIGNED.zip
+          sbom-path: attestation-input/Lekh-Keyboard-macOS-Community-Preview.spdx.json
+
+      - name: Publish trust boundary in the job summary
+        shell: bash
+        run: cat attestation-input/COMMUNITY_PREVIEW_TRUST.md >> "$GITHUB_STEP_SUMMARY"

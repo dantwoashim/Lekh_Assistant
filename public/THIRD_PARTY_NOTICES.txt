@@ -28,6 +28,11 @@ Source: https://github.com/wooorm/nspell
 License: MIT.
 Use: local Hunspell-style spell validation in the browser.
 
+saxes 6.0.0
+Source: https://github.com/lddubeau/saxes
+License: ISC; its xmlchars dependency is MIT.
+Use: strict, namespace-aware parsing of the bounded macOS update appcast in the Electron companion.
+
 Electron 42.x
 Source: https://github.com/electron/electron
 License: MIT.

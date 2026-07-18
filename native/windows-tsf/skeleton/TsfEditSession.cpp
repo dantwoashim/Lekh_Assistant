@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <limits>
+#include <new>
 
 namespace lekh::tsf {
 namespace {
@@ -155,9 +156,14 @@ public:
   DocumentEditSession(
     ITfContext* context,
     ITfComposition** activeComposition,
+    ITfCompositionSink* compositionSink,
     const EngineDecision& decision
-  ) : context_(context), activeComposition_(activeComposition), decision_(decision) {
+  ) : context_(context),
+      activeComposition_(activeComposition),
+      compositionSink_(compositionSink),
+      decision_(decision) {
     context_->AddRef();
+    compositionSink_->AddRef();
   }
 
   STDMETHODIMP QueryInterface(REFIID riid, void** object) override {
@@ -180,30 +186,38 @@ public:
   }
 
   STDMETHODIMP DoEditSession(TfEditCookie editCookie) override {
+    HRESULT hr = E_UNEXPECTED;
     switch (decision_.action) {
       case EngineAction::Compose:
-        return compose(editCookie);
+        hr = compose(editCookie);
+        break;
       case EngineAction::Commit:
-        return commit(editCookie);
+        hr = commit(editCookie);
+        break;
       case EngineAction::Cancel:
-        return cancel(editCookie);
+        hr = cancel(editCookie);
+        break;
       case EngineAction::PassThrough:
-        return E_INVALIDARG;
+        hr = E_INVALIDARG;
+        break;
     }
-    return E_UNEXPECTED;
+    completed_ = SUCCEEDED(hr);
+    return hr;
   }
 
-  bool hostTextMutated() const { return hostTextMutated_; }
+  bool keyEffectApplied() const { return keyEffectApplied_; }
+  bool completed() const { return completed_; }
 
 private:
   ~DocumentEditSession() {
+    compositionSink_->Release();
     context_->Release();
   }
 
   HRESULT compose(TfEditCookie editCookie) {
-    if (decision_.displayText.size() > static_cast<std::size_t>(std::numeric_limits<LONG>::max())) return E_INVALIDARG;
+    if (decision_.compositionText.size() > static_cast<std::size_t>(std::numeric_limits<LONG>::max())) return E_INVALIDARG;
     if (*activeComposition_) return updateComposition(editCookie);
-    if (decision_.displayText.empty()) return S_FALSE;
+    if (decision_.compositionText.empty()) return S_FALSE;
 
     ITfInsertAtSelection* insert = nullptr;
     HRESULT hr = context_->QueryInterface(IID_ITfInsertAtSelection, reinterpret_cast<void**>(&insert));
@@ -213,33 +227,35 @@ private:
     hr = insert->InsertTextAtSelection(
       editCookie,
       TF_IAS_NO_DEFAULT_COMPOSITION,
-      decision_.displayText.c_str(),
-      static_cast<LONG>(decision_.displayText.size()),
+      decision_.compositionText.c_str(),
+      static_cast<LONG>(decision_.compositionText.size()),
       &insertedRange
     );
     insert->Release();
     if (FAILED(hr) || !insertedRange) return FAILED(hr) ? hr : E_FAIL;
-    hostTextMutated_ = true;
+    keyEffectApplied_ = true;
 
     ITfContextComposition* compositionContext = nullptr;
     hr = context_->QueryInterface(IID_ITfContextComposition, reinterpret_cast<void**>(&compositionContext));
     ITfComposition* composition = nullptr;
     if (SUCCEEDED(hr) && compositionContext) {
-      hr = compositionContext->StartComposition(editCookie, insertedRange, nullptr, &composition);
+      hr = compositionContext->StartComposition(editCookie, insertedRange, compositionSink_, &composition);
       compositionContext->Release();
     }
 
     if (FAILED(hr) || !composition) {
-      const HRESULT rollback = insertedRange->SetText(editCookie, 0, L"", 0);
+      setSelectionToEnd(context_, editCookie, insertedRange);
       insertedRange->Release();
-      if (SUCCEEDED(rollback)) hostTextMutated_ = false;
+      // InsertTextAtSelection already represented this physical key. A host
+      // that rejects composition ownership must not make us delete that text
+      // and replay the key through a second path.
       return FAILED(hr) ? hr : TF_E_COMPOSITION_REJECTED;
     }
 
     *activeComposition_ = composition;
-    setSelectionToEnd(context_, editCookie, insertedRange);
+    hr = setSelectionToEnd(context_, editCookie, insertedRange);
     insertedRange->Release();
-    return S_OK;
+    return hr;
   }
 
   HRESULT updateComposition(TfEditCookie editCookie) {
@@ -249,14 +265,15 @@ private:
     hr = range->SetText(
       editCookie,
       0,
-      decision_.displayText.c_str(),
-      static_cast<LONG>(decision_.displayText.size())
+      decision_.compositionText.c_str(),
+      static_cast<LONG>(decision_.compositionText.size())
     );
     if (SUCCEEDED(hr)) {
-      hostTextMutated_ = true;
-      setSelectionToEnd(context_, editCookie, range);
-      if (decision_.displayText.empty() && SUCCEEDED((*activeComposition_)->EndComposition(editCookie))) {
-        releaseActiveComposition(activeComposition_);
+      keyEffectApplied_ = true;
+      hr = setSelectionToEnd(context_, editCookie, range);
+      if (SUCCEEDED(hr) && decision_.compositionText.empty()) {
+        hr = (*activeComposition_)->EndComposition(editCookie);
+        if (SUCCEEDED(hr)) releaseActiveComposition(activeComposition_);
       }
     }
     range->Release();
@@ -276,11 +293,13 @@ private:
         static_cast<LONG>(decision_.committedText.size())
       );
       if (SUCCEEDED(hr)) {
-        hostTextMutated_ = true;
-        setSelectionToEnd(context_, editCookie, range);
-        if (SUCCEEDED((*activeComposition_)->EndComposition(editCookie))) {
+        keyEffectApplied_ = true;
+        const HRESULT selectionResult = setSelectionToEnd(context_, editCookie, range);
+        const HRESULT endResult = (*activeComposition_)->EndComposition(editCookie);
+        if (SUCCEEDED(endResult)) {
           releaseActiveComposition(activeComposition_);
         }
+        hr = FAILED(selectionResult) ? selectionResult : endResult;
       }
       range->Release();
       return hr;
@@ -298,22 +317,20 @@ private:
       nullptr
     );
     insert->Release();
-    hostTextMutated_ = SUCCEEDED(hr);
+    keyEffectApplied_ = SUCCEEDED(hr);
     return hr;
   }
 
   HRESULT cancel(TfEditCookie editCookie) {
     if (!*activeComposition_) return S_FALSE;
-    ITfRange* range = nullptr;
-    HRESULT hr = (*activeComposition_)->GetRange(&range);
-    if (FAILED(hr) || !range) return FAILED(hr) ? hr : E_FAIL;
-    hr = range->SetText(editCookie, 0, L"", 0);
-    range->Release();
+    // Escape dismisses Lekh ownership while preserving the canonical raw
+    // range exactly once. A denied EndComposition is not an applied Escape:
+    // the caller must relinquish local ownership and return the physical key
+    // to the host instead of silently swallowing it.
+    const HRESULT hr = (*activeComposition_)->EndComposition(editCookie);
     if (SUCCEEDED(hr)) {
-      hostTextMutated_ = true;
-      if (SUCCEEDED((*activeComposition_)->EndComposition(editCookie))) {
-        releaseActiveComposition(activeComposition_);
-      }
+      keyEffectApplied_ = true;
+      releaseActiveComposition(activeComposition_);
     }
     return hr;
   }
@@ -321,8 +338,10 @@ private:
   long refCount_ = 1;
   ITfContext* context_;
   ITfComposition** activeComposition_;
+  ITfCompositionSink* compositionSink_;
   EngineDecision decision_;
-  bool hostTextMutated_ = false;
+  bool keyEffectApplied_ = false;
+  bool completed_ = false;
 };
 
 class FinishEditSession final : public ITfEditSession {
@@ -373,7 +392,8 @@ private:
 
 ContextPrivacy inspectContextPrivacy(ITfContext* context, TfClientId clientId) {
   if (!context || clientId == TF_CLIENTID_NULL) return ContextPrivacy::Unknown;
-  auto* editSession = new ScopeEditSession(context);
+  auto* editSession = new (std::nothrow) ScopeEditSession(context);
+  if (!editSession) return ContextPrivacy::Unknown;
   HRESULT sessionResult = E_FAIL;
   const HRESULT requestResult = context->RequestEditSession(
     clientId,
@@ -388,14 +408,24 @@ ContextPrivacy inspectContextPrivacy(ITfContext* context, TfClientId clientId) {
   return result;
 }
 
-bool applyEngineDecision(
+EngineDecisionApplication applyEngineDecision(
   ITfContext* context,
   TfClientId clientId,
   ITfComposition** activeComposition,
+  ITfCompositionSink* compositionSink,
   const EngineDecision& decision
 ) {
-  if (!context || clientId == TF_CLIENTID_NULL || !activeComposition || decision.action == EngineAction::PassThrough) return false;
-  auto* editSession = new DocumentEditSession(context, activeComposition, decision);
+  if (!context || clientId == TF_CLIENTID_NULL || !activeComposition || !compositionSink ||
+      decision.action == EngineAction::PassThrough) {
+    return EngineDecisionApplication::NotApplied;
+  }
+  auto* editSession = new (std::nothrow) DocumentEditSession(
+    context,
+    activeComposition,
+    compositionSink,
+    decision
+  );
+  if (!editSession) return EngineDecisionApplication::NotApplied;
   HRESULT sessionResult = E_FAIL;
   const HRESULT requestResult = context->RequestEditSession(
     clientId,
@@ -403,12 +433,15 @@ bool applyEngineDecision(
     TF_ES_SYNC | TF_ES_READWRITE,
     &sessionResult
   );
-  // A host mutation is the decisive no-key-loss signal. DoEditSession can
-  // report a later composition-ownership failure after inserting text; if
-  // rollback also fails, passing the original key through would duplicate it.
-  const bool applied = SUCCEEDED(requestResult) && editSession->hostTextMutated();
+  // A host-applied key effect is the decisive no-key-loss signal. It can be a
+  // text mutation or Escape ending/relinquishing composition ownership.
+  const bool applied = SUCCEEDED(requestResult) && editSession->keyEffectApplied();
+  const bool completed = applied && SUCCEEDED(sessionResult) && editSession->completed();
   editSession->Release();
-  return applied;
+  if (!applied) return EngineDecisionApplication::NotApplied;
+  return completed
+    ? EngineDecisionApplication::Applied
+    : EngineDecisionApplication::AppliedWithOwnershipCleanupRequired;
 }
 
 bool finishActiveComposition(
@@ -418,7 +451,8 @@ bool finishActiveComposition(
 ) {
   if (!activeComposition || !*activeComposition) return true;
   if (!context || clientId == TF_CLIENTID_NULL) return false;
-  auto* editSession = new FinishEditSession(activeComposition);
+  auto* editSession = new (std::nothrow) FinishEditSession(activeComposition);
+  if (!editSession) return false;
   HRESULT sessionResult = E_FAIL;
   const HRESULT requestResult = context->RequestEditSession(
     clientId,

@@ -12,12 +12,19 @@ enum class ContextPrivacy {
   Unknown
 };
 
+enum class EngineDecisionApplication {
+  NotApplied,
+  Applied,
+  AppliedWithOwnershipCleanupRequired
+};
+
 ContextPrivacy inspectContextPrivacy(ITfContext* context, TfClientId clientId);
 
-bool applyEngineDecision(
+EngineDecisionApplication applyEngineDecision(
   ITfContext* context,
   TfClientId clientId,
   ITfComposition** activeComposition,
+  ITfCompositionSink* compositionSink,
   const EngineDecision& decision
 );
 

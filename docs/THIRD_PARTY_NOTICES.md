@@ -16,6 +16,13 @@
 - License: MIT.
 - Use in this repository: local Hunspell-style spell validation in the browser.
 
+## saxes 6.0.0
+
+- Source: `https://github.com/lddubeau/saxes`
+- npm package: `https://www.npmjs.com/package/saxes`
+- License: ISC; its `xmlchars` dependency is MIT.
+- Use in this repository: strict, namespace-aware parsing of the bounded macOS update appcast in the Electron companion.
+
 ## @nepalibhasha/converter 0.1.0
 
 - Source: `https://github.com/nepalibhasha/nepali-fonts/tree/main/packages/converter-js`

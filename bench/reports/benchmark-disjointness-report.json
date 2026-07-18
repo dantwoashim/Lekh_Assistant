@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-07-17T14:14:06.419Z",
+  "generatedAt": "2026-07-18T09:24:57.032Z",
   "command": "npm run check:benchmark-disjointness",
   "suite": "benchmark-disjointness",
   "mode": "full",
-  "durationMs": 286,
+  "durationMs": 139,
   "fixtureCount": 17001,
   "publicProofEligibleFixtureCount": 1896,
   "rule": "Exact held-out input overlap with phrase/alias sources fails. Quarantined regression suites stay visible but are excluded from public-proof scorecards. Expected-output overlap is reported as warning because Nepali words can legitimately recur.",

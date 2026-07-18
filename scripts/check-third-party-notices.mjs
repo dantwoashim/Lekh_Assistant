@@ -15,6 +15,7 @@ const requiredPackages = [
   "nspell",
   "react",
   "react-dom",
+  "saxes",
   "vite",
 ];
 

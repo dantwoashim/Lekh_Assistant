@@ -1,6 +1,6 @@
 # Engine Quality Scorecard
 
-Updated: 2026-07-17T14:14:48.936Z
+Updated: 2026-07-18T09:25:32.281Z
 
 This scorecard reads existing fresh report files from `bench/reports`. It does not recompute the heavy benchmark universe. Missing, stale, zero-fixture, or schema-weak reports are visible below.
 
@@ -9,16 +9,16 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | Report | Status | Fixtures | Mode | Command | Note |
 | --- | --- | ---: | --- | --- | --- |
 | Romanized benchmark | fresh | 776 | smoke | npm run benchmark:romanized:smoke |  |
-| Romanized self-consistency | fresh | 140 | smoke | npm run benchmark:romanized:self:smoke |  |
+| Romanized self-consistency | fresh | 2130 | full | npm run benchmark:romanized:self |  |
 | Typing-session benchmark | fresh | 66 | full | npm run benchmark:typing-session |  |
 | Typing-session dictionary benchmark | fresh | 5 | full | npm run benchmark:typing-session -- dictionary-lookup |  |
 | Typing-session memory benchmark | fresh | 4 | full | npm run benchmark:typing-session -- memory-ranking,memory-controls |  |
 | Proofread benchmark | fresh | 9 | full | npm run benchmark:proofread |  |
-| Performance smoke benchmark | fresh | 12 | smoke | npm run bench:perf:smoke |  |
+| Performance smoke benchmark | fresh | 12 | full | npm run bench:perf:full |  |
 | Benchmark disjointness | fresh | 17001 | full | npm run check:benchmark-disjointness |  |
 | Keyboard corpus package | fresh | 11 | n/a | npm run corpus:keyboard:package-check |  |
 | Preeti benchmark | stale | 10225 | full | npm run benchmark:preeti | A relevant source, fixture, or benchmark script is newer than the report. |
-| Mixed span mutations | stale | 25 | full | npm run benchmark:mixed-span-mutations | A relevant source, fixture, or benchmark script is newer than the report. |
+| Mixed span mutations | fresh | 25 | full | npm run benchmark:mixed-span-mutations |  |
 | Romanized alias collisions | fresh | 76193 | full | npm run check:alias-collisions |  |
 
 ## Keyboard Foundation
@@ -42,7 +42,7 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | top-3 | 1.0000 |
 | top-5 | 1.0000 |
 | MRR | 1.0000 |
-| self-consistency fixtures | 140 |
+| self-consistency fixtures | 2130 |
 | self-consistency failures | 0 |
 
 ## Corpus Package
@@ -98,7 +98,7 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | memory controls | complete |
 | Keyboard Lab | complete |
 | companion shell | complete |
-| typing latency p95 ms | 69 |
+| typing latency p95 ms | 34 |
 | native release readiness | pending |
 
 ## Performance
@@ -106,16 +106,16 @@ This scorecard reads existing fresh report files from `bench/reports`. It does n
 | Case | p95 ms | Gate ms | Status |
 | --- | ---: | ---: | --- |
 | 50-token hostile Romanized mixed sentence | 1 | 30 | pass |
-| 5KB mixed Preeti paragraph | 19 | 100 | pass |
-| KeyboardEngine warm startup | 0 | 500 | pass |
-| KeyboardEngine partial warm timeout | 0 | 50 | pass |
+| 5KB mixed Preeti paragraph | 13 | 100 | pass |
+| KeyboardEngine warm startup | 21 | 500 | pass |
+| KeyboardEngine partial warm timeout | 25 | 50 | pass |
 | Keyboard Romanized live update | 0 | 20 | pass |
 | Keyboard candidate count cap | 0 | 20 | pass |
 | Keyboard Traditional Unicode suggestion | 0 | 20 | pass |
 | Keyboard proofread hint update | 0 | 40 | pass |
 | Keyboard dictionary lookup | 0 | 30 | pass |
 | Keyboard memory ranking update | 0 | 10 | pass |
-| Keyboard candidate commit | 5 | 10 | pass |
+| Keyboard candidate commit | 2 | 10 | pass |
 | Native IPC JSON envelope simulation | 0 | 10 | pass |
 
 Performance target misses: 0

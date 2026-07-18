@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(LekhTextService LANGUAGES CXX)
 
+option(
+  LEKH_ENABLE_MUTATING_REGISTRATION_TESTS
+  "Run current-user TSF registration/activation cleanup smoke tests"
+  OFF
+)
+
 if(NOT WIN32)
   message(FATAL_ERROR "LekhTextService is a Windows TSF DLL and must be built on Windows with MSVC.")
 endif()
@@ -73,6 +79,7 @@ add_library(LekhTextService SHARED
   DllMain.cpp
   InputScopeGuids.cpp
   IpcClient.cpp
+  LekhTextService.def
   LekhTextService.cpp
   Register.cpp
   TsfEditSession.cpp
@@ -142,6 +149,55 @@ set_target_properties(LekhPipeBroker PROPERTIES
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(LekhComExportTests LekhComExportTests.cpp)
+  target_compile_definitions(LekhComExportTests PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _WIN32_WINNT=0x0A00
+  )
+  if(MSVC)
+    target_compile_options(LekhComExportTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  endif()
+  add_test(
+    NAME LekhComExportTests
+    COMMAND LekhComExportTests "$<TARGET_FILE:LekhTextService>"
+  )
+
+  if(LEKH_ENABLE_MUTATING_REGISTRATION_TESTS)
+    add_executable(LekhComRegistrationTests LekhComRegistrationTests.cpp)
+    target_compile_definitions(LekhComRegistrationTests PRIVATE
+      UNICODE
+      _UNICODE
+      WIN32_LEAN_AND_MEAN
+      NOMINMAX
+      _WIN32_WINNT=0x0A00
+    )
+    target_link_libraries(LekhComRegistrationTests PRIVATE ole32 uuid)
+    if(MSVC)
+      target_compile_options(LekhComRegistrationTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+    endif()
+    add_test(
+      NAME LekhComRegistrationTests
+      COMMAND LekhComRegistrationTests "$<TARGET_FILE:LekhTextService>"
+    )
+  endif()
+
+  add_executable(LekhDaemonRetirementTests DaemonRetirementTests.cpp)
+  target_compile_features(LekhDaemonRetirementTests PRIVATE cxx_std_20)
+  if(MSVC)
+    target_compile_options(LekhDaemonRetirementTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  endif()
+  add_test(NAME LekhDaemonRetirementTests COMMAND LekhDaemonRetirementTests)
+
+  add_executable(LekhCompositionRecoveryTests CompositionRecoveryTests.cpp)
+  target_compile_features(LekhCompositionRecoveryTests PRIVATE cxx_std_20)
+  if(MSVC)
+    target_compile_options(LekhCompositionRecoveryTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  endif()
+  add_test(NAME LekhCompositionRecoveryTests COMMAND LekhCompositionRecoveryTests)
+
   add_executable(LekhTsfProtocolTests TsfProtocolTests.cpp)
   target_link_libraries(LekhTsfProtocolTests PRIVATE LekhTsfProtocol)
   if(MSVC)

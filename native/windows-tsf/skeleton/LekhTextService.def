@@ -1,0 +1,7 @@
+LIBRARY "LekhTextService"
+
+EXPORTS
+  DllCanUnloadNow
+  DllGetClassObject
+  DllRegisterServer
+  DllUnregisterServer

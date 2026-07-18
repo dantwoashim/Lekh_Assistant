@@ -63,7 +63,7 @@ Only one level may demand user attention at a time.
 | Browsing | 1…8 | Commit the corresponding visible page row |
 | Browsing | Space | Commit selected candidate plus one space |
 | Browsing | Return | Commit selected candidate plus one newline |
-| Not browsing | Space | Commit an engine-authorized calibrated/unique-reversible token; otherwise raw plus one space |
+| Not browsing | Space | Commit exactly the raw composition plus one space; experimental auto-commit has no native or production authority |
 | Not browsing | Return | Commit exactly the raw composition plus one newline |
 | Any composition | Shift-Tab | Commit raw, then pass focus traversal to the host exactly once |
 | Converted composition | First Escape | Dismiss alternatives and commit the exact raw composition without learning or data loss |
@@ -150,7 +150,7 @@ A UX-quality candidate requires all of the following:
 - Companion accessibility tree exposes every navigation item, mode, toggle, destructive confirmation and diagnostic action.
 - Light, Dark, Increase Contrast, Reduce Transparency and Reduce Motion are inspected.
 - 820×620 and 1440×900 window layouts have no unreachable controls.
-- TextEdit HID probes prove ghost presence/acceptance, safe-auto versus raw Space, passive digit safety, explicit candidate selection and two-stage Escape.
+- TextEdit HID probes prove ghost presence/acceptance, exact raw Space, passive digit safety, explicit candidate selection and two-stage Escape; any future calibrated auto-commit requires a separately promoted contract and host matrix.
 - Required host matrix records screenshots, committed text and surface behavior for every host/version.
 - Deterministic p99 stays below 5 ms after all UX logic.
 - End-to-end neural-tail latency measures complete beam decoding, not a single Core ML forward pass.

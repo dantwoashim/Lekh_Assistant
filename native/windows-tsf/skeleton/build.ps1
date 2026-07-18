@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("x64", "ARM64")]
+  [ValidateSet("Win32", "x64", "ARM64")]
   [string]$Architecture = "x64",
   [switch]$SkipTests
 )

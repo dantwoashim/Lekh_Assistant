@@ -166,15 +166,24 @@ std::optional<PrivateChannel> createPrivateChannel(
   return PrivateChannel{std::move(server), std::move(client)};
 }
 
-bool blockedEnvironmentVariable(const std::wstring& key) {
-  static constexpr const wchar_t* blocked[] = {
-    L"ELECTRON_RUN_AS_NODE",
-    L"NODE_OPTIONS",
-    L"NODE_PATH",
-    L"NODE_REPL_EXTERNAL_MODULE",
-    L"NODE_REDIRECT_WARNINGS"
+bool allowedDaemonEnvironmentVariable(const std::wstring& key) {
+  // The broker is a security boundary. Do not copy arbitrary credentials,
+  // proxy configuration, Node injection flags, or application-specific state
+  // from the companion into the contained daemon.
+  static constexpr const wchar_t* allowed[] = {
+    L"SystemRoot",
+    L"WINDIR",
+    L"TEMP",
+    L"TMP",
+    L"USERPROFILE",
+    L"APPDATA",
+    L"LOCALAPPDATA",
+    L"ProgramData",
+    L"LANG",
+    L"LC_ALL",
+    L"TZ"
   };
-  return std::any_of(std::begin(blocked), std::end(blocked), [&key](const wchar_t* candidate) {
+  return std::any_of(std::begin(allowed), std::end(allowed), [&key](const wchar_t* candidate) {
     return _wcsicmp(key.c_str(), candidate) == 0;
   });
 }
@@ -188,7 +197,7 @@ std::vector<wchar_t> sanitizedEnvironment() {
     cursor += entry.size() + 1;
     const std::size_t separator = entry.find(L'=', entry.empty() || entry.front() != L'=' ? 0 : 1);
     const std::wstring key = separator == std::wstring::npos ? entry : entry.substr(0, separator);
-    if (!blockedEnvironmentVariable(key)) entries.push_back(std::move(entry));
+    if (allowedDaemonEnvironmentVariable(key)) entries.push_back(std::move(entry));
   }
   FreeEnvironmentStringsW(rawEnvironment);
   entries.emplace_back(L"ELECTRON_RUN_AS_NODE=1");

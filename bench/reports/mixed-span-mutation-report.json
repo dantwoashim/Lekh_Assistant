@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-08T12:52:56.312Z",
+  "generatedAt": "2026-07-18T09:25:07.720Z",
   "fixtureCount": 25,
   "exactOutputRate": 1,
   "actionMatchRate": 1,
@@ -26,5 +26,5 @@
   "command": "npm run benchmark:mixed-span-mutations",
   "suite": "mixed-span-mutations",
   "mode": "full",
-  "durationMs": 8
+  "durationMs": 15
 }

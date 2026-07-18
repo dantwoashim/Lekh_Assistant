@@ -10,6 +10,11 @@ const {
   BoundedSerialTaskQueue,
   validatePreferencePatch
 } = require("./preference-write-queue.cjs");
+const {
+  fetchBounded,
+  parseAppcast,
+  validatePinnedHttpsUrl
+} = require("./update-security.cjs");
 
 const isDevServer = Boolean(process.env.LEKH_COMPANION_DEV_SERVER);
 const startsInBackground = process.platform === "win32" && process.argv.includes("--background");
@@ -320,8 +325,9 @@ function registerCompanionIpc() {
         message: "Updates are enabled only in a Developer ID signed production companion."
       };
     }
-    const xml = await fetchBounded(updateFeedUrl, 512 * 1024);
-    const details = parseAppcast(xml.toString("utf8"));
+    verifiedUpdate = null;
+    const xml = await fetchBounded(updateFeedUrl, 512 * 1024, updateFetchOptions());
+    const details = parseAppcast(xml);
     validateUpdateUrl(details.url);
     const currentVersion = app.getVersion();
     const available = compareVersions(details.shortVersion, currentVersion) > 0;
@@ -339,7 +345,11 @@ function registerCompanionIpc() {
     if (!verifiedUpdate || !(await isDeveloperIdSigned())) {
       throw new Error("No verified production update is available.");
     }
-    const archive = await fetchBounded(verifiedUpdate.url, 512 * 1024 * 1024);
+    const archive = await fetchBounded(
+      verifiedUpdate.url,
+      512 * 1024 * 1024,
+      updateFetchOptions()
+    );
     const digest = createHash("sha256").update(archive).digest("hex");
     if (digest.toLowerCase() !== verifiedUpdate.sha256.toLowerCase()) {
       throw new Error("Update checksum verification failed.");
@@ -479,62 +489,15 @@ async function isDeveloperIdSigned(target = process.execPath) {
   }
 }
 
-async function fetchBounded(url, maximumBytes) {
-  const response = await fetch(url, {
-    redirect: "follow",
+function updateFetchOptions() {
+  return {
     headers: { "User-Agent": `Lekh-Keyboard/${app.getVersion()}` },
-    signal: AbortSignal.timeout(15_000)
-  });
-  if (!response.ok) throw new Error(`Update server returned HTTP ${response.status}.`);
-  validateUpdateUrl(response.url);
-  const declaredLength = Number(response.headers.get("content-length") ?? 0);
-  if (declaredLength > maximumBytes) throw new Error("Update response exceeds the size limit.");
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length > maximumBytes) throw new Error("Update response exceeds the size limit.");
-  return bytes;
-}
-
-function parseAppcast(xml) {
-  const enclosure = xml.match(/<enclosure\b([^>]+?)\/?>/i)?.[1] ?? "";
-  const attributes = {};
-  for (const match of enclosure.matchAll(/([\w:-]+)\s*=\s*"([^"]*)"/g)) {
-    attributes[match[1]] = decodeXml(match[2]);
-  }
-  const shortVersion = xml.match(/<sparkle:shortVersionString>([^<]+)<\/sparkle:shortVersionString>/i)?.[1];
-  const version = attributes["sparkle:version"];
-  const details = {
-    url: attributes.url,
-    version,
-    shortVersion: shortVersion ? decodeXml(shortVersion) : undefined,
-    sha256: attributes["sparkle:sha256"],
-    signature: attributes["sparkle:edSignature"]
+    validateUrl: validateUpdateUrl
   };
-  if (
-    !details.url ||
-    !/^\d+$/.test(details.version ?? "") ||
-    !/^\d+\.\d+\.\d+$/.test(details.shortVersion ?? "") ||
-    !/^[a-f0-9]{64}$/i.test(details.sha256 ?? "") ||
-    !/^[A-Za-z0-9+/]+={0,2}$/.test(details.signature ?? "")
-  ) {
-    throw new Error("The update appcast is malformed or unsigned.");
-  }
-  return details;
 }
 
 function validateUpdateUrl(url) {
-  const parsed = new URL(url);
-  if (parsed.protocol !== "https:" || parsed.hostname !== updateHost) {
-    throw new Error("Update URL is outside the pinned HTTPS host.");
-  }
-}
-
-function decodeXml(value) {
-  return value
-    .replace(/&quot;/g, "\"")
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
+  validatePinnedHttpsUrl(url, updateHost);
 }
 
 function compareVersions(left, right) {
