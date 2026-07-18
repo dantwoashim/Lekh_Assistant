@@ -107,6 +107,25 @@ describe("IPC protocol v2 security state", () => {
     expect(daemon.metrics().activeSessions).toBe(1);
   });
 
+  it("isolates the replay cache from mutations to returned responses", async () => {
+    const daemon = new KeyboardDaemon({ now: () => NOW, serverInstanceId: "server-a" });
+    const client = new ProtocolTestClient("mutation-client");
+    await negotiate(daemon, client);
+
+    const request = client.request("health.check", { client: "daemon-test" }, "mutation-health");
+    const first = await daemon.handle(request);
+    const pristine = structuredClone(first);
+    (first as { serverInstanceId: string }).serverInstanceId = "caller-corrupted";
+    (first.payload as { warnings: string[] }).warnings.push("caller-corrupted");
+
+    const replay = await daemon.handle(request);
+    expect(replay).toEqual(pristine);
+    expect(replay).not.toBe(first);
+    (replay.payload as { warnings: string[] }).warnings.push("second-caller-corruption");
+
+    await expect(daemon.handle(request)).resolves.toEqual(pristine);
+  });
+
   it("retires only the renegotiating client's sessions and replays the negotiation idempotently", async () => {
     const engine = createKeyboardEngine();
     const endSession = vi.spyOn(engine, "endSession");

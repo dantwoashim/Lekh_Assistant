@@ -11,12 +11,11 @@ import type {
 import { defaultKeyboardSettings } from "../../../src/engine/keyboard/storage";
 import { isSecureContext } from "../../../src/engine/keyboard/modes";
 import type { DictionaryResult, TypingContext } from "../../../src/engine/keyboard/types";
-import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
 import {
-  MAX_CORRECTION_MEMORY_DECAY_WEIGHT,
-  MIN_CORRECTION_MEMORY_DECAY_WEIGHT,
-  privacySafeCorrectionMemoryDomain
-} from "../../../src/engine/memory/types";
+  normalizeCorrectionMemoryImportEntries,
+  normalizeCorrectionMemoryImportEntry
+} from "../../../src/engine/memory/importNormalization";
+import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
 
 export interface NativeKeyboardStorageFile {
   schemaVersion: 1;
@@ -178,11 +177,12 @@ export class JsonFileCorrectionMemoryStore implements KeyboardCorrectionMemorySt
 
   async record(entry: CorrectionMemoryEntry): Promise<void> {
     const current = await this.storage.read();
+    const normalizedEntry = privacySafeCorrectionMemoryEntry(entry);
     await this.storage.write({
       ...current,
       correctionMemory: [
-        ...current.correctionMemory.filter((item) => item.id !== entry.id),
-        privacySafeCorrectionMemoryEntry(entry)
+        ...current.correctionMemory.filter((item) => item.id !== normalizedEntry.id),
+        normalizedEntry
       ]
     });
   }
@@ -224,7 +224,12 @@ export class JsonFileCorrectionMemoryStore implements KeyboardCorrectionMemorySt
     const current = await this.storage.read();
     await this.storage.write({
       ...current,
-      correctionMemory: data.entries.map(privacySafeCorrectionMemoryEntry)
+      correctionMemory: normalizeCorrectionMemoryImportEntries(data.entries, {
+        requireTimestamps: true,
+        requireKnownSource: true,
+        scoringPolicy: "strict",
+        minimumFrequency: 0
+      })
     });
   }
 }
@@ -240,7 +245,12 @@ function normalizeStorage(value: unknown): NativeKeyboardStorageFile {
     schemaVersion: 1,
     settings: normalizeKeyboardSettings(value.settings),
     personalDictionary: value.personalDictionary.map(normalizePersonalDictionaryEntry),
-    correctionMemory: value.correctionMemory.map(privacySafeCorrectionMemoryEntry),
+    correctionMemory: normalizeCorrectionMemoryImportEntries(value.correctionMemory, {
+      requireTimestamps: true,
+      requireKnownSource: true,
+      scoringPolicy: "strict",
+      minimumFrequency: 0
+    }),
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date(0).toISOString()
   };
 }
@@ -300,54 +310,15 @@ export function normalizePersonalDictionaryEntry(value: unknown): PersonalDictio
 }
 
 export function privacySafeCorrectionMemoryEntry(value: unknown): CorrectionMemoryEntry {
-  if (!isRecord(value) || !CORRECTION_MEMORY_SOURCES.has(String(value.source)) || !isRecord(value.timestamps)) {
+  if (!isRecord(value) || !CORRECTION_MEMORY_SOURCES.has(String(value.source))) {
     throw new Error("JSON keyboard storage contains a malformed correction-memory entry.");
   }
-  const context = isRecord(value.context) ? value.context : {};
-  const domain = privacySafeCorrectionMemoryDomain(context.domain);
-  const frequency = requiredFiniteNumber(value.frequency, "correction-memory frequency");
-  const confidence = requiredFiniteNumber(value.confidenceAtSelection, "correction-memory confidence");
-  if (!Number.isInteger(frequency) || frequency < 0 || confidence < 0 || confidence > 1) {
-    throw new Error("JSON keyboard storage contains out-of-range correction-memory scoring values.");
-  }
-  const decayWeight = optionalFiniteNumber(value.decayWeight);
-  if (
-    decayWeight !== undefined &&
-    (decayWeight < MIN_CORRECTION_MEMORY_DECAY_WEIGHT ||
-      decayWeight > MAX_CORRECTION_MEMORY_DECAY_WEIGHT)
-  ) {
-    throw new Error("JSON keyboard storage contains an out-of-range correction-memory decay weight.");
-  }
-  return {
-    id: requiredBoundedString(value.id, 256, "correction-memory id"),
-    ...(optionalBoundedString(value.inputRomanized, 1024) ? {
-      inputRomanized: optionalBoundedString(value.inputRomanized, 1024)
-    } : {}),
-    ...(optionalBoundedString(value.inputPreeti, 1024) ? {
-      inputPreeti: optionalBoundedString(value.inputPreeti, 1024)
-    } : {}),
-    normalizedInput: requiredBoundedString(value.normalizedInput, 1024, "correction-memory input"),
-    chosenOutput: requiredBoundedString(value.chosenOutput, 2048, "correction-memory chosen output"),
-    normalizedOutput: requiredBoundedString(value.normalizedOutput, 2048, "correction-memory normalized output"),
-    rejectedAlternatives: value.rejectedAlternatives === undefined
-      ? []
-      : boundedStringArray(value.rejectedAlternatives, 32, 2048),
-    context: {
-      leftWindow: "",
-      rightWindow: "",
-      ...(domain ? { domain } : {})
-    },
-    source: value.source as CorrectionMemoryEntry["source"],
-    frequency,
-    confidenceAtSelection: confidence,
-    timestamps: {
-      firstSeen: requiredBoundedString(value.timestamps.firstSeen, 64, "correction-memory firstSeen"),
-      lastUsed: requiredBoundedString(value.timestamps.lastUsed, 64, "correction-memory lastUsed")
-    },
-    ...(typeof value.pinned === "boolean" ? { pinned: value.pinned } : {}),
-    ...(typeof value.blocked === "boolean" ? { blocked: value.blocked } : {}),
-    ...(decayWeight === undefined ? {} : { decayWeight })
-  };
+  return normalizeCorrectionMemoryImportEntry(value, {
+    requireTimestamps: true,
+    requireKnownSource: true,
+    scoringPolicy: "strict",
+    minimumFrequency: 0
+  });
 }
 
 function requiredBoundedString(value: unknown, maximumLength: number, label: string): string {
@@ -368,17 +339,6 @@ function boundedStringArray(value: unknown, maximumItems: number, maximumLength:
     throw new Error("JSON keyboard storage contains an invalid bounded string collection.");
   }
   return [...new Set(value)];
-}
-
-function requiredFiniteNumber(value: unknown, label: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`JSON keyboard storage contains an invalid ${label}.`);
-  }
-  return value;
-}
-
-function optionalFiniteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function booleanOr(value: unknown, fallback: boolean): boolean {

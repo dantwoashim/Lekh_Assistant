@@ -95,6 +95,10 @@ class LocalKeyboardEngine implements KeyboardEngine {
       const update = this.refresh(sessionId);
       const candidate = update.candidates.find((item) => item.shortcut === key.key);
       if (candidate) {
+        // processKeyStroke returns CandidateUpdate, which deliberately carries
+        // no commit receipt. Until this path has an acknowledgement-capable
+        // protocol, learning here would treat an attempted host edit as proof
+        // that the edit succeeded. Keep shortcut commits explicitly unlearned.
         const commitResult = this.commitCandidate(sessionId, candidate.id, { learning: "disabled" });
         return withCommit(this.refresh(sessionId), commitResult, commitResult.committedText);
       }

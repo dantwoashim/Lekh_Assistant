@@ -15,7 +15,14 @@ export class KeyboardSessionManager {
     private readonly sessionTtlMs = DEFAULT_SESSION_TTL_MS,
     private readonly maxSessions = DEFAULT_MAX_SESSIONS,
     private readonly onSessionsRemoved?: (sessionIds: SessionId[]) => void
-  ) {}
+  ) {
+    if (!Number.isSafeInteger(sessionTtlMs) || sessionTtlMs < 1) {
+      throw new Error("Keyboard session TTL must be a positive safe integer.");
+    }
+    if (!Number.isSafeInteger(maxSessions) || maxSessions < 1) {
+      throw new Error("Keyboard session capacity must be a positive safe integer.");
+    }
+  }
 
   beginSession(context: TypingContext): SessionId {
     this.cleanupExpired();

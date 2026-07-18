@@ -1,5 +1,6 @@
 import { isSecureContext } from "./modes";
 import type { DictionaryResult, TypingContext } from "./types";
+import { normalizeCorrectionMemoryImportEntries } from "../memory/importNormalization";
 import type { CorrectionMemoryEntry } from "../memory/types";
 
 export interface KeyboardSettings {
@@ -150,7 +151,12 @@ export class InMemoryKeyboardCorrectionMemoryStore implements KeyboardCorrection
 
   async import(data: unknown): Promise<void> {
     if (!isCorrectionMemoryExport(data)) return;
-    this.entries = clone(data.entries);
+    this.entries = normalizeCorrectionMemoryImportEntries(data.entries, {
+      requireTimestamps: true,
+      requireKnownSource: true,
+      scoringPolicy: "strict",
+      minimumFrequency: 0
+    });
   }
 }
 
@@ -159,7 +165,9 @@ function isPersonalDictionaryExport(data: unknown): data is { schemaVersion: 1; 
 }
 
 function isCorrectionMemoryExport(data: unknown): data is { schemaVersion: 1; entries: CorrectionMemoryEntry[] } {
-  return typeof data === "object" && data !== null && Array.isArray((data as { entries?: unknown }).entries);
+  return typeof data === "object" && data !== null &&
+    (data as { schemaVersion?: unknown }).schemaVersion === 1 &&
+    Array.isArray((data as { entries?: unknown }).entries);
 }
 
 function clone<T>(value: T): T {

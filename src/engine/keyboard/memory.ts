@@ -1,26 +1,22 @@
 import { normalizeCorrectionInput } from "../../core/transliteration/localCorrectionMemory";
+import { normalizeNepaliText } from "../../core/normalize/normalizeNepaliText";
 import {
   MAX_CORRECTION_MEMORY_DECAY_WEIGHT,
   MIN_CORRECTION_MEMORY_DECAY_WEIGHT,
   privacySafeCorrectionMemoryDomain
 } from "../memory/types";
-import type { CorrectionMemoryEntry, CorrectionMemorySource } from "../memory";
-import { sha256Hex } from "../util/sha256";
+import {
+  canonicalCorrectionMemoryId,
+  normalizeCorrectionMemoryImportEntries,
+  normalizeCorrectionMemoryImportEntry
+} from "../memory/importNormalization";
+import type { CorrectionMemoryEntry } from "../memory";
 import type { Candidate, KeyboardSession } from "./types";
 
 const MAXIMUM_MEMORY_ENTRIES = 500;
 const MAXIMUM_REJECTED_ALTERNATIVES = 32;
 const MAXIMUM_INPUT_LENGTH = 1024;
 const MAXIMUM_OUTPUT_LENGTH = 2048;
-const MAXIMUM_ID_LENGTH = 256;
-const MAXIMUM_TIMESTAMP_LENGTH = 64;
-const ALLOWED_MEMORY_SOURCES = new Set<CorrectionMemorySource>([
-  "user-accept",
-  "user-edit",
-  "user-add-dictionary",
-  "proofread-accept",
-  "import"
-]);
 
 export function keyboardMemoryCandidates(input: string, entries: CorrectionMemoryEntry[], session: KeyboardSession): Candidate[] {
   const normalized = normalizeCorrectionInput(input);
@@ -68,7 +64,7 @@ export function buildKeyboardMemorySelection(
   candidate: Candidate
 ): CorrectionMemoryEntry | undefined {
   const normalizedInput = normalizeCorrectionInput(session.compositionText);
-  const normalizedOutput = normalizeCorrectionInput(candidate.text);
+  const normalizedOutput = normalizeNepaliText(candidate.text);
   if (
     !normalizedInput ||
     !normalizedOutput ||
@@ -85,7 +81,7 @@ export function buildKeyboardMemorySelection(
     .slice(0, 8);
   const domain = privacySafeCorrectionMemoryDomain(session.context.activeDomains[0]);
   return {
-    id: semanticMemoryEntryId(normalizedInput, normalizedOutput, domain),
+    id: canonicalCorrectionMemoryId(normalizedInput, normalizedOutput, domain),
     inputRomanized: /[A-Za-z]/.test(session.compositionText) ? session.compositionText : undefined,
     chosenOutput: candidate.text,
     normalizedInput,
@@ -141,66 +137,30 @@ export function applyKeyboardMemorySelection(
 }
 
 export function importKeyboardMemoryEntry(entries: CorrectionMemoryEntry[], raw: unknown): CorrectionMemoryEntry[] {
-  if (!raw || typeof raw !== "object") return entries;
-  const value = raw as Partial<CorrectionMemoryEntry>;
-  const chosenOutput = boundedString(value.chosenOutput, MAXIMUM_OUTPUT_LENGTH);
-  const inputRomanized = boundedString(value.inputRomanized, MAXIMUM_INPUT_LENGTH);
-  const inputPreeti = boundedString(value.inputPreeti, MAXIMUM_INPUT_LENGTH);
-  const suppliedNormalizedInput = boundedString(value.normalizedInput, MAXIMUM_INPUT_LENGTH);
-  if (!chosenOutput || (!inputRomanized && !suppliedNormalizedInput)) return entries;
-  const now = new Date().toISOString();
-  const normalizedInput = normalizeCorrectionInput(suppliedNormalizedInput ?? inputRomanized ?? "");
-  const normalizedOutput = normalizeCorrectionInput(
-    boundedString(value.normalizedOutput, MAXIMUM_OUTPUT_LENGTH) ?? chosenOutput
-  );
-  if (!normalizedInput || !normalizedOutput) return entries;
-  const context = value.context && typeof value.context === "object" ? value.context : undefined;
-  const domain = privacySafeCorrectionMemoryDomain(context?.domain);
-  const timestamps = value.timestamps && typeof value.timestamps === "object" ? value.timestamps : undefined;
-  const frequency = Number.isSafeInteger(value.frequency) && (value.frequency ?? -1) >= 0
-    ? value.frequency as number
-    : 1;
-  const confidence = typeof value.confidenceAtSelection === "number" &&
-    Number.isFinite(value.confidenceAtSelection) &&
-    value.confidenceAtSelection >= 0 &&
-    value.confidenceAtSelection <= 1
-    ? value.confidenceAtSelection
-    : 0.8;
-  const decayWeight = typeof value.decayWeight === "number" && Number.isFinite(value.decayWeight)
-    ? Math.max(
-      MIN_CORRECTION_MEMORY_DECAY_WEIGHT,
-      Math.min(MAX_CORRECTION_MEMORY_DECAY_WEIGHT, value.decayWeight)
-    )
-    : 1;
-  const source = value.source && ALLOWED_MEMORY_SOURCES.has(value.source) ? value.source : "import";
-  const rejectedAlternatives = Array.isArray(value.rejectedAlternatives)
-    ? Array.from(new Set(value.rejectedAlternatives.filter((item): item is string => (
-      typeof item === "string" && item.length > 0 && item.length <= MAXIMUM_OUTPUT_LENGTH
-    )))).slice(0, MAXIMUM_REJECTED_ALTERNATIVES)
-    : [];
-  return [
-    ...entries,
-    {
-      id: boundedString(value.id, MAXIMUM_ID_LENGTH) ?? `kbd-import-${Date.now().toString(36)}-${entries.length.toString(36)}`,
-      ...(inputRomanized ? { inputRomanized } : {}),
-      ...(inputPreeti ? { inputPreeti } : {}),
-      chosenOutput,
-      normalizedInput,
-      normalizedOutput,
-      rejectedAlternatives,
-      context: { leftWindow: "", rightWindow: "", ...(domain ? { domain } : {}) },
-      source,
-      frequency,
-      confidenceAtSelection: confidence,
-      timestamps: {
-        firstSeen: boundedString(timestamps?.firstSeen, MAXIMUM_TIMESTAMP_LENGTH) ?? now,
-        lastUsed: boundedString(timestamps?.lastUsed, MAXIMUM_TIMESTAMP_LENGTH) ?? now
-      },
-      ...(typeof value.pinned === "boolean" ? { pinned: value.pinned } : {}),
-      ...(typeof value.blocked === "boolean" ? { blocked: value.blocked } : {}),
-      decayWeight
-    }
-  ].slice(-MAXIMUM_MEMORY_ENTRIES);
+  try {
+    const imported = normalizeCorrectionMemoryImportEntry(raw, {
+      defaultTimestamp: new Date().toISOString(),
+      scoringPolicy: "clamp",
+      minimumFrequency: 0
+    });
+    const semanticIndex = entries.findIndex((entry) => sameMemorySemantics(entry, imported));
+    const idCollision = entries.find((entry) => entry.id === imported.id && !sameMemorySemantics(entry, imported));
+    if (idCollision) return entries;
+    if (semanticIndex < 0) return [...entries, imported].slice(-MAXIMUM_MEMORY_ENTRIES);
+
+    const existing = entries[semanticIndex]!;
+    const [merged] = normalizeCorrectionMemoryImportEntries([existing, imported], {
+      requireTimestamps: true,
+      scoringPolicy: "clamp",
+      minimumFrequency: 0
+    });
+    if (!merged) return entries;
+    const next = entries.slice();
+    next[semanticIndex] = merged;
+    return next;
+  } catch {
+    return entries;
+  }
 }
 
 export function keyboardBlockedCandidateTexts(input: string, entries: CorrectionMemoryEntry[]): Set<string> {
@@ -240,17 +200,8 @@ function recencyWeight(entry: CorrectionMemoryEntry): number {
   return Math.max(0.25, Math.pow(0.5, ageDays / halfLifeDays));
 }
 
-function boundedString(value: unknown, maximumLength: number): string | undefined {
-  return typeof value === "string" && value.length > 0 && value.length <= maximumLength
-    ? value
-    : undefined;
-}
-
-function semanticMemoryEntryId(
-  normalizedInput: string,
-  normalizedOutput: string,
-  domain: string | undefined
-): string {
-  const digest = sha256Hex(JSON.stringify([normalizedInput, normalizedOutput, domain ?? ""]));
-  return `kbd-memory-${digest.slice(0, 40)}`;
+function sameMemorySemantics(left: CorrectionMemoryEntry, right: CorrectionMemoryEntry): boolean {
+  return left.normalizedInput === right.normalizedInput &&
+    left.normalizedOutput === right.normalizedOutput &&
+    (left.context.domain ?? "") === (right.context.domain ?? "");
 }

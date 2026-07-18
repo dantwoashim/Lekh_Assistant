@@ -375,6 +375,13 @@ describe("KeyboardEngine session API", () => {
     expect(committed.action).toBe("commit");
     expect(committed.committedText).toBe("स्वस्थ");
     expect(committed.compositionText).toBe("");
+    expect(committed).not.toHaveProperty("commitEpoch");
+    expect(committed).not.toHaveProperty("memoryRecorded");
+
+    const afterUnacknowledgedCommit = engine.updateComposition(sessionId, "swas", 4);
+    expect(afterUnacknowledgedCommit.candidates.some((candidate) => (
+      candidate.type === "personal" && candidate.text === "स्वस्थ"
+    ))).toBe(false);
   });
 
   it("commits selected candidate and clears composition", () => {
@@ -934,7 +941,7 @@ describe("KeyboardEngine session API", () => {
     })?.id;
     expect(firstId).toMatch(/^kbd-memory-[a-f0-9]{40}$/);
     expect(differentOutputId).not.toBe(firstId);
-    expect(importKeyboardMemoryEntry([], {
+    const imported = importKeyboardMemoryEntry([], {
       id: "imported",
       inputRomanized: "prabin",
       chosenOutput: "प्रवीण",
@@ -942,8 +949,54 @@ describe("KeyboardEngine session API", () => {
         leftWindow: "private imported left",
         rightWindow: "private imported right",
         domain: "health"
+      },
+      timestamps: {
+        firstSeen: "2026-07-18T00:00:00.000Z",
+        lastUsed: "2026-07-18T00:00:00.000Z"
       }
-    })[0]?.context).toEqual({ leftWindow: "", rightWindow: "", domain: "health" });
+    });
+    expect(imported[0]?.context).toEqual({ leftWindow: "", rightWindow: "", domain: "health" });
+    expect(imported[0]?.id).toBe(firstId);
+
+    const duplicate = importKeyboardMemoryEntry(imported, {
+      id: "same-supplied-id-for-unrelated-data",
+      inputRomanized: "ＰＲＡＢＩＮ",
+      normalizedInput: "forged",
+      chosenOutput: "प्रवीण",
+      context: { domain: "HEALTH" },
+      frequency: 7,
+      timestamps: {
+        firstSeen: "2026-07-18T05:45:00+05:45",
+        lastUsed: "2026-07-18T06:45:00+05:45"
+      }
+    });
+    expect(duplicate).toHaveLength(1);
+    expect(duplicate[0]).toEqual(expect.objectContaining({
+      id: firstId,
+      frequency: 7,
+      timestamps: {
+        firstSeen: expect.any(String),
+        lastUsed: "2026-07-18T01:00:00.000Z"
+      }
+    }));
+
+    const malformed = importKeyboardMemoryEntry(duplicate, {
+      inputRomanized: "prabin",
+      chosenOutput: "broken-\ud800"
+    });
+    expect(malformed).toBe(duplicate);
+
+    const collidingExisting = [{
+      ...duplicate[0]!,
+      normalizedInput: "unrelated",
+      normalizedOutput: "असम्बन्धित",
+      chosenOutput: "असम्बन्धित"
+    }];
+    expect(importKeyboardMemoryEntry(collidingExisting, {
+      inputRomanized: "prabin",
+      chosenOutput: "प्रवीण",
+      context: { domain: "health" }
+    })).toBe(collidingExisting);
   });
 
   it("honors pinned personal memory and never-suggest blocks safely", () => {
@@ -1122,6 +1175,16 @@ describe("KeyboardEngine session API", () => {
     expect(manager.has(first)).toBe(true);
     expect(manager.has(second)).toBe(true);
     expect(removed).toEqual([]);
+  });
+
+  it("rejects invalid custom session TTL and capacity limits", () => {
+    const invalidLimits = [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1];
+    for (const invalid of invalidLimits) {
+      expect(() => new KeyboardSessionManager(invalid, 1)).toThrow(/TTL.*positive safe integer/);
+      expect(() => new KeyboardSessionManager(1, invalid)).toThrow(/capacity.*positive safe integer/);
+    }
+    expect(() => new KeyboardSessionManager(1, 1)).not.toThrow();
+    expect(() => new KeyboardSessionManager(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)).not.toThrow();
   });
 
   it("atomically purges retained text and assistance when a session becomes secure", () => {

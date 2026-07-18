@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { defaultTypingContext } from "../../../src/engine/keyboard";
 import { applyKeyboardMemorySelection } from "../../../src/engine/keyboard/memory";
+import { canonicalCorrectionMemoryId } from "../../../src/engine/memory/importNormalization";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
 import { SQLiteKeyboardStorage } from "./sqliteStores";
 
@@ -108,6 +109,65 @@ describe("native SQLite keyboard stores", () => {
     reopened.close();
   });
 
+  it("canonicalizes, deduplicates, and collision-isolates SQLite memory imports atomically", async () => {
+    const storage = new SQLiteKeyboardStorage(await tempStoragePath());
+    const memory = storage.correctionMemory();
+    await memory.record(memoryEntry("existing", "existing", "विद्यमान", 1));
+
+    const prabin = {
+      ...memoryEntry("attacker-shared", "prabin", "प्रवीण", 2),
+      inputRomanized: "ＰＲＡＢＩＮ",
+      timestamps: {
+        firstSeen: "2026-05-26T05:45:00+05:45",
+        lastUsed: "2026-05-26T06:45:00+05:45"
+      }
+    };
+    const duplicate = {
+      ...prabin,
+      id: "attacker-other",
+      inputRomanized: "prabin",
+      frequency: 9
+    };
+    const niraj = {
+      ...memoryEntry("attacker-shared", "niraj", "नीरज", 1),
+      inputRomanized: "niraj"
+    };
+    await memory.import({ schemaVersion: 1, entries: [prabin, duplicate, niraj] });
+
+    const prabinRows = await memory.query("prabin", defaultTypingContext("romanized"));
+    const nirajRows = await memory.query("niraj", defaultTypingContext("romanized"));
+    expect(prabinRows).toEqual([expect.objectContaining({
+      id: canonicalCorrectionMemoryId("prabin", "प्रवीण"),
+      frequency: 9,
+      timestamps: {
+        firstSeen: "2026-05-26T00:00:00.000Z",
+        lastUsed: "2026-05-26T01:00:00.000Z"
+      }
+    })]);
+    expect(nirajRows).toEqual([expect.objectContaining({
+      id: canonicalCorrectionMemoryId("niraj", "नीरज")
+    })]);
+    expect(nirajRows[0]?.id).not.toBe(prabinRows[0]?.id);
+    expect(await memory.query("existing", defaultTypingContext("romanized"))).toEqual([]);
+
+    await expect(memory.import({
+      schemaVersion: 1,
+      entries: [{ ...prabin, chosenOutput: "broken-\ud800" }]
+    })).rejects.toThrow(/UTF-16/);
+    expect(await memory.query("prabin", defaultTypingContext("romanized"))).toEqual(prabinRows);
+    expect(await memory.query("niraj", defaultTypingContext("romanized"))).toEqual(nirajRows);
+
+    await expect(memory.import({
+      schemaVersion: 1,
+      entries: [{
+        ...prabin,
+        timestamps: { firstSeen: "2026-02-30T00:00:00.000Z", lastUsed: "2026-03-01T00:00:00.000Z" }
+      }]
+    })).rejects.toThrow(/ISO 8601/);
+    expect(await memory.query("prabin", defaultTypingContext("romanized"))).toEqual(prabinRows);
+    storage.close();
+  });
+
   it("treats SQLite wildcard characters as literal correction-memory input", async () => {
     const storage = new SQLiteKeyboardStorage(await tempStoragePath());
     await storage.correctionMemory().record(memoryEntry("mem_1", "niraj", "नीरज", 1));
@@ -154,6 +214,7 @@ describe("native SQLite keyboard stores", () => {
     const storage = new SQLiteKeyboardStorage(filePath);
     expect(await storage.correctionMemory().query("legacy", defaultTypingContext("romanized"))).toEqual([
       expect.objectContaining({
+        id: canonicalCorrectionMemoryId("legacy", "लेगेसी", "health"),
         context: { leftWindow: "", rightWindow: "", domain: "health" },
         normalizedInput: "legacy"
       })
@@ -162,9 +223,9 @@ describe("native SQLite keyboard stores", () => {
 
     const database = openTestDatabase(filePath);
     try {
-      expect(database.prepare("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+      expect(database.prepare("PRAGMA user_version").get()).toEqual({ user_version: 3 });
       expect(database.prepare("SELECT schema_version FROM storage_metadata WHERE id = 1").get()).toEqual({
-        schema_version: 2
+        schema_version: 3
       });
       const columns = database.prepare("PRAGMA table_info(correction_memory)").all().map((row) => row.name);
       expect(columns).toContain("context_domain");
@@ -174,6 +235,121 @@ describe("native SQLite keyboard stores", () => {
     }
 
     expect((await readFile(filePath)).includes(Buffer.from(surroundingSentence, "utf8"))).toBe(false);
+  });
+
+  it("upgrades schema v2 IDs, deduplicates ranking rows, and preserves unrelated data", async () => {
+    const filePath = await tempStoragePath();
+    const initial = new SQLiteKeyboardStorage(filePath);
+    await initial.settings().updateSettings({ showRomanizedLabels: true });
+    await initial.personalDictionary().addWord({
+      id: "preserved-word",
+      word: "अभिलेख",
+      romanized: ["abhilekh"],
+      source: "user",
+      createdAt: "2026-07-18T00:00:00.000Z",
+      updatedAt: "2026-07-18T00:00:00.000Z",
+      schemaVersion: 1
+    });
+    initial.close();
+
+    const version2 = openTestDatabase(filePath);
+    try {
+      version2.exec("DELETE FROM correction_memory");
+      insertVersion2CorrectionMemory(version2, {
+        id: "legacy-arbitrary-first",
+        inputRomanized: "ＰＲＡＢＩＮ",
+        frequency: 2,
+        firstSeen: "2026-05-26T05:45:00+05:45",
+        lastUsed: "2026-05-26T06:45:00+05:45",
+        rejectedAlternatives: ["प्रबिन"]
+      });
+      insertVersion2CorrectionMemory(version2, {
+        id: "legacy-arbitrary-second",
+        inputRomanized: "prabin",
+        frequency: 9,
+        firstSeen: "2026-05-25T00:00:00.000Z",
+        lastUsed: "2026-05-26T01:00:00.000Z",
+        rejectedAlternatives: ["प्रविण"],
+        pinned: 1
+      });
+      markDatabaseAsVersion2(version2);
+    } finally {
+      version2.close();
+    }
+
+    const upgraded = new SQLiteKeyboardStorage(filePath);
+    expect(await upgraded.settings().getSettings()).toEqual(expect.objectContaining({ showRomanizedLabels: true }));
+    expect(await upgraded.personalDictionary().lookup("abhilekh")).toEqual([
+      expect.objectContaining({ word: "अभिलेख", source: "personal:user" })
+    ]);
+    const rankedRows = await upgraded.correctionMemory().query("prabin", defaultTypingContext("romanized"));
+    expect(rankedRows).toEqual([expect.objectContaining({
+      id: canonicalCorrectionMemoryId("prabin", "प्रवीण", "health"),
+      frequency: 9,
+      pinned: true,
+      rejectedAlternatives: ["प्रबिन", "प्रविण"],
+      timestamps: {
+        firstSeen: "2026-05-25T00:00:00.000Z",
+        lastUsed: "2026-05-26T01:00:00.000Z"
+      }
+    })]);
+    upgraded.close();
+
+    const current = openTestDatabase(filePath);
+    try {
+      expect(current.prepare("PRAGMA user_version").get()).toEqual({ user_version: 3 });
+      expect(current.prepare("SELECT schema_version FROM storage_metadata WHERE id = 1").get()).toEqual({
+        schema_version: 3
+      });
+      expect(current.prepare("SELECT COUNT(*) AS count FROM correction_memory").get()).toEqual({ count: 1 });
+      expect(current.prepare("SELECT id FROM correction_memory").get()).toEqual({
+        id: canonicalCorrectionMemoryId("prabin", "प्रवीण", "health")
+      });
+      expect(current.prepare("SELECT COUNT(*) AS count FROM personal_dictionary WHERE id = ?")
+        .get("preserved-word")).toEqual({ count: 1 });
+    } finally {
+      current.close();
+    }
+  });
+
+  it("keeps malformed schema v2 byte-recoverable when canonical migration is rejected", async () => {
+    const filePath = await tempStoragePath();
+    const initial = new SQLiteKeyboardStorage(filePath);
+    await initial.settings().updateSettings({ showRomanizedLabels: true });
+    initial.close();
+
+    const version2 = openTestDatabase(filePath);
+    try {
+      version2.exec("DELETE FROM correction_memory");
+      insertVersion2CorrectionMemory(version2, {
+        id: "malformed-v2-memory",
+        firstSeen: "not-an-iso-instant",
+        lastUsed: "2026-05-26T01:00:00.000Z"
+      });
+      markDatabaseAsVersion2(version2);
+    } finally {
+      version2.close();
+    }
+    const original = await readFile(filePath);
+
+    expect(() => new SQLiteKeyboardStorage(filePath)).toThrow(/ISO 8601/);
+    expect(await readFile(filePath)).toEqual(original);
+    const recovered = openTestDatabase(filePath);
+    try {
+      expect(recovered.prepare("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+      expect(recovered.prepare("SELECT schema_version FROM storage_metadata WHERE id = 1").get()).toEqual({
+        schema_version: 2
+      });
+      expect(recovered.prepare("SELECT id FROM correction_memory").get()).toEqual({ id: "malformed-v2-memory" });
+      expect(recovered.prepare("SELECT json FROM settings WHERE id = 1").get()).toEqual(expect.objectContaining({
+        json: expect.stringContaining('"showRomanizedLabels":true')
+      }));
+    } finally {
+      recovered.close();
+    }
+    expect((await readdir(dirname(filePath))).filter((name) => (
+      name.includes(".migration") || name.includes(".backup")
+    ))).toEqual([]);
   });
 
   it("never persists reconstructable context windows for new correction-memory records", async () => {
@@ -309,7 +485,7 @@ describe("native SQLite keyboard stores", () => {
     migrated.close();
     const database = openTestDatabase(filePath);
     try {
-      expect(database.prepare("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+      expect(database.prepare("PRAGMA user_version").get()).toEqual({ user_version: 3 });
     } finally {
       database.close();
     }
@@ -360,7 +536,7 @@ describe("native SQLite keyboard stores", () => {
       entries: [memoryEntry("replacement", "ram", "राम", 1), invalid]
     })).rejects.toThrow();
     expect(await memory.query("niraj", defaultTypingContext("romanized"))).toEqual([
-      expect.objectContaining({ id: "existing" })
+      expect.objectContaining({ id: canonicalCorrectionMemoryId("niraj", "नीरज") })
     ]);
     expect(await memory.query("ram", defaultTypingContext("romanized"))).toHaveLength(0);
     storage.close();
@@ -438,6 +614,63 @@ async function tempStoragePath(): Promise<string> {
 function openTestDatabase(filePath: string): TestDatabase {
   const sqlite = require("node:sqlite") as { DatabaseSync: new (path: string) => TestDatabase };
   return new sqlite.DatabaseSync(filePath);
+}
+
+interface Version2CorrectionMemoryFixture {
+  id?: string;
+  inputRomanized?: string;
+  normalizedInput?: string;
+  chosenOutput?: string;
+  normalizedOutput?: string;
+  rejectedAlternatives?: string[];
+  domain?: string | null;
+  source?: string;
+  frequency?: number;
+  confidence?: number;
+  firstSeen?: string;
+  lastUsed?: string;
+  pinned?: number;
+  blocked?: number;
+  decayWeight?: number | null;
+}
+
+function insertVersion2CorrectionMemory(
+  database: TestDatabase,
+  fixture: Version2CorrectionMemoryFixture
+): void {
+  database.prepare(`
+    INSERT INTO correction_memory (
+      id, input_romanized, input_preeti, normalized_input, chosen_output, normalized_output,
+      rejected_alternatives_json, context_domain, source, frequency, confidence_at_selection,
+      first_seen, last_used, pinned, blocked, decay_weight
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    fixture.id ?? "legacy-arbitrary-id",
+    fixture.inputRomanized ?? "prabin",
+    null,
+    fixture.normalizedInput ?? "prabin",
+    fixture.chosenOutput ?? "प्रवीण",
+    fixture.normalizedOutput ?? "प्रवीण",
+    JSON.stringify(fixture.rejectedAlternatives ?? []),
+    fixture.domain === undefined ? "health" : fixture.domain,
+    fixture.source ?? "import",
+    fixture.frequency ?? 1,
+    fixture.confidence ?? 0.8,
+    fixture.firstSeen ?? "2026-05-26T00:00:00.000Z",
+    fixture.lastUsed ?? "2026-05-26T00:00:00.000Z",
+    fixture.pinned ?? 0,
+    fixture.blocked ?? 0,
+    fixture.decayWeight ?? null
+  );
+}
+
+function markDatabaseAsVersion2(database: TestDatabase): void {
+  database.prepare(`
+    UPDATE storage_metadata
+    SET schema_version = 2, migrated_at = ?
+    WHERE id = 1
+  `).run("2026-07-18T00:00:00.000Z");
+  database.exec("PRAGMA user_version = 2");
 }
 
 function createLegacyVersion1Database(filePath: string, surroundingSentence: string): void {

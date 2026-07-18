@@ -1,6 +1,8 @@
-import type { SQLiteDatabase, SQLiteRow, SqlitePrimitive } from "./sqliteTypes";
+import { normalizeCorrectionMemoryImportEntries } from "../../../src/engine/memory/importNormalization";
+import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
+import type { SQLiteDatabase, SQLiteRow } from "./sqliteTypes";
 
-export const CURRENT_SQLITE_SCHEMA_VERSION = 2;
+export const CURRENT_SQLITE_SCHEMA_VERSION = 3;
 
 export function migrateSQLiteDatabase(db: SQLiteDatabase): void {
   let version = sqliteUserVersion(db);
@@ -10,6 +12,7 @@ export function migrateSQLiteDatabase(db: SQLiteDatabase): void {
     withSQLiteTransaction(db, () => {
       if (nextVersion === 1) migrateToVersion1(db);
       else if (nextVersion === 2) migrateToVersion2(db);
+      else if (nextVersion === 3) migrateToVersion3(db);
       else throw new Error(`No SQLite keyboard storage migration exists for version ${nextVersion}`);
       db.exec(`PRAGMA user_version = ${nextVersion}`);
     });
@@ -21,6 +24,10 @@ export function migrateSQLiteDatabase(db: SQLiteDatabase): void {
 }
 
 export function assertCurrentSQLiteSchema(db: SQLiteDatabase, label: string): void {
+  assertCanonicalSQLiteSchema(db, label, CURRENT_SQLITE_SCHEMA_VERSION);
+}
+
+function assertCanonicalSQLiteSchema(db: SQLiteDatabase, label: string, expectedVersion: number): void {
   const expectedColumns: Record<string, string[]> = {
     settings: ["id", "json", "updated_at"],
     personal_dictionary: [
@@ -107,7 +114,7 @@ export function assertCurrentSQLiteSchema(db: SQLiteDatabase, label: string): vo
     }
   }
   const metadata = optionalRow(db.prepare("SELECT schema_version FROM storage_metadata WHERE id = 1").get());
-  if (numberValue(metadata?.schema_version, -1) !== CURRENT_SQLITE_SCHEMA_VERSION) {
+  if (numberValue(metadata?.schema_version, -1) !== expectedVersion) {
     throw new Error(`SQLite keyboard storage metadata version mismatch for ${label}`);
   }
   const metadataRows = optionalRow(db.prepare("SELECT COUNT(*) AS count FROM storage_metadata").get());
@@ -192,6 +199,57 @@ function migrateToVersion2(db: SQLiteDatabase): void {
     DROP INDEX IF EXISTS correction_memory_input_idx;
     DROP INDEX IF EXISTS correction_memory_last_used_idx;
     ALTER TABLE correction_memory RENAME TO correction_memory_v1;
+  `);
+  createCanonicalCorrectionMemoryTable(db);
+
+  const entries = normalizeCorrectionMemoryImportEntries(
+    db.prepare("SELECT * FROM correction_memory_v1").all().map(legacyCorrectionMemoryEntry),
+    strictPersistedMemoryOptions()
+  );
+  insertCorrectionMemoryEntries(db, entries);
+
+  db.exec(`
+    DROP TABLE correction_memory_v1;
+    CREATE INDEX correction_memory_input_idx ON correction_memory(normalized_input);
+    CREATE INDEX correction_memory_last_used_idx ON correction_memory(last_used);
+    CREATE TABLE storage_metadata (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      schema_version INTEGER NOT NULL,
+      migrated_at TEXT NOT NULL
+    );
+  `);
+  db.prepare("INSERT INTO storage_metadata (id, schema_version, migrated_at) VALUES (1, ?, ?)")
+    .run(2, new Date().toISOString());
+}
+
+function migrateToVersion3(db: SQLiteDatabase): void {
+  assertCanonicalSQLiteSchema(db, "schema-v2 migration source", 2);
+  const entries = normalizeCorrectionMemoryImportEntries(
+    db.prepare("SELECT * FROM correction_memory ORDER BY id").all().map(version2CorrectionMemoryEntry),
+    strictPersistedMemoryOptions()
+  );
+
+  db.exec(`
+    DROP INDEX correction_memory_input_idx;
+    DROP INDEX correction_memory_last_used_idx;
+    ALTER TABLE correction_memory RENAME TO correction_memory_v2;
+  `);
+  createCanonicalCorrectionMemoryTable(db);
+  insertCorrectionMemoryEntries(db, entries);
+  db.exec(`
+    DROP TABLE correction_memory_v2;
+    CREATE INDEX correction_memory_input_idx ON correction_memory(normalized_input);
+    CREATE INDEX correction_memory_last_used_idx ON correction_memory(last_used);
+  `);
+  db.prepare(`
+    UPDATE storage_metadata
+    SET schema_version = ?, migrated_at = ?
+    WHERE id = 1 AND schema_version = 2
+  `).run(3, new Date().toISOString());
+}
+
+function createCanonicalCorrectionMemoryTable(db: SQLiteDatabase): void {
+  db.exec(`
     CREATE TABLE correction_memory (
       id TEXT PRIMARY KEY,
       input_romanized TEXT,
@@ -211,7 +269,9 @@ function migrateToVersion2(db: SQLiteDatabase): void {
       decay_weight REAL
     );
   `);
+}
 
+function insertCorrectionMemoryEntries(db: SQLiteDatabase, entries: CorrectionMemoryEntry[]): void {
   const insert = db.prepare(`
     INSERT INTO correction_memory (
       id, input_romanized, input_preeti, normalized_input, chosen_output, normalized_output,
@@ -219,42 +279,35 @@ function migrateToVersion2(db: SQLiteDatabase): void {
       first_seen, last_used, pinned, blocked, decay_weight
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  for (const raw of db.prepare("SELECT * FROM correction_memory_v1").all()) {
-    const row = asRow(raw);
-    const legacyContext = parseJson(row.context_json, {});
-    const domain = isRecord(legacyContext) ? sanitizedContextDomain(legacyContext.domain) : null;
+  for (const entry of entries) {
     insert.run(
-      sqliteValue(row.id),
-      sqliteValue(row.input_romanized),
-      sqliteValue(row.input_preeti),
-      sqliteValue(row.normalized_input),
-      sqliteValue(row.chosen_output),
-      sqliteValue(row.normalized_output),
-      sqliteValue(row.rejected_alternatives_json),
-      domain,
-      sqliteValue(row.source),
-      sqliteValue(row.frequency),
-      sqliteValue(row.confidence_at_selection),
-      sqliteValue(row.first_seen),
-      sqliteValue(row.last_used),
-      sqliteValue(row.pinned),
-      sqliteValue(row.blocked),
-      sqliteValue(row.decay_weight)
+      entry.id,
+      entry.inputRomanized ?? null,
+      entry.inputPreeti ?? null,
+      entry.normalizedInput,
+      entry.chosenOutput,
+      entry.normalizedOutput,
+      JSON.stringify(entry.rejectedAlternatives),
+      entry.context.domain ?? null,
+      entry.source,
+      entry.frequency,
+      entry.confidenceAtSelection,
+      entry.timestamps.firstSeen,
+      entry.timestamps.lastUsed,
+      entry.pinned ? 1 : 0,
+      entry.blocked ? 1 : 0,
+      entry.decayWeight ?? null
     );
   }
+}
 
-  db.exec(`
-    DROP TABLE correction_memory_v1;
-    CREATE INDEX correction_memory_input_idx ON correction_memory(normalized_input);
-    CREATE INDEX correction_memory_last_used_idx ON correction_memory(last_used);
-    CREATE TABLE storage_metadata (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      schema_version INTEGER NOT NULL,
-      migrated_at TEXT NOT NULL
-    );
-  `);
-  db.prepare("INSERT INTO storage_metadata (id, schema_version, migrated_at) VALUES (1, ?, ?)")
-    .run(2, new Date().toISOString());
+function strictPersistedMemoryOptions() {
+  return {
+    requireTimestamps: true,
+    requireKnownSource: true,
+    scoringPolicy: "strict" as const,
+    minimumFrequency: 0 as const
+  };
 }
 
 function parseJson(value: unknown, fallback: unknown): unknown {
@@ -266,16 +319,66 @@ function parseJson(value: unknown, fallback: unknown): unknown {
   }
 }
 
-function sanitizedContextDomain(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return /^[\p{L}\p{N}._:-]{1,64}$/u.test(normalized) ? normalized : null;
+function legacyCorrectionMemoryEntry(value: unknown): Record<string, unknown> {
+  const row = asRow(value);
+  const context = parseJson(row.context_json, undefined);
+  const rejectedAlternatives = parseJson(row.rejected_alternatives_json, undefined);
+  if (!isRecord(context) || !Array.isArray(rejectedAlternatives)) {
+    throw new Error("Legacy SQLite correction memory contains malformed JSON fields.");
+  }
+  return correctionMemoryImportRecord(row, context, rejectedAlternatives);
 }
 
-function sqliteValue(value: unknown): SqlitePrimitive {
-  return typeof value === "string" || typeof value === "number" || typeof value === "bigint" || value === null
-    ? value
-    : null;
+function version2CorrectionMemoryEntry(value: unknown): Record<string, unknown> {
+  const row = asRow(value);
+  const rejectedAlternatives = parseJson(row.rejected_alternatives_json, undefined);
+  if (!Array.isArray(rejectedAlternatives)) {
+    throw new Error("Schema-v2 SQLite correction memory contains malformed alternatives JSON.");
+  }
+  if (row.context_domain !== null && typeof row.context_domain !== "string") {
+    throw new Error("Schema-v2 SQLite correction memory contains an invalid context domain.");
+  }
+  const context = row.context_domain === null
+    ? { leftWindow: "", rightWindow: "" }
+    : { leftWindow: "", rightWindow: "", domain: row.context_domain };
+  return correctionMemoryImportRecord(row, context, rejectedAlternatives);
+}
+
+function correctionMemoryImportRecord(
+  row: SQLiteRow,
+  context: Record<string, unknown>,
+  rejectedAlternatives: unknown[]
+): Record<string, unknown> {
+  return {
+    id: row.id,
+    ...(typeof row.input_romanized === "string" && row.input_romanized.length > 0
+      ? { inputRomanized: row.input_romanized }
+      : {}),
+    ...(typeof row.input_preeti === "string" && row.input_preeti.length > 0
+      ? { inputPreeti: row.input_preeti }
+      : {}),
+    normalizedInput: row.normalized_input,
+    chosenOutput: row.chosen_output,
+    normalizedOutput: row.normalized_output,
+    rejectedAlternatives,
+    context,
+    source: row.source,
+    frequency: row.frequency,
+    confidenceAtSelection: row.confidence_at_selection,
+    timestamps: {
+      firstSeen: row.first_seen,
+      lastUsed: row.last_used
+    },
+    pinned: legacyBoolean(row.pinned, "pinned"),
+    blocked: legacyBoolean(row.blocked, "blocked"),
+    ...(typeof row.decay_weight === "number" ? { decayWeight: row.decay_weight } : {})
+  };
+}
+
+function legacyBoolean(value: unknown, label: string): boolean {
+  if (value === 0 || value === false) return false;
+  if (value === 1 || value === true) return true;
+  throw new Error(`Legacy SQLite correction memory ${label} must be 0 or 1.`);
 }
 
 function optionalRow(value: unknown): SQLiteRow | undefined {

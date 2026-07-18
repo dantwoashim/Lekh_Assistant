@@ -9,6 +9,7 @@ import type {
 import { defaultKeyboardSettings } from "../../../src/engine/keyboard/storage";
 import { isSecureContext } from "../../../src/engine/keyboard/modes";
 import type { DictionaryResult, TypingContext } from "../../../src/engine/keyboard/types";
+import { normalizeCorrectionMemoryImportEntries } from "../../../src/engine/memory/importNormalization";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
 import { privacySafeCorrectionMemoryDomain } from "../../../src/engine/memory/types";
 import {
@@ -200,9 +201,15 @@ export class SQLiteCorrectionMemoryStore implements KeyboardCorrectionMemoryStor
 
   async import(data: unknown): Promise<void> {
     if (!isEntryExport<CorrectionMemoryEntry>(data)) return;
+    const entries = normalizeCorrectionMemoryImportEntries(data.entries, {
+      requireTimestamps: true,
+      requireKnownSource: true,
+      scoringPolicy: "strict",
+      minimumFrequency: 0
+    });
     withSQLiteTransaction(this.db, () => {
       this.db.exec("DELETE FROM correction_memory");
-      for (const entry of data.entries) this.upsert(entry);
+      for (const entry of entries) this.upsert(entry);
     });
   }
 
@@ -311,7 +318,7 @@ function sanitizedContextDomain(value: unknown): string | null {
 }
 
 function isEntryExport<T>(value: unknown): value is { schemaVersion: 1; entries: T[] } {
-  return isRecord(value) && Array.isArray(value.entries);
+  return isRecord(value) && value.schemaVersion === 1 && Array.isArray(value.entries);
 }
 
 function correctionMemorySource(value: unknown): CorrectionMemoryEntry["source"] {

@@ -9,8 +9,8 @@ The `KeyboardEngine` API is the repo-executable contract for Lekh Keyboard. It i
 This API supports:
 
 - browser/web-lab typing simulation;
-- future Windows TSF bridge;
-- future macOS InputMethodKit bridge;
+- Windows TSF bridge contract;
+- macOS InputMethodKit bridge contract;
 - session lifecycle;
 - composition update;
 - key-stroke processing;
@@ -21,7 +21,7 @@ This API supports:
 - dictionary lookup;
 - warm startup reporting.
 
-It does not implement production TSF, production IMK, final Traditional layout conversion, or the Tauri companion app.
+Native TSF and IMK proof targets exist, but production qualification still requires their signed host matrices. Final Traditional layout source-of-truth validation and production calibration remain gated work.
 
 ## Important Types
 
@@ -77,11 +77,15 @@ Use `updateComposition(sessionId, input, cursor)`.
 
 The caller sends the full active composition string. This is the simplest path for React input events and local testing.
 
+The neutral engine contract caps active composition at 128 UTF-16 code units. The exact bound is accepted. Bulk updates or key insertions that would produce `+1` fail open before refresh/model/proof/hash work and preserve the previous bounded session state. Caret and edit helpers clamp to extended-grapheme boundaries, so deletion cannot strand a surrogate or combining sequence. This is a work bound, not the larger committed-text limit.
+
 ## Native IME Path
 
 Use `processKeyStroke(sessionId, key)`.
 
-This method is required, not optional. It is the contract for future Windows TSF and macOS IMK bridges. The engine accepts malformed runtime key events defensively: missing modifier objects are normalized to false booleans, non-text modifier shortcuts pass through, and unknown or stale session IDs return diagnostic `CandidateUpdate` values instead of crashing the host process.
+This method is required, not optional. It is the contract for Windows TSF and native adapters. The engine accepts malformed runtime key events defensively: missing modifier objects are normalized to false booleans, malformed UTF-16 and non-text modifier shortcuts pass through, and unknown or stale session IDs return bounded diagnostic `CandidateUpdate` values instead of crashing the host process.
+
+Numeric candidate shortcuts commit through `processKeyStroke`, whose `CandidateUpdate` has no host-commit receipt. They therefore remain deliberately non-learning: recording a preference before the native host acknowledges its text edit would convert an attempted edit into false user-memory evidence. Shortcut learning can be enabled only after an acknowledgement-capable protocol grants the same one-time confirmation used by `memory.learn`.
 
 ## Candidate Finalization
 
@@ -109,10 +113,10 @@ Prompt 1 implements:
 - Enter;
 - Tab;
 - Escape;
-- Space as conservative composition insertion in the browser/web-lab foundation;
+- Space as an exact raw delimiter commit in the default/browser/native contract;
 - modifier shortcut pass-through warning.
 
-Prompt 2 and native bridge policy may add user-configurable Space auto-commit once acceptance and undo behavior are measured.
+Space follows the engine contract: raw text is the default for browser and native sessions, and IPC callers have no auto-commit authority. A test-build-only factory, excluded from production consumers and guarded by an opaque module-private capability, exercises the checked-in exact/single-output experiment. That policy validates before activation, explicitly quarantines ten known ambiguous/ordinary-Latin inputs, never grants learning authority, and remains production-ineligible until its human-rated intent, ambiguity, negative-corpus, and undo gates pass. Enter remains raw unless the user explicitly selected a candidate.
 
 ## Prompt 2 Intelligence Layer
 

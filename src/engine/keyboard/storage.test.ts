@@ -7,6 +7,7 @@ import {
 } from "./storage";
 import { defaultTypingContext } from "./modes";
 import { keyboardMemoryCandidates } from "./memory";
+import { canonicalCorrectionMemoryId } from "../memory/importNormalization";
 import type { CorrectionMemoryEntry } from "../memory/types";
 
 describe("keyboard native storage contracts", () => {
@@ -78,6 +79,31 @@ describe("keyboard native storage contracts", () => {
 
     await store.forget("niraj");
     expect(await store.query("niraj", defaultTypingContext("romanized"))).toHaveLength(0);
+  });
+
+  it("canonicalizes and deduplicates in-memory correction imports", async () => {
+    const store = new InMemoryKeyboardCorrectionMemoryStore();
+    const first = {
+      ...memoryEntry("attacker-id", "prabin", "प्रवीण"),
+      inputRomanized: "prabin",
+      frequency: 2
+    };
+    await store.import({
+      schemaVersion: 1,
+      entries: [first, { ...first, id: "other-id", frequency: 8 }]
+    });
+    expect(await store.query("prabin", defaultTypingContext("romanized"))).toEqual([
+      expect.objectContaining({
+        id: canonicalCorrectionMemoryId("prabin", "प्रवीण"),
+        frequency: 8
+      })
+    ]);
+
+    await expect(store.import({
+      schemaVersion: 1,
+      entries: [{ ...first, timestamps: { firstSeen: "invalid", lastUsed: "invalid" } }]
+    })).rejects.toThrow(/ISO 8601/);
+    expect(await store.query("prabin", defaultTypingContext("romanized"))).toHaveLength(1);
   });
 
   it("scores personal memory with frequency and recency decay", () => {

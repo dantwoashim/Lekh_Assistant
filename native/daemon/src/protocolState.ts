@@ -15,7 +15,7 @@ interface ReplayEntry {
   id: string;
   type: AnyTypedIpcRequest["type"];
   fingerprint: string;
-  response: IpcResponse;
+  response: Readonly<IpcResponse>;
 }
 
 interface ClientState {
@@ -74,7 +74,7 @@ export class IpcProtocolState {
       if (replay) {
         if (replay.id === request.id && replay.type === request.type &&
             replay.fingerprint === requestFingerprint(request)) {
-          return { proceed: false, response: replay.response, replayed: true };
+          return { proceed: false, response: cloneIpcResponse(replay.response), replayed: true };
         }
         return this.reject(request, "IPC_REPLAY_DETECTED", "A request sequence was reused with different content.");
       }
@@ -137,7 +137,7 @@ export class IpcProtocolState {
       id: request.id,
       type: request.type,
       fingerprint: requestFingerprint(request),
-      response
+      response: frozenIpcResponse(response)
     });
     while (client.replayBySequence.size > IPC_PROTOCOL_LIMITS.maximumReplayEntriesPerClient) {
       const oldest = client.replayBySequence.keys().next().value as number | undefined;
@@ -231,6 +231,21 @@ export class IpcProtocolState {
       })
     };
   }
+}
+
+function cloneIpcResponse(response: Readonly<IpcResponse>): IpcResponse {
+  return structuredClone(response) as IpcResponse;
+}
+
+function frozenIpcResponse(response: IpcResponse): Readonly<IpcResponse> {
+  return deepFreeze(cloneIpcResponse(response));
+}
+
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (typeof value !== "object" || value === null || seen.has(value)) return value;
+  seen.add(value);
+  for (const nested of Object.values(value)) deepFreeze(nested, seen);
+  return Object.freeze(value);
 }
 
 function requestFingerprint(request: AnyTypedIpcRequest): string {

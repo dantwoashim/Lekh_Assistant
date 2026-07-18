@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { defaultTypingContext } from "../../../src/engine/keyboard";
 import { applyKeyboardMemorySelection } from "../../../src/engine/keyboard/memory";
+import { canonicalCorrectionMemoryId } from "../../../src/engine/memory/importNormalization";
 import type { CorrectionMemoryEntry } from "../../../src/engine/memory/types";
 import { JsonFileKeyboardStorage, nativeKeyboardDataDir } from "./jsonFileStores";
 
@@ -67,11 +68,74 @@ describe("native JSON file keyboard stores", () => {
     expect(await memory.query("pra", { ...defaultTypingContext("romanized"), secureInput: true })).toHaveLength(0);
     expect(await memory.query("pra", { ...defaultTypingContext("romanized"), fieldType: "unknown" })).toHaveLength(0);
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual(
-      expect.objectContaining({ schemaVersion: 1, correctionMemory: [expect.objectContaining({ id: "mem_1" })] })
+      expect.objectContaining({
+        schemaVersion: 1,
+        correctionMemory: [expect.objectContaining({ id: canonicalCorrectionMemoryId("prabin", "प्रवीण") })]
+      })
     );
 
     await memory.reset();
     expect(await memory.query("pra", defaultTypingContext("romanized"))).toHaveLength(0);
+  });
+
+  it("canonicalizes, deduplicates, and collision-isolates JSON memory imports atomically", async () => {
+    const filePath = await tempStoragePath();
+    const storage = new JsonFileKeyboardStorage(filePath);
+    const memory = storage.correctionMemory();
+    await memory.record(memoryEntry("existing", "existing", "विद्यमान"));
+
+    const prabin = {
+      ...memoryEntry("attacker-shared", "prabin", "प्रवीण"),
+      inputRomanized: "ＰＲＡＢＩＮ",
+      frequency: 2,
+      timestamps: {
+        firstSeen: "2026-05-26T05:45:00+05:45",
+        lastUsed: "2026-05-26T06:45:00+05:45"
+      }
+    };
+    const duplicate = {
+      ...prabin,
+      id: "attacker-other",
+      inputRomanized: "prabin",
+      frequency: 9
+    };
+    const niraj = {
+      ...memoryEntry("attacker-shared", "niraj", "नीरज"),
+      inputRomanized: "niraj"
+    };
+    await memory.import({ schemaVersion: 1, entries: [prabin, duplicate, niraj] });
+
+    const prabinRows = await memory.query("prabin", defaultTypingContext("romanized"));
+    const nirajRows = await memory.query("niraj", defaultTypingContext("romanized"));
+    expect(prabinRows).toEqual([expect.objectContaining({
+      id: canonicalCorrectionMemoryId("prabin", "प्रवीण"),
+      frequency: 9,
+      timestamps: {
+        firstSeen: "2026-05-26T00:00:00.000Z",
+        lastUsed: "2026-05-26T01:00:00.000Z"
+      }
+    })]);
+    expect(nirajRows).toEqual([expect.objectContaining({
+      id: canonicalCorrectionMemoryId("niraj", "नीरज")
+    })]);
+    expect(nirajRows[0]?.id).not.toBe(prabinRows[0]?.id);
+    expect(await memory.query("existing", defaultTypingContext("romanized"))).toEqual([]);
+
+    const beforeRejectedImport = await readFile(filePath, "utf8");
+    await expect(memory.import({
+      schemaVersion: 1,
+      entries: [{ ...prabin, chosenOutput: "broken-\ud800" }]
+    })).rejects.toThrow(/UTF-16/);
+    expect(await readFile(filePath, "utf8")).toBe(beforeRejectedImport);
+
+    await expect(memory.import({
+      schemaVersion: 1,
+      entries: [{
+        ...prabin,
+        timestamps: { firstSeen: "2026-02-30T00:00:00.000Z", lastUsed: "2026-03-01T00:00:00.000Z" }
+      }]
+    })).rejects.toThrow(/ISO 8601/);
+    expect(await readFile(filePath, "utf8")).toBe(beforeRejectedImport);
   });
 
   it("persists the canonical repeated-selection decay bound across reopen", async () => {
@@ -109,15 +173,20 @@ describe("native JSON file keyboard stores", () => {
     const entries = legacy.correctionMemory as CorrectionMemoryEntry[];
     entries[0] = {
       ...entries[0],
+      id: "legacy-arbitrary-memory-id",
       context: { leftWindow, rightWindow, domain: "health" },
       privateText: "unknown fields must not survive normalization"
     } as CorrectionMemoryEntry;
     await writeFile(filePath, JSON.stringify(legacy), "utf8");
 
     await storage.read();
+    expect(await storage.correctionMemory().query("swas", defaultTypingContext("romanized"))).toEqual([
+      expect.objectContaining({ id: canonicalCorrectionMemoryId("swasthya", "स्वास्थ्य", "health") })
+    ]);
     expect(await readFile(filePath, "utf8")).not.toContain(leftWindow);
     expect(await readFile(filePath, "utf8")).not.toContain(rightWindow);
     expect(await readFile(filePath, "utf8")).not.toContain("unknown fields must not survive normalization");
+    expect(await readFile(filePath, "utf8")).not.toContain("legacy-arbitrary-memory-id");
   });
 
   it("returns no correction history for an empty query", async () => {

@@ -9,5 +9,11 @@ export {
   importCorrectionMemory,
   migrateLegacyCorrections
 } from "./migrate";
+export {
+  canonicalCorrectionMemoryId,
+  canonicalIsoTimestamp,
+  normalizeCorrectionMemoryImportEntries,
+  normalizeCorrectionMemoryImportEntry
+} from "./importNormalization";
 export { correctionMemoryCandidates, scoreCorrection } from "./scoring";
 export type * from "./types";

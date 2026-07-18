@@ -19,6 +19,7 @@ The SQLite adapter is the production path for user lexicon and correction memory
 Persistence invariants:
 
 - SQLite schema changes advance both `PRAGMA user_version` and the singleton `storage_metadata` record.
+- Schema v3 rebuilds schema-v2 correction memory from canonical input/output/domain semantics. It discards caller-supplied legacy IDs, merges duplicate ranking rows without frequency amplification, and leaves settings and personal-dictionary tables untouched.
 - Migrations run transactionally on an integrity-checked private staging copy. Fixed staging and backup paths make every rename crash point recoverable on the next startup; the original is removed only after the promoted database has been reopened and validated.
 - Migration locks carry an owner PID and random token. A live owner is never displaced because a wall-clock timeout elapsed; valid owner records are removed only when their token matches, while an incomplete record must age past the recovery threshold.
 - Every `SQLiteKeyboardStorage` connection holds a lifetime lease. A schema migration refuses to replace a database while another supported process can still write through an older inode; crashed-process leases are reclaimed before startup.
