@@ -24,7 +24,7 @@ No Tauri dependency is added in Prompt 3 because the current repo does not need 
 ## Responsibilities
 
 - Change mode defaults.
-- Manage Romanized labels, helper suggestions, and conservative auto-commit.
+- Manage Romanized labels and helper suggestions; report experimental auto-commit as unavailable until its promotion gates pass.
 - Show Traditional layout audit status and preview once verified.
 - Manage personal dictionary entries.
 - Export, import, and reset correction memory.

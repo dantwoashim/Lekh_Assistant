@@ -34,6 +34,12 @@ function installBridge({
   chosenApplications?: LekhExcludedApplication[];
   platform?: string;
 } = {}) {
+  let persistedPreferences: LekhNativePreferences = {
+    ...nativePreferences,
+    excludedApplicationBundleIdentifiers: [
+      ...nativePreferences.excludedApplicationBundleIdentifiers
+    ]
+  };
   const bridge: NonNullable<Window["lekhDesktop"]> = {
     kind: "companion",
     platform,
@@ -41,8 +47,22 @@ function installBridge({
     versions: { app: "0.1.0" },
     productBoundary: "Native IMK handles keystrokes.",
     getStatus: vi.fn().mockResolvedValue(status),
-    readPreferences: vi.fn().mockResolvedValue(nativePreferences),
-    updatePreferences: vi.fn().mockResolvedValue({ ok: true }),
+    readPreferences: vi.fn().mockImplementation(async () => ({
+      ...persistedPreferences,
+      excludedApplicationBundleIdentifiers: [
+        ...persistedPreferences.excludedApplicationBundleIdentifiers
+      ]
+    })),
+    updatePreferences: vi.fn().mockImplementation(async (patch) => {
+      persistedPreferences = {
+        ...persistedPreferences,
+        ...patch,
+        excludedApplicationBundleIdentifiers: patch.excludedApplicationBundleIdentifiers
+          ? [...patch.excludedApplicationBundleIdentifiers]
+          : persistedPreferences.excludedApplicationBundleIdentifiers
+      };
+      return { ok: true };
+    }),
     openKeyboardSettings: vi.fn().mockResolvedValue({ ok: true }),
     revealInputMethod: vi.fn().mockResolvedValue({ ok: true, error: null }),
     chooseExcludedApplications: vi.fn().mockResolvedValue(chosenApplications),

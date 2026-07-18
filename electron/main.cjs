@@ -6,8 +6,13 @@ const { writeFile } = require("node:fs/promises");
 const { promisify } = require("node:util");
 const { homedir, tmpdir } = require("node:os");
 const path = require("node:path");
+const {
+  BoundedSerialTaskQueue,
+  validatePreferencePatch
+} = require("./preference-write-queue.cjs");
 
 const isDevServer = Boolean(process.env.LEKH_COMPANION_DEV_SERVER);
+const startsInBackground = process.platform === "win32" && process.argv.includes("--background");
 const execFileAsync = promisify(execFile);
 const nativePreferenceDomain = "com.lekh.inputmethod.LekhKeyboard";
 const nativeBundlePath = path.join(homedir(), "Library", "Input Methods", "Lekh Keyboard.app");
@@ -20,8 +25,12 @@ const nativePreferenceKeys = new Map([
   ["personalizationEnabled", ["LekhPersonalizationEnabled", true]],
   ["nextWordPredictionEnabled", ["LekhNextWordPredictionEnabled", true]]
 ]);
+const nativeBooleanPreferenceKeys = new Set(nativePreferenceKeys.keys());
 const nativeModeKey = "LekhNativeTypingMode";
 const excludedApplicationsKey = "LekhExcludedApplicationBundleIdentifiers";
+const maximumExcludedApplications = 100;
+const maximumPendingPreferenceWrites = 32;
+const preferenceWriteDrainTimeoutMs = 5000;
 const updateFeedUrl = "https://lekh-assistant.pages.dev/updates/macos/appcast.xml";
 const updateHost = "lekh-assistant.pages.dev";
 const updatePublicKeyBase64 = "iKAPpQHHx7GBhsTDmadt3rilfhhPKo2RdqV2Q0/zN6U=";
@@ -31,14 +40,20 @@ const nativeModes = new Set([
   "traditional-traditional",
   "traditional-romanized"
 ]);
+const preferenceWriteQueue = new BoundedSerialTaskQueue({
+  maximumPending: maximumPendingPreferenceWrites
+});
 let pipeBrokerProcess = null;
 let pipeBrokerRestartTimer = null;
 let pipeBrokerStableTimer = null;
 let pipeBrokerRestartAttempts = 0;
 let applicationIsQuitting = false;
 let verifiedUpdate = null;
+let settingsOpenRequestedBeforeReady = false;
+let preferenceQuitDrainStarted = false;
+let preferenceQuitDrainComplete = false;
 
-function createWindow() {
+function createWindow({ showWhenReady = true } = {}) {
   const window = new BrowserWindow({
     width: 980,
     height: 720,
@@ -56,7 +71,7 @@ function createWindow() {
     }
   });
 
-  window.once("ready-to-show", () => window.show());
+  if (showWhenReady) window.once("ready-to-show", () => window.show());
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) shell.openExternal(url);
     return { action: "deny" };
@@ -76,6 +91,18 @@ function createWindow() {
   } else {
     window.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
+  return window;
+}
+
+function showCompanionWindow() {
+  let [window] = BrowserWindow.getAllWindows();
+  if (!window) {
+    createWindow();
+    return;
+  }
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
 }
 
 function isAllowedAppNavigation(url, appUrl) {
@@ -101,15 +128,26 @@ function isSafeExternalUrl(url) {
 }
 
 app.setName("Lekh Keyboard Companion");
-app.whenReady().then(() => {
-  installApplicationMenu();
-  registerCompanionIpc();
-  startWindowsPipeBrokerIfAvailable();
-  createWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+const ownsPrimaryInstance = app.requestSingleInstanceLock();
+if (!ownsPrimaryInstance) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (app.isReady()) {
+      showCompanionWindow();
+    } else {
+      settingsOpenRequestedBeforeReady = true;
+    }
   });
-});
+  app.whenReady().then(() => {
+    installApplicationMenu();
+    registerCompanionIpc();
+    startWindowsPipeBrokerIfAvailable();
+    if (!startsInBackground || settingsOpenRequestedBeforeReady) createWindow();
+    settingsOpenRequestedBeforeReady = false;
+    app.on("activate", showCompanionWindow);
+  });
+}
 
 function installApplicationMenu() {
   const template = [
@@ -208,49 +246,12 @@ function registerCompanionIpc() {
     if (process.platform === "win32") {
       throw new Error("Windows native preference integration is not yet available.");
     }
-    if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
-      throw new Error("Invalid preference update.");
-    }
-    for (const [publicKey, value] of Object.entries(patch)) {
-      if (publicKey === "nativeTypingMode" && typeof value === "string" && nativeModes.has(value)) {
-        await execFileAsync("/usr/bin/defaults", [
-          "write",
-          nativePreferenceDomain,
-          nativeModeKey,
-          "-string",
-          value
-        ], { timeout: 3000 });
-        continue;
-      }
-      if (publicKey === "excludedApplicationBundleIdentifiers" && Array.isArray(value)) {
-        const identifiers = Array.from(new Set(value))
-          .filter((item) => typeof item === "string" && /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(item))
-          .slice(0, 100);
-        if (identifiers.length !== value.length) {
-          throw new Error("Excluded applications must be valid bundle identifiers.");
-        }
-        await execFileAsync("/usr/bin/defaults", [
-          "write",
-          nativePreferenceDomain,
-          excludedApplicationsKey,
-          "-array",
-          ...identifiers
-        ], { timeout: 3000 });
-        continue;
-      }
-      const definition = nativePreferenceKeys.get(publicKey);
-      if (!definition || typeof value !== "boolean") {
-        throw new Error(`Unsupported preference: ${publicKey}`);
-      }
-      await execFileAsync("/usr/bin/defaults", [
-        "write",
-        nativePreferenceDomain,
-        definition[0],
-        "-bool",
-        value ? "true" : "false"
-      ], { timeout: 3000 });
-    }
-    return { ok: true };
+    const validatedPatch = validatePreferencePatch(patch, {
+      booleanKeys: nativeBooleanPreferenceKeys,
+      nativeModes,
+      maximumExcludedApplications
+    });
+    return preferenceWriteQueue.enqueue(() => writeNativePreferencePatch(validatedPatch));
   });
 
   ipcMain.handle("lekh:open-keyboard-settings", async () => {
@@ -365,6 +366,40 @@ function registerCompanionIpc() {
     shell.showItemInFolder(destination);
     return { ok: true, version: verifiedUpdate.shortVersion };
   });
+}
+
+async function writeNativePreferencePatch(patch) {
+  for (const [publicKey, value] of Object.entries(patch)) {
+    if (publicKey === "nativeTypingMode") {
+      await execFileAsync("/usr/bin/defaults", [
+        "write",
+        nativePreferenceDomain,
+        nativeModeKey,
+        "-string",
+        value
+      ], { timeout: 3000 });
+      continue;
+    }
+    if (publicKey === "excludedApplicationBundleIdentifiers") {
+      await execFileAsync("/usr/bin/defaults", [
+        "write",
+        nativePreferenceDomain,
+        excludedApplicationsKey,
+        "-array",
+        ...value
+      ], { timeout: 3000 });
+      continue;
+    }
+    const definition = nativePreferenceKeys.get(publicKey);
+    await execFileAsync("/usr/bin/defaults", [
+      "write",
+      nativePreferenceDomain,
+      definition[0],
+      "-bool",
+      value ? "true" : "false"
+    ], { timeout: 3000 });
+  }
+  return { ok: true };
 }
 
 function defaultCompanionPreferences() {
@@ -557,10 +592,13 @@ async function readPlistAtPath(plistPath, key) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  // On Windows the hidden primary process owns the per-user broker. Closing
+  // Settings must never stop the keyboard; relaunching the shortcut focuses
+  // this single instance. Linux keeps the conventional quit-on-close behavior.
+  if (process.platform !== "darwin" && process.platform !== "win32") app.quit();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   applicationIsQuitting = true;
   if (pipeBrokerRestartTimer) clearTimeout(pipeBrokerRestartTimer);
   if (pipeBrokerStableTimer) clearTimeout(pipeBrokerStableTimer);
@@ -568,6 +606,28 @@ app.on("before-quit", () => {
   pipeBrokerStableTimer = null;
   if (pipeBrokerProcess && !pipeBrokerProcess.killed) pipeBrokerProcess.kill();
   pipeBrokerProcess = null;
+
+  preferenceWriteQueue.close();
+  if (preferenceQuitDrainComplete || preferenceWriteQueue.pendingCount === 0) {
+    preferenceQuitDrainComplete = true;
+    return;
+  }
+  event.preventDefault();
+  if (preferenceQuitDrainStarted) return;
+  preferenceQuitDrainStarted = true;
+  void preferenceWriteQueue.drain(preferenceWriteDrainTimeoutMs)
+    .then((result) => {
+      if (!result.drained) {
+        console.error(`Native preference writes did not drain before quit (${result.pending} pending).`);
+      }
+    })
+    .catch((error) => {
+      console.error("Native preference write drain failed before quit.", error);
+    })
+    .finally(() => {
+      preferenceQuitDrainComplete = true;
+      app.quit();
+    });
 });
 
 function startWindowsPipeBrokerIfAvailable() {
@@ -600,10 +660,11 @@ function startWindowsPipeBrokerIfAvailable() {
     if (pipeBrokerStableTimer) clearTimeout(pipeBrokerStableTimer);
     pipeBrokerStableTimer = null;
     if (pipeBrokerProcess === broker) pipeBrokerProcess = null;
-    if (applicationIsQuitting || pipeBrokerRestartAttempts >= 3) return;
-    const retryDelays = [250, 1000, 4000];
-    const delay = retryDelays[pipeBrokerRestartAttempts];
-    pipeBrokerRestartAttempts += 1;
+    if (applicationIsQuitting) return;
+    const retryDelays = [250, 1000, 4000, 15_000, 60_000];
+    const retryIndex = Math.min(pipeBrokerRestartAttempts, retryDelays.length - 1);
+    const delay = retryDelays[retryIndex];
+    pipeBrokerRestartAttempts = Math.min(retryIndex + 1, retryDelays.length - 1);
     pipeBrokerRestartTimer = setTimeout(() => {
       pipeBrokerRestartTimer = null;
       startWindowsPipeBrokerIfAvailable();
