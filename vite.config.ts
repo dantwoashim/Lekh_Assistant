@@ -1,12 +1,31 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
+import {
+  developmentContentSecurityPolicy,
+  injectContentSecurityPolicy,
+  productionContentSecurityPolicy
+} from "./scripts/lib/contentSecurityPolicy";
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const companionBuild = mode === "companion";
+  const contentSecurityPolicy = command === "serve"
+    ? developmentContentSecurityPolicy()
+    : productionContentSecurityPolicy();
   return {
     base: "./",
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: "lekh-content-security-policy",
+        transformIndexHtml: {
+          order: "pre",
+          handler(html) {
+            return injectContentSecurityPolicy(html, contentSecurityPolicy);
+          }
+        }
+      }
+    ],
     resolve: {
       alias: {
         "@lekh/app-entry": fileURLToPath(new URL(
