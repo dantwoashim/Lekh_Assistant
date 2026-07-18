@@ -1,0 +1,183 @@
+# Lekh Assistant v1.0 — State of Build
+
+Baseline captured on 2026-07-18 at source revision
+`9668c6363fd7c342f1a13edc9f08aeee067f327f` on an Apple Silicon Mac running
+Node.js 24.14.0 and npm 11.8.0.
+
+This is executable baseline truth for the v1.0 release mission. It deliberately
+separates engine tests, native builds, operating-system integration, and real
+host-application evidence. A source contract is not counted as a working input
+method, and an installed bundle is not counted as usable unless the operating
+system exposes and runs it.
+
+## Current end-to-end status
+
+| Surface | What was run | What works now | What is not yet proved |
+|---|---|---|---|
+| macOS Romanized typing | TypeScript keyboard suite, shared behavior contract, native Swift build, and TypeScript/Swift byte comparison | The deterministic engine composes Romanized input, produces Devanagari candidates, preserves bounded Latin/protected spans, handles graphemes safely, commits an explicitly chosen candidate, and fails closed in password/unknown contexts. The Swift adapter produces byte-identical results for all 31 shared contract cases. | No fresh host-application typing run was performed in this baseline. The installed build is not currently present in the enabled or selected input-source preferences, so system-wide typing is **not claimed end-to-end today**. |
+| macOS Traditional / Preeti | Existing Traditional and Preeti tests in the focused product sweep | Native Traditional candidate behavior and the existing Preeti paste-conversion fixtures pass their automated tests. | Native Traditional has no fresh host run. The TypeScript Traditional layout is still marked `pending-audit`, and the Preeti converter is not exposed as a system-wide input scheme in the current focused app. |
+| macOS suggestions, dictionary, proofread | Focused product sweep and keyboard suite | Deterministic suggestions, candidate selection, local dictionary lookup APIs/data, protected-span handling, and the current bounded proofread rules pass. | The shipping focused UI does not expose dictionary lookup or a standalone proofread panel. Their system-wide host behavior is not proved by this baseline. |
+| macOS build/install | Native Swift build; installed-bundle identity, architecture, signature, and input-source preference inspection | The native package builds when the matching SDK is selected. A previously installed `Lekh Keyboard.app` build 176 exists, is a universal `arm64` + `x86_64` Mach-O, and passes local ad-hoc code-sign verification. | Build 176 is not a v1.0 artifact, is not enabled/selected, is unsigned by Apple and unnotarized, and has its experimental-neural bundle flag enabled. No fresh install/use/uninstall simulation was run. |
+| Windows Romanized typing | Windows source/unit proxy tests on macOS and the latest real Windows CI job | IPC schema generation passes; the TSF source-contract tests and installer source contract pass. The repository contains a TSF/broker implementation that is testable at source level. | The latest CI run stopped before MSVC compilation and CTest. There is no passing integration receipt showing Devanagari reached a Windows target sink, so system-wide Windows typing is **not working end-to-end by available evidence**. |
+| Windows candidates | Windows source-contract tests | Candidate-window source and state contracts are present and their source tests pass. | No passing Windows runtime/UI integration test currently proves rendering, navigation, or text commit. |
+| Windows installer | `npm run check:windows-installer-contract` | The installer source contract passes: required DLL and broker paths exist and packaging fails closed when required inputs are missing. | No CI log currently proves silent install, registration, broker startup, uninstall, and cleanup. |
+| Cross-platform deterministic web/companion surfaces | Focused Vitest sweep, app smoke, production web build, offline/privacy/user-data/IPC checks | 191 focused product tests pass; the web build completes; its service worker precaches 15 URLs; no text-telemetry payloads are found; the IPC schema is version 2 with 18 message types. | The focused web UI is not a system-wide keyboard and currently omits end-user dictionary/proofread panels. Windows has no visible companion Quit action in the tested surface; input-source switching is the current toggle. |
+
+## Exact local commands and results
+
+All Node commands used this runtime prefix:
+
+```sh
+export PATH=/Users/rohanbasnet14/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH
+```
+
+### Focused deterministic product sweep
+
+```sh
+npx vitest run src/core/transliteration/transliterateRomanized.test.ts src/engine/romanized/candidateEngine.test.ts src/engine/keyboard/keyboardEngine.test.ts src/engine/keyboard/modes.test.ts src/core/dictionary/dictionary.test.ts src/engine/proofread/proofread.test.ts src/engine/protected/protectedSpans.test.ts src/engine/traditional/traditional.test.ts src/core/preeti/convertPreetiToUnicode.test.ts src/features/companion/companionModel.test.ts src/features/companion/settings.test.ts src/features/companion/useCompanionController.test.ts src/tests/companion-shell.test.tsx --pool=forks --maxWorkers=1
+npx vitest run src/tests/app-smoke.test.tsx --pool=forks --maxWorkers=1
+```
+
+Result: 13 files / 174 tests passed, then 1 file / 17 tests passed.
+
+```sh
+npm run test:keyboard
+npm run check:behavior-contract
+```
+
+Result: 5 files / 195 tests passed; shared behavior contract 31/31 passed.
+The contract covers grapheme-safe edits, protected Latin tokens,
+secure/unknown-context purging, Romanized and Traditional candidates, explicit
+commit, raw delimiter behavior, cancellation, and fail-open errors.
+
+### Web build and finite safety checks
+
+```sh
+npm run build
+npm run check:privacy
+npm run check:offline
+npm run check:user-data
+npm run check:ipc-schema
+```
+
+Result: all passed outside the restricted command sandbox. The build produced
+15 precached URLs and 10 hashed assets; privacy, user-data, and IPC checks
+reported no violations. The first sandboxed attempt was not a product failure:
+`tsx` was denied permission to create its local Unix IPC socket.
+
+### Native macOS build and shared contract
+
+The default `npm run build:macos` first failed because the selected Command Line
+Tools compiler did not match the default macOS 26.2 SDK. The exact successful
+retry was:
+
+```sh
+export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
+export CLANG_MODULE_CACHE_PATH=/private/tmp/lekh-a1-clang-module-cache
+export SWIFT_MODULE_CACHE_PATH=/private/tmp/lekh-a1-swift-module-cache
+swift build --disable-sandbox --package-path native/macos-imk/skeleton
+```
+
+It completed in 44.56 seconds. No trainer, model execution, or inference
+benchmark ran.
+
+The TypeScript and Swift behavior runners each passed 31/31 cases. `cmp` found
+their JSONL output byte-identical, with SHA-256:
+`2739abe6506fb7394df8128e25b4a6d5e5088dc1928c8108de3b697b52339916`.
+
+```sh
+./node_modules/.bin/vite-node scripts/run-keyboard-behavior-contract.ts contracts/keyboard-behavior/v1/lekh-keyboard-behavior.v1.jsonl > /private/tmp/lekh-a1-typescript-behavior.jsonl
+native/macos-imk/skeleton/.build/debug/LekhBehaviorContractRunner contracts/keyboard-behavior/v1/lekh-keyboard-behavior.v1.jsonl > /private/tmp/lekh-a1-swift-behavior.jsonl
+cmp /private/tmp/lekh-a1-typescript-behavior.jsonl /private/tmp/lekh-a1-swift-behavior.jsonl
+shasum -a 256 /private/tmp/lekh-a1-typescript-behavior.jsonl /private/tmp/lekh-a1-swift-behavior.jsonl
+```
+
+The standalone native behavior probe was also run:
+
+```sh
+env -u LEKH_NEURAL_BENCH_BUNDLE -u LEKH_NEURAL_BENCH_REPORT -u LEKH_DUMP_NATIVE_CANDIDATES native/macos-imk/skeleton/.build/debug/LekhInputMethodBehaviorProbe
+```
+
+It failed at:
+
+```text
+FAIL: A companion reset epoch must immediately evict learned candidates from live IMK memory
+```
+
+Romanized preview/commit, Latin preservation, passive delimiters,
+escape/backspace, and host pass-through assertions before that point passed.
+Assertions after the failure did not run. The macOS CI job at this same revision
+passed this probe, so the local reset-notification result remains environment-
+sensitive rather than silently treated as a pass.
+
+### Installed macOS bundle inspection
+
+```sh
+ls -ld "$HOME/Library/Input Methods/Lekh Keyboard.app"
+plutil -p "$HOME/Library/Input Methods/Lekh Keyboard.app/Contents/Info.plist"
+codesign --verify --deep --strict --verbose=2 "$HOME/Library/Input Methods/Lekh Keyboard.app"
+file "$HOME/Library/Input Methods/Lekh Keyboard.app/Contents/MacOS/LekhInputMethodApp"
+defaults read com.apple.HIToolbox AppleEnabledInputSources
+defaults read com.apple.HIToolbox AppleSelectedInputSources
+defaults read com.apple.HIToolbox AppleCurrentKeyboardLayoutInputSourceID
+```
+
+Result: build 176 exists and passes local ad-hoc signature verification; its
+executable contains `arm64` and `x86_64`. No Lekh entry was returned from the
+enabled or selected input-source preferences, and the current input source was
+`com.apple.keylayout.ABC`.
+
+### Windows proxy and installer source checks
+
+```sh
+npm run check:ipc-schema
+npm run test:native-scaffold
+npm run check:windows-installer-contract
+```
+
+Result on macOS: IPC generation reported version 2 / 18 message types. The
+installer source contract passed with zero failures. The native scaffold ended
+with 17 files passed, 1 failed and 201 tests passed, 1 failed; the failure was a
+macOS companion Swift truth-table compile blocked by the restricted local Swift
+cache/SDK environment, not a Windows runtime result. `build:windows` correctly
+refuses to claim a Windows binary on macOS.
+
+## GitHub Actions baseline
+
+Latest `main` CI examined:
+[run 29645227301](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29645227301),
+revision `9668c6363fd7c342f1a13edc9f08aeee067f327f`.
+
+| CI target/job | Baseline result |
+|---|---|
+| macOS `macos-15` | Passed |
+| macOS `macos-15-intel` | Passed |
+| Windows `windows-2022 / x64` | Failed before native build |
+| Windows `windows-2025 / x64` | Failed before native build |
+| Windows `windows-2025 / ARM64` | Failed before native build |
+
+In Windows job
+[88082249940](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29645227301/job/88082249940),
+IPC schema checks passed, then the native scaffold reported 17 files passed,
+1 failed; 199 tests passed, 2 skipped, 1 failed. The failure was:
+
+```text
+native/daemon/src/productionDaemon.test.ts > production daemon persistence >
+survives a process crash, preloads learned memory, and never stores surrounding windows
+Error: spawn D:\a\Lekh_Assistant\Lekh_Assistant\node_modules\.bin\vite-node ENOENT
+```
+
+The job therefore never reached the PowerShell TSF build, native unit tests, or
+installer execution. This CI run is not evidence of a working Windows keyboard.
+The last fully green historical `main` workflow was
+[run 29595443145](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29595443145),
+but it predates the baseline revision and is not used to claim current behavior.
+
+## Baseline conclusion
+
+The deterministic engine is healthy and the macOS TypeScript/Swift behavior
+contract agrees. The production web build is healthy. The current release gap
+is native delivery: Windows has no current runtime integration receipt, and the
+installed macOS development build is not enabled and was not exercised in a
+fresh host session. These are the facts Part B and Part C must close or document
+under the finite v1.0 checklist.
