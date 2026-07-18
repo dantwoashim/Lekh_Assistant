@@ -1,5 +1,7 @@
 # Current Production Readiness Status
 
+Status: superseded on 2026-07-18 by the finite v1.0 release mission and [`STATE_OF_BUILD.md`](../STATE_OF_BUILD.md); all non-v1 Noble-plan work is frozen in [`BACKLOG_V2.md`](../BACKLOG_V2.md).
+
 Updated: 2026-07-17
 
 Evidence basis: reviewed source revision `12af2d686479f61fb50b147e4995842516e47b83` and the locally generated build 177 archive. Build 176 is superseded and does not contain these fixes.

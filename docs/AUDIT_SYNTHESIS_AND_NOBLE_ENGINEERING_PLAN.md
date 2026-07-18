@@ -2,6 +2,8 @@
 
 Updated: 2026-07-17
 
+Status: frozen on 2026-07-18 with zero active Noble-plan issues; v1 work is limited to the finite release checklist and all remaining programme work is tracked in [`BACKLOG_V2.md`](../BACKLOG_V2.md).
+
 ## Executive decision
 
 The supplied audits are valuable, but none is safe to use alone as the engineering backlog. The strongest working method is:

@@ -419,31 +419,33 @@ Remaining release/security blockers:
 
 ## 17. Complete Issue Register
 
+Open Noble-plan rows: 0; active v1 rows: 8; moved to [`BACKLOG_V2.md`](../BACKLOG_V2.md): 15; this historical register no longer defines release scope.
+
 | ID | Severity | Area | Status | Evidence | Exact fix |
 | --- | --- | --- | --- | --- | --- |
-| P0-01 | P0 | Windows TSF | open, blocked-native-environment | `build:windows` blocked on `darwin-arm64`. | Build TSF DLL on Windows with MSVC/SDK, register, test host-app typing, save logs. |
-| P0-02 | P0 | Windows text commit | open | No Notepad/Word/Chrome proof. | Prove TSF composition/commit/candidate flow and daemon failure pass-through. |
-| P0-03 | P0 | Windows installer | open, blocked-native-environment/external | `package:windows*` blocked. | Produce unsigned installer on Windows, then signed installer with certificate. |
-| P0-04 | P0 | macOS IMK | open, blocked-native-environment | Swift builds, installed IMK not validated. | Install `.inputmethod`, enable, test marked text/commit/candidates in target apps. |
-| P0-05 | P0 | macOS signing | open, blocked-external | `package:macos` requires Developer ID/notarization env. | Add Developer ID credentials, hardened runtime, notarize, staple, verify. |
-| P0-06 | P0 | Traditional physical | open, blocked-human | Scorecard `traditionalPhysical=blocked-human`. | Complete LTK capture, fixtures, typist validation, and layout preview consistency. |
-| P0-07 | P0 | Blind benchmark | partially closed | Active contaminated suites are `0`; `romanized-held-out` is quarantined; public-proof eligible fixtures `1,896`. | Keep quarantined suite excluded, grow independent human-reviewed blind set, and block public 99% claims until reviewed evidence is sufficient. |
-| P0-08 | P0 | Corpus quality | open | 124 gold rows only. | Grow human-reviewed gold rows in high-impact queues before accuracy claims. |
-| P0-09 | P0 | Pilot feedback | open | No real pilot evidence. | Run consented private pilot and import redacted feedback into review queue. |
-| P0-10 | P0 | Launch claim policy | open until native gates pass | Scorecard blocks release. | Keep public claims conservative until native/signing/pilot gates pass. |
-| P1-01 | P1 | Alias collisions | open | 4,499 collisions, 4,237 review-needed. | Prioritize short aliases, names, loanwords, and high-frequency terms for review. |
-| P1-02 | P1 | Benchmark trust | open | Perfect Romanized scores. | Add hostile real-world blind mixed cases and fail on suspicious leakage. |
-| P1-03 | P1 | Bundle size | partially closed | App/feature shell split; bundle budget passes; large lazy local data packs remain. | Replace raw TSV/JSON runtime packs with compact indexed assets after native data-pack format is finalized. |
-| P1-04 | P1 | Daemon install | open | Dev daemon builds, service install unproven. | Add Windows login task/service and macOS LaunchAgent/XPC lifecycle tests. |
-| P1-05 | P1 | IPC security | open | ACL/XPC security not OS-tested. | Verify per-user named pipe ACL and macOS XPC service identity. |
-| P1-06 | P1 | Companion UX | partial | Tests/build pass, no native onboarding proof. | User-test install/status/settings/privacy/diagnostics flows. |
-| P1-07 | P1 | Release licenses | closed for direct deps | `check:third-party-notices` is wired into `verify` and passes. | Regenerate full transitive license manifest before signed public release artifacts. |
-| P1-08 | P1 | Runtime data | open | `data` is 2.1 GB. | Keep only compiled/minimal runtime packs in app builds. |
-| P1-09 | P1 | Native candidate UI | open | No real OS candidate window evidence. | Implement and test native candidate UI selection on both platforms. |
-| P1-10 | P1 | Secure input native | open | Engine tests pass; native secure input unproven. | Test password/secure fields and ensure memory/proofread disabled. |
-| P2-01 | P2 | Dependency hygiene | open | `npm ci` deprecation warnings. | Upgrade/replace deprecated transitive paths where practical. |
-| P2-02 | P2 | Generated artifacts | watch | `release`, native build output, reports are large. | Keep ignored; do not commit generated binaries unless release artifact policy says so. |
-| P2-03 | P2 | Documentation volume | watch | Many historical reports exist. | Maintain current status index and archive stale completion docs. |
+| P0-01 | P0 | Windows TSF | active-v1 | `build:windows` blocked on `darwin-arm64`. | Build TSF DLL on Windows with MSVC/SDK, register, test host-app typing, save logs. |
+| P0-02 | P0 | Windows text commit | active-v1 | No Notepad/Word/Chrome proof. | Prove TSF composition/commit/candidate flow and daemon failure pass-through. |
+| P0-03 | P0 | Windows installer | active-v1 | `package:windows*` blocked. | Produce and CI-test the unsigned v1 Windows installer and uninstaller. |
+| P0-04 | P0 | macOS IMK | active-v1 | Swift builds, installed IMK not validated. | Install `.inputmethod`, enable, test marked text/commit/candidates in target apps. |
+| P0-05 | P0 | macOS signing | moved-v2 | `package:macos` requires Developer ID/notarization env. | Add Developer ID credentials, hardened runtime, notarize, staple, verify. |
+| P0-06 | P0 | Traditional physical | moved-v2 | Scorecard `traditionalPhysical=blocked-human`. | Complete LTK capture, fixtures, typist validation, and layout preview consistency. |
+| P0-07 | P0 | Blind benchmark | moved-v2 | Active contaminated suites are `0`; `romanized-held-out` is quarantined; public-proof eligible fixtures `1,896`. | Keep quarantined suite excluded, grow independent human-reviewed blind set, and block public 99% claims until reviewed evidence is sufficient. |
+| P0-08 | P0 | Corpus quality | moved-v2 | 124 gold rows only. | Grow human-reviewed gold rows in high-impact queues before accuracy claims. |
+| P0-09 | P0 | Pilot feedback | moved-v2 | No real pilot evidence. | Run consented private pilot and import redacted feedback into review queue. |
+| P0-10 | P0 | Launch claim policy | moved-v2 | Scorecard blocks release. | Keep public claims conservative until native/signing/pilot gates pass. |
+| P1-01 | P1 | Alias collisions | moved-v2 | 4,499 collisions, 4,237 review-needed. | Prioritize short aliases, names, loanwords, and high-frequency terms for review. |
+| P1-02 | P1 | Benchmark trust | moved-v2 | Perfect Romanized scores. | Add hostile real-world blind mixed cases and fail on suspicious leakage. |
+| P1-03 | P1 | Bundle size | moved-v2 | App/feature shell split; bundle budget passes; large lazy local data packs remain. | Replace raw TSV/JSON runtime packs with compact indexed assets after native data-pack format is finalized. |
+| P1-04 | P1 | Daemon install | active-v1-windows; macOS moved-v2 | Dev daemon builds, service install unproven. | Verify Windows daemon startup and removal through the v1 installer flow. |
+| P1-05 | P1 | IPC security | active-v1-windows; macOS moved-v2 | ACL/XPC security not OS-tested. | Keep the existing Windows per-user pipe security tests green for v1. |
+| P1-06 | P1 | Companion UX | moved-v2 | Tests/build pass, no native onboarding proof. | User-test install/status/settings/privacy/diagnostics flows. |
+| P1-07 | P1 | Release licenses | moved-v2 | `check:third-party-notices` is wired into `verify` and passes. | Regenerate full transitive license manifest before signed public release artifacts. |
+| P1-08 | P1 | Runtime data | moved-v2 | `data` is 2.1 GB. | Keep only compiled/minimal runtime packs in app builds. |
+| P1-09 | P1 | Native candidate UI | active-v1 | No real OS candidate window evidence. | Implement and test native candidate UI selection on both platforms. |
+| P1-10 | P1 | Secure input native | active-v1 | Engine tests pass; native secure input unproven. | Test password/secure fields and ensure memory/proofread disabled. |
+| P2-01 | P2 | Dependency hygiene | moved-v2 | `npm ci` deprecation warnings. | Upgrade/replace deprecated transitive paths where practical. |
+| P2-02 | P2 | Generated artifacts | moved-v2 | `release`, native build output, reports are large. | Keep ignored; do not commit generated binaries unless release artifact policy says so. |
+| P2-03 | P2 | Documentation volume | moved-v2 | Many historical reports exist. | Maintain current status index and archive stale completion docs. |
 
 Resolved in current evidence:
 
