@@ -173,6 +173,27 @@ The last fully green historical `main` workflow was
 [run 29595443145](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29595443145),
 but it predates the baseline revision and is not used to claim current behavior.
 
+## A3 four-architecture CI resolution
+
+Current v1 CI passed at revision
+`a6cc01290721e986693d6bcf3763f008c41efe7a` in
+[run 29649454136](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29649454136).
+
+| Architecture target | Result | Job evidence |
+|---|---|---|
+| macOS ARM64 | Passed | [job 88093159653](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29649454136/job/88093159653) |
+| macOS Intel x64 | Passed | [job 88093159648](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29649454136/job/88093159648) |
+| Windows x64 | Passed | [job 88093159640](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29649454136/job/88093159640) |
+| Windows ARM64 | Passed on native `windows-11-arm` hardware | [job 88093159644](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29649454136/job/88093159644) |
+
+Every target ran the scoped deterministic v1 suite (47 files / 451 tests), built
+the application, and verified IPC schema version 2. Both Windows architectures
+compiled the TSF service and broker and executed native CTest. Both macOS
+architectures built the release `LekhInputMethodApp` product and produced
+byte-identical TypeScript/Swift results for all 31 behavior-contract cases.
+Neural training, promotion, provenance, model execution, and Core ML compute
+probes are absent from v1 CI; the experimental-neural runtime flag is forced off.
+
 ## Baseline conclusion
 
 The deterministic engine is healthy and the macOS TypeScript/Swift behavior
