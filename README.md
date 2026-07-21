@@ -26,7 +26,7 @@ The real keyboard product is the native input-method layer:
 - [Privacy Model](#privacy-model)
 - [Current Quality Evidence](#current-quality-evidence)
 - [Run Locally](#run-locally)
-- [Useful Commands](#useful-commands)
+- [Primary v1 Commands](#primary-v1-commands)
 - [Project Shape](#project-shape)
 - [Data Source Policy](#data-source-policy)
 - [Feedback and Real-Document Validation](#feedback-and-real-document-validation)
@@ -60,7 +60,7 @@ This zip is the current unsigned test installer for the native macOS InputMethod
 Build or refresh the local macOS test installer with:
 
 ```bash
-npm run package:macos:imk:test-installer
+npm run v1:package:macos
 ```
 
 Because this artifact is ad-hoc signed and not notarized, macOS can block a downloaded copy. After extracting the ZIP, **Control-click or right-click `Lekh Keyboard Test Installer.app`, choose Open, then click Open again**. This is the preferred path. If macOS still blocks it, open **System Settings > Privacy & Security** and choose **Open Anyway** for the installer.
@@ -101,12 +101,6 @@ Current macOS IMK test-build behavior includes:
 - Traditional Option-key helpers for halanta, rakar/yaphala, chandrabindu, anusvara, and danda
 - fallback InScript-style Traditional key mapping when macOS does not provide a Devanagari layout override
 - input-menu preferences for transliteration strictness, halanta behavior, mixed-script preference, local dictionary export/edit/delete, diagnostics, and privacy controls
-
-The recovery command remains:
-
-```bash
-npm run restore:macos-keyboard
-```
 
 ## What It Does
 
@@ -153,7 +147,7 @@ The larger Hunspell dictionary is lazy-loaded as a local browser chunk, so the f
 
 The browser demo and Electron shell exist to validate the engine, demonstrate typing behavior, and manage companion-style settings. They are not substitutes for TSF/IMK native input methods.
 
-The production web build writes a service worker that precaches the app shell and Vite hashed assets. Offline behavior is checked as part of `npm run verify`.
+The production web build writes a service worker that precaches the app shell and Vite hashed assets. Offline behavior is checked as part of `npm run v1:check`.
 
 ## Privacy Model
 
@@ -169,14 +163,10 @@ Current keyboard-specific evidence is produced by committed scripts and generate
 
 | Gate | Status |
 | --- | --- |
-| Shared keyboard engine | `npm run test:keyboard` covers Romanized, Traditional Unicode suggestions, memory, protected tokens, secure pass-through, runtime pack candidates, trained context candidates, and inline next-word completion |
-| Quantized inline completion model | `npm run build:ngram-lm` emits `35,000` local n-gram rows with NFC, self-loop, unsafe-token, duplicate, and spelling-quality validation |
-| Core ML transliteration readiness | `npm run check:neural-transliteration` permits the current closed-vocabulary baseline only for dev/test and blocks production unless the open-vocabulary seq2seq/GRU/Transformer model, manifest, beam decoding, context reranking, measured latency, and local-only policy pass |
-| macOS native bundle | `npm run package:macos:imk:test-installer` produces the unsigned IMK test installer zip for manual host-app validation |
-| Privacy guard | `npm run check:privacy` blocks text telemetry payloads |
-| Local-first guard | `npm run check:engine-local` verifies the hot path stays local |
-| Runtime data guard | `npm run check:runtime-data` keeps benchmark/probe fixtures out of production source and build output |
-| Production readiness | Still blocked until the signed/notarized app and real host-app matrix pass |
+| Deterministic v1 suite | `npm run v1:test` runs the frozen v1 unit-test surface |
+| Cross-platform release check | `npm run v1:check` runs format, types, deterministic tests, the web build, IPC validation, and the passive-commit policy |
+| macOS package | `npm run v1:package:macos` builds the unsigned universal IMK installer with neural typing forced off |
+| Windows package | `npm run v1:package:windows` builds the unsigned Windows installer |
 
 Internal fixture metrics are useful for regression control, but they are not public superiority claims and they are not a substitute for consented real-document validation or manually filled competitor outputs.
 
@@ -186,7 +176,7 @@ Prerequisite: Node.js `^20.19.0` or `>=22.12.0`.
 
 ```bash
 npm install
-npm run dev
+npm run v1:dev
 ```
 
 Open the local URL printed by Vite, usually:
@@ -195,35 +185,22 @@ Open the local URL printed by Vite, usually:
 http://127.0.0.1:5173/
 ```
 
-## Useful Commands
+## Primary v1 Commands
 
-```bash
-npm run test
-npm run build
-npm run check:privacy
-npm run build:ngram-lm
-npm run neural:dataset
-npm run check:neural-transliteration
-npm run check:offline
-npm run check:runtime-data
-npm run verify
-npm run benchmark
-npm run report:quality
-npm run report:preeti
-npm run dictionary:review
-npm run rank:hunspell -- --apply --limit 36000
-npm run package:macos:imk:test-installer
-npm run restore:macos-keyboard
-npm audit --audit-level=moderate
-```
+These eight commands are the supported top-level developer interface for v1.0.
+The older maintenance scripts remain available to repository maintainers but
+are intentionally not part of the primary workflow.
 
-Fixture and data maintenance:
-
-```bash
-npm run generate:fixtures
-npm run generate:wordlist
-npm run ingest:preeti-real -- data/private/preeti-real-manifest.json
-```
+| Command | Purpose | Host |
+|---|---|---|
+| `npm run v1:dev` | Start the local Vite development surface | macOS / Windows |
+| `npm run v1:build` | Build the web/companion UI | macOS / Windows |
+| `npm run v1:test` | Run the deterministic v1 test suite | macOS / Windows |
+| `npm run v1:check` | Run the cross-platform v1 preflight | macOS / Windows |
+| `npm run v1:build:macos` | Compile the native macOS input method with neural typing off | macOS |
+| `npm run v1:build:windows` | Compile the native Windows TSF service | Windows |
+| `npm run v1:package:macos` | Build and verify the unsigned universal macOS installer ZIP | macOS |
+| `npm run v1:package:windows` | Build the unsigned Windows installer | Windows |
 
 ## Project Shape
 
@@ -284,7 +261,7 @@ Real Preeti validation has a separate intake path:
 
 1. Collect written permission for each source document.
 2. Keep raw documents and private manifests under ignored `data/private/`.
-3. Run `npm run ingest:preeti-real -- data/private/preeti-real-manifest.json`.
+3. Use the repository's maintainer-only Preeti intake script.
 4. Review de-identified fixtures and failure tags.
 5. Promote only safe, consented, de-identified fixtures.
 
