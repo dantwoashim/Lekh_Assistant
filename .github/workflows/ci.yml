@@ -53,6 +53,9 @@ jobs:
       - name: Verify IPC contract
         run: npm run check:ipc-schema
 
+      - name: Verify unsigned macOS first-run walkthrough
+        run: node scripts/check-macos-unsigned-install-ux.mjs --check-receipt
+
       - name: Build Swift input method
         run: npm run build:macos
 

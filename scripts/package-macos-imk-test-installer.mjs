@@ -472,6 +472,9 @@ const installerScript = `#!/usr/bin/env bash
 set -euo pipefail
 
 RESOURCE_DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
+APP_BUNDLE="$(cd "$(dirname "$0")/../.." && pwd)"
+RELEASE_FOLDER="$(/usr/bin/dirname "$APP_BUNDLE")"
+UNSIGNED_BUILD="${signingIdentity === "-" ? "1" : "0"}"
 DEST="$HOME/Library/Input Methods/Lekh Keyboard.app"
 PAYLOAD="$RESOURCE_DIR/Lekh Keyboard.app"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -505,6 +508,33 @@ dialog() {
 display dialog (system attribute "LEKH_DIALOG_MESSAGE") buttons {"OK"} default button "OK" with title "Lekh Keyboard" with icon note
 APPLESCRIPT
 }
+print_unsigned_first_run_instructions() {
+  echo "Lekh Keyboard is an unsigned, unnotarized test build."
+  echo "1. In Finder, Control-click or right-click Lekh Keyboard Test Installer.app."
+  echo "2. Choose Open, then click Open again."
+  echo "3. If macOS still blocks it, open System Settings > Privacy & Security and choose Open Anyway."
+  echo "4. Last resort: run this one Terminal command on the installer app, then repeat step 1:"
+  echo 'xattr -dr com.apple.quarantine "/path/to/Lekh Keyboard Test Installer.app"'
+}
+handle_unsigned_first_run() {
+  [[ "$UNSIGNED_BUILD" == "1" ]] || return 0
+  local quarantined_path=""
+  quarantined_path="$("$RESOURCE_DIR/detect-quarantine" "$APP_BUNDLE" "$0" "$RELEASE_FOLDER" 2>/dev/null || true)"
+  if [[ -n "$quarantined_path" ]]; then
+    echo "LEKH_UNSIGNED_FIRST_RUN_STATUS=quarantined"
+    echo "LEKH_UNSIGNED_FIRST_RUN_TARGET=$quarantined_path"
+    print_unsigned_first_run_instructions
+    log "unsigned first run detected quarantine target=$quarantined_path"
+    dialog "macOS marked this downloaded test build as quarantined. This build is unsigned and not notarized. The preferred safe opening path is: Control-click or right-click Lekh Keyboard Test Installer.app, choose Open, then click Open again. If macOS still refuses, use System Settings > Privacy & Security > Open Anyway. The one-line xattr command in README.txt is the last resort."
+  elif [[ "\${LEKH_INSTALLER_WALKTHROUGH_ONLY:-0}" == "1" ]]; then
+    echo "LEKH_UNSIGNED_FIRST_RUN_STATUS=clear"
+    print_unsigned_first_run_instructions
+  fi
+  if [[ "\${LEKH_INSTALLER_WALKTHROUGH_ONLY:-0}" == "1" ]]; then
+    exit 0
+  fi
+}
+handle_unsigned_first_run
 rollback() {
   if [[ "$ROLLBACK_COMPLETED" == "1" ]]; then
     return
@@ -773,6 +803,9 @@ for (const appPath of [installerApp, uninstallerApp]) {
   const resourcesDir = join(appPath, "Contents", "Resources");
   if (appPath === installerApp) {
     run("copy-imk-payload", "ditto", [...metadataSafeDittoFlags, imkBundle, join(resourcesDir, "Lekh Keyboard.app")]);
+    const quarantineDetector = join(resourcesDir, "detect-quarantine");
+    copyFileSync(join(skeletonDir, "detect-quarantine.sh"), quarantineDetector);
+    chmodSync(quarantineDetector, 0o755);
   }
   for (const [sourceFile, binaryName] of [
     ["register-dev.swift", "register-lekh-input-source"],
@@ -974,11 +1007,10 @@ writeFileSync(
     "Signature: ad-hoc unless this package was built with LEKH_MAC_DEVELOPER_ID.",
     "",
     "Install:",
-    "1. Open Terminal, type bash followed by one space, drag Verify Lekh Release.command into Terminal, and press Return. It creates a private metadata-clean snapshot; its bundled verifier requires no Homebrew or third-party tools. Do not install if verification does not pass.",
-    "2. Open Lekh Keyboard Test Installer.app.",
-    "3. If macOS blocks the app because it is an unnotarized test build, open System Settings > Privacy & Security and choose Open Anyway for Lekh Keyboard Test Installer.",
-    "   Do not recursively remove quarantine attributes from the download folder.",
-    "4. If macOS only shows Move to Trash or Done and no Open Anyway option appears, open Install Lekh Keyboard from Terminal.command instead; it repeats full release verification before installation.",
+    "1. Extract the downloaded ZIP.",
+    "2. Control-click or right-click Lekh Keyboard Test Installer.app, choose Open, then click Open again.",
+    "3. If macOS still blocks it, open System Settings > Privacy & Security and choose Open Anyway for Lekh Keyboard Test Installer.",
+    "4. Last resort only: open Terminal, type xattr -dr com.apple.quarantine followed by one space, drag Lekh Keyboard Test Installer.app into Terminal, and press Return. Then repeat step 2. This is one command and changes only the installer app.",
     "5. After it finishes, use the macOS input menu in the menu bar to choose Lekh Keyboard.",
     "6. If Lekh Keyboard does not appear immediately, log out and back in, then open Keyboard Settings > Text Input > Edit and add it under Nepali.",
     "7. Installer rollback backups are compressed under ~/Library/Application Support/Lekh Keyboard/InstallBackups.noindex and rotated to the newest 3 copies so macOS cannot rediscover them as duplicate input methods.",
@@ -993,12 +1025,12 @@ writeFileSync(
     "This test build is local-first and does not send typing data to a server.",
     "Production distribution still requires Developer ID signing and notarization if this zip is built without LEKH_MAC_DEVELOPER_ID.",
     "Release manifest:",
-    "Verify Lekh Release.command pins the expected Minisign key, authenticates RELEASE-MANIFEST.json first, then verifies the exact closed-world file set and every file digest.",
+    "Optional technical verification: run Verify Lekh Release.command through Terminal before installing. It pins the expected Minisign key, authenticates RELEASE-MANIFEST.json first, then verifies the exact closed-world file set and every file digest.",
     "",
     "नेपाली:",
-    "१. Terminal मा bash र एक space टाइप गरेर Verify Lekh Release.command drag गर्नुहोस् र Return थिच्नुहोस्। यसले private metadata-clean snapshot बनाउँछ; bundled verifier लाई Homebrew वा अरू tool चाहिँदैन। verification pass नभए install नगर्नुहोस्।",
-    "२. Lekh Keyboard Test Installer.app खोल्नुहोस्।",
-    "३. macOS ले unnotarized test build भनेर block गरेमा System Settings > Privacy & Security मा Open Anyway छान्नुहोस्।",
+    "१. Download गरिएको ZIP extract गर्नुहोस्।",
+    "२. Lekh Keyboard Test Installer.app मा Control-click वा right-click गरेर Open छान्नुहोस्, अनि फेरि Open थिच्नुहोस्।",
+    "३. अझै block भए System Settings > Privacy & Security मा Open Anyway छान्नुहोस्। अन्तिम विकल्पका रूपमा README मा भएको एक-line xattr command प्रयोग गर्नुहोस्।",
     "४. स्थापना भएपछि menu bar को input menu बाट Lekh Keyboard छान्नुहोस्।",
     "५. तुरुन्त नदेखिए log out गरेर फेरि log in गर्नुहोस्, अनि Keyboard Settings > Text Input > Edit > Nepali बाट थप्नुहोस्।",
     "६. Uninstaller ले confirmation माग्छ र local learned words, packs, models, backups, caches, logs हटाउँछ।",
@@ -1099,6 +1131,42 @@ for (const quarantinedPath of [extractedReleaseVerifier, extractedSignatureVerif
     syntheticQuarantine,
     quarantinedPath
   ]);
+}
+let unsignedFirstRunWalkthrough = "LEKH_UNSIGNED_FIRST_RUN_STATUS=not-applicable-developer-id";
+if (signingIdentity === "-") {
+  run("quarantine-extracted-installer", "/usr/bin/xattr", [
+    "-w",
+    "com.apple.quarantine",
+    syntheticQuarantine,
+    extractedInstaller
+  ]);
+  const walkthroughHome = join(zipCheckDir, "fresh-user-home");
+  mkdirSync(walkthroughHome, { recursive: true });
+  unsignedFirstRunWalkthrough = run(
+    "verify-unsigned-first-run-walkthrough",
+    "/usr/bin/env",
+    [
+      `HOME=${walkthroughHome}`,
+      "LEKH_INSTALLER_NO_DIALOG=1",
+      "LEKH_INSTALLER_WALKTHROUGH_ONLY=1",
+      join(extractedInstaller, "Contents", "MacOS", "install-lekh-keyboard")
+    ],
+    { cwd: extractedRoot }
+  ).stdout.trim();
+  for (const requiredLine of [
+    "LEKH_UNSIGNED_FIRST_RUN_STATUS=quarantined",
+    "Control-click or right-click Lekh Keyboard Test Installer.app.",
+    "Choose Open, then click Open again.",
+    "xattr -dr com.apple.quarantine"
+  ]) {
+    if (!unsignedFirstRunWalkthrough.includes(requiredLine)) {
+      finish("failed", {
+        step: "verify-unsigned-first-run-walkthrough",
+        reason: `Unsigned first-run walkthrough omitted required text: ${requiredLine}`,
+        stdout: unsignedFirstRunWalkthrough
+      }, 1);
+    }
+  }
 }
 run(
   "verify-extracted-release-self-contained",
@@ -1283,6 +1351,7 @@ finish(signingIdentity === "-" ? "passed-adhoc-release" : "passed-developer-id-n
   helperArchs,
   extractedPayloadArchs,
   zipVerification: "passed-self-contained-quarantine-path",
+  unsignedFirstRunWalkthrough: unsignedFirstRunWalkthrough.split("\n"),
   zipBytes,
   checksumEntries: checksumLines.length,
   releaseManifest: releaseManifestSidecarPath,

@@ -63,17 +63,17 @@ Build or refresh the local macOS test installer with:
 npm run package:macos:imk:test-installer
 ```
 
-Because this artifact is ad-hoc signed unless `LEKH_MAC_DEVELOPER_ID` is provided at build time, a downloaded zip can be blocked by Gatekeeper. For test builds only, open **System Settings > Privacy & Security** and choose **Open Anyway** for `Lekh Keyboard Test Installer.app`.
+Because this artifact is ad-hoc signed and not notarized, macOS can block a downloaded copy. After extracting the ZIP, **Control-click or right-click `Lekh Keyboard Test Installer.app`, choose Open, then click Open again**. This is the preferred path. If macOS still blocks it, open **System Settings > Privacy & Security** and choose **Open Anyway** for the installer.
 
-If macOS shows only **Move to Trash** or **Done** with no install/open option, use the authenticated terminal fallback included in the zip. Open Terminal, type `bash` followed by one space, drag `Install Lekh Keyboard from Terminal.command` into the Terminal window, and press Return. Do not recursively remove quarantine attributes from the extracted folder.
+As a last resort, remove quarantine from the installer app only: open Terminal, type `xattr -dr com.apple.quarantine` followed by one space, drag `Lekh Keyboard Test Installer.app` into Terminal, and press Return. Then repeat the right-click → Open step. Do not run the command on your Downloads folder or home directory.
 
 ```bash
-bash "/path/to/Lekh Keyboard Test Installer/Install Lekh Keyboard from Terminal.command"
+xattr -dr com.apple.quarantine "/path/to/Lekh Keyboard Test Installer.app"
 ```
 
-That fallback first creates a private metadata-clean snapshot of the complete extracted release, authenticates the signed closed-world inventory of that exact snapshot, verifies its code signature, and then runs the same installer from the snapshot. It is only for unsigned QA builds; it does not turn the build into an Apple-trusted or notarized release.
+On first run, the installer detects the quarantine marker and explains these same steps in plain language. None of these steps turns the build into an Apple-trusted, Developer ID-signed, or notarized release.
 
-The zip also includes `Verify Lekh Release.command`, `SHA256SUMS.txt`, `RELEASE-MANIFEST.json`, `RELEASE-MANIFEST.json.minisig`, and `lekh-release-manifest-minisign.pub`. The verifier is self-contained and does not require Homebrew or a separately installed `minisign` binary. To avoid Finder launching the quarantined helper in place, run the verifier through Terminal; it creates and authenticates a private metadata-clean snapshot:
+The ZIP also includes an optional technical integrity check: `Verify Lekh Release.command`, `SHA256SUMS.txt`, `RELEASE-MANIFEST.json`, `RELEASE-MANIFEST.json.minisig`, and `lekh-release-manifest-minisign.pub`. The verifier is self-contained and does not require Homebrew or a separately installed `minisign` binary. It is not required for the normal right-click → Open installation path.
 
 ```bash
 bash "/path/to/Lekh Keyboard Test Installer/Verify Lekh Release.command"
