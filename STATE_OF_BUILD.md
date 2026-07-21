@@ -421,3 +421,34 @@ ZIP and quarantine-path verification passed. Walkthrough-only mode then stopped
 before appcast or public-update publication. This test models the installer
 after the user approves Finder → Open; it does not claim Apple notarization or
 that Gatekeeper permits a downloaded unsigned executable before approval.
+
+## C3 Traditional / Preeti corpus evidence
+
+The complete as-is results are committed in
+`C3_TRADITIONAL_PREETI_CORPUS_RESULTS.md`. The Traditional pending-scaffold
+audit passed its single structural fixture, but there are zero scorable physical
+key mappings, zero of two required verified final layout files, and the existing
+final-layout audit fails with `implementationAllowed: false`. No physical-layout
+accuracy rate is invented from an intentionally empty corpus.
+
+The locked Preeti benchmark passed 10,225/10,225 fixtures (100% exact), with
+zero character or word errors. That total consists of 200 manual, 9,920
+generated dictionary round trips, 55 held-out, and 50 competitor-probe expected
+outputs. The result is explicitly limited to repository fixtures; the
+user-submitted and consented real-document count remains zero.
+
+Because Traditional physical typing does not meet the repository's existing
+final-layout threshold, revision
+`5f6b58109a97f6e0237d08cd1170f138fe2073ec` labels every user-visible
+Traditional mode **Beta** in the native English and Nepali menus, focused typing
+surface, engine lab, layout reference, and end-user documentation. The change
+passed all four jobs in
+[CI run 29845558182](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29845558182):
+
+| macOS architecture | C3 result | Job evidence |
+|---|---|---|
+| ARM64 | Beta-label source/UI tests, full scoped suite, app build, Swift input method, and shared behavior contract passed | [job 88685226829](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29845558182/job/88685226829) |
+| Intel x64 | Beta-label source/UI tests, full scoped suite, app build, Swift input method, and shared behavior contract passed | [job 88685226810](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29845558182/job/88685226810) |
+
+Experienced-typist validation remains frozen as `BACKLOG_V2.md` item `V2-015`;
+the v1.0 release does not claim that validation.

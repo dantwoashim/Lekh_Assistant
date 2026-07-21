@@ -35,3 +35,18 @@ CI and the local packaging walkthrough verify quarantine detection and the
 instructions shown after Finder approval. They cannot make an unsigned build
 trusted by Apple, suppress every Gatekeeper warning, or reproduce every macOS
 policy version. No Apple signing or notarization claim is made.
+
+## Traditional typing is beta
+
+Traditional typing is labeled **Beta**. The existing pending-layout audit is
+green only because it verifies that no guessed physical keymap is treated as
+final. The final-layout audit still fails: the repository has zero scorable
+physical key mappings and neither of its two required verified layout files.
+The macOS input method uses an available macOS Nepali layout override and an
+InScript-style fallback, but no experienced Traditional typist has validated
+the complete physical layout. Romanized typing is the primary v1.0 scheme.
+
+The Preeti converter passed all 10,225 locked benchmark fixtures, but 9,920 are
+generated dictionary round trips and there are no user-submitted or consented
+real-document fixtures. That result is regression evidence, not a promise of
+perfect conversion for every legacy-font document.
