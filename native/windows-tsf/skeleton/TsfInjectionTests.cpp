@@ -364,6 +364,8 @@ int main() {
   require(SUCCEEDED(hr) && context, "Windows TSF context creation failed");
   hr = documentManager->Push(context);
   require(SUCCEEDED(hr), "Windows TSF context push failed");
+  hr = threadManager->SetFocus(documentManager);
+  require(SUCCEEDED(hr), "Windows TSF document focus failed");
 
   ITfComposition* activeComposition = nullptr;
   EngineDecision compose;
@@ -371,10 +373,12 @@ int main() {
   compose.compositionText = L"namaste";
   compose.displayText = L"\u0928\u092e\u0938\u094d\u0924\u0947";
   compose.caret = compose.compositionText.size();
-  require(
-    applyEngineDecision(context, clientId, &activeComposition, compose),
-    "TSF compose edit session did not mutate the test target"
-  );
+  const bool compositionApplied = applyEngineDecision(context, clientId, &activeComposition, compose);
+  if (!compositionApplied) {
+    std::cerr << "compose diagnostics: target_length=" << sink->text().size()
+              << " composition_started=" << (sink->compositionStarted() ? "true" : "false") << '\n';
+  }
+  require(compositionApplied, "TSF compose edit session did not mutate the test target");
   require(activeComposition != nullptr, "TSF composition was not started");
   require(sink->compositionStarted(), "the target did not accept the TSF composition");
   require(
@@ -396,6 +400,7 @@ int main() {
     "committed Devanagari text did not reach the target exactly"
   );
 
+  threadManager->SetFocus(nullptr);
   documentManager->Pop(TF_POPF_ALL);
   context->Release();
   documentManager->Release();
