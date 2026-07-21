@@ -91,7 +91,7 @@ After installation, save your work and log out and back in. Then open **System S
 
 Current macOS IMK test-build behavior includes:
 
-- four native modes: Romanized-Romanized, Romanized-Traditional, Traditional-Traditional, and Traditional-Romanized
+- four native modes: Romanized-Romanized, Romanized-Traditional, Traditional-Traditional (Beta), and Traditional-Romanized (Beta)
 - first-selection mode chooser plus a first-run `namaste` to `नमस्ते` tutorial
 - underlined inline marked-text preview before commit
 - Space commit, Escape cancel, Backspace composition edit, and Command/Control shortcut pass-through
@@ -135,9 +135,9 @@ Romanized typing is the flagship first-launch experience. It uses:
 - full-output alternatives so selecting a candidate does not collapse a sentence into a single word
 - local correction memory after explicit candidate selection
 
-### Traditional Nepali Typing
+### Traditional Nepali Typing (Beta)
 
-Traditional Unicode suggestions and proofread can be validated in the engine. The macOS IMK build now uses macOS layout override when available and an InScript-style fallback mapping when the override is unavailable. This still needs experienced Traditional typist validation before any public quality claim.
+Traditional Unicode suggestions and proofread can be validated in the engine. The macOS IMK build now uses macOS layout override when available and an InScript-style fallback mapping when the override is unavailable. Every Traditional mode is labeled **Beta** because the repository has no verified physical-layout corpus or experienced-typist validation; Romanized remains the primary scheme.
 
 ### Preeti to Unicode
 

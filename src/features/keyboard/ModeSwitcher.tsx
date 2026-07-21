@@ -45,7 +45,7 @@ export function ModeSwitcher({
 
 function labelFor(mode: KeyboardMode): string {
   if (mode === "romanized") return "Romanized";
-  if (mode === "traditional") return "Traditional";
+  if (mode === "traditional") return "Traditional (Beta)";
   if (mode === "unicode-proofread") return "Proofread";
   return "Diagnostic";
 }

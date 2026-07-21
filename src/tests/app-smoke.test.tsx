@@ -15,8 +15,8 @@ describe("Minimal typing UI", () => {
     expect(screen.getByText("Ctrl+Alt+Space switches mode.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Romanized-Romanized" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Romanized-Traditional" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Traditional-Traditional" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Traditional-Romanized" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Traditional-Traditional (Beta)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Traditional-Romanized (Beta)" })).toBeInTheDocument();
     expect(screen.queryByText(/Output/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Companion/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Preeti/i)).not.toBeInTheDocument();
@@ -58,8 +58,8 @@ describe("Minimal typing UI", () => {
 
     expect(screen.getByRole("menu", { name: "Typing mode shortcut menu" })).toBeInTheDocument();
     await user.keyboard("4");
-    expect(screen.getByRole("textbox", { name: "Traditional-Romanized" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Traditional-Romanized" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("textbox", { name: "Traditional-Romanized (Beta)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Traditional-Romanized (Beta)" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("accepts Romanized-Romanized completions with Tab", async () => {
@@ -239,8 +239,8 @@ describe("Minimal typing UI", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Traditional-Traditional" }));
-    const input = screen.getByRole("textbox", { name: "Traditional-Traditional" });
+    await user.click(screen.getByRole("button", { name: "Traditional-Traditional (Beta)" }));
+    const input = screen.getByRole("textbox", { name: "Traditional-Traditional (Beta)" });
     await user.type(input, "स्वा");
 
     expectSuggestion("स्वास्थ्य");
@@ -252,8 +252,8 @@ describe("Minimal typing UI", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Traditional-Romanized" }));
-    const input = screen.getByRole("textbox", { name: "Traditional-Romanized" });
+    await user.click(screen.getByRole("button", { name: "Traditional-Romanized (Beta)" }));
+    const input = screen.getByRole("textbox", { name: "Traditional-Romanized (Beta)" });
     await user.type(input, "स्वास्थ्य");
 
     expectSuggestion("swasthya");

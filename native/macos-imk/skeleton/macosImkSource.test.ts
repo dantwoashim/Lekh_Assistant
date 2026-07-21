@@ -529,6 +529,10 @@ describe("macOS IMK proof target source", () => {
     expect(controller).not.toContain("modeSelectedDecision");
     expect(english).toContain('"menu.privateMode" = "Private Mode";');
     expect(nepali).toContain('"menu.privateMode" = "निजी मोड";');
+    expect(english).toContain('"mode.traditionalTraditional" = "Traditional → Nepali (Beta)";');
+    expect(english).toContain('"mode.traditionalRomanized" = "Traditional → Romanized (Beta)";');
+    expect(nepali).toContain('"mode.traditionalTraditional" = "परम्परागत → नेपाली (बेटा)";');
+    expect(nepali).toContain('"mode.traditionalRomanized" = "परम्परागत → रोमनाइज्ड (बेटा)";');
   });
 
   it("allows delimiter commits only for an explicit current choice or exact raw text", () => {

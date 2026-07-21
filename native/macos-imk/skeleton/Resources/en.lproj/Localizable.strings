@@ -11,8 +11,8 @@
 "menu.openKeyboardSettings" = "Open macOS Keyboard Settings";
 "mode.romanizedRomanized" = "Romanized → Romanized";
 "mode.romanizedTraditional" = "Romanized → Nepali";
-"mode.traditionalTraditional" = "Traditional → Nepali";
-"mode.traditionalRomanized" = "Traditional → Romanized";
+"mode.traditionalTraditional" = "Traditional → Nepali (Beta)";
+"mode.traditionalRomanized" = "Traditional → Romanized (Beta)";
 "mode.prompt" = "Choose Lekh mode";
 "mode.picker.body" = "Change this anytime from the लेख menu, Control-Option-Space, or Control-Option-M.";
 "mode.picker.privacy" = "Local only. No typing is sent anywhere.";

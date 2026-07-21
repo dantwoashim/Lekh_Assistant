@@ -13,10 +13,10 @@ export function TraditionalLayoutReference() {
     <section className="reference-panel" aria-label="Traditional reference">
       <div className="panel-heading">
         <div>
-          <h2>Traditional reference</h2>
+          <h2>Traditional reference (Beta)</h2>
           <p>This is not a full Traditional key map. It keeps a quick character reference while layout expectations are collected.</p>
         </div>
-        <span className="local-badge">Reference</span>
+        <span className="local-badge">Beta</span>
       </div>
 
       <div className="key-grid" aria-label="Common Devanagari reference keys">

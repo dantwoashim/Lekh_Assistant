@@ -11,8 +11,8 @@
 "menu.openKeyboardSettings" = "macOS किबोर्ड सेटिङ खोल्नुहोस्";
 "mode.romanizedRomanized" = "रोमनाइज्ड → रोमनाइज्ड";
 "mode.romanizedTraditional" = "रोमनाइज्ड → नेपाली";
-"mode.traditionalTraditional" = "परम्परागत → नेपाली";
-"mode.traditionalRomanized" = "परम्परागत → रोमनाइज्ड";
+"mode.traditionalTraditional" = "परम्परागत → नेपाली (बेटा)";
+"mode.traditionalRomanized" = "परम्परागत → रोमनाइज्ड (बेटा)";
 "mode.prompt" = "लेख मोड छान्नुहोस्";
 "mode.picker.body" = "लेख मेनु, Control-Option-Space वा Control-Option-M बाट जुनसुकै बेला परिवर्तन गर्नुहोस्।";
 "mode.picker.privacy" = "स्थानीय मात्र। टाइप गरेको सामग्री कतै पठाइँदैन।";

@@ -35,13 +35,13 @@ const MODES: Array<{ id: TypingMode; label: string; engineMode: TypingMode; plac
   },
   {
     id: "traditional-traditional",
-    label: "Traditional-Traditional",
+    label: "Traditional-Traditional (Beta)",
     engineMode: "traditional-traditional",
     placeholder: "स्वा"
   },
   {
     id: "traditional-romanized",
-    label: "Traditional-Romanized",
+    label: "Traditional-Romanized (Beta)",
     engineMode: "traditional-romanized",
     placeholder: "स्वास्थ्य"
   }
