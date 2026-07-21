@@ -81,13 +81,7 @@ public:
       *sessionResult = E_UNEXPECTED;
       return E_UNEXPECTED;
     }
-    if (activeLock_ != 0) {
-      *sessionResult = (lockFlags & TS_LF_SYNC) != 0 ? TS_E_SYNCHRONOUS : TS_S_ASYNC;
-      return S_OK;
-    }
-    activeLock_ = lockFlags;
     *sessionResult = sink_->OnLockGranted(lockFlags);
-    activeLock_ = 0;
     return S_OK;
   }
 
@@ -101,17 +95,15 @@ public:
   STDMETHODIMP QueryInsert(
     LONG testStart,
     LONG testEnd,
-    ULONG characterCount,
+    ULONG,
     LONG* resultStart,
     LONG* resultEnd
   ) override {
-    if (!resultStart || !resultEnd || !validRange(testStart, testEnd) ||
-        characterCount > static_cast<ULONG>(std::numeric_limits<LONG>::max()) ||
-        testStart > std::numeric_limits<LONG>::max() - static_cast<LONG>(characterCount)) {
+    if (!resultStart || !resultEnd || !validRange(testStart, testEnd)) {
       return E_INVALIDARG;
     }
     *resultStart = testStart;
-    *resultEnd = testStart + static_cast<LONG>(characterCount);
+    *resultEnd = testEnd;
     return S_OK;
   }
 
@@ -138,7 +130,6 @@ public:
     }
     selectionStart_ = selection[0].acpStart;
     selectionEnd_ = selection[0].acpEnd;
-    if (sink_) sink_->OnSelectionChange();
     return S_OK;
   }
 
@@ -328,16 +319,11 @@ private:
     if (change) *change = localChange;
     selectionStart_ = newEnd;
     selectionEnd_ = newEnd;
-    if (sink_) {
-      sink_->OnTextChange(0, &localChange);
-      sink_->OnSelectionChange();
-    }
     return S_OK;
   }
 
   long refCount_ = 1;
   ITextStoreACPSink* sink_ = nullptr;
-  DWORD activeLock_ = 0;
   std::wstring text_;
   LONG selectionStart_ = 0;
   LONG selectionEnd_ = 0;
