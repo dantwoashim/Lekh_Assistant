@@ -290,15 +290,22 @@ private:
     ITfInsertAtSelection* insert = nullptr;
     HRESULT hr = context_->QueryInterface(IID_ITfInsertAtSelection, reinterpret_cast<void**>(&insert));
     if (FAILED(hr) || !insert) return FAILED(hr) ? hr : E_NOINTERFACE;
+    ITfRange* insertedRange = nullptr;
     hr = insert->InsertTextAtSelection(
       editCookie,
-      TF_IAS_NOQUERY,
+      0,
       decision_.committedText.c_str(),
       static_cast<LONG>(decision_.committedText.size()),
-      nullptr
+      &insertedRange
     );
     insert->Release();
-    hostTextMutated_ = SUCCEEDED(hr);
+    if (SUCCEEDED(hr) && insertedRange) {
+      hostTextMutated_ = true;
+      setSelectionToEnd(context_, editCookie, insertedRange);
+      insertedRange->Release();
+    } else if (SUCCEEDED(hr)) {
+      hr = E_FAIL;
+    }
     return hr;
   }
 
