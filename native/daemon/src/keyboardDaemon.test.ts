@@ -243,7 +243,8 @@ describe("KeyboardDaemon IPC dispatcher", () => {
   });
 
   it("authorizes memory receipts once for a live non-secure commit and rejects injected context", async () => {
-    const daemon = new KeyboardDaemon();
+    const fixedNow = Date.now();
+    const daemon = new KeyboardDaemon({ now: () => fixedNow });
     const sessionId = await beginSession(daemon);
     const commitEpoch = await commitCandidate(daemon, sessionId, "ramro");
 
@@ -343,7 +344,8 @@ describe("KeyboardDaemon IPC dispatcher", () => {
   });
 
   it("rejects stale, missing, ended, and unknown memory-learning sessions", async () => {
-    const daemon = new KeyboardDaemon();
+    const fixedNow = Date.now();
+    const daemon = new KeyboardDaemon({ now: () => fixedNow });
     const sessionId = await beginSession(daemon);
     const staleEpoch = await commitCandidate(daemon, sessionId, "ramro");
     const currentEpoch = await commitCandidate(daemon, sessionId, "swasthya");

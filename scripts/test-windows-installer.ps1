@@ -41,7 +41,11 @@ function Invoke-CheckedProcess {
     [Parameter(Mandatory = $true)][string]$FilePath,
     [Parameter(Mandatory = $true)][string[]]$Arguments
   )
-  $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -Wait -PassThru
+  # Start-Process -Wait follows the complete descendant process tree on
+  # Windows. The installer intentionally launches a long-lived companion, so
+  # wait only for the installer or uninstaller process itself.
+  $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru
+  $process.WaitForExit()
   if ($process.ExitCode -ne 0) {
     throw "$FilePath exited with code $($process.ExitCode)."
   }
