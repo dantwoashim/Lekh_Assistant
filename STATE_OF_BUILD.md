@@ -196,9 +196,37 @@ probes are absent from v1 CI; the experimental-neural runtime flag is forced off
 
 ## Baseline conclusion
 
-The deterministic engine is healthy and the macOS TypeScript/Swift behavior
-contract agrees. The production web build is healthy. The current release gap
-is native delivery: Windows has no current runtime integration receipt, and the
-installed macOS development build is not enabled and was not exercised in a
-fresh host session. These are the facts Part B and Part C must close or document
-under the finite v1.0 checklist.
+At baseline, the deterministic engine and the macOS TypeScript/Swift behavior
+contract agreed, while Windows still had no runtime integration receipt. The
+subsequent B1 evidence below supersedes that Windows baseline for the final TSF
+commit boundary. The installed macOS development build remains unexercised in a
+fresh host session; Part C must close or document that gap.
+
+## B1 Windows Devanagari commit evidence
+
+Revision `5baf64de053ecac8690585178ad3e6566368da5a` added and passed a
+native Text Services Framework integration test in
+[CI run 29830177965](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29830177965).
+
+| Windows architecture | Native build/test step | Job evidence |
+|---|---|---|
+| x64 | Passed `LekhTsfInjectionTests` | [job 88632824374](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29830177965/job/88632824374) |
+| ARM64 | Passed `LekhTsfInjectionTests` in 0.04 seconds; all 5 native CTests passed | [job 88632824391](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29830177965/job/88632824391) |
+
+The integration executable constructs a real COM `ITfThreadMgr`, focused
+`ITfDocumentMgr`, `ITfContext`, TSF edit session, and in-memory
+`ITextStoreACP`. It sends the precomposed deterministic result `नमस्ते` through
+the production `applyEngineDecision` path and the range-returning
+`ITfInsertAtSelection` API. The test asserts that the sink changes from
+`Latin remains: ` to `Latin remains: नमस्ते`, that the insertion callback is
+used, and that the selection lands after the committed text.
+
+The corresponding native CI command was:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File native/windows-tsf/skeleton/build.ps1 -Architecture $env:LEKH_WINDOWS_ARCH -Configuration Release
+```
+
+This is evidence for the final TSF mutation boundary, not a claim that CI
+visually exercised Notepad, a browser, Word, or the incremental candidate UI.
+Those exact hardware/application gaps are recorded in `KNOWN_LIMITATIONS.md`.
