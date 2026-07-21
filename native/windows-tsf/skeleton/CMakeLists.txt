@@ -181,7 +181,7 @@ if(BUILD_TESTING)
     _WIN32_WINNT=0x0A00
   )
   target_include_directories(LekhTsfInjectionTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(LekhTsfInjectionTests PRIVATE ole32 oleaut32 uuid)
+  target_link_libraries(LekhTsfInjectionTests PRIVATE LekhCandidateState ole32 oleaut32 uuid)
   if(MSVC)
     target_compile_options(LekhTsfInjectionTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   endif()

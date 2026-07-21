@@ -1,3 +1,4 @@
+#include "CandidateState.h"
 #include "TsfEditSession.h"
 #include "Guids.h"
 
@@ -400,10 +401,19 @@ int main() {
   hr = threadManager->SetFocus(documentManager);
   require(SUCCEEDED(hr), "Windows TSF document focus failed");
 
+  CandidateState candidates;
+  candidates.update({
+    {L"candidate-1", L"नमस्कार", L"namaskar", L"1"},
+    {L"candidate-2", L"नमस्ते", L"namaste", L"2"}
+  }, true);
+  const CandidateInteraction selection = candidates.handle(CandidateCommand::Digit2);
+  require(selection.type == CandidateInteractionType::CommitRequested && selection.candidate,
+    "candidate digit did not request a commit");
+
   ITfComposition* activeComposition = nullptr;
   EngineDecision commit;
   commit.action = EngineAction::Commit;
-  commit.committedText = L"\u0928\u092e\u0938\u094d\u0924\u0947";
+  commit.committedText = selection.candidate->text;
   EditSessionDiagnostics commitDiagnostics;
   const bool commitApplied = applyEngineDecision(
     context,
@@ -436,6 +446,6 @@ int main() {
   threadManager->Release();
   CoUninitialize();
 
-  std::cout << "Windows TSF Devanagari injection integration test passed\n";
+  std::cout << "Windows candidate selection and TSF injection integration test passed\n";
   return 0;
 }

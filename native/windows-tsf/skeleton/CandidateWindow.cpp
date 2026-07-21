@@ -70,7 +70,7 @@ bool CandidateWindow::show(const std::vector<Candidate>& candidates, std::size_t
   int contentWidth = 0;
   TEXTMETRICW metrics = {};
   if (GetTextMetricsW(device, &metrics)) {
-    rowHeight_ = std::max(scaled(34, dpi), metrics.tmHeight + scaled(14, dpi));
+    rowHeight_ = std::max(scaled(34, dpi), static_cast<int>(metrics.tmHeight) + scaled(14, dpi));
   } else {
     rowHeight_ = scaled(38, dpi);
   }
@@ -79,7 +79,7 @@ bool CandidateWindow::show(const std::vector<Candidate>& candidates, std::size_t
     const std::wstring row = rowText(candidates_[index], index);
     SIZE extent = {};
     if (GetTextExtentPoint32W(device, row.c_str(), static_cast<int>(row.size()), &extent)) {
-      contentWidth = std::max(contentWidth, extent.cx);
+      contentWidth = std::max(contentWidth, static_cast<int>(extent.cx));
     }
   }
   SelectObject(device, previousFont);
