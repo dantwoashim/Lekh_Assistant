@@ -1,4 +1,5 @@
 #include "TsfEditSession.h"
+#include "Guids.h"
 
 #include <msctf.h>
 #include <textstor.h>
@@ -364,9 +365,20 @@ int main() {
   );
   require(SUCCEEDED(hr) && threadManager, "Windows TSF thread manager unavailable");
 
-  TfClientId clientId = TF_CLIENTID_NULL;
-  hr = threadManager->Activate(&clientId);
-  require(SUCCEEDED(hr) && clientId != TF_CLIENTID_NULL, "Windows TSF activation failed");
+  TfClientId applicationClientId = TF_CLIENTID_NULL;
+  hr = threadManager->Activate(&applicationClientId);
+  require(SUCCEEDED(hr) && applicationClientId != TF_CLIENTID_NULL, "Windows TSF activation failed");
+
+  ITfClientId* clientIdProvider = nullptr;
+  hr = threadManager->QueryInterface(IID_ITfClientId, reinterpret_cast<void**>(&clientIdProvider));
+  require(SUCCEEDED(hr) && clientIdProvider, "Windows TSF client-ID provider unavailable");
+  TfClientId textServiceClientId = TF_CLIENTID_NULL;
+  hr = clientIdProvider->GetClientId(CLSID_LekhTextService, &textServiceClientId);
+  clientIdProvider->Release();
+  require(
+    SUCCEEDED(hr) && textServiceClientId != TF_CLIENTID_NULL && textServiceClientId != applicationClientId,
+    "Windows TSF did not issue a distinct Lekh text-service client ID"
+  );
 
   ITfDocumentMgr* documentManager = nullptr;
   hr = threadManager->CreateDocumentMgr(&documentManager);
@@ -375,7 +387,13 @@ int main() {
   auto* sink = new TestTextStore(L"Latin remains: ");
   ITfContext* context = nullptr;
   TfEditCookie editCookie = 0;
-  hr = documentManager->CreateContext(clientId, 0, static_cast<ITextStoreACP*>(sink), &context, &editCookie);
+  hr = documentManager->CreateContext(
+    applicationClientId,
+    0,
+    static_cast<ITextStoreACP*>(sink),
+    &context,
+    &editCookie
+  );
   require(SUCCEEDED(hr) && context, "Windows TSF context creation failed");
   hr = documentManager->Push(context);
   require(SUCCEEDED(hr), "Windows TSF context push failed");
@@ -389,7 +407,7 @@ int main() {
   EditSessionDiagnostics commitDiagnostics;
   const bool commitApplied = applyEngineDecision(
     context,
-    clientId,
+    textServiceClientId,
     &activeComposition,
     commit,
     &commitDiagnostics
