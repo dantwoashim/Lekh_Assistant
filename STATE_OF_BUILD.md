@@ -334,3 +334,40 @@ administrator-protected machine installation scope, and no installer rule
 grants broad write access to its files. The lifecycle test separately confirmed
 machine-wide COM and TSF registration. No additional v1 security policy or
 hardening gate was introduced.
+
+## C1 macOS Romanized pipeline evidence
+
+The complete scoped deterministic v1 suite and native macOS behavior contract
+passed at implementation revision
+`b42487b0604fe12309d786d9c4225c7201d1716f` in
+[CI run 29843100876](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29843100876).
+
+| macOS architecture | Automated result | Job evidence |
+|---|---|---|
+| ARM64 | 47 test files / 452 tests passed; release Swift input method built; TypeScript and Swift each passed 31/31 behavior cases with byte-identical output | [job 88676814218](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29843100876/job/88676814218) |
+| Intel x64 | 47 test files / 452 tests passed; release Swift input method built; TypeScript and Swift each passed 31/31 behavior cases with byte-identical output | [job 88676814332](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29843100876/job/88676814332) |
+
+The shared contract explicitly covers deletion of complete emoji ZWJ
+graphemes, caret clamping outside surrogate clusters, Romanized composition and
+candidate commit, empty-composition pass-through, protected Latin tokens such
+as `PDF` and `API`, raw Latin preservation when no candidate is explicitly
+chosen, and fail-open behavior after malformed input or backend failure. The
+byte-identical result SHA-256 on both macOS architectures was
+`2739abe6506fb7394df8128e25b4a6d5e5088dc1928c8108de3b697b52339916`.
+The CI environment forced `LEKH_EXPERIMENTAL_NEURAL_TYPING=0`.
+
+Local focused regression runs at the same implementation revision also passed:
+
+```text
+npm run test:keyboard
+Test Files  5 passed (5)
+Tests       195 passed (195)
+
+npx vitest run src/core/transliteration/transliterateRomanized.test.ts \
+  src/engine/romanized/candidateEngine.test.ts \
+  src/engine/keyboard/ranges.test.ts \
+  src/engine/protected/protectedSpans.test.ts \
+  --pool=forks --maxWorkers=1
+Test Files  4 passed (4)
+Tests       34 passed (34)
+```
