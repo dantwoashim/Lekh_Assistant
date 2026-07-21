@@ -29,7 +29,7 @@ CI does not capture and inspect candidate-window pixels inside a physical Notepa
 
 The Windows installer is unsigned. Windows may show an unknown-publisher or SmartScreen warning, and no claim of Microsoft trust, signing, or certification is made. The input method uses machine-wide COM and TSF registration, so installation and removal require administrator approval through Windows User Account Control.
 
-The silent install/startup/daemon/uninstall lifecycle is CI-verified for the x64 installer. Windows ARM64 compiles and passes the native service tests on an ARM64 runner, but an ARM64 installer artifact is not yet produced by the current packaging configuration.
+The silent install/startup/daemon/uninstall lifecycle is CI-verified for the x64 installer. Windows ARM64 compiles and passes the native service tests on an ARM64 runner. CI can assemble an ARM64 NSIS executable, but its scripted installation aborts before the native runtime is available, so v1.0 does not publish that installer.
 
 The lifecycle check proves removal of installed files, running Lekh processes,
 the startup entry, COM registration, and the TSF profile. The Windows installer

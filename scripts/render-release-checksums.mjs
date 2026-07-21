@@ -20,8 +20,7 @@ const checksumsPath = resolve(root, requiredArgument("checksums"));
 const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 const expectedNames = [
   "Lekh-Keyboard-Test-Installer.zip",
-  `Lekh-Keyboard-Companion-${packageVersion}-Setup-x64.exe`,
-  `Lekh-Keyboard-Companion-${packageVersion}-Setup-arm64.exe`
+  `Lekh-Keyboard-Companion-${packageVersion}-Setup-x64.exe`
 ];
 
 if (!existsSync(artifactsDirectory)) {

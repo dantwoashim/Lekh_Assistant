@@ -90,8 +90,8 @@ Detailed receipts:
   experienced-typist validation.
 - Preeti has no consented real-document or user-submitted validation set.
 - Proofread is not full spelling or grammar correction.
-- Windows ARM64 builds/tests pass, but v1.0 currently ships an x64 Windows
-  installer.
+- Windows ARM64 builds/tests pass, but its assembled NSIS package does not pass
+  the install lifecycle; v1.0 therefore ships only the verified x64 installer.
 - There is no automatic update service.
 
 Read [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) before distributing the

@@ -72,6 +72,21 @@ jobs:
           cmp "$RUNNER_TEMP/typescript-behavior.jsonl" "$RUNNER_TEMP/swift-behavior.jsonl"
           shasum -a 256 "$RUNNER_TEMP/typescript-behavior.jsonl"
 
+      - name: Prepare per-run unsigned-package manifest key
+        if: matrix.architecture == 'ARM64'
+        shell: bash
+        run: |
+          if ! command -v minisign >/dev/null 2>&1; then
+            brew install minisign
+          fi
+          key_directory="$RUNNER_TEMP/lekh-release-manifest-key"
+          mkdir -p "$key_directory"
+          minisign -G -W \
+            -p "$key_directory/lekh-release-manifest-minisign.pub" \
+            -s "$key_directory/lekh-release-manifest-minisign.sec"
+          echo "LEKH_RELEASE_MANIFEST_MINISIGN_PUBLIC_KEY=$key_directory/lekh-release-manifest-minisign.pub" >> "$GITHUB_ENV"
+          echo "LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY=$key_directory/lekh-release-manifest-minisign.sec" >> "$GITHUB_ENV"
+
       - name: Build unsigned universal macOS release artifact
         if: matrix.architecture == 'ARM64'
         env:
@@ -101,7 +116,6 @@ jobs:
             package_architecture: x64
           - runner: windows-11-arm
             architecture: ARM64
-            package_architecture: arm64
 
     steps:
       - name: Check out repository
@@ -132,16 +146,20 @@ jobs:
         run: npm run check:ipc-schema
 
       - name: Verify Windows packaging contract
+        if: matrix.architecture == 'x64'
         run: npm run check:windows-installer-contract
 
       - name: Build unsigned Windows installer
+        if: matrix.architecture == 'x64'
         run: node scripts/package-windows-companion.mjs --unsigned --architecture "${{ matrix.architecture }}"
 
       - name: Verify silent Windows install lifecycle
+        if: matrix.architecture == 'x64'
         shell: pwsh
         run: .\scripts\test-windows-installer.ps1
 
       - name: Upload Windows release artifact
+        if: matrix.architecture == 'x64'
         uses: actions/upload-artifact@v7
         with:
           name: lekh-v1-windows-${{ matrix.package_architecture }}

@@ -92,3 +92,4 @@
 - V2-090 Make Windows uninstall fail visibly and recoverably if TSF unregistration fails instead of leaving stale registration.
 - V2-091 Make Windows background-start failure rollback remove all partially installed application files.
 - V2-092 Add an explicit Windows uninstall choice for retaining or deleting every Lekh-owned per-user preference and cache file.
+- V2-093 Make the Windows ARM64 NSIS package expose its native runtime before custom installation and pass the complete install lifecycle.

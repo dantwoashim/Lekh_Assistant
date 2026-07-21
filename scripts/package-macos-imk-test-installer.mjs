@@ -50,7 +50,8 @@ const releaseChannel = signingIdentity === "-" ? "test-adhoc" : "developer-id";
 const expectedConnectionName = "com.lekh.inputmethod.LekhKeyboard_Connection";
 const minisignSecretKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY ||
   join(root, "data", "private", "lekh-release-manifest-minisign.sec");
-const minisignPublicKey = join(root, "public", "security", "lekh-release-manifest-minisign.pub");
+const minisignPublicKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_PUBLIC_KEY ||
+  join(root, "public", "security", "lekh-release-manifest-minisign.pub");
 const sparklePrivateKey = process.env.LEKH_SPARKLE_EDDSA_PRIVATE_KEY_PATH ||
   join(root, "data", "private", "lekh-sparkle-ed25519-private.pem");
 const appcastPath = join(releaseDir, "appcast.xml");

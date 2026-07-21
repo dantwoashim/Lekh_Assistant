@@ -27,7 +27,8 @@ const manifestBuild = Number(args.get("build") ?? 5);
 const releaseChannel = args.get("channel") ?? (process.env.LEKH_MAC_DEVELOPER_ID ? "developer-id" : "test-adhoc");
 const minisignSecretKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_SECRET_KEY ||
   join(ROOT, "data", "private", "lekh-release-manifest-minisign.sec");
-const minisignPublicKey = join(ROOT, "public", "security", "lekh-release-manifest-minisign.pub");
+const minisignPublicKey = process.env.LEKH_RELEASE_MANIFEST_MINISIGN_PUBLIC_KEY ||
+  join(ROOT, "public", "security", "lekh-release-manifest-minisign.pub");
 
 try {
   if (!existsSync(releaseDir)) {
