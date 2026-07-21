@@ -174,7 +174,7 @@ STDMETHODIMP LekhTextService::OnSetFocus(BOOL foreground) {
 STDMETHODIMP LekhTextService::OnTestKeyDown(ITfContext* context, WPARAM wParam, LPARAM lParam, BOOL* eaten) {
   if (!eaten) return E_POINTER;
   *eaten = FALSE;
-  if (!experimentalKeyEatingEnabled() || !shouldHandleKey(wParam, lParam)) return S_OK;
+  if (!shouldHandleKey(wParam, lParam)) return S_OK;
   *eaten = prepareSafeContext(context) ? TRUE : FALSE;
   return S_OK;
 }
@@ -182,7 +182,7 @@ STDMETHODIMP LekhTextService::OnTestKeyDown(ITfContext* context, WPARAM wParam, 
 STDMETHODIMP LekhTextService::OnKeyDown(ITfContext* context, WPARAM wParam, LPARAM lParam, BOOL* eaten) {
   if (!eaten) return E_POINTER;
   *eaten = FALSE;
-  if (!experimentalKeyEatingEnabled() || !shouldHandleKey(wParam, lParam) || !prepareSafeContext(context)) return S_OK;
+  if (!shouldHandleKey(wParam, lParam) || !prepareSafeContext(context)) return S_OK;
   *eaten = processKey(context, wParam, lParam) ? TRUE : FALSE;
   return S_OK;
 }
@@ -242,17 +242,6 @@ bool LekhTextService::shouldHandleKey(WPARAM wParam, LPARAM lParam) const {
   if (isRomanizedLetter(logicalKey(wParam, lParam))) return true;
   if (!activeComposition_) return false;
   return wParam == VK_SPACE || wParam == VK_BACK || wParam == VK_RETURN || wParam == VK_ESCAPE;
-}
-
-bool LekhTextService::experimentalKeyEatingEnabled() const {
-  wchar_t value[16] = {};
-  const DWORD length = GetEnvironmentVariableW(
-    L"LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING",
-    value,
-    static_cast<DWORD>(std::size(value))
-  );
-  if (length == 0 || length >= std::size(value)) return false;
-  return wcscmp(value, L"1") == 0 || _wcsicmp(value, L"true") == 0 || _wcsicmp(value, L"yes") == 0;
 }
 
 bool LekhTextService::prepareSafeContext(ITfContext* context) {

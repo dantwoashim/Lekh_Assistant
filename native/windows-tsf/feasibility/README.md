@@ -9,7 +9,7 @@ The first real vertical slice now covers:
 5. Marked composition creation/update, commit, and cancel through `ITfEditSession`.
 6. Fail-open behavior when privacy classification, daemon IPC, parsing, or host editing fails.
 
-The slice is opt-in with `LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING=1`. Without that setting, every key passes through unchanged.
+The deterministic slice is now the v1 product path. It remains fail-closed for secure or unclassified fields and passes keys through when the native host or daemon cannot safely accept them.
 
 Native validation targets:
 

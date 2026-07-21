@@ -15,11 +15,13 @@ afterAll(() => {
 });
 
 describe("Windows TSF source safety contract", () => {
-  it("keeps host-app keys pass-through unless the opt-in slice is enabled", () => {
+  it("enables deterministic typing while consuming keys only after a safe context is ready", () => {
     const source = read("LekhTextService.cpp");
-    expect(source).toContain("LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING");
-    expect(source).toContain("!experimentalKeyEatingEnabled()");
+    const header = read("LekhTextService.h");
+    expect(source).not.toContain("LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING");
+    expect(header).not.toContain("experimentalKeyEatingEnabled");
     expect(source).toContain("*eaten = FALSE");
+    expect(source).toContain("*eaten = prepareSafeContext(context) ? TRUE : FALSE");
     expect(source).toContain("*eaten = processKey(context, wParam, lParam) ? TRUE : FALSE");
     expect(source).toContain("ToUnicodeEx");
     expect(source).toContain("GetKeyboardLayout(0)");
@@ -96,7 +98,7 @@ describe("Windows TSF source safety contract", () => {
     const source = read("LekhTextService.cpp");
     const handleBlock = source.slice(
       source.indexOf("bool LekhTextService::shouldHandleKey"),
-      source.indexOf("bool LekhTextService::experimentalKeyEatingEnabled")
+      source.indexOf("bool LekhTextService::prepareSafeContext")
     );
     expect(handleBlock).toContain("if (!activeComposition_) return false");
     expect(handleBlock).toContain("VK_SPACE");

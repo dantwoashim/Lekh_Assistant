@@ -149,6 +149,26 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME LekhTsfProtocolTests COMMAND LekhTsfProtocolTests)
 
+  add_executable(LekhTsfInjectionTests
+    InputScopeGuids.cpp
+    TsfEditSession.cpp
+    TsfInjectionTests.cpp
+  )
+  target_compile_features(LekhTsfInjectionTests PRIVATE cxx_std_20)
+  target_compile_definitions(LekhTsfInjectionTests PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _WIN32_WINNT=0x0A00
+  )
+  target_include_directories(LekhTsfInjectionTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(LekhTsfInjectionTests PRIVATE ole32 oleaut32 uuid)
+  if(MSVC)
+    target_compile_options(LekhTsfInjectionTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  endif()
+  add_test(NAME LekhTsfInjectionTests COMMAND LekhTsfInjectionTests)
+
   add_executable(LekhPipeSecurityTests LekhPipeSecurityTests.cpp)
   target_compile_definitions(LekhPipeSecurityTests PRIVATE
     UNICODE

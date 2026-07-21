@@ -47,7 +47,6 @@ private:
   ~LekhTextService();
 
   bool shouldHandleKey(WPARAM wParam, LPARAM lParam) const;
-  bool experimentalKeyEatingEnabled() const;
   bool prepareSafeContext(ITfContext* context);
   bool negotiateDaemon();
   bool beginDaemonSession();

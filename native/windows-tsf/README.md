@@ -25,7 +25,7 @@ For a current-user development registration of the x64 build:
 .\register-dev.ps1
 ```
 
-Set `LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING=1` only for a controlled host-matrix test. Without it, the DLL remains pass-through.
+The deterministic TSF typing path is enabled whenever the Lekh input method is active. It consumes a supported key only after the focused context is classified as safe and a daemon session is ready; secure, unknown, failed, and unsupported contexts remain pass-through.
 
 See:
 

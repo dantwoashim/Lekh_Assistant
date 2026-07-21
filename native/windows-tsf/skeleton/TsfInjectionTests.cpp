@@ -1,0 +1,423 @@
+#include "TsfEditSession.h"
+
+#include <msctf.h>
+#include <textstor.h>
+#include <windows.h>
+
+#include <algorithm>
+#include <cstdlib>
+#include <iostream>
+#include <limits>
+#include <string>
+#include <utility>
+
+namespace {
+
+void require(bool condition, const char* message) {
+  if (!condition) {
+    std::cerr << message << '\n';
+    std::exit(1);
+  }
+}
+
+class TestTextStore final : public ITextStoreACP, public ITfContextOwnerCompositionSink {
+public:
+  explicit TestTextStore(std::wstring initialText)
+    : text_(std::move(initialText)), selectionStart_(checkedLength()), selectionEnd_(checkedLength()) {}
+
+  STDMETHODIMP QueryInterface(REFIID riid, void** object) override {
+    if (!object) return E_POINTER;
+    *object = nullptr;
+    if (riid == IID_IUnknown || riid == IID_ITextStoreACP) {
+      *object = static_cast<ITextStoreACP*>(this);
+    } else if (riid == IID_ITfContextOwnerCompositionSink) {
+      *object = static_cast<ITfContextOwnerCompositionSink*>(this);
+    } else {
+      return E_NOINTERFACE;
+    }
+    AddRef();
+    return S_OK;
+  }
+
+  STDMETHODIMP_(ULONG) AddRef() override {
+    return static_cast<ULONG>(InterlockedIncrement(&refCount_));
+  }
+
+  STDMETHODIMP_(ULONG) Release() override {
+    const ULONG count = static_cast<ULONG>(InterlockedDecrement(&refCount_));
+    if (count == 0) delete this;
+    return count;
+  }
+
+  STDMETHODIMP AdviseSink(REFIID riid, IUnknown* unknown, DWORD) override {
+    if (riid != IID_ITextStoreACPSink || !unknown) return E_INVALIDARG;
+    ITextStoreACPSink* sink = nullptr;
+    const HRESULT hr = unknown->QueryInterface(IID_ITextStoreACPSink, reinterpret_cast<void**>(&sink));
+    if (FAILED(hr) || !sink) return FAILED(hr) ? hr : E_NOINTERFACE;
+    if (sink_) {
+      sink->Release();
+      return E_UNEXPECTED;
+    }
+    sink_ = sink;
+    return S_OK;
+  }
+
+  STDMETHODIMP UnadviseSink(IUnknown* unknown) override {
+    if (!unknown || !sink_) return E_INVALIDARG;
+    ITextStoreACPSink* sink = nullptr;
+    const HRESULT hr = unknown->QueryInterface(IID_ITextStoreACPSink, reinterpret_cast<void**>(&sink));
+    if (FAILED(hr) || !sink) return FAILED(hr) ? hr : E_NOINTERFACE;
+    const bool matches = sink == sink_;
+    sink->Release();
+    if (!matches) return E_INVALIDARG;
+    sink_->Release();
+    sink_ = nullptr;
+    return S_OK;
+  }
+
+  STDMETHODIMP RequestLock(DWORD lockFlags, HRESULT* sessionResult) override {
+    if (!sessionResult) return E_POINTER;
+    if (!sink_) {
+      *sessionResult = E_UNEXPECTED;
+      return E_UNEXPECTED;
+    }
+    if (activeLock_ != 0) {
+      *sessionResult = (lockFlags & TS_LF_SYNC) != 0 ? TS_E_SYNCHRONOUS : TS_S_ASYNC;
+      return S_OK;
+    }
+    activeLock_ = lockFlags;
+    *sessionResult = sink_->OnLockGranted(lockFlags);
+    activeLock_ = 0;
+    return S_OK;
+  }
+
+  STDMETHODIMP GetStatus(TS_STATUS* status) override {
+    if (!status) return E_POINTER;
+    status->dwDynamicFlags = 0;
+    status->dwStaticFlags = TS_SS_NOHIDDENTEXT;
+    return S_OK;
+  }
+
+  STDMETHODIMP QueryInsert(
+    LONG testStart,
+    LONG testEnd,
+    ULONG characterCount,
+    LONG* resultStart,
+    LONG* resultEnd
+  ) override {
+    if (!resultStart || !resultEnd || !validRange(testStart, testEnd) ||
+        characterCount > static_cast<ULONG>(std::numeric_limits<LONG>::max()) ||
+        testStart > std::numeric_limits<LONG>::max() - static_cast<LONG>(characterCount)) {
+      return E_INVALIDARG;
+    }
+    *resultStart = testStart;
+    *resultEnd = testStart + static_cast<LONG>(characterCount);
+    return S_OK;
+  }
+
+  STDMETHODIMP GetSelection(
+    ULONG index,
+    ULONG count,
+    TS_SELECTION_ACP* selection,
+    ULONG* fetched
+  ) override {
+    if (!selection || !fetched || count == 0) return E_INVALIDARG;
+    *fetched = 0;
+    if (index != TS_DEFAULT_SELECTION && index != 0) return TS_E_NOSELECTION;
+    selection[0].acpStart = selectionStart_;
+    selection[0].acpEnd = selectionEnd_;
+    selection[0].style.ase = TS_AE_END;
+    selection[0].style.fInterimChar = FALSE;
+    *fetched = 1;
+    return S_OK;
+  }
+
+  STDMETHODIMP SetSelection(ULONG count, const TS_SELECTION_ACP* selection) override {
+    if (!selection || count != 1 || !validRange(selection[0].acpStart, selection[0].acpEnd)) {
+      return E_INVALIDARG;
+    }
+    selectionStart_ = selection[0].acpStart;
+    selectionEnd_ = selection[0].acpEnd;
+    if (sink_) sink_->OnSelectionChange();
+    return S_OK;
+  }
+
+  STDMETHODIMP GetText(
+    LONG start,
+    LONG end,
+    WCHAR* plainText,
+    ULONG plainCapacity,
+    ULONG* plainLength,
+    TS_RUNINFO* runInfo,
+    ULONG runCapacity,
+    ULONG* runCount,
+    LONG* nextPosition
+  ) override {
+    if (!plainLength || !runCount || !nextPosition) return E_POINTER;
+    const LONG resolvedEnd = end == -1 ? checkedLength() : end;
+    if (!validRange(start, resolvedEnd)) return TS_E_INVALIDPOS;
+    const ULONG available = static_cast<ULONG>(resolvedEnd - start);
+    const ULONG copied = std::min(available, plainCapacity);
+    if (copied > 0 && !plainText) return E_POINTER;
+    if (copied > 0) {
+      text_.copy(plainText, copied, static_cast<std::size_t>(start));
+    }
+    *plainLength = copied;
+    *runCount = 0;
+    if (runCapacity > 0) {
+      if (!runInfo) return E_POINTER;
+      runInfo[0].uCount = copied;
+      runInfo[0].type = TS_RT_PLAIN;
+      *runCount = 1;
+    }
+    *nextPosition = start + static_cast<LONG>(copied);
+    return S_OK;
+  }
+
+  STDMETHODIMP SetText(
+    DWORD,
+    LONG start,
+    LONG end,
+    const WCHAR* text,
+    ULONG length,
+    TS_TEXTCHANGE* change
+  ) override {
+    return replaceText(start, end, text, length, change);
+  }
+
+  STDMETHODIMP GetFormattedText(LONG, LONG, IDataObject**) override { return E_NOTIMPL; }
+  STDMETHODIMP GetEmbedded(LONG, REFGUID, REFIID, IUnknown**) override { return E_NOTIMPL; }
+
+  STDMETHODIMP QueryInsertEmbedded(const GUID*, const FORMATETC*, BOOL* insertable) override {
+    if (!insertable) return E_POINTER;
+    *insertable = FALSE;
+    return S_OK;
+  }
+
+  STDMETHODIMP InsertEmbedded(DWORD, LONG, LONG, IDataObject*, TS_TEXTCHANGE*) override {
+    return E_NOTIMPL;
+  }
+
+  STDMETHODIMP InsertTextAtSelection(
+    DWORD flags,
+    const WCHAR* text,
+    ULONG length,
+    LONG* start,
+    LONG* end,
+    TS_TEXTCHANGE* change
+  ) override {
+    const LONG insertionStart = selectionStart_;
+    const LONG insertionEnd = selectionEnd_;
+    if ((flags & TS_IAS_QUERYONLY) != 0) {
+      if (start) *start = insertionStart;
+      if (end) *end = insertionStart + static_cast<LONG>(length);
+      if (change) {
+        change->acpStart = insertionStart;
+        change->acpOldEnd = insertionEnd;
+        change->acpNewEnd = insertionStart + static_cast<LONG>(length);
+      }
+      return S_OK;
+    }
+    const HRESULT hr = replaceText(insertionStart, insertionEnd, text, length, change);
+    if (SUCCEEDED(hr) && (flags & TS_IAS_NOQUERY) == 0) {
+      if (start) *start = insertionStart;
+      if (end) *end = insertionStart + static_cast<LONG>(length);
+    }
+    return hr;
+  }
+
+  STDMETHODIMP InsertEmbeddedAtSelection(DWORD, IDataObject*, LONG*, LONG*, TS_TEXTCHANGE*) override {
+    return E_NOTIMPL;
+  }
+
+  STDMETHODIMP RequestSupportedAttrs(DWORD, ULONG, const TS_ATTRID*) override { return S_OK; }
+  STDMETHODIMP RequestAttrsAtPosition(LONG, ULONG, const TS_ATTRID*, DWORD) override { return S_OK; }
+  STDMETHODIMP RequestAttrsTransitioningAtPosition(LONG, ULONG, const TS_ATTRID*, DWORD) override { return S_OK; }
+
+  STDMETHODIMP FindNextAttrTransition(
+    LONG start,
+    LONG,
+    ULONG,
+    const TS_ATTRID*,
+    DWORD,
+    LONG* next,
+    BOOL* found,
+    LONG* foundOffset
+  ) override {
+    if (!next || !found || !foundOffset) return E_POINTER;
+    *next = start;
+    *found = FALSE;
+    *foundOffset = 0;
+    return S_OK;
+  }
+
+  STDMETHODIMP RetrieveRequestedAttrs(ULONG, TS_ATTRVAL*, ULONG* fetched) override {
+    if (!fetched) return E_POINTER;
+    *fetched = 0;
+    return S_OK;
+  }
+
+  STDMETHODIMP GetEndACP(LONG* end) override {
+    if (!end) return E_POINTER;
+    *end = checkedLength();
+    return S_OK;
+  }
+
+  STDMETHODIMP GetActiveView(TsViewCookie* view) override {
+    if (!view) return E_POINTER;
+    *view = 1;
+    return S_OK;
+  }
+
+  STDMETHODIMP GetACPFromPoint(TsViewCookie, const POINT*, DWORD, LONG*) override { return E_NOTIMPL; }
+  STDMETHODIMP GetTextExt(TsViewCookie, LONG, LONG, RECT*, BOOL*) override { return E_NOTIMPL; }
+  STDMETHODIMP GetScreenExt(TsViewCookie, RECT*) override { return E_NOTIMPL; }
+
+  STDMETHODIMP GetWnd(TsViewCookie, HWND* window) override {
+    if (!window) return E_POINTER;
+    *window = nullptr;
+    return S_OK;
+  }
+
+  STDMETHODIMP OnStartComposition(ITfCompositionView*, BOOL* accepted) override {
+    if (!accepted) return E_POINTER;
+    *accepted = TRUE;
+    compositionStarted_ = true;
+    return S_OK;
+  }
+
+  STDMETHODIMP OnUpdateComposition(ITfCompositionView*, ITfRange*) override { return S_OK; }
+
+  STDMETHODIMP OnEndComposition(ITfCompositionView*) override {
+    compositionEnded_ = true;
+    return S_OK;
+  }
+
+  const std::wstring& text() const { return text_; }
+  bool compositionStarted() const { return compositionStarted_; }
+  bool compositionEnded() const { return compositionEnded_; }
+
+private:
+  ~TestTextStore() {
+    if (sink_) sink_->Release();
+  }
+
+  LONG checkedLength() const {
+    require(text_.size() <= static_cast<std::size_t>(std::numeric_limits<LONG>::max()), "test text exceeded ACP range");
+    return static_cast<LONG>(text_.size());
+  }
+
+  bool validRange(LONG start, LONG end) const {
+    return start >= 0 && end >= start && end <= checkedLength();
+  }
+
+  HRESULT replaceText(LONG start, LONG end, const WCHAR* text, ULONG length, TS_TEXTCHANGE* change) {
+    if (!validRange(start, end) || (length > 0 && !text) ||
+        length > static_cast<ULONG>(std::numeric_limits<LONG>::max()) ||
+        start > std::numeric_limits<LONG>::max() - static_cast<LONG>(length)) {
+      return E_INVALIDARG;
+    }
+    const std::wstring replacement = length == 0 ? std::wstring() : std::wstring(text, text + length);
+    text_.replace(
+      static_cast<std::size_t>(start),
+      static_cast<std::size_t>(end - start),
+      replacement
+    );
+    const LONG newEnd = start + static_cast<LONG>(length);
+    TS_TEXTCHANGE localChange = {start, end, newEnd};
+    if (change) *change = localChange;
+    selectionStart_ = newEnd;
+    selectionEnd_ = newEnd;
+    if (sink_) {
+      sink_->OnTextChange(0, &localChange);
+      sink_->OnSelectionChange();
+    }
+    return S_OK;
+  }
+
+  long refCount_ = 1;
+  ITextStoreACPSink* sink_ = nullptr;
+  DWORD activeLock_ = 0;
+  std::wstring text_;
+  LONG selectionStart_ = 0;
+  LONG selectionEnd_ = 0;
+  bool compositionStarted_ = false;
+  bool compositionEnded_ = false;
+};
+
+} // namespace
+
+int main() {
+  using namespace lekh::tsf;
+
+  const HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  require(SUCCEEDED(initialized), "COM initialization failed");
+
+  ITfThreadMgr* threadManager = nullptr;
+  HRESULT hr = CoCreateInstance(
+    CLSID_TF_ThreadMgr,
+    nullptr,
+    CLSCTX_INPROC_SERVER,
+    IID_ITfThreadMgr,
+    reinterpret_cast<void**>(&threadManager)
+  );
+  require(SUCCEEDED(hr) && threadManager, "Windows TSF thread manager unavailable");
+
+  TfClientId clientId = TF_CLIENTID_NULL;
+  hr = threadManager->Activate(&clientId);
+  require(SUCCEEDED(hr) && clientId != TF_CLIENTID_NULL, "Windows TSF activation failed");
+
+  ITfDocumentMgr* documentManager = nullptr;
+  hr = threadManager->CreateDocumentMgr(&documentManager);
+  require(SUCCEEDED(hr) && documentManager, "Windows TSF document manager creation failed");
+
+  auto* sink = new TestTextStore(L"Latin remains: ");
+  ITfContext* context = nullptr;
+  TfEditCookie editCookie = 0;
+  hr = documentManager->CreateContext(clientId, 0, static_cast<ITextStoreACP*>(sink), &context, &editCookie);
+  require(SUCCEEDED(hr) && context, "Windows TSF context creation failed");
+  hr = documentManager->Push(context);
+  require(SUCCEEDED(hr), "Windows TSF context push failed");
+
+  ITfComposition* activeComposition = nullptr;
+  EngineDecision compose;
+  compose.action = EngineAction::Compose;
+  compose.compositionText = L"namaste";
+  compose.displayText = L"\u0928\u092e\u0938\u094d\u0924\u0947";
+  compose.caret = compose.compositionText.size();
+  require(
+    applyEngineDecision(context, clientId, &activeComposition, compose),
+    "TSF compose edit session did not mutate the test target"
+  );
+  require(activeComposition != nullptr, "TSF composition was not started");
+  require(sink->compositionStarted(), "the target did not accept the TSF composition");
+  require(
+    sink->text() == L"Latin remains: \u0928\u092e\u0938\u094d\u0924\u0947",
+    "Devanagari composition did not reach the target or corrupted existing Latin text"
+  );
+
+  EngineDecision commit;
+  commit.action = EngineAction::Commit;
+  commit.committedText = L"\u0928\u092e\u0938\u094d\u0924\u0947";
+  require(
+    applyEngineDecision(context, clientId, &activeComposition, commit),
+    "TSF commit edit session did not mutate the test target"
+  );
+  require(activeComposition == nullptr, "TSF composition remained active after commit");
+  require(sink->compositionEnded(), "the target did not observe the end of composition");
+  require(
+    sink->text() == L"Latin remains: \u0928\u092e\u0938\u094d\u0924\u0947",
+    "committed Devanagari text did not reach the target exactly"
+  );
+
+  documentManager->Pop(TF_POPF_ALL);
+  context->Release();
+  documentManager->Release();
+  sink->Release();
+  threadManager->Deactivate();
+  threadManager->Release();
+  CoUninitialize();
+
+  std::cout << "Windows TSF Devanagari injection integration test passed\n";
+  return 0;
+}

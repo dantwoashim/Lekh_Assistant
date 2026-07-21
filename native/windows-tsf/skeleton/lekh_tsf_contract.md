@@ -28,7 +28,7 @@ Malformed, mismatched, late, failed, or timed-out responses pass through. A reje
 
 Only Latin letter keys translated through the active Windows keyboard layout are admitted without an active composition. Translation uses the non-mutating `ToUnicodeEx` mode so probing a dead key cannot alter host keyboard state. Space, Backspace, Enter, and Escape are admitted only while the DLL owns a composition. Tab, Delete, digits, navigation, system shortcuts, Ctrl/Alt/Windows shortcuts, and candidate shortcuts remain pass-through until their native behavior is implemented.
 
-The vertical slice remains behind `LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING=1` until the Windows host matrix passes.
+The deterministic vertical slice is enabled by default for v1 and remains fail-closed in secure or unclassified contexts.
 
 ## Privacy invariant
 
