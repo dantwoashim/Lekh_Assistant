@@ -309,3 +309,28 @@ INSTALL: TSF registration and installed artifacts verified.
 UNINSTALL: running the installed uninstaller silently.
 CLEAN: files, processes, startup entry, COM registration, and TSF profile were removed.
 ```
+
+## B4 Windows security-floor evidence
+
+The existing Windows security floor passed without adding new hardening work in
+[CI run 29842059755](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29842059755):
+
+| Windows architecture | Existing security result | Job evidence |
+|---|---|---|
+| x64 | `LekhPipeSecurityTests` passed; all 6 native CTests passed | [job 88673155934](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29842059755/job/88673155934) |
+| ARM64 | `LekhPipeSecurityTests` passed; all 6 native CTests passed | [job 88673155935](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29842059755/job/88673155935) |
+
+The native test creates the production security descriptor and named pipe,
+reads the resulting kernel-object DACL back through `GetSecurityInfo`, and
+requires a protected, non-inherited allow-list containing only the current
+logon/user SID and LocalSystem. It also requires remote-client rejection and
+verifies that a second first-instance pipe cannot squat on the endpoint. The
+broker refuses to run if either descriptor creation or post-creation DACL
+validation fails.
+
+The same x64 job passed the existing Windows packaging contract. That contract
+requires `perMachine: true`; the normal installer therefore defaults to the
+administrator-protected machine installation scope, and no installer rule
+grants broad write access to its files. The lifecycle test separately confirmed
+machine-wide COM and TSF registration. No additional v1 security policy or
+hardening gate was introduced.
