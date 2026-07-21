@@ -371,3 +371,53 @@ npx vitest run src/core/transliteration/transliterateRomanized.test.ts \
 Test Files  4 passed (4)
 Tests       34 passed (34)
 ```
+
+## C2 macOS unsigned first-run evidence
+
+Revision `1cb58a8b74ab88d0be5c40779ada0b1f2d541af4` passed the
+unsigned-install walkthrough on both macOS architectures in
+[CI run 29844764168](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29844764168).
+
+| macOS architecture | Automated result | Job evidence |
+|---|---|---|
+| ARM64 | The fresh-extraction quarantine simulation and the complete scoped CI job passed | [job 88682471191](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29844764168/job/88682471191) |
+| Intel x64 | The fresh-extraction quarantine simulation and the complete scoped CI job passed | [job 88682471226](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29844764168/job/88682471226) |
+
+The committed walkthrough receipt is
+`C2_MACOS_UNSIGNED_INSTALL_WALKTHROUGH.md`. It verifies clean-folder handling,
+downloaded-folder and installer-app quarantine detection, plain-language
+instructions, Finder Control-click/right-click → Open as the preferred path,
+and a last-resort `xattr` command bounded to the installer app.
+
+The real packaging path was also run locally from that clean revision:
+
+```sh
+export LEKH_EXPERIMENTAL_NEURAL_TYPING=0
+npm run package:macos:imk:dev
+
+export LEKH_MACOS_PACKAGE_WALKTHROUGH_ONLY=1
+npm run package:macos:imk:test-installer
+```
+
+The first command produced an ad-hoc hardened-runtime universal bundle for
+`x86_64` and `arm64`, with `packagedNeuralModelBytes: 0`,
+`neuralModelPackaged: false`, and `experimentalNeuralTypingEnabled: false`.
+The second command extracted the generated ZIP into a fresh temporary folder,
+applied a synthetic quarantine marker, and executed the post-approval
+no-install walkthrough. Its exact required output was:
+
+```text
+LEKH_UNSIGNED_FIRST_RUN_STATUS=quarantined
+Lekh Keyboard is an unsigned, unnotarized test build.
+1. In Finder, Control-click or right-click Lekh Keyboard Test Installer.app.
+2. Choose Open, then click Open again.
+3. If macOS still blocks it, open System Settings > Privacy & Security and choose Open Anyway.
+4. Last resort: run this one Terminal command on the installer app, then repeat step 1:
+xattr -dr com.apple.quarantine "/path/to/Lekh Keyboard Test Installer.app"
+```
+
+The package result was `passed-unsigned-first-run-walkthrough`; self-contained
+ZIP and quarantine-path verification passed. Walkthrough-only mode then stopped
+before appcast or public-update publication. This test models the installer
+after the user approves Finder → Open; it does not claim Apple notarization or
+that Gatekeeper permits a downloaded unsigned executable before approval.

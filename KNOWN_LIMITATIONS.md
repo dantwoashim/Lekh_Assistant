@@ -19,3 +19,19 @@ CI does not capture and inspect candidate-window pixels inside a physical Notepa
 The Windows installer is unsigned. Windows may show an unknown-publisher or SmartScreen warning, and no claim of Microsoft trust, signing, or certification is made. The input method uses machine-wide COM and TSF registration, so installation and removal require administrator approval through Windows User Account Control.
 
 The silent install/startup/daemon/uninstall lifecycle is CI-verified for the x64 installer. Windows ARM64 compiles and passes the native service tests on an ARM64 runner, but an ARM64 installer artifact is not yet produced by the current packaging configuration.
+
+## macOS distribution
+
+The macOS build is ad-hoc signed and is not Apple-notarized because this project
+has no paid Apple Developer ID. A freshly downloaded copy can therefore be
+blocked by Gatekeeper. The supported first step is to Control-click or
+right-click `Lekh Keyboard Test Installer.app`, choose **Open**, and click
+**Open** again. If macOS still blocks it, use **System Settings → Privacy &
+Security → Open Anyway**. The documented one-line `xattr` command is a last
+resort and is intentionally scoped to that installer app; users are not asked
+to disable Gatekeeper system-wide.
+
+CI and the local packaging walkthrough verify quarantine detection and the
+instructions shown after Finder approval. They cannot make an unsigned build
+trusted by Apple, suppress every Gatekeeper warning, or reproduce every macOS
+policy version. No Apple signing or notarization claim is made.
