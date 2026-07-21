@@ -81,6 +81,7 @@ add_library(LekhTextService SHARED
   InputScopeGuids.cpp
   IpcClient.cpp
   LekhTextService.cpp
+  LekhTextService.def
   Register.cpp
   TsfEditSession.cpp
 )

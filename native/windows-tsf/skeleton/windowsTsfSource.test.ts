@@ -42,6 +42,16 @@ describe("Windows TSF source safety contract", () => {
     expect(source).not.toContain("AdviseSink(IID_ITfKeyEventSink");
   });
 
+  it("exports the complete COM and self-registration surface from the TSF DLL", () => {
+    const cmake = read("CMakeLists.txt");
+    const exports = read("LekhTextService.def");
+    expect(cmake).toContain("LekhTextService.def");
+    expect(exports).toContain("DllCanUnloadNow PRIVATE");
+    expect(exports).toContain("DllGetClassObject PRIVATE");
+    expect(exports).toContain("DllRegisterServer PRIVATE");
+    expect(exports).toContain("DllUnregisterServer PRIVATE");
+  });
+
   it("begins, validates, and ends real daemon sessions rather than inventing a client session id", () => {
     const source = read("LekhTextService.cpp");
     const protocol = read("TsfProtocol.cpp");
