@@ -353,9 +353,12 @@ bool verifyBackendReadiness(lekh::pipe::DaemonBackend& backend) {
 }
 
 void serveClient(HANDLE pipe, lekh::pipe::DaemonBackend& backend) {
-  const Deadline hotPathDeadline = std::chrono::steady_clock::now() +
+  const auto acceptedAt = std::chrono::steady_clock::now();
+  const Deadline hotPathDeadline = acceptedAt +
     std::chrono::milliseconds(kHotPathDeadlineMilliseconds);
-  const std::optional<std::string> request = readClientFrame(pipe, hotPathDeadline);
+  const Deadline requestReadDeadline = acceptedAt +
+    std::chrono::milliseconds(kControlDeadlineMilliseconds);
+  const std::optional<std::string> request = readClientFrame(pipe, requestReadDeadline);
   const Deadline operationDeadline = request && isProtocolNegotiation(*request)
     ? std::chrono::steady_clock::now() + std::chrono::milliseconds(kControlDeadlineMilliseconds)
     : hotPathDeadline;

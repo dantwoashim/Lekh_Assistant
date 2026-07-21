@@ -211,6 +211,7 @@ describe("Windows TSF source safety contract", () => {
     expect(broker).toContain("lekh::ipc::kMaximumActiveConnections");
     expect(generatedProtocol).toContain("kControlDeadlineMilliseconds = 5000");
     expect(broker).toContain("lekh::ipc::kControlDeadlineMilliseconds");
+    expect(broker).toContain("readClientFrame(pipe, requestReadDeadline)");
     expect(broker).toContain("isProtocolNegotiation(*request)");
     expect(broker).toContain("operationDeadline");
     expect(broker).toContain("verifyBackendReadiness(backend)");
