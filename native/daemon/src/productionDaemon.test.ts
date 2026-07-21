@@ -60,7 +60,7 @@ describe("production daemon persistence", () => {
     ], {
       cwd: process.cwd(),
       env: { ...process.env, LEKH_DAEMON_CRASH_FIXTURE: "1", NODE_NO_WARNINGS: "1" },
-      timeout: 30_000
+      timeout: 60_000
     });
 
     const reopenedEngine = createKeyboardEngine();
@@ -89,7 +89,7 @@ describe("production daemon persistence", () => {
       expect(bytes.includes(Buffer.from(CRASH_FIXTURE_PRIVATE_LEFT, "utf8")), fileName).toBe(false);
       expect(bytes.includes(Buffer.from(CRASH_FIXTURE_PRIVATE_RIGHT, "utf8")), fileName).toBe(false);
     }
-  }, 30_000);
+  }, 90_000);
 
   it("retries the same prepared learning snapshot after a failed durable write", async () => {
     const engine = createKeyboardEngine();

@@ -1,3 +1,43 @@
+!macro customInstallMode
+  ; Lekh is a per-user TSF input method. Avoid an elevation choice that cannot
+  ; make the HKCU text-service registration available to other accounts.
+  StrCpy $isForceCurrentInstall "1"
+!macroend
+
+!macro customCheckAppRunning
+  ; electron-builder's default assisted-installer check queries Win32_Process
+  ; through PowerShell/WMI. That can block indefinitely on headless Windows
+  ; hosts, so use the bundled native process plugin instead.
+  nsProcess::_FindProcess /NOUNLOAD "${APP_EXECUTABLE_FILENAME}"
+  Pop $R0
+  nsProcess::_FindProcess /NOUNLOAD "LekhPipeBroker.exe"
+  Pop $R1
+  ${If} $R0 == 0
+  ${OrIf} $R1 == 0
+    DetailPrint "Stopping the existing Lekh keyboard service before installation."
+    nsProcess::_CloseProcess /NOUNLOAD "${APP_EXECUTABLE_FILENAME}"
+    Pop $R2
+    Sleep 1500
+    nsProcess::_KillProcess /NOUNLOAD "${APP_EXECUTABLE_FILENAME}"
+    Pop $R2
+    nsProcess::_KillProcess /NOUNLOAD "LekhPipeBroker.exe"
+    Pop $R2
+    Sleep 500
+    nsProcess::_FindProcess /NOUNLOAD "${APP_EXECUTABLE_FILENAME}"
+    Pop $R0
+    nsProcess::_FindProcess /NOUNLOAD "LekhPipeBroker.exe"
+    Pop $R1
+    ${If} $R0 == 0
+    ${OrIf} $R1 == 0
+      nsProcess::_Unload
+      MessageBox MB_OK|MB_ICONSTOP "Lekh Keyboard is still running. Quit it and run the installer again." /SD IDOK
+      SetErrorLevel 1
+      Quit
+    ${EndIf}
+  ${EndIf}
+  nsProcess::_Unload
+!macroend
+
 !macro customInstall
   DetailPrint "Configuring Lekh Keyboard Companion."
   IfFileExists "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll" lekh_tsf_dll_found
@@ -30,8 +70,9 @@
 
   DetailPrint "Starting the Lekh keyboard service in the background."
   ClearErrors
-  ExecShell "open" "$INSTDIR\Lekh Keyboard Companion.exe" "--background" SW_HIDE
-  IfErrors lekh_companion_start_failed lekh_companion_started
+  ExecWait '"$SYSDIR\cmd.exe" /D /C start "" /B "$INSTDIR\Lekh Keyboard Companion.exe" --background' $0
+  IfErrors lekh_companion_start_failed
+  IntCmp $0 0 lekh_companion_started lekh_companion_start_failed lekh_companion_start_failed
 
   lekh_companion_start_failed:
     DetailPrint "Lekh background service could not be started; rolling back native registration."
