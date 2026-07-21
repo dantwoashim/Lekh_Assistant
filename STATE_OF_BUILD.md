@@ -230,3 +230,44 @@ powershell -ExecutionPolicy Bypass -File native/windows-tsf/skeleton/build.ps1 -
 This is evidence for the final TSF mutation boundary, not a claim that CI
 visually exercised Notepad, a browser, Word, or the incremental candidate UI.
 Those exact hardware/application gaps are recorded in `KNOWN_LIMITATIONS.md`.
+
+## B2 Windows candidate-window evidence
+
+Revision `f753962be1b676e0546cd023ca712d94379d211e` passed the native
+candidate tests in
+[CI run 29831765740](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29831765740).
+
+| Windows architecture | Native candidate result | Job evidence |
+|---|---|---|
+| x64 | All 6 native CTests passed, including protocol, candidate state, and candidate-to-TSF injection | [job 88638060869](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29831765740/job/88638060869) |
+| ARM64 | Native build and all 6 CTests passed | [job 88638060944](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29831765740/job/88638060944) |
+
+`LekhCandidateStateTests` exercises the complete headless interaction state
+machine: initial selection, Up/Down movement and wrapping, digit selection,
+Space commit, Enter commit, selection preservation across refreshed results,
+missing shortcuts, hidden lists, and reset. `LekhTsfProtocolTests` verifies the
+bounded eight-candidate response and explicit `session.commitCandidate`
+request/response path. `LekhTsfInjectionTests` selects candidate 2 by digit and
+asserts that its exact Devanagari text, `नमस्ते`, reaches the real TSF test sink
+without changing the existing Latin prefix.
+
+The shipping TSF DLL also compiles the concrete Win32 renderer. It creates a
+topmost `WS_EX_NOACTIVATE` tool window, anchors it near the host caret, renders
+the numbered Devanagari rows using `Nirmala UI`, visibly highlights the active
+row, and bounds long content with an ellipsis. The service only consumes
+Up/Down, digits 1–8, Space, and Enter while that window has a live candidate
+state; selection uses the daemon's explicit candidate-commit message and every
+focus, context, security, IPC, or edit failure hides and clears the window.
+
+Local verification at the same revision also passed:
+
+```text
+npm run test:v1
+Test Files  47 passed (47)
+Tests       451 passed (451)
+```
+
+CI compiles the renderer and verifies its state and final text mutation, but it
+does not perform a pixel-level visual inspection inside a physical Notepad,
+browser, or Word session. That exact distinction is recorded in
+`KNOWN_LIMITATIONS.md`.
