@@ -39,13 +39,18 @@ New-Item -ItemType Directory -Path $TestRoot | Out-Null
 function Invoke-CheckedProcess {
   param(
     [Parameter(Mandatory = $true)][string]$FilePath,
-    [Parameter(Mandatory = $true)][string[]]$Arguments
+    [Parameter(Mandatory = $true)][string[]]$Arguments,
+    [int]$TimeoutSeconds = 60
   )
   # Start-Process -Wait follows the complete descendant process tree on
   # Windows. The installer intentionally launches a long-lived companion, so
   # wait only for the installer or uninstaller process itself.
   $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru
-  $process.WaitForExit()
+  if (!$process.WaitForExit($TimeoutSeconds * 1000)) {
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    $process.WaitForExit()
+    throw "$FilePath did not exit within $TimeoutSeconds seconds."
+  }
   if ($process.ExitCode -ne 0) {
     throw "$FilePath exited with code $($process.ExitCode)."
   }

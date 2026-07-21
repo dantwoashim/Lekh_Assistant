@@ -30,7 +30,7 @@
 
   DetailPrint "Starting the Lekh keyboard service in the background."
   ClearErrors
-  Exec '"$INSTDIR\Lekh Keyboard Companion.exe" --background'
+  ExecShell "open" "$INSTDIR\Lekh Keyboard Companion.exe" "--background" SW_HIDE
   IfErrors lekh_companion_start_failed lekh_companion_started
 
   lekh_companion_start_failed:

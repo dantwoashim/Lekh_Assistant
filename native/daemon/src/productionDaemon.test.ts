@@ -69,7 +69,11 @@ describe("production daemon persistence", () => {
       engine: reopenedEngine,
       expirySweepIntervalMs: 600_000
     });
-    const client = new DaemonClient("crash-reopen");
+    // This test covers durable crash recovery, not a five-second control
+    // deadline. Keep requests valid even when a shared CI runner is paused
+    // between reopening storage and dispatching the first request.
+    const requestNow = Date.now() + 60_000;
+    const client = new DaemonClient("crash-reopen", () => requestNow);
     await negotiate(reopened, client);
     const session = await begin(reopened, client, defaultTypingContext("romanized"));
     const update = reopenedEngine.updateComposition(session.sessionId, "prabin", 6);

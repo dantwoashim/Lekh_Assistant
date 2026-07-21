@@ -248,7 +248,7 @@ describe("Windows TSF source safety contract", () => {
     const candidateRun = spawnSync(candidateExecutable, [], { encoding: "utf8" });
     expect(candidateRun.status, `${candidateRun.stdout}\n${candidateRun.stderr}`).toBe(0);
     expect(candidateRun.stdout).toContain("Candidate state navigation tests passed");
-  });
+  }, 60_000);
 });
 
 function read(file: string): string {

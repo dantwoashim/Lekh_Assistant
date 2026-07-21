@@ -6,7 +6,8 @@ import { KeyboardDaemon } from "./keyboardDaemon";
 
 describe("daemon CLI line protocol", () => {
   it("handles JSONL IPC requests and returns JSON responses", async () => {
-    const handler = createDaemonLineHandler();
+    const fixedNow = Date.now();
+    const handler = createDaemonLineHandler(new KeyboardDaemon({ now: () => fixedNow }));
     const negotiation = JSON.parse(
       await handler.handleLine(JSON.stringify(createIpcRequest("protocol.negotiate", {
         client: "daemon-test",
