@@ -21,7 +21,7 @@ jobs:
   native-macos:
     name: macOS ${{ matrix.architecture }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -72,18 +72,36 @@ jobs:
           cmp "$RUNNER_TEMP/typescript-behavior.jsonl" "$RUNNER_TEMP/swift-behavior.jsonl"
           shasum -a 256 "$RUNNER_TEMP/typescript-behavior.jsonl"
 
+      - name: Build unsigned universal macOS release artifact
+        if: matrix.architecture == 'ARM64'
+        env:
+          LEKH_PACKAGE_NEURAL_MODEL: "0"
+          LEKH_EXPERIMENTAL_NEURAL_TYPING: "0"
+        run: npm run v1:package:macos
+
+      - name: Upload universal macOS release artifact
+        if: matrix.architecture == 'ARM64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lekh-v1-macos-universal
+          path: release/native/macos/Lekh-Keyboard-Test-Installer.zip
+          if-no-files-found: error
+          compression-level: 0
+
   native-windows:
     name: Windows ${{ matrix.architecture }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: windows-2025
             architecture: x64
+            package_architecture: x64
           - runner: windows-11-arm
             architecture: ARM64
+            package_architecture: arm64
 
     steps:
       - name: Check out repository
@@ -114,14 +132,59 @@ jobs:
         run: npm run check:ipc-schema
 
       - name: Verify Windows packaging contract
-        if: matrix.architecture == 'x64'
         run: npm run check:windows-installer-contract
 
       - name: Build unsigned Windows installer
-        if: matrix.architecture == 'x64'
-        run: node scripts/package-windows-companion.mjs --unsigned
+        run: node scripts/package-windows-companion.mjs --unsigned --architecture "${{ matrix.architecture }}"
 
       - name: Verify silent Windows install lifecycle
-        if: matrix.architecture == 'x64'
         shell: pwsh
         run: .\scripts\test-windows-installer.ps1
+
+      - name: Upload Windows release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: lekh-v1-windows-${{ matrix.package_architecture }}
+          path: release/Lekh-Keyboard-Companion-1.0.0-Setup-${{ matrix.package_architecture }}.exe
+          if-no-files-found: error
+          compression-level: 0
+
+  release-candidate:
+    name: v1.0.0 release bundle
+    needs:
+      - native-macos
+      - native-windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Download installers from this CI run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: lekh-v1-*
+          path: release-candidate
+          merge-multiple: true
+
+      - name: Generate checksums and rendered release notes
+        run: >-
+          node scripts/render-release-checksums.mjs
+          --notes RELEASE_NOTES_v1.0.md
+          --artifacts release-candidate
+          --output release-candidate/RELEASE_NOTES_v1.0.md
+          --checksums release-candidate/SHA256SUMS.txt
+
+      - name: Upload self-consistent v1.0.0 release bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: lekh-assistant-v1.0.0-release-candidate
+          path: release-candidate
+          if-no-files-found: error
+          compression-level: 0
