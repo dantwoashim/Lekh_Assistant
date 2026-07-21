@@ -116,7 +116,7 @@ jobs:
 
       - name: Build unsigned Windows installer
         if: matrix.architecture == 'x64'
-        run: npm run package:windows:unsigned
+        run: node scripts/package-windows-companion.mjs --unsigned
 
       - name: Verify silent Windows install lifecycle
         if: matrix.architecture == 'x64'

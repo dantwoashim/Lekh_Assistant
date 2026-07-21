@@ -84,3 +84,4 @@
 - V2-082 Type-check security-sensitive release scripts and desktop main-process code.
 - V2-083 Replace stale source-string readiness assertions with runtime, commit-bound evidence.
 - V2-084 Establish maintained ownership, architecture decisions, release exceptions, and a live post-v1 engineering backlog.
+- V2-085 Make the frozen experimental passive-commit source allowlist path-separator-independent on Windows.
