@@ -133,18 +133,22 @@ function Invoke-DaemonHealthCheck {
       if (!$read.Wait([TimeSpan]::FromSeconds(5))) {
         throw "The installed daemon did not answer its named-pipe health request."
       }
-      $response = $read.Result | ConvertFrom-Json
+      $responseLine = $read.Result
+      if ([string]::IsNullOrWhiteSpace($responseLine)) {
+        throw "The installed daemon closed its named pipe without a health response."
+      }
+      $response = $responseLine | ConvertFrom-Json
       if ($response.id -ne "installer-health-1" -or $response.type -ne "protocol.negotiate" -or
           $response.ok -ne $true -or $response.payload.selectedVersion -ne 2) {
-        throw "The installed daemon returned an invalid negotiation response: $($read.Result)"
+        throw "The installed daemon returned an invalid negotiation response: $responseLine"
       }
       Write-Host "SERVICE CHECK: daemon protocol negotiation passed on $pipeName."
     } finally {
-      $reader.Dispose()
-      $writer.Dispose()
+      try { $reader.Dispose() } catch { Write-Host "DIAGNOSTICS: reader cleanup observed a closed pipe." }
+      try { $writer.Dispose() } catch { Write-Host "DIAGNOSTICS: writer cleanup observed a closed pipe." }
     }
   } finally {
-    $pipe.Dispose()
+    try { $pipe.Dispose() } catch { Write-Host "DIAGNOSTICS: pipe cleanup observed a closed pipe." }
   }
 }
 
@@ -159,7 +163,7 @@ try {
   }
 
   Wait-Until -Condition { Test-Path -LiteralPath $InprocKey } `
-    -FailureMessage "The installer did not create the per-user COM registration."
+    -FailureMessage "The installer did not create the machine-wide COM registration."
   $registeredPath = (Get-Item -LiteralPath $InprocKey).GetValue("")
   if (![StringComparer]::OrdinalIgnoreCase.Equals(
       [System.IO.Path]::GetFullPath([string]$registeredPath),
@@ -175,6 +179,7 @@ try {
   if ($runValue -ne $expectedRunValue) {
     throw "The startup command is not the background companion command: $runValue"
   }
+  Write-Host "INSTALL: artifacts, COM, TSF, and startup entry verified."
 
   Wait-Until -Condition {
     (Get-InstalledProcesses | Where-Object { $_.Name -eq "LekhPipeBroker.exe" }).Count -ge 1
