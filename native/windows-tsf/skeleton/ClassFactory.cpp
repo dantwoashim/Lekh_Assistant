@@ -5,10 +5,15 @@
 #include <new>
 #include <windows.h>
 
+extern long g_objectCount;
 extern long g_lockCount;
 
 class LekhClassFactory final : public IClassFactory {
 public:
+  LekhClassFactory() {
+    InterlockedIncrement(&g_objectCount);
+  }
+
   STDMETHODIMP QueryInterface(REFIID riid, void** object) override {
     if (!object) return E_POINTER;
     *object = nullptr;
@@ -50,6 +55,10 @@ public:
   }
 
 private:
+  ~LekhClassFactory() {
+    InterlockedDecrement(&g_objectCount);
+  }
+
   long refCount_ = 1;
 };
 

@@ -86,3 +86,8 @@
 - V2-084 Establish maintained ownership, architecture decisions, release exceptions, and a live post-v1 engineering backlog.
 - V2-085 Make the frozen experimental passive-commit source allowlist path-separator-independent on Windows.
 - V2-086 Remove the companion-controller test's unwrapped asynchronous React state-update warning.
+- V2-087 Track owned versus stock Windows candidate-window font handles before calling `DeleteObject`.
+- V2-088 Define and validate Windows install, startup, and uninstall behavior across multiple user accounts.
+- V2-089 Isolate Windows public pipe endpoints by logon session as well as user SID for concurrent sessions of one account.
+- V2-090 Make Windows uninstall fail visibly and recoverably if TSF unregistration fails instead of leaving stale registration.
+- V2-091 Make Windows background-start failure rollback remove all partially installed application files.

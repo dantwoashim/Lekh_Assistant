@@ -188,6 +188,25 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME LekhTsfInjectionTests COMMAND LekhTsfInjectionTests)
 
+  add_executable(LekhComServerLifetimeTests LekhComServerLifetimeTests.cpp)
+  target_compile_features(LekhComServerLifetimeTests PRIVATE cxx_std_20)
+  target_compile_definitions(LekhComServerLifetimeTests PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _WIN32_WINNT=0x0A00
+  )
+  target_link_libraries(LekhComServerLifetimeTests PRIVATE ole32 uuid)
+  add_dependencies(LekhComServerLifetimeTests LekhTextService)
+  if(MSVC)
+    target_compile_options(LekhComServerLifetimeTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  endif()
+  add_test(
+    NAME LekhComServerLifetimeTests
+    COMMAND LekhComServerLifetimeTests "$<TARGET_FILE:LekhTextService>"
+  )
+
   add_executable(LekhPipeSecurityTests LekhPipeSecurityTests.cpp)
   target_compile_definitions(LekhPipeSecurityTests PRIVATE
     UNICODE
