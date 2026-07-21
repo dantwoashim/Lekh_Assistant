@@ -1214,6 +1214,22 @@ const extractedPayloadArchs = run(
 ).stdout.trim();
 rmSync(zipCheckDir, { recursive: true, force: true });
 
+if (process.env.LEKH_MACOS_PACKAGE_WALKTHROUGH_ONLY === "1") {
+  unregisterReleaseArtifacts();
+  finish("passed-unsigned-first-run-walkthrough", {
+    artifact: installerApp,
+    uninstaller: uninstallerApp,
+    folder: distFolder,
+    zip: zipPath,
+    payload: imkBundle,
+    signed: signingIdentity === "-" ? "ad-hoc-hardened-runtime" : signingIdentity,
+    extractedPayloadArchs,
+    zipVerification: "passed-self-contained-quarantine-path",
+    unsignedFirstRunWalkthrough: unsignedFirstRunWalkthrough.split("\n"),
+    note: "Walkthrough-only packaging stopped before appcast and public-update publication."
+  }, 0);
+}
+
 const dictionaryPackVersion = `${releaseChannel}-build${appBuild}`;
 const dictionaryPackDir = join(releaseDir, "dictionary-packs", dictionaryPackVersion);
 const bundledRuntimeBinary = join(imkBundle, "Contents", "Resources", "runtime-suggestions.lkb");

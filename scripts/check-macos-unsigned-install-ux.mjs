@@ -63,6 +63,7 @@ try {
     "Choose Open, then click Open again.",
     "xattr -dr com.apple.quarantine",
     "LEKH_INSTALLER_WALKTHROUGH_ONLY",
+    "LEKH_MACOS_PACKAGE_WALKTHROUGH_ONLY",
     "verify-unsigned-first-run-walkthrough"
   ]) {
     requireCondition(packager.includes(required), `Packaged first-run flow is missing: ${required}`);
