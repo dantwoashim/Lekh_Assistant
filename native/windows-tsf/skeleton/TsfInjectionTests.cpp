@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -270,16 +271,28 @@ public:
     return S_OK;
   }
 
-  STDMETHODIMP OnStartComposition(ITfCompositionView*, BOOL* accepted) override {
+  STDMETHODIMP OnStartComposition(ITfCompositionView* composition, BOOL* accepted) override {
     if (!accepted) return E_POINTER;
+    if (composition) composition->AddRef();
+    if (compositionView_) compositionView_->Release();
+    compositionView_ = composition;
     *accepted = TRUE;
     compositionStarted_ = true;
     return S_OK;
   }
 
-  STDMETHODIMP OnUpdateComposition(ITfCompositionView*, ITfRange*) override { return S_OK; }
+  STDMETHODIMP OnUpdateComposition(ITfCompositionView* composition, ITfRange*) override {
+    if (composition) composition->AddRef();
+    if (compositionView_) compositionView_->Release();
+    compositionView_ = composition;
+    return S_OK;
+  }
 
   STDMETHODIMP OnEndComposition(ITfCompositionView*) override {
+    if (compositionView_) {
+      compositionView_->Release();
+      compositionView_ = nullptr;
+    }
     compositionEnded_ = true;
     return S_OK;
   }
@@ -290,6 +303,7 @@ public:
 
 private:
   ~TestTextStore() {
+    if (compositionView_) compositionView_->Release();
     if (sink_) sink_->Release();
   }
 
@@ -324,6 +338,7 @@ private:
 
   long refCount_ = 1;
   ITextStoreACPSink* sink_ = nullptr;
+  ITfCompositionView* compositionView_ = nullptr;
   std::wstring text_;
   LONG selectionStart_ = 0;
   LONG selectionEnd_ = 0;
@@ -373,10 +388,21 @@ int main() {
   compose.compositionText = L"namaste";
   compose.displayText = L"\u0928\u092e\u0938\u094d\u0924\u0947";
   compose.caret = compose.compositionText.size();
-  const bool compositionApplied = applyEngineDecision(context, clientId, &activeComposition, compose);
+  EditSessionDiagnostics composeDiagnostics;
+  const bool compositionApplied = applyEngineDecision(
+    context,
+    clientId,
+    &activeComposition,
+    compose,
+    &composeDiagnostics
+  );
   if (!compositionApplied) {
     std::cerr << "compose diagnostics: target_length=" << sink->text().size()
-              << " composition_started=" << (sink->compositionStarted() ? "true" : "false") << '\n';
+              << " composition_started=" << (sink->compositionStarted() ? "true" : "false")
+              << " composition_ended=" << (sink->compositionEnded() ? "true" : "false")
+              << " request_hresult=0x" << std::hex << static_cast<std::uint32_t>(composeDiagnostics.requestResult)
+              << " session_hresult=0x" << static_cast<std::uint32_t>(composeDiagnostics.sessionResult)
+              << " host_mutated=" << (composeDiagnostics.hostTextMutated ? "true" : "false") << '\n';
   }
   require(compositionApplied, "TSF compose edit session did not mutate the test target");
   require(activeComposition != nullptr, "TSF composition was not started");
