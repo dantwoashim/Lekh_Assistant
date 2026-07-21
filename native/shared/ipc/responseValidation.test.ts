@@ -293,7 +293,11 @@ describe("generated IPC response validation", () => {
   });
 
   it("accepts every response type emitted by the real daemon dispatcher", async () => {
-    const daemon = new KeyboardDaemon();
+    // This is a response-schema coverage test, not a wall-clock deadline test.
+    // Keep the daemon clock fixed so a loaded CI runner cannot turn a valid
+    // candidate response into the intentional 50 ms fail-open response.
+    const fixedNow = Date.now();
+    const daemon = new KeyboardDaemon({ now: () => fixedNow });
     const seen = new Set<IpcMessageType>();
     const accept = (response: Awaited<ReturnType<KeyboardDaemon["handle"]>>) => {
       const wireResponse = JSON.parse(JSON.stringify(response)) as unknown;
