@@ -110,10 +110,16 @@ function Invoke-DaemonHealthCheck {
     clientInstanceId = "windows-installer-ci"
     requestSequence = 1
     payload = @{
-      client = "windows-installer-ci"
+      client = "windows-tsf"
       supportedVersions = @(2)
     }
   } | ConvertTo-Json -Compress -Depth 5
+
+  # Prepare the exact wire frame before connecting. The installed broker uses
+  # the same 50 ms fail-closed deadline as TSF, so allocating StreamWriter and
+  # its buffers after Connect can consume the request window on a cold runner.
+  $encoding = [System.Text.UTF8Encoding]::new($false)
+  $requestBytes = $encoding.GetBytes($request + "`n")
 
   $pipe = [System.IO.Pipes.NamedPipeClientStream]::new(
     ".",
@@ -123,12 +129,10 @@ function Invoke-DaemonHealthCheck {
   )
   try {
     $pipe.Connect(5000)
-    $encoding = [System.Text.UTF8Encoding]::new($false)
-    $writer = [System.IO.StreamWriter]::new($pipe, $encoding, 1024, $true)
+    $pipe.Write($requestBytes, 0, $requestBytes.Length)
+    $pipe.Flush()
     $reader = [System.IO.StreamReader]::new($pipe, $encoding, $false, 1024, $true)
     try {
-      $writer.WriteLine($request)
-      $writer.Flush()
       $read = $reader.ReadLineAsync()
       if (!$read.Wait([TimeSpan]::FromSeconds(5))) {
         throw "The installed daemon did not answer its named-pipe health request."
@@ -145,7 +149,6 @@ function Invoke-DaemonHealthCheck {
       Write-Host "SERVICE CHECK: daemon protocol negotiation passed on $pipeName."
     } finally {
       try { $reader.Dispose() } catch { Write-Host "DIAGNOSTICS: reader cleanup observed a closed pipe." }
-      try { $writer.Dispose() } catch { Write-Host "DIAGNOSTICS: writer cleanup observed a closed pipe." }
     }
   } finally {
     try { $pipe.Dispose() } catch { Write-Host "DIAGNOSTICS: pipe cleanup observed a closed pipe." }

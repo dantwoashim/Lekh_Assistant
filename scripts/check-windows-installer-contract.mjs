@@ -76,6 +76,9 @@ requireText(source.installer, '!insertmacro lekhInstallPhase "registering-tsf"',
 requireText(source.installer, 'taskkill.exe /F /T /IM "Lekh Keyboard Companion.exe"', "Uninstall must stop the companion process tree before deleting files.");
 requireText(source.installer, 'taskkill.exe /F /IM "LekhPipeBroker.exe"', "Uninstall must stop the native broker before deleting files.");
 requireText(source.lifecycle, "Invoke-DaemonHealthCheck", "The installer lifecycle test must negotiate with the installed daemon.");
+requireText(source.lifecycle, 'client = "windows-tsf"', "The installer health request must identify as a supported native Windows client.");
+requireText(source.lifecycle, '$requestBytes = $encoding.GetBytes($request + "`n")', "The installer health frame must be prepared before the fail-closed pipe connection opens.");
+requireText(source.lifecycle, '$pipe.Write($requestBytes, 0, $requestBytes.Length)', "The installer health check must write the prepared frame directly within the broker deadline.");
 requireText(source.lifecycle, "The installer did not register the TSF input profile.", "The lifecycle test must verify TSF registration.");
 requireText(source.lifecycle, "COM registration remained after uninstall.", "The lifecycle test must reject leftover COM registration.");
 requireText(source.lifecycle, "TSF profile registration remained after uninstall.", "The lifecycle test must reject leftover TSF registration.");
