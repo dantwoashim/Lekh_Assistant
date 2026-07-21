@@ -30,7 +30,7 @@ requireText(source.builder, 'from: "native/windows-tsf/skeleton"', "electron-bui
 requireText(source.builder, 'to: "native/windows-tsf"', "electron-builder TSF destination changed.");
 requireText(source.builder, '"build/bin/Release/LekhTextService.dll"', "electron-builder no longer includes the TSF DLL.");
 requireText(source.builder, '"build/bin/Release/LekhPipeBroker.exe"', "electron-builder no longer includes the pipe broker.");
-requireText(source.package, 'npm", ["run", "build:windows"]', "Windows packaging must build the TSF DLL first.");
+requireText(source.package, '"scripts", "build-windows-tsf.mjs"', "Windows packaging must build the TSF DLL first.");
 requireText(source.package, '"native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhTextService.dll"', "Package preflight does not point to the canonical TSF DLL.");
 requireText(source.package, '"native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhPipeBroker.exe"', "Package preflight does not point to the canonical pipe broker.");
 requireText(source.package, "A companion-only installer is forbidden.", "Package preflight must fail closed when the TSF DLL is absent.");

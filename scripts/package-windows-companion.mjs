@@ -65,16 +65,13 @@ if (process.platform !== "win32" && !process.env.LEKH_ALLOW_CROSS_WINDOWS_PACKAG
 }
 
 if (process.platform === "win32") {
-  const nativeBuild = spawnSync("npm", ["run", "build:windows"], {
-    cwd: root,
-    encoding: "utf8",
-    stdio: "pipe"
-  });
+  const nativeBuild = runNode(join(root, "scripts", "build-windows-tsf.mjs"));
   if (nativeBuild.status !== 0) {
     finish("failed", {
       step: "windows-tsf-build",
       stdout: nativeBuild.stdout,
-      stderr: nativeBuild.stderr
+      stderr: nativeBuild.stderr,
+      error: nativeBuild.error?.message
     }, nativeBuild.status ?? 1);
   }
 }
@@ -96,25 +93,47 @@ if (!existsSync(pipeBroker)) {
   }, 1);
 }
 
-const daemonBuild = spawnSync("npm", ["run", "build:daemon"], { cwd: root, encoding: "utf8", stdio: "pipe" });
+const daemonBuild = runNode(join(root, "scripts", "bundle-daemon.mjs"));
 if (daemonBuild.status !== 0) {
-  finish("failed", { step: "daemon-build", stdout: daemonBuild.stdout, stderr: daemonBuild.stderr }, daemonBuild.status ?? 1);
+  finish("failed", {
+    step: "daemon-build",
+    stdout: daemonBuild.stdout,
+    stderr: daemonBuild.stderr,
+    error: daemonBuild.error?.message
+  }, daemonBuild.status ?? 1);
 }
 
-const build = spawnSync("npm", ["run", "build:companion-ui"], { cwd: root, encoding: "utf8", stdio: "pipe" });
+const viteBin = join(root, "node_modules", "vite", "bin", "vite.js");
+const build = runNode(viteBin, ["build", "--mode", "companion"]);
 if (build.status !== 0) {
-  finish("failed", { step: "vite-build", stdout: build.stdout, stderr: build.stderr }, build.status ?? 1);
+  finish("failed", {
+    step: "vite-build",
+    stdout: build.stdout,
+    stderr: build.stderr,
+    error: build.error?.message
+  }, build.status ?? 1);
+}
+
+const tsxBin = join(root, "node_modules", "tsx", "dist", "cli.mjs");
+const serviceWorker = runNode(tsxBin, [join(root, "scripts", "write-service-worker.ts")]);
+if (serviceWorker.status !== 0) {
+  finish("failed", {
+    step: "service-worker-build",
+    stdout: serviceWorker.stdout,
+    stderr: serviceWorker.stderr,
+    error: serviceWorker.error?.message
+  }, serviceWorker.status ?? 1);
 }
 
 const env = {
   ...process.env,
   ...(unsigned ? { CSC_IDENTITY_AUTO_DISCOVERY: "false" } : {})
 };
-const electronBuilderBin = join(root, "node_modules", ".bin", process.platform === "win32" ? "electron-builder.cmd" : "electron-builder");
-const builder = spawnSync(
+const electronBuilderBin = join(root, "node_modules", "electron-builder", "cli.js");
+const builder = runNode(
   electronBuilderBin,
   ["--win", "nsis", "--x64", "--publish=never", "--config", "electron-builder.config.cjs"],
-  { cwd: root, encoding: "utf8", stdio: "pipe", env, timeout: 300_000 }
+  { env, timeout: 300_000 }
 );
 if (builder.status !== 0) {
   finish(
@@ -123,7 +142,8 @@ if (builder.status !== 0) {
       step: "electron-builder",
       signal: builder.signal ?? null,
       stdout: builder.stdout,
-      stderr: builder.stderr
+      stderr: builder.stderr,
+      error: builder.error?.message
     },
     builder.status ?? 1
   );
@@ -138,6 +158,15 @@ if (!exe) {
 }
 
 finish(signed ? "passed-signed" : "passed-unsigned-dev", { artifact: exe, signed: !unsigned }, 0);
+
+function runNode(script, args = [], options = {}) {
+  return spawnSync(process.execPath, [script, ...args], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: "pipe",
+    ...options
+  });
+}
 
 function findInstallerExe(dir) {
   const entries = readdirSync(dir);
