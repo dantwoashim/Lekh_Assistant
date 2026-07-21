@@ -26,14 +26,35 @@
   lekh_tsf_registration_complete:
     DetailPrint "Lekh TSF text service registered successfully."
 
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "LekhKeyboardCompanion" "$INSTDIR\Lekh Keyboard Companion.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "LekhKeyboardCompanion" '"$INSTDIR\Lekh Keyboard Companion.exe" --background'
+
+  DetailPrint "Starting the Lekh keyboard service in the background."
+  ClearErrors
+  Exec '"$INSTDIR\Lekh Keyboard Companion.exe" --background'
+  IfErrors lekh_companion_start_failed lekh_companion_started
+
+  lekh_companion_start_failed:
+    DetailPrint "Lekh background service could not be started; rolling back native registration."
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "LekhKeyboardCompanion"
+    ExecWait 'regsvr32.exe /u /s "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll"'
+    MessageBox MB_OK|MB_ICONSTOP "Lekh Keyboard was installed but its background typing service could not start. Installation was rolled back."
+    Abort
+
+  lekh_companion_started:
+    DetailPrint "Lekh keyboard background service started."
 !macroend
 
 !macro customUnInstall
+  DetailPrint "Stopping Lekh Keyboard processes."
+  nsExec::ExecToLog 'taskkill.exe /F /T /IM "Lekh Keyboard Companion.exe"'
+  nsExec::ExecToLog 'taskkill.exe /F /IM "LekhPipeBroker.exe"'
+  Sleep 500
+
   DetailPrint "Removing Lekh Keyboard startup entry."
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "LekhKeyboardCompanion"
 
-  IfFileExists "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll" 0 +3
+  IfFileExists "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll" 0 +4
     DetailPrint "Unregistering Lekh TSF text service."
-    ExecWait 'regsvr32.exe /u /s "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll"'
+    ExecWait 'regsvr32.exe /u /s "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll"' $0
+    DetailPrint "Lekh TSF unregister exit code: $0"
 !macroend

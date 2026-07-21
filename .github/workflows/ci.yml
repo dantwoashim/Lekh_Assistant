@@ -113,3 +113,12 @@ jobs:
       - name: Verify Windows packaging contract
         if: matrix.architecture == 'x64'
         run: npm run check:windows-installer-contract
+
+      - name: Build unsigned Windows installer
+        if: matrix.architecture == 'x64'
+        run: npm run package:windows:unsigned
+
+      - name: Verify silent Windows install lifecycle
+        if: matrix.architecture == 'x64'
+        shell: pwsh
+        run: .\scripts\test-windows-installer.ps1

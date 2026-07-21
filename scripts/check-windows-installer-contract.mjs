@@ -9,7 +9,9 @@ const paths = {
   build: "scripts/build-windows-tsf.mjs",
   package: "scripts/package-windows-companion.mjs",
   builder: "electron-builder.config.cjs",
-  installer: "build/installer/windows/installer.nsh"
+  installer: "build/installer/windows/installer.nsh",
+  lifecycle: "scripts/test-windows-installer.ps1",
+  workflow: ".github/workflows/ci.yml"
 };
 const source = Object.fromEntries(
   Object.entries(paths).map(([key, file]) => [key, readFileSync(join(root, file), "utf8")])
@@ -45,8 +47,8 @@ if (brokerArtifactGuard < 0 || builderInvocation < 0 || brokerArtifactGuard > bu
 }
 
 const installedPathCount = source.installer.split(installedDll).length - 1;
-if (installedPathCount !== 4) {
-  failures.push(`NSIS must use the canonical installed TSF path exactly four times; found ${installedPathCount}.`);
+if (installedPathCount !== 5) {
+  failures.push(`NSIS must use the canonical installed TSF path exactly five times; found ${installedPathCount}.`);
 }
 const installedBrokerPathCount = source.installer.split(installedBroker).length - 1;
 if (installedBrokerPathCount !== 1) {
@@ -63,6 +65,15 @@ requireText(source.installer, "lekh_tsf_registration_failed:", "NSIS registratio
 requireText(source.installer, "No working keyboard was installed.", "NSIS must not disguise registration failure as a usable keyboard.");
 requireText(source.installer, "Abort", "NSIS must abort failed native registration.");
 requireText(source.installer, `ExecWait 'regsvr32.exe /u /s "${installedDll}"'`, "Uninstall must unregister the same DLL that install registered.");
+requireText(source.installer, '"$INSTDIR\\Lekh Keyboard Companion.exe" --background', "Install must start and persist the companion in background mode.");
+requireText(source.installer, 'taskkill.exe /F /T /IM "Lekh Keyboard Companion.exe"', "Uninstall must stop the companion process tree before deleting files.");
+requireText(source.installer, 'taskkill.exe /F /IM "LekhPipeBroker.exe"', "Uninstall must stop the native broker before deleting files.");
+requireText(source.lifecycle, "Invoke-DaemonHealthCheck", "The installer lifecycle test must negotiate with the installed daemon.");
+requireText(source.lifecycle, "The installer did not register the TSF input profile.", "The lifecycle test must verify TSF registration.");
+requireText(source.lifecycle, "COM registration remained after uninstall.", "The lifecycle test must reject leftover COM registration.");
+requireText(source.lifecycle, "TSF profile registration remained after uninstall.", "The lifecycle test must reject leftover TSF registration.");
+requireText(source.workflow, "Build unsigned Windows installer", "Windows CI must build the actual unsigned NSIS artifact.");
+requireText(source.workflow, "Verify silent Windows install lifecycle", "Windows CI must run the silent installer lifecycle test.");
 
 if (source.installer.includes("companion-only dev install")) {
   failures.push("NSIS still contains the silent companion-only installation path.");
