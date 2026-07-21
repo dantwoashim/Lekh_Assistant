@@ -1,302 +1,258 @@
-# Lekh Keyboard
+# Lekh Assistant
 
-Lekh Keyboard is a local-first Nepali desktop keyboard project. The target product is a real Windows/macOS input method that lets people type Nepali inside normal apps such as Word, Chrome, Edge, Safari, WhatsApp, VS Code, TextEdit, Pages, and browser forms.
+Lekh Assistant is a local-first Nepali typing assistant for macOS and Windows.
+It lets you type Nepali in ordinary desktop apps instead of copying text from a
+website.
 
-Current repo status is deliberately narrower than that target:
+The v1.0 product uses the deterministic engine:
 
-- The React/Vite browser surface is a typing-engine validation demo.
-- The Electron shell is a companion/demo shell for settings, diagnostics, packaging, and first-run validation.
-- The native macOS IMK path has a test installer for host-app validation.
-- The native Windows TSF path is under active proof-spike development.
-- The Electron/browser demo is **not** the keyboard app.
-- The companion app is **not** the keyboard app.
-- Preeti to Unicode is a side utility, not the main product.
+- Romanized Nepali typing is the primary mode.
+- Suggestions appear while you type and are committed only when you choose one.
+- Traditional typing is available on macOS as a clearly labeled Beta.
+- Windows v1.0 provides Romanized typing.
+- Dictionary data and conservative proofread rules run locally.
+- Password and other secure fields fail closed.
+- Experimental neural/Core ML typing is off and is not packaged in v1.0.
 
-The real keyboard product is the native input-method layer:
+## Download
 
-- Windows: TSF text service.
-- macOS: InputMethodKit input method.
-- Shared local keyboard engine for Romanized typing, Traditional typing, suggestions, proofread, dictionary, and personal memory.
+Use the assets on the
+[GitHub Releases page](https://github.com/dantwoashim/Lekh_Assistant/releases).
 
-## Contents
+| Computer | Download | Supported release target |
+|---|---|---|
+| Apple Silicon or Intel Mac | Lekh-Keyboard-Test-Installer.zip | macOS 13 or newer |
+| Windows PC | Lekh-Keyboard-Companion-<version>-Setup-x64.exe | Windows 11 x64 |
 
-- [Why It Exists](#why-it-exists)
-- [macOS Test Build](#macos-test-build)
-- [What It Does](#what-it-does)
-- [Privacy Model](#privacy-model)
-- [Current Quality Evidence](#current-quality-evidence)
-- [Run Locally](#run-locally)
-- [Primary v1 Commands](#primary-v1-commands)
-- [Project Shape](#project-shape)
-- [Data Source Policy](#data-source-policy)
-- [Feedback and Real-Document Validation](#feedback-and-real-document-validation)
-- [Known Limitations](#known-limitations)
-- [Maintainer Docs](#maintainer-docs)
-- [License](#license)
-- [What It Does Not Claim](#what-it-does-not-claim)
+Both packages are unsigned. This project does not have a paid Apple Developer
+ID or Windows code-signing certificate, so your computer will show an
+unknown-developer or unknown-publisher warning. The warnings and limitations
+are explained below; no signing or notarization claim is made.
 
-## Why It Exists
+## Install on macOS
 
-Nepali desktop users need a keyboard that works system-wide, understands real Romanized Nepali, preserves mixed English safely, and stays private by default. Existing copy-paste converters and browser boxes are not enough for daily desktop typing.
+1. Download Lekh-Keyboard-Test-Installer.zip.
+2. In Finder, double-click the ZIP once. A folder named
+   Lekh Keyboard Test Installer appears beside it.
+3. Open that folder. Do not rename, remove, or rearrange its contents.
+4. Control-click or right-click `Lekh Keyboard Test Installer.app`, choose Open, then click Open again.
+5. Read the installer result and click OK.
+6. Save open work, then log out of your Mac and log back in. macOS can cache
+   newly installed input methods, especially unsigned ones.
+7. Open System Settings → Keyboard.
+8. Beside Text Input, click Edit….
+9. Click the + button at the lower-left.
+10. Select Nepali in the left column, select Lekh Keyboard in the right column,
+    then click Add.
+11. In the menu bar, click the current input-source icon and choose Lekh
+    Keyboard.
 
-The product direction is deliberately conservative and native-first:
+### If macOS blocks the installer
 
-- Build real Windows TSF and macOS IMK input methods.
-- Keep typing local and offline in the hot path.
-- Prefer documented rules, reviewed data, and measurable benchmarks over hidden magic.
-- Show candidates when Romanized input is ambiguous.
-- Preserve protected tokens such as NID, PAN, PDF, emails, URLs, numbers, and IDs.
-- Treat Preeti conversion as a side utility.
-- Avoid unclear-license language data.
+The supported order is:
 
-## macOS Test Build
+1. Try the Finder right-click → Open flow above.
+2. If the app is still blocked, open System Settings → Privacy & Security,
+   scroll to the Security section, and click Open Anyway for Lekh Keyboard Test
+   Installer.
+3. Only if both paths fail, open Terminal and run this command against the
+   installer app itself:
 
-The GitHub-visible macOS keyboard test artifact is:
+    xattr -dr com.apple.quarantine "/path/to/Lekh Keyboard Test Installer.app"
 
-- [`release/native/macos/Lekh-Keyboard-Test-Installer.zip`](release/native/macos/Lekh-Keyboard-Test-Installer.zip)
+Drag the installer app into Terminal to insert its exact path. Never run that
+command on Downloads, your home folder, or an entire drive. Then repeat the
+right-click → Open step.
 
-This zip is the current unsigned test installer for the native macOS InputMethodKit build. It is intended for development and host-app validation, not for public production distribution. A production macOS release still requires Developer ID signing, notarization, the full host-app matrix, secure-field evidence, install/uninstall evidence, and multi-day pilot use.
+### If Lekh is not listed under Input Sources
 
-Build or refresh the local macOS test installer with:
+1. Confirm that the installer reported success.
+2. Log out and back in; do not only close System Settings.
+3. Return to System Settings → Keyboard → Text Input → Edit… → + → Nepali.
+4. If it is still absent, run the installer again from the complete extracted
+   folder and repeat the logout/login step.
 
-```bash
-npm run v1:package:macos
-```
+## Install on Windows
 
-Because this artifact is ad-hoc signed and not notarized, macOS can block a downloaded copy. After extracting the ZIP, **Control-click or right-click `Lekh Keyboard Test Installer.app`, choose Open, then click Open again**. This is the preferred path. If macOS still blocks it, open **System Settings > Privacy & Security** and choose **Open Anyway** for the installer.
+1. Download the x64 Setup.exe asset.
+2. Double-click it.
+3. If Windows shows “Windows protected your PC,” click More info, verify that
+   the file name is the Lekh installer you downloaded, then click Run anyway.
+4. When User Account Control asks whether to allow changes, click Yes.
+5. In Lekh Keyboard Companion Setup, keep the default install folder unless you
+   have a reason to change it. Click Install.
+6. Wait for the installer to finish. It registers the Lekh text service and
+   starts the local background companion.
+7. Press Windows key + Space.
+8. Choose Lekh Keyboard Nepali.
 
-As a last resort, remove quarantine from the installer app only: open Terminal, type `xattr -dr com.apple.quarantine` followed by one space, drag `Lekh Keyboard Test Installer.app` into Terminal, and press Return. Then repeat the right-click → Open step. Do not run the command on your Downloads folder or home directory.
+If Lekh is not in the Windows key + Space list, sign out of Windows and sign
+back in once. If it remains absent, uninstall Lekh Keyboard Companion, restart
+Windows, and install the same Setup.exe again.
 
-```bash
-xattr -dr com.apple.quarantine "/path/to/Lekh Keyboard Test Installer.app"
-```
+The Windows installer requires administrator approval because it registers a
+machine-wide Text Services Framework component. The x64 install/start,
+registration, background-service, uninstall, and cleanup lifecycle is exercised
+on a Windows CI runner.
 
-On first run, the installer detects the quarantine marker and explains these same steps in plain language. None of these steps turns the build into an Apple-trusted, Developer ID-signed, or notarized release.
+## Type Nepali
 
-The ZIP also includes an optional technical integrity check: `Verify Lekh Release.command`, `SHA256SUMS.txt`, `RELEASE-MANIFEST.json`, `RELEASE-MANIFEST.json.minisig`, and `lekh-release-manifest-minisign.pub`. The verifier is self-contained and does not require Homebrew or a separately installed `minisign` binary. It is not required for the normal right-click → Open installation path.
+### Romanized mode
 
-```bash
-bash "/path/to/Lekh Keyboard Test Installer/Verify Lekh Release.command"
-```
+1. Select Lekh as your current input source.
+2. Type the Nepali word using Latin letters. For example, type namaste.
+3. Review the Devanagari candidates.
+4. Choose the intended candidate. Lekh does not silently replace text with an
+   unchosen suggestion.
 
-The canonical signing key and its independently checkable fingerprint are published in [`docs/security/RELEASE_SIGNING_KEYS.md`](docs/security/RELEASE_SIGNING_KEYS.md). Package verification proves integrity under that project-owned key; it does not prove an Apple-verified developer identity.
+Common protected Latin text—such as PDF, NID, email addresses, URLs, file
+names, and numbers—is preserved instead of being forced into Devanagari.
 
-The generated Homebrew Cask is a convenience for technical testers, not a Gatekeeper bypass or a substitute for Developer ID identity and notarization:
+### macOS controls
 
-```bash
-brew install --cask ./release/native/macos/lekh-keyboard-test.rb
-```
+| Action | Control |
+|---|---|
+| Choose Romanized Nepali | Click the ले menu → Romanized → Nepali |
+| Open the mode chooser | Control + Option + Space |
+| Accept the gray inline completion | Tab or Right Arrow |
+| Open/move through candidates | Down Arrow, then Up/Down |
+| Commit the highlighted candidate | Return |
+| Choose a visible shortcut | Option + 1, 2, or 3 |
+| Keep/cancel to raw text | Escape |
+| Turn Lekh off | Click the ले menu → Switch to ABC, or choose another input source |
 
-After installation, save your work and log out and back in. Then open **System Settings > Keyboard > Text Input > Edit**, click **+**, and add `Lekh Keyboard` under **Nepali**. An unsigned installer can request TIS registration but cannot honestly guarantee that macOS persisted user approval, so the installer deliberately reports those as separate states. The packaged uninstaller asks for confirmation, restores the previous input source when macOS allows it, and deletes local learned words, dictionary packs, model files, install backups, caches, and Lekh logs.
+Traditional → Nepali (Beta) and Traditional → Romanized (Beta) are available
+from the same ले menu. Their physical layout has not been validated by an
+experienced Traditional typist, so Romanized → Nepali is the recommended v1.0
+mode.
 
-Current macOS IMK test-build behavior includes:
+### Windows controls
 
-- four native modes: Romanized-Romanized, Romanized-Traditional, Traditional-Traditional (Beta), and Traditional-Romanized (Beta)
-- first-selection mode chooser plus a first-run `namaste` to `नमस्ते` tutorial
-- underlined inline marked-text preview before commit
-- Space commit, Escape cancel, Backspace composition edit, and Command/Control shortcut pass-through
-- a custom non-activating candidate window with Devanagari font sizing, badges, and correction explainers
-- proofread suggestions for active Traditional/Unicode composition using the bundled correction pairs
-- smart Nepali punctuation for danda commit in Nepali output modes
-- Traditional Option-key helpers for halanta, rakar/yaphala, chandrabindu, anusvara, and danda
-- fallback InScript-style Traditional key mapping when macOS does not provide a Devanagari layout override
-- input-menu preferences for transliteration strictness, halanta behavior, mixed-script preference, local dictionary export/edit/delete, diagnostics, and privacy controls
+| Action | Control |
+|---|---|
+| Turn Lekh on or switch keyboards | Windows key + Space |
+| Move through candidates | Up/Down Arrow |
+| Choose a numbered candidate | 1–8 |
+| Commit the selected candidate | Space or Enter |
+| Turn Lekh off | Windows key + Space, then choose another keyboard |
 
-## What It Does
+To stop the Windows background companion completely, open Lekh Keyboard
+Companion from the Start menu and choose File → Exit Lekh Keyboard Companion.
+Typing then fails open to unchanged Latin input until you reopen the companion.
 
-### Native Keyboard Work
+## Suggestions, dictionary, and proofread
 
-The production target is a native keyboard:
+- Suggestions come from bundled deterministic rules, word/phrase data, and
+  local explicit-choice memory.
+- Dictionary data improves candidate ranking and local lookup. v1.0 does not
+  present itself as an authoritative dictionary with certified definitions.
+- Proofread appears as conservative Fix candidates for supported active Nepali
+  tokens. It is not a document-wide grammar checker.
+- Nothing is committed merely because it appears in the candidate window.
 
-- Windows TSF input method.
-- macOS InputMethodKit input method.
-- Per-user daemon/service for heavy packs, memory, dictionary, and diagnostics.
-- Companion app for settings, privacy, dictionary, memory, diagnostics, and install status.
+## Uninstall
 
-Native work is not yet public-launch-ready. Current native artifacts are proof-spike/build scaffolds and must pass real host-app testing before any production claim.
+### macOS
 
-### Romanized Nepali Typing
+Open the original extracted installer folder, right-click Lekh Keyboard
+Uninstaller.app, choose Open, and confirm removal. Switch to ABC first if Lekh
+is active. The uninstaller removes the input method and Lekh-owned local data,
+including learned words, packs, backups, caches, and logs.
 
-Romanized typing is the flagship first-launch experience. It uses:
+### Windows
 
-- phonology rules from [`docs/PHONOLOGY_CONTRACT.md`](docs/PHONOLOGY_CONTRACT.md)
-- keyboard candidate ranking for phrase, dictionary, rule, variant, context, and local memory paths
-- a quantized local n-gram model for context-aware next-word inline completion
-- a gated Core ML tail slot for a future small open-vocabulary transliteration model; the current packaged Core ML artifact is only a closed-vocabulary baseline tail and is blocked by production gates
-- domain-ranked local suggestions for office, government, education, legal, names, and places
-- casual Nepali completions such as `ramro xa`, `kasto cha`, and `dherai ramro`
-- mixed Nepali-English policy candidates that preserve protected tokens and offer loanword preferences
-- full-output alternatives so selecting a candidate does not collapse a sentence into a single word
-- local correction memory after explicit candidate selection
+Open Settings → Apps → Installed apps, find Lekh Keyboard Companion, open its
+… menu, and choose Uninstall. Approve the User Account Control prompt. The
+uninstaller stops the companion/broker, removes startup registration, unregisters
+the text service, and removes the installed files.
 
-### Traditional Nepali Typing (Beta)
+## Privacy and safe behavior
 
-Traditional Unicode suggestions and proofread can be validated in the engine. The macOS IMK build now uses macOS layout override when available and an InScript-style fallback mapping when the override is unavailable. Every Traditional mode is labeled **Beta** because the repository has no verified physical-layout corpus or experienced-typist validation; Romanized remains the primary scheme.
+Typing, suggestions, dictionary queries, and proofread processing stay on the
+computer. The v1.0 typing path has no text telemetry and does not require an
+account or network connection.
 
-### Preeti to Unicode
+Lekh refuses to transform secure fields. If the host context, service, or IPC
+state cannot be trusted, it clears local composition state and leaves host text
+unchanged. Personal learning records explicit candidate choices locally; it
+does not store surrounding sentences.
 
-Preeti conversion remains a side utility. It wraps a documented converter baseline, preserves unknown characters instead of dropping them, reports uncertain mappings, and normalizes output before copy.
+## Known limitations
 
-### Suggestions and Spell Hints
+- macOS and Windows packages are unsigned.
+- Windows GUI behavior has automated native/logic coverage but no claimed
+  physical Notepad, browser, or Word visual inspection.
+- The Windows release installer is x64; ARM64 source builds and tests, but no
+  ARM64 installer is currently shipped.
+- Traditional typing is Beta and has no verified physical-layout corpus.
+- Preeti results are fixture-based; there are no consented real-document or
+  user-submitted validation rows.
+- Proofread is conservative and is not full grammar correction.
+- v1.0 has no auto-update service.
 
-Suggestions and basic unknown-word hints run against bundled local data. They are meant to help users discover likely words, not to certify spelling or grammar.
+See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) for the complete release-honesty
+record.
 
-The larger Hunspell dictionary is lazy-loaded as a local browser chunk, so the first app load is not forced to carry the full spellchecking asset.
+---
 
-### Browser Demo and Companion Shell
+## Developers
 
-The browser demo and Electron shell exist to validate the engine, demonstrate typing behavior, and manage companion-style settings. They are not substitutes for TSF/IMK native input methods.
+End users do not need Node.js or a terminal. The rest of this README is for
+contributors building from source.
 
-The production web build writes a service worker that precaches the app shell and Vite hashed assets. Offline behavior is checked as part of `npm run v1:check`.
+### Prerequisites
 
-## Privacy Model
+- Node.js 24
+- npm 11
+- macOS: Xcode Command Line Tools and the macOS SDK
+- Windows: Visual Studio Build Tools, CMake, and the Windows SDK
 
-Typed text, converted text, dictionary queries, raw keystrokes, clipboard content, spell tokens, and output text stay local. The engine hot path must not use the network.
+Install dependencies:
 
-Feedback is explicit. The app prepares a report only when the user chooses to copy or submit it. A deployment can enable email handoff with `VITE_FEEDBACK_EMAIL`; otherwise the report remains local.
+    npm ci
 
-Correction memory is local, explicit, and user-controlled. It must not learn secure-field text, passwords, protected tokens, IDs, emails, URLs, or excluded app input.
+### Primary v1 command surface
 
-## Current Quality Evidence
-
-Current keyboard-specific evidence is produced by committed scripts and generated local reports:
-
-| Gate | Status |
-| --- | --- |
-| Deterministic v1 suite | `npm run v1:test` runs the frozen v1 unit-test surface |
-| Cross-platform release check | `npm run v1:check` runs format, types, deterministic tests, the web build, IPC validation, and the passive-commit policy |
-| macOS package | `npm run v1:package:macos` builds the unsigned universal IMK installer with neural typing forced off |
-| Windows package | `npm run v1:package:windows` builds the unsigned Windows installer |
-
-Internal fixture metrics are useful for regression control, but they are not public superiority claims and they are not a substitute for consented real-document validation or manually filled competitor outputs.
-
-## Run Locally
-
-Prerequisite: Node.js `^20.19.0` or `>=22.12.0`.
-
-```bash
-npm install
-npm run v1:dev
-```
-
-Open the local URL printed by Vite, usually:
-
-```text
-http://127.0.0.1:5173/
-```
-
-## Primary v1 Commands
-
-These eight commands are the supported top-level developer interface for v1.0.
-The older maintenance scripts remain available to repository maintainers but
-are intentionally not part of the primary workflow.
+These eight commands are the only documented top-level v1 entry points.
+Lower-level maintenance scripts remain in package.json for maintainers and
+historical workflows.
 
 | Command | Purpose | Host |
 |---|---|---|
-| `npm run v1:dev` | Start the local Vite development surface | macOS / Windows |
-| `npm run v1:build` | Build the web/companion UI | macOS / Windows |
-| `npm run v1:test` | Run the deterministic v1 test suite | macOS / Windows |
-| `npm run v1:check` | Run the cross-platform v1 preflight | macOS / Windows |
-| `npm run v1:build:macos` | Compile the native macOS input method with neural typing off | macOS |
-| `npm run v1:build:windows` | Compile the native Windows TSF service | Windows |
-| `npm run v1:package:macos` | Build and verify the unsigned universal macOS installer ZIP | macOS |
-| `npm run v1:package:windows` | Build the unsigned Windows installer | Windows |
+| npm run v1:dev | Start the local development surface | macOS / Windows |
+| npm run v1:build | Build the web/companion UI | macOS / Windows |
+| npm run v1:test | Run the deterministic v1 test suite | macOS / Windows |
+| npm run v1:check | Run format, types, tests, build, IPC, and commit-policy checks | macOS / Windows |
+| npm run v1:build:macos | Compile the native macOS input method with neural typing off | macOS |
+| npm run v1:build:windows | Compile the Windows TSF service | Windows |
+| npm run v1:package:macos | Build and verify the unsigned universal installer ZIP | macOS |
+| npm run v1:package:windows | Build the unsigned x64 Windows installer | Windows |
 
-## Project Shape
+### Repository map
 
-```text
-src/
-  app/                 React app entry and shell
-  components/          Shared UI primitives
-  core/
-    normalize/         Unicode normalization
-    preeti/            Preeti conversion wrapper
-    transliteration/   Romanized engine, candidates, local correction memory
-    dictionary/        Local suggestions and spell hints
-    validation/        Real Preeti intake and de-identification pipeline
-  data/
-    fixtures/          Generated and curated test fixtures
-    wordlists/         Local curated seed/domain wordlist
-  features/            Product surfaces
-scripts/               Fixture, dictionary, quality, privacy, and offline gates
-docs/                  Contracts, validation plans, data policy, notices
-native/                macOS IMK and Windows TSF native input-method source
-public/                Manifest and icons
-```
+    src/                         Deterministic engine and focused UI
+    native/macos-imk/skeleton/   macOS InputMethodKit implementation
+    native/windows-tsf/skeleton/ Windows Text Services Framework implementation
+    native/daemon/               Local deterministic daemon
+    native/shared/               IPC and local storage contracts
+    scripts/                     Build, package, and verification automation
+    data/                        Bundled deterministic language data
+    docs/                        Architecture, safety, and historical records
 
-Important contracts:
+Architecture truth: Windows: TSF text service. macOS: InputMethodKit input method.
+The Electron/browser demo is **not** the keyboard app. The companion app is **not** the keyboard app.
+Preeti to Unicode is a side utility, not the main system-wide typing path.
 
-- [`docs/ENGINE_CONTRACT.md`](docs/ENGINE_CONTRACT.md)
-- [`docs/PHONOLOGY_CONTRACT.md`](docs/PHONOLOGY_CONTRACT.md)
-- [`docs/PRIVACY.md`](docs/PRIVACY.md)
-- [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md)
-- [`docs/REAL_PREETI_VALIDATION.md`](docs/REAL_PREETI_VALIDATION.md)
-- [`docs/REAL_DOCUMENT_COLLECTION_PACKET.md`](docs/REAL_DOCUMENT_COLLECTION_PACKET.md)
-- [`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md)
-- [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
-- [`docs/REPOSITORY_GOVERNANCE.md`](docs/REPOSITORY_GOVERNANCE.md)
+### Current evidence
 
-## Data Source Policy
-
-Bundled data must have a documented source and license status. The app currently uses:
-
-- project-owned seed words and domain packs
-- seed-derived surface forms
-- a reviewed `dictionary-ne` ranked lexical expansion derived from LGPL dictionary entries, with local Wikipedia frequency counts used only as ignored research input
-- Romanized phrase and alias ranking packs
-- local aggregate n-gram prediction packs
-- 5,000 generated Romanized fixtures plus manual, hostile, contaminated-regression, and competitor-probe benchmark cases
-- 10,000+ Preeti round-trip fixtures plus hard manual, held-out paragraph, and competitor-probe benchmark cases
-- separate Preeti manual, generated, held-out, competitor-probe, and user-submitted fixture buckets
-- `@nepalibhasha/converter` as the Preeti baseline
-- `dictionary-ne` and `nspell` for browser-local spell validation, with LGPL/MIT notices and a replacement path
-
-No GPL, noncommercial, unclear-license mapping table, scraped private-like document, or unclear-license corpus is bundled in production.
-
-## Feedback and Real-Document Validation
-
-Use the in-app feedback panel for explicit examples the user wants reviewed. Private documents should not be pasted into feedback.
-
-Real Preeti validation has a separate intake path:
-
-1. Collect written permission for each source document.
-2. Keep raw documents and private manifests under ignored `data/private/`.
-3. Use the repository's maintainer-only Preeti intake script.
-4. Review de-identified fixtures and failure tags.
-5. Promote only safe, consented, de-identified fixtures.
-
-The current real-document collection count is `0`. Public real-document quality claims remain blocked until the project has 30-50 consented Preeti documents from target workflows.
-
-## Known Limitations
-
-- Preeti conversion is practical but not perfect. Legacy font documents can contain ambiguous or font-specific text.
-- Romanized typing is a preview common-Nepali profile, not an official Romanization standard.
-- Romanized hostile fixtures pass today, but one older file named held-out is contaminated by phrase-pack overlap and is treated only as regression evidence.
-- Controlled testing is acceptable; broad demo and comparative claims stay blocked by missing consented real Preeti documents and pending manual competitor probes.
-- The dictionary has curated domain packs, phrase/alias packs, and generated surface forms, not a complete Nepali dictionary.
-- Spell hints are local unknown-word hints only. They are not grammar checks.
-- The neural transliteration model is not production-shipped yet. Public model research is wired into source selection and readiness gates, but production requires a trained small Core ML artifact under `models/macos/`.
-- The larger Hunspell spell asset is lazy-loaded locally; first-use spell hints can lag slightly on slower machines.
-- Suggestions focus on the trailing typed token. Candidate alternatives are full-output ranked paths, but full cursor-aware replacement in the middle of a sentence is future work.
-- Native macOS proofread decoration is composition-time candidate UI. Normal host apps do not give an IMK a universal way to draw persistent squiggles under arbitrary text after it is already committed.
-- The custom macOS candidate window is non-activating and host-safe; exact caret anchoring can vary by app because some hosts expose limited caret geometry through IMK.
-- Local correction memory improves repeated inputs through local storage: browser builds use browser-local memory and native macOS builds use a per-user SQLite lexicon.
-- Generated Preeti round-trip fixtures are regression tests, not proof of real-world document coverage.
-- Varnavinyas orthography checking is only a disabled local development probe.
-- Offline support applies after the first successful load.
-
-## Maintainer Docs
-
+- [State of build](STATE_OF_BUILD.md)
+- [Known limitations](KNOWN_LIMITATIONS.md)
+- [Traditional / Preeti corpus result](C3_TRADITIONAL_PREETI_CORPUS_RESULTS.md)
+- [Mid-mission adversarial review](ADVERSARIAL_REVIEW_MID_V1.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
-- [Support](SUPPORT.md)
-- [Code of conduct](CODE_OF_CONDUCT.md)
 - [Third-party notices](docs/THIRD_PARTY_NOTICES.md)
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
-
-## What It Does Not Claim
-
-Lekh does not claim official language authority, government endorsement, perfect Preeti conversion, perfect transliteration, official spellchecking, grammar correction, signed/notarized production native release status, a browser extension, sync, accounts, payments, or server-side text processing.
+MIT. See [LICENSE](LICENSE).
