@@ -1,7 +1,7 @@
-!macro customInstallMode
-  ; Lekh is a per-user TSF input method. Avoid an elevation choice that cannot
-  ; make the HKCU text-service registration available to other accounts.
-  StrCpy $isForceCurrentInstall "1"
+!macro lekhInstallPhase value
+  FileOpen $R9 "$INSTDIR\.lekh-install-phase" w
+  FileWrite $R9 "${value}"
+  FileClose $R9
 !macroend
 
 !macro customCheckAppRunning
@@ -39,6 +39,7 @@
 !macroend
 
 !macro customInstall
+  !insertmacro lekhInstallPhase "custom-install-started"
   DetailPrint "Configuring Lekh Keyboard Companion."
   IfFileExists "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll" lekh_tsf_dll_found
     DetailPrint "Required Lekh TSF DLL is missing; refusing a companion-only keyboard install."
@@ -55,11 +56,13 @@
 
   lekh_pipe_broker_found:
     DetailPrint "Registering Lekh TSF text service."
+    !insertmacro lekhInstallPhase "registering-tsf"
     ClearErrors
     ; electron-builder's NSIS host is 32-bit. Sysnative reaches the native
     ; 64-bit regsvr32 required by the packaged x64 TSF DLL.
     ExecWait '"$WINDIR\Sysnative\regsvr32.exe" /s "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll"' $0
     IfErrors lekh_tsf_registration_failed
+    !insertmacro lekhInstallPhase "register-tsf-exit-$0"
     IntCmp $0 0 lekh_tsf_registration_complete lekh_tsf_registration_failed lekh_tsf_registration_failed
 
   lekh_tsf_registration_failed:
@@ -69,14 +72,17 @@
     Quit
 
   lekh_tsf_registration_complete:
+    !insertmacro lekhInstallPhase "tsf-registered"
     DetailPrint "Lekh TSF text service registered successfully."
 
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "LekhKeyboardCompanion" '"$INSTDIR\Lekh Keyboard Companion.exe" --background'
 
   DetailPrint "Starting the Lekh keyboard service in the background."
+  !insertmacro lekhInstallPhase "starting-companion"
   ClearErrors
   ExecWait '"$SYSDIR\cmd.exe" /D /C start "" /B "$INSTDIR\Lekh Keyboard Companion.exe" --background' $0
   IfErrors lekh_companion_start_failed
+  !insertmacro lekhInstallPhase "start-companion-exit-$0"
   IntCmp $0 0 lekh_companion_started lekh_companion_start_failed lekh_companion_start_failed
 
   lekh_companion_start_failed:
@@ -88,6 +94,7 @@
     Quit
 
   lekh_companion_started:
+    Delete "$INSTDIR\.lekh-install-phase"
     DetailPrint "Lekh keyboard background service started."
 !macroend
 

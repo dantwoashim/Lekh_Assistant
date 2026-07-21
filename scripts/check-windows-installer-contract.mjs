@@ -31,7 +31,7 @@ requireText(source.builder, 'to: "native/windows-tsf"', "electron-builder TSF de
 requireText(source.builder, '"build/bin/Release/LekhTextService.dll"', "electron-builder no longer includes the TSF DLL.");
 requireText(source.builder, '"build/bin/Release/LekhPipeBroker.exe"', "electron-builder no longer includes the pipe broker.");
 requireText(source.builder, "runAfterFinish: false", "electron-builder must not launch a second companion after custom installation.");
-requireText(source.builder, "allowElevation: false", "The per-user TSF installer must not offer an unsupported all-users elevation path.");
+requireText(source.builder, "perMachine: true", "The TSF installer must request the machine-wide registration context required by Windows.");
 requireText(source.package, '"scripts", "build-windows-tsf.mjs"', "Windows packaging must build the TSF DLL first.");
 requireText(source.package, '"native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhTextService.dll"', "Package preflight does not point to the canonical TSF DLL.");
 requireText(source.package, '"native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhPipeBroker.exe"', "Package preflight does not point to the canonical pipe broker.");
@@ -58,8 +58,6 @@ if (installedBrokerPathCount !== 1) {
 }
 requireText(source.installer, "Required Lekh TSF DLL is missing", "NSIS must explain a missing native DLL.");
 requireText(source.installer, "Required Lekh named-pipe broker is missing", "NSIS must explain a missing secure IPC broker.");
-requireText(source.installer, "!macro customInstallMode", "NSIS must force the supported per-user installation mode.");
-requireText(source.installer, 'StrCpy $isForceCurrentInstall "1"', "NSIS must force the supported per-user installation mode.");
 requireText(source.installer, "!macro customCheckAppRunning", "NSIS must use a bounded native process check instead of WMI.");
 requireText(source.installer, 'nsProcess::_FindProcess /NOUNLOAD "${APP_EXECUTABLE_FILENAME}"', "NSIS must check the companion without PowerShell/WMI.");
 requireText(source.installer, "lekh_pipe_broker_found:", "NSIS pipe-broker guard is absent.");
@@ -74,6 +72,7 @@ requireText(source.installer, "SetErrorLevel 1", "NSIS must report failed native
 requireText(source.installer, `ExecWait '"$WINDIR\\Sysnative\\regsvr32.exe" /u /s "${installedDll}"'`, "Uninstall must unregister the same DLL with native 64-bit regsvr32.");
 requireText(source.installer, 'start "" /B "$INSTDIR\\Lekh Keyboard Companion.exe" --background', "Install must detach the companion through a bounded launcher.");
 requireText(source.installer, '"$INSTDIR\\Lekh Keyboard Companion.exe" --background', "Install must persist the companion in background mode.");
+requireText(source.installer, '!insertmacro lekhInstallPhase "registering-tsf"', "Install failures must identify whether native registration started.");
 requireText(source.installer, 'taskkill.exe /F /T /IM "Lekh Keyboard Companion.exe"', "Uninstall must stop the companion process tree before deleting files.");
 requireText(source.installer, 'taskkill.exe /F /IM "LekhPipeBroker.exe"', "Uninstall must stop the native broker before deleting files.");
 requireText(source.lifecycle, "Invoke-DaemonHealthCheck", "The installer lifecycle test must negotiate with the installed daemon.");

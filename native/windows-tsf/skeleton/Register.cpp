@@ -16,6 +16,19 @@ extern HMODULE g_module;
 
 namespace {
 
+HRESULT initializeComForRegistration(bool* mustUninitialize) {
+  if (!mustUninitialize) return E_POINTER;
+  *mustUninitialize = false;
+  const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  if (SUCCEEDED(hr)) {
+    *mustUninitialize = true;
+    return S_OK;
+  }
+  // regsvr32 can initialize COM before calling the export. Its apartment is
+  // usable even when requesting a different model returns RPC_E_CHANGED_MODE.
+  return hr == RPC_E_CHANGED_MODE ? S_OK : hr;
+}
+
 HRESULT guidToString(REFGUID guid, wchar_t* output, size_t outputCount) {
   return StringFromGUID2(guid, output, static_cast<int>(outputCount)) > 0 ? S_OK : E_FAIL;
 }
@@ -45,12 +58,12 @@ HRESULT registerComServer() {
 
   wchar_t keyPath[256] = {};
   RETURN_IF_FAILED(StringCchPrintfW(keyPath, ARRAYSIZE(keyPath), L"Software\\Classes\\CLSID\\%s", clsid));
-  RETURN_IF_FAILED(writeStringValue(HKEY_CURRENT_USER, keyPath, nullptr, kLekhTextServiceDescription));
+  RETURN_IF_FAILED(writeStringValue(HKEY_LOCAL_MACHINE, keyPath, nullptr, kLekhTextServiceDescription));
 
   wchar_t inprocPath[300] = {};
   RETURN_IF_FAILED(StringCchPrintfW(inprocPath, ARRAYSIZE(inprocPath), L"%s\\InprocServer32", keyPath));
-  RETURN_IF_FAILED(writeStringValue(HKEY_CURRENT_USER, inprocPath, nullptr, modulePath));
-  RETURN_IF_FAILED(writeStringValue(HKEY_CURRENT_USER, inprocPath, L"ThreadingModel", L"Apartment"));
+  RETURN_IF_FAILED(writeStringValue(HKEY_LOCAL_MACHINE, inprocPath, nullptr, modulePath));
+  RETURN_IF_FAILED(writeStringValue(HKEY_LOCAL_MACHINE, inprocPath, L"ThreadingModel", L"Apartment"));
   return S_OK;
 }
 
@@ -59,14 +72,15 @@ HRESULT unregisterComServer() {
   RETURN_IF_FAILED(guidToString(CLSID_LekhTextService, clsid, ARRAYSIZE(clsid)));
   wchar_t keyPath[256] = {};
   RETURN_IF_FAILED(StringCchPrintfW(keyPath, ARRAYSIZE(keyPath), L"Software\\Classes\\CLSID\\%s", clsid));
-  const LONG result = SHDeleteKeyW(HKEY_CURRENT_USER, keyPath);
+  const LONG result = SHDeleteKeyW(HKEY_LOCAL_MACHINE, keyPath);
   return result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND ? S_OK : HRESULT_FROM_WIN32(result);
 }
 
 HRESULT registerTsfProfile() {
   ITfInputProcessorProfiles* profiles = nullptr;
   HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER, IID_ITfInputProcessorProfiles, reinterpret_cast<void**>(&profiles));
-  if (FAILED(hr) || !profiles) return hr;
+  if (FAILED(hr)) return hr;
+  if (!profiles) return E_NOINTERFACE;
 
   hr = profiles->Register(CLSID_LekhTextService);
   if (SUCCEEDED(hr)) {
@@ -83,12 +97,14 @@ HRESULT registerTsfProfile() {
     );
   }
   profiles->Release();
+  if (FAILED(hr)) return hr;
 
   ITfCategoryMgr* categoryMgr = nullptr;
-  if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_ITfCategoryMgr, reinterpret_cast<void**>(&categoryMgr))) && categoryMgr) {
-    categoryMgr->RegisterCategory(CLSID_LekhTextService, GUID_TFCAT_TIP_KEYBOARD, CLSID_LekhTextService);
-    categoryMgr->Release();
-  }
+  hr = CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_ITfCategoryMgr, reinterpret_cast<void**>(&categoryMgr));
+  if (FAILED(hr)) return hr;
+  if (!categoryMgr) return E_NOINTERFACE;
+  hr = categoryMgr->RegisterCategory(CLSID_LekhTextService, GUID_TFCAT_TIP_KEYBOARD, CLSID_LekhTextService);
+  categoryMgr->Release();
   return hr;
 }
 
@@ -105,17 +121,23 @@ HRESULT unregisterTsfProfile() {
 } // namespace
 
 STDAPI DllRegisterServer() {
-  RETURN_IF_FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
+  bool mustUninitialize = false;
+  RETURN_IF_FAILED(initializeComForRegistration(&mustUninitialize));
   const HRESULT comResult = registerComServer();
   const HRESULT tsfResult = SUCCEEDED(comResult) ? registerTsfProfile() : comResult;
-  CoUninitialize();
+  if (FAILED(tsfResult)) {
+    unregisterTsfProfile();
+    unregisterComServer();
+  }
+  if (mustUninitialize) CoUninitialize();
   return tsfResult;
 }
 
 STDAPI DllUnregisterServer() {
-  CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-  unregisterTsfProfile();
+  bool mustUninitialize = false;
+  const HRESULT initialization = initializeComForRegistration(&mustUninitialize);
+  if (SUCCEEDED(initialization)) unregisterTsfProfile();
   const HRESULT result = unregisterComServer();
-  CoUninitialize();
-  return result;
+  if (mustUninitialize) CoUninitialize();
+  return FAILED(initialization) ? initialization : result;
 }

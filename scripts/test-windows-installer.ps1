@@ -14,9 +14,10 @@ $CompanionPath = Join-Path $InstallDirectory "Lekh Keyboard Companion.exe"
 $TsfPath = Join-Path $InstallDirectory "resources\native\windows-tsf\build\bin\Release\LekhTextService.dll"
 $BrokerPath = Join-Path $InstallDirectory "resources\native\windows-tsf\build\bin\Release\LekhPipeBroker.exe"
 $DaemonPath = Join-Path $InstallDirectory "resources\native\daemon\lekh-keyboard-daemon.mjs"
-$ComKey = "HKCU:\Software\Classes\CLSID\$Clsid"
+$PhasePath = Join-Path $InstallDirectory ".lekh-install-phase"
+$ComKey = "HKLM:\Software\Classes\CLSID\$Clsid"
 $InprocKey = Join-Path $ComKey "InprocServer32"
-$TipKey = "HKCU:\Software\Microsoft\CTF\TIP\$Clsid"
+$TipKey = "HKLM:\Software\Microsoft\CTF\TIP\$Clsid"
 $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 
 if ([string]::IsNullOrWhiteSpace($InstallerPath)) {
@@ -47,23 +48,32 @@ function Invoke-CheckedProcess {
   # wait only for the installer or uninstaller process itself.
   $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru
   if (!$process.WaitForExit($TimeoutSeconds * 1000)) {
-    Write-Host "DIAGNOSTICS: process $($process.Id) did not exit; recording installer state."
-    foreach ($path in @($InstallDirectory, $CompanionPath, $TsfPath, $BrokerPath, $DaemonPath)) {
-      Write-Host "DIAGNOSTICS: exists=$([bool](Test-Path -LiteralPath $path)) path=$path"
-    }
-    foreach ($key in @($InprocKey, $TipKey, $RunKey)) {
-      Write-Host "DIAGNOSTICS: registryExists=$([bool](Test-Path -LiteralPath $key)) key=$key"
-    }
-    Get-Process -ErrorAction SilentlyContinue |
-      Where-Object { $_.ProcessName -match "Lekh|Uninstall|Setup|regsvr32" } |
-      ForEach-Object { Write-Host "DIAGNOSTICS: process=$($_.ProcessName) pid=$($_.Id)" }
+    Write-Host "DIAGNOSTICS: process $($process.Id) did not exit."
+    Write-InstallerDiagnostics
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     $process.WaitForExit()
     throw "$FilePath did not exit within $TimeoutSeconds seconds."
   }
   if ($process.ExitCode -ne 0) {
+    Write-Host "DIAGNOSTICS: process $($process.Id) exited with code $($process.ExitCode)."
+    Write-InstallerDiagnostics
     throw "$FilePath exited with code $($process.ExitCode)."
   }
+}
+
+function Write-InstallerDiagnostics {
+  if (Test-Path -LiteralPath $PhasePath -PathType Leaf) {
+    Write-Host "DIAGNOSTICS: installerPhase=$(Get-Content -LiteralPath $PhasePath -Raw)"
+  }
+  foreach ($path in @($InstallDirectory, $CompanionPath, $TsfPath, $BrokerPath, $DaemonPath)) {
+    Write-Host "DIAGNOSTICS: exists=$([bool](Test-Path -LiteralPath $path)) path=$path"
+  }
+  foreach ($key in @($InprocKey, $TipKey, $RunKey)) {
+    Write-Host "DIAGNOSTICS: registryExists=$([bool](Test-Path -LiteralPath $key)) key=$key"
+  }
+  Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProcessName -match "Lekh|Uninstall|Setup|regsvr32" } |
+    ForEach-Object { Write-Host "DIAGNOSTICS: process=$($_.ProcessName) pid=$($_.Id)" }
 }
 
 function Wait-Until {
@@ -140,7 +150,7 @@ function Invoke-DaemonHealthCheck {
 
 try {
   Write-Host "INSTALL: running the unsigned NSIS artifact silently."
-  Invoke-CheckedProcess -FilePath $InstallerPath -Arguments @("/S", "/currentuser", "/D=$InstallDirectory")
+  Invoke-CheckedProcess -FilePath $InstallerPath -Arguments @("/S", "/allusers", "/D=$InstallDirectory")
 
   foreach ($required in @($CompanionPath, $TsfPath, $BrokerPath, $DaemonPath)) {
     if (!(Test-Path -LiteralPath $required -PathType Leaf)) {
