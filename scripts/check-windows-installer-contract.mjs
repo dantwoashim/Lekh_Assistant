@@ -84,6 +84,7 @@ requireText(source.lifecycle, 'did not become ready within 30 seconds', "The lif
 requireText(source.lifecycle, "The installer did not register the TSF input profile.", "The lifecycle test must verify TSF registration.");
 requireText(source.lifecycle, "COM registration remained after uninstall.", "The lifecycle test must reject leftover COM registration.");
 requireText(source.lifecycle, "TSF profile registration remained after uninstall.", "The lifecycle test must reject leftover TSF registration.");
+requireText(source.lifecycle, "@(Get-InstalledProcesses).Count -eq 0", "The lifecycle cleanup check must treat an empty PowerShell pipeline as zero processes.");
 requireText(source.workflow, "Build unsigned Windows installer", "Windows CI must build the actual unsigned NSIS artifact.");
 requireText(source.workflow, "Verify silent Windows install lifecycle", "Windows CI must run the silent installer lifecycle test.");
 

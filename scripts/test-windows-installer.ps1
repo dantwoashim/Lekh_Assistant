@@ -197,7 +197,7 @@ try {
   Write-Host "INSTALL: artifacts, COM, TSF, and startup entry verified."
 
   Wait-Until -Condition {
-    (Get-InstalledProcesses | Where-Object { $_.Name -eq "LekhPipeBroker.exe" }).Count -ge 1
+    @(Get-InstalledProcesses | Where-Object { $_.Name -eq "LekhPipeBroker.exe" }).Count -ge 1
   } -FailureMessage "The installed Lekh pipe broker did not stay running."
   Invoke-DaemonHealthCheck
   Write-Host "INSTALL: TSF registration and installed artifacts verified."
@@ -212,7 +212,7 @@ try {
 
   Wait-Until -Condition { !(Test-Path -LiteralPath $InstallDirectory) } `
     -FailureMessage "The installation directory remained after uninstall."
-  Wait-Until -Condition { (Get-InstalledProcesses).Count -eq 0 } `
+  Wait-Until -Condition { @(Get-InstalledProcesses).Count -eq 0 } `
     -FailureMessage "Installed Lekh processes remained after uninstall."
   if (Test-Path -LiteralPath $ComKey) { throw "COM registration remained after uninstall." }
   if (Test-Path -LiteralPath $TipKey) { throw "TSF profile registration remained after uninstall." }
