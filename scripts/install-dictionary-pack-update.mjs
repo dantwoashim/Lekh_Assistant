@@ -27,7 +27,7 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 
 const manifestPath = args.get("manifest") ? resolve(args.get("manifest")) : null;
-const appVersion = args.get("app-version") ?? "0.1.0";
+const appVersion = args.get("app-version") ?? "1.0.0";
 const appBuild = Number(args.get("app-build") ?? 5);
 const packDirectory = join(homedir(), "Library", "Application Support", "Lekh Keyboard", "Packs");
 const activePackPath = join(packDirectory, "runtime-suggestions.current.lkb");

@@ -76,7 +76,7 @@ try {
     bytes: pack.length,
     sha256,
     path: packFileName,
-    minAppVersion: args.get("min-app-version") ?? "0.1.0",
+    minAppVersion: args.get("min-app-version") ?? "1.0.0",
     minAppBuild: Number.isFinite(minAppBuild) ? minAppBuild : 5,
     maxAppBuild: Number.isFinite(maxAppBuild) ? maxAppBuild : null,
     installName: "runtime-suggestions.current.lkb",

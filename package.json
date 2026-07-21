@@ -1,7 +1,7 @@
 {
   "name": "lekh-keyboard",
   "private": true,
-  "version": "0.1.0-week1",
+  "version": "1.0.0",
   "description": "Lekh Keyboard companion, daemon, and native input method source for local-first Nepali typing.",
   "author": "Lekh",
   "license": "MIT",

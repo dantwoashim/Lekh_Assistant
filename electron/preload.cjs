@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld("lekhDesktop", {
   platform: process.platform,
   arch: process.arch,
   versions: {
-    app: process.env.npm_package_version || "0.1.0-week1"
+    app: process.env.npm_package_version || "1.0.0"
   },
   productBoundary:
     "This desktop shell manages settings, privacy, diagnostics, and install status. Native TSF/IMK input methods handle keystrokes.",

@@ -19,7 +19,7 @@ for (let index = 2; index < process.argv.length; index += 1) {
 const zipPath = args.get("zip") ?? join(ROOT, "release", "native", "macos", "Lekh-Keyboard-Test-Installer.zip");
 const appcastPath = args.get("out") ?? join(ROOT, "release", "native", "macos", "appcast.xml");
 const version = args.get("version") ?? "5";
-const shortVersion = args.get("short-version") ?? "0.1.0";
+const shortVersion = args.get("short-version") ?? "1.0.0";
 const minimumAutoupdateVersion = args.get("minimum-autoupdate-version") ?? version;
 const channel = args.get("channel") ?? "monthly";
 const updateURL = args.get("url") ?? "https://lekh-assistant.pages.dev/updates/macos/Lekh-Keyboard-Test-Installer.zip";

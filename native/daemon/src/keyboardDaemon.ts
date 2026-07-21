@@ -32,7 +32,7 @@ import type {
 } from "../../shared/ipc/messages";
 import { IpcProtocolState } from "./protocolState";
 
-const DAEMON_VERSION = "0.1.0-dev";
+const DAEMON_VERSION = "1.0.0";
 const HOT_PATH_TIMEOUT_MS = 50;
 
 export interface KeyboardDaemonPersistence {
