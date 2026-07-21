@@ -91,3 +91,4 @@
 - V2-089 Isolate Windows public pipe endpoints by logon session as well as user SID for concurrent sessions of one account.
 - V2-090 Make Windows uninstall fail visibly and recoverably if TSF unregistration fails instead of leaving stale registration.
 - V2-091 Make Windows background-start failure rollback remove all partially installed application files.
+- V2-092 Add an explicit Windows uninstall choice for retaining or deleting every Lekh-owned per-user preference and cache file.
