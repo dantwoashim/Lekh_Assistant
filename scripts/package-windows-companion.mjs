@@ -171,6 +171,25 @@ if (builder.status !== 0) {
 }
 
 const releaseDir = join(root, "release");
+const unpackedDirectory = join(
+  releaseDir,
+  architecture.electronBuilder === "arm64" ? "win-arm64-unpacked" : "win-unpacked"
+);
+const unpackedArtifacts = [
+  join(unpackedDirectory, "Lekh Keyboard Companion.exe"),
+  join(unpackedDirectory, "resources", "native", "windows-tsf", "build", "bin", "Release", "LekhTextService.dll"),
+  join(unpackedDirectory, "resources", "native", "windows-tsf", "build", "bin", "Release", "LekhPipeBroker.exe"),
+  join(unpackedDirectory, "resources", "native", "daemon", "lekh-keyboard-daemon.mjs")
+];
+const missingUnpackedArtifacts = unpackedArtifacts.filter((path) => !existsSync(path));
+if (missingUnpackedArtifacts.length > 0) {
+  finish("failed", {
+    step: "unpacked-artifacts",
+    reason: "electron-builder omitted required architecture-specific runtime files.",
+    missingArtifacts: missingUnpackedArtifacts
+  }, 1);
+}
+
 const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 const exe = join(
   releaseDir,
@@ -184,7 +203,11 @@ if (!existsSync(exe)) {
   }, 1);
 }
 
-finish(signed ? "passed-signed" : "passed-unsigned-dev", { artifact: exe, signed: !unsigned }, 0);
+finish(signed ? "passed-signed" : "passed-unsigned-dev", {
+  artifact: exe,
+  unpackedArtifacts,
+  signed: !unsigned
+}, 0);
 
 function runNode(script, args = [], options = {}) {
   return spawnSync(process.execPath, [script, ...args], {

@@ -27,11 +27,11 @@ module.exports = {
       filter: ["**/*"]
     },
     {
-      from: `native/windows-tsf/skeleton/${windowsNativeBuildDirectory}`,
-      to: "native/windows-tsf/build",
+      from: `native/windows-tsf/skeleton/${windowsNativeBuildDirectory}/bin/Release`,
+      to: "native/windows-tsf/build/bin/Release",
       filter: [
-        "bin/Release/LekhTextService.dll",
-        "bin/Release/LekhPipeBroker.exe"
+        "LekhTextService.dll",
+        "LekhPipeBroker.exe"
       ]
     },
     {

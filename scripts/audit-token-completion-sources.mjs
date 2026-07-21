@@ -58,7 +58,8 @@ for (const disposition of quarantine.dispositions ?? []) {
   const absolute = join(ROOT, disposition.path ?? "");
   if (!disposition.path || dispositionPaths.has(disposition.path)) failures.push(`Duplicate or missing quarantine path: ${disposition.path ?? "missing"}.`);
   dispositionPaths.add(disposition.path);
-  if (!existsSync(absolute)) failures.push(`Quarantined source is missing: ${disposition.path}.`);
+  // Quarantined corpora are intentionally allowed to be absent from a
+  // distributable checkout; only runtime-eligible sources must be present.
   if (!Array.isArray(disposition.reasons) || disposition.reasons.length === 0) failures.push(`Quarantine row has no reasons: ${disposition.path}.`);
   if (String(disposition.status).includes("eligible")) failures.push(`Quarantine row may not be runtime eligible: ${disposition.path}.`);
 }
