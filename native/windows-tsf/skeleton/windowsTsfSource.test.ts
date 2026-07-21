@@ -214,6 +214,8 @@ describe("Windows TSF source safety contract", () => {
     expect(broker).toContain("readClientFrame(pipe, requestReadDeadline)");
     expect(broker).toContain("isProtocolNegotiation(*request)");
     expect(broker).toContain("operationDeadline");
+    expect(broker).toContain("if (responseWritten) FlushFileBuffers(pipe)");
+    expect(broker.indexOf("FlushFileBuffers(pipe)")).toBeLessThan(broker.lastIndexOf("closeConnectedPipe(pipe)"));
     expect(broker).toContain("verifyBackendReadiness(backend)");
     expect(broker).toContain("kMaximumConnections - kWorkerCount - 1");
     expect(backend).toContain("PROC_THREAD_ATTRIBUTE_HANDLE_LIST");

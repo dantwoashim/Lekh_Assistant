@@ -363,10 +363,12 @@ void serveClient(HANDLE pipe, lekh::pipe::DaemonBackend& backend) {
     ? std::chrono::steady_clock::now() + std::chrono::milliseconds(kControlDeadlineMilliseconds)
     : hotPathDeadline;
   const std::optional<DWORD> backendTimeout = remainingMilliseconds(operationDeadline);
+  bool responseWritten = false;
   if (request && backendTimeout) {
     const std::optional<std::string> response = backend.request(*request + "\n", *backendTimeout);
-    if (response) writeClientFrame(pipe, *response, operationDeadline);
+    responseWritten = response && writeClientFrame(pipe, *response, operationDeadline);
   }
+  if (responseWritten) FlushFileBuffers(pipe);
   closeConnectedPipe(pipe);
 }
 
