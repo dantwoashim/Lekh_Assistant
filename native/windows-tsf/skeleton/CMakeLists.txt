@@ -75,6 +75,7 @@ target_include_directories(LekhDaemonBackend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(LekhDaemonBackend PRIVATE LekhPipeSecurity bcrypt)
 
 add_library(LekhTextService SHARED
+  CandidateWindow.cpp
   ClassFactory.cpp
   DllMain.cpp
   InputScopeGuids.cpp
@@ -94,6 +95,7 @@ target_compile_definitions(LekhTextService PRIVATE
 )
 target_include_directories(LekhTextService PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(LekhTextService PRIVATE
+  LekhCandidateState
   LekhTsfProtocol
   LekhPipeServerIdentity
   LekhWindowsIdentity
@@ -101,7 +103,9 @@ target_link_libraries(LekhTextService PRIVATE
   oleaut32
   uuid
   advapi32
+  gdi32
   shlwapi
+  user32
 )
 
 add_executable(LekhPipeBroker WIN32

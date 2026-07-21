@@ -94,17 +94,40 @@ describe("Windows TSF source safety contract", () => {
     expect(read("CMakeLists.txt")).toContain("InputScopeGuids.cpp");
   });
 
-  it("does not consume unsupported candidate or navigation keys without a native UI", () => {
+  it("renders and navigates the bounded native candidate list without taking focus", () => {
     const source = read("LekhTextService.cpp");
+    const header = read("LekhTextService.h");
+    const state = read("CandidateState.cpp");
+    const window = read("CandidateWindow.cpp");
+    const protocol = read("TsfProtocol.cpp");
+    const cmake = read("CMakeLists.txt");
     const handleBlock = source.slice(
       source.indexOf("bool LekhTextService::shouldHandleKey"),
       source.indexOf("bool LekhTextService::prepareSafeContext")
     );
+    expect(header).toContain("lekh::tsf::CandidateState candidateState_");
+    expect(header).toContain("lekh::tsf::CandidateWindow candidateWindow_");
+    expect(handleBlock).toContain("candidateState_.visible() && candidateCommand(wParam)");
     expect(handleBlock).toContain("if (!activeComposition_) return false");
-    expect(handleBlock).toContain("VK_SPACE");
-    expect(handleBlock).toContain("VK_BACK");
-    expect(handleBlock).toContain("VK_RETURN");
-    expect(handleBlock).toContain("VK_ESCAPE");
+    expect(source).toContain("VK_UP");
+    expect(source).toContain("VK_DOWN");
+    expect(source).toContain("CandidateCommand::Digit1");
+    expect(source).toContain("CandidateCommand::Digit8");
+    expect(source).toContain("CandidateCommand::ConfirmWithSpace");
+    expect(source).toContain("CandidateCommand::ConfirmWithEnter");
+    expect(source).toContain("makeCommitCandidateRequest");
+    expect(source).toContain("parseCommitCandidateResponse");
+    expect(state).toContain("CandidateInteractionType::SelectionChanged");
+    expect(state).toContain("CandidateInteractionType::CommitRequested");
+    expect(protocol).toContain("kMaximumCandidateCount");
+    expect(window).toContain("CreateWindowExW");
+    expect(window).toContain("WS_EX_NOACTIVATE");
+    expect(window).toContain("SWP_NOACTIVATE | SWP_SHOWWINDOW");
+    expect(window).toContain("DrawTextW");
+    expect(window).toContain("DT_END_ELLIPSIS");
+    expect(window).toContain('L"Nirmala UI"');
+    expect(cmake).toContain("add_executable(LekhCandidateStateTests");
+    expect(cmake).toContain("add_test(NAME LekhCandidateStateTests");
     expect(handleBlock).not.toContain("VK_TAB");
     expect(handleBlock).not.toContain("VK_DELETE");
   });
@@ -207,6 +230,24 @@ describe("Windows TSF source safety contract", () => {
     const run = spawnSync(executable, [], { encoding: "utf8" });
     expect(run.status, `${run.stdout}\n${run.stderr}`).toBe(0);
     expect(run.stdout).toContain("TSF protocol v2 tests passed");
+
+    const candidateExecutable = join(temporaryDirectory, "CandidateStateTests");
+    const candidateBuild = spawnSync("c++", [
+      "-std=c++20",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-Werror",
+      join(skeleton, "CandidateState.cpp"),
+      join(skeleton, "CandidateStateTests.cpp"),
+      "-o",
+      candidateExecutable
+    ], { encoding: "utf8" });
+    expect(candidateBuild.status, `${candidateBuild.stdout}\n${candidateBuild.stderr}`).toBe(0);
+
+    const candidateRun = spawnSync(candidateExecutable, [], { encoding: "utf8" });
+    expect(candidateRun.status, `${candidateRun.stdout}\n${candidateRun.stderr}`).toBe(0);
+    expect(candidateRun.stdout).toContain("Candidate state navigation tests passed");
   });
 });
 

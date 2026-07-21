@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CandidateState.h"
+#include "CandidateWindow.h"
 #include "IpcClient.h"
 #include "TsfEditSession.h"
 #include "TsfProtocol.h"
@@ -51,6 +53,10 @@ private:
   bool negotiateDaemon();
   bool beginDaemonSession();
   bool processKey(ITfContext* context, WPARAM wParam, LPARAM lParam);
+  bool commitCandidate(ITfContext* context, const lekh::tsf::Candidate& candidate);
+  bool applyDecision(ITfContext* context, const lekh::tsf::EngineDecision& decision);
+  void updateCandidateUi(const lekh::tsf::EngineDecision& decision);
+  void resetCandidateUi();
   void endDaemonSession();
   void abandonDaemonSession();
   void closeActiveContext(bool finishComposition);
@@ -68,6 +74,8 @@ private:
   LekhIpcClient ipc_;
   ITfContext* activeContext_ = nullptr;
   ITfComposition* activeComposition_ = nullptr;
+  lekh::tsf::CandidateState candidateState_;
+  lekh::tsf::CandidateWindow candidateWindow_;
   std::wstring clientInstanceId_;
   std::wstring serverInstanceId_;
   lekh::tsf::SessionHandle session_;

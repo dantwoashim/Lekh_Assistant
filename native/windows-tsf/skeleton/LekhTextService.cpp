@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cwchar>
 #include <iterator>
+#include <optional>
 #include <string>
 
 extern long g_objectCount;
@@ -45,6 +46,33 @@ bool isRomanizedLetter(const std::wstring& key) {
     (key[0] >= L'a' && key[0] <= L'z') ||
     (key[0] >= L'A' && key[0] <= L'Z')
   );
+}
+
+std::optional<lekh::tsf::CandidateCommand> candidateCommand(WPARAM wParam) {
+  using lekh::tsf::CandidateCommand;
+  switch (wParam) {
+    case VK_UP: return CandidateCommand::Previous;
+    case VK_DOWN: return CandidateCommand::Next;
+    case VK_SPACE: return CandidateCommand::ConfirmWithSpace;
+    case VK_RETURN: return CandidateCommand::ConfirmWithEnter;
+    case L'1':
+    case VK_NUMPAD1: return CandidateCommand::Digit1;
+    case L'2':
+    case VK_NUMPAD2: return CandidateCommand::Digit2;
+    case L'3':
+    case VK_NUMPAD3: return CandidateCommand::Digit3;
+    case L'4':
+    case VK_NUMPAD4: return CandidateCommand::Digit4;
+    case L'5':
+    case VK_NUMPAD5: return CandidateCommand::Digit5;
+    case L'6':
+    case VK_NUMPAD6: return CandidateCommand::Digit6;
+    case L'7':
+    case VK_NUMPAD7: return CandidateCommand::Digit7;
+    case L'8':
+    case VK_NUMPAD8: return CandidateCommand::Digit8;
+    default: return std::nullopt;
+  }
 }
 
 std::wstring physicalKeyCode(WPARAM wParam, LPARAM lParam) {
@@ -239,6 +267,7 @@ bool LekhTextService::shouldHandleKey(WPARAM wParam, LPARAM lParam) const {
       GetKeyState(VK_LWIN) < 0 || GetKeyState(VK_RWIN) < 0) {
     return false;
   }
+  if (candidateState_.visible() && candidateCommand(wParam)) return true;
   if (isRomanizedLetter(logicalKey(wParam, lParam))) return true;
   if (!activeComposition_) return false;
   return wParam == VK_SPACE || wParam == VK_BACK || wParam == VK_RETURN || wParam == VK_ESCAPE;
@@ -304,6 +333,23 @@ bool LekhTextService::beginDaemonSession() {
 
 bool LekhTextService::processKey(ITfContext* context, WPARAM wParam, LPARAM lParam) {
   if (session_.sessionId.empty() || serverInstanceId_.empty() || context != activeContext_) return false;
+  if (candidateState_.visible()) {
+    const std::optional<lekh::tsf::CandidateCommand> command = candidateCommand(wParam);
+    if (command) {
+      const lekh::tsf::CandidateInteraction interaction = candidateState_.handle(*command);
+      if (interaction.type == lekh::tsf::CandidateInteractionType::SelectionChanged) {
+        if (!candidateWindow_.show(candidateState_.candidates(), candidateState_.selectedIndex())) {
+          candidateState_.reset();
+        }
+        return true;
+      }
+      if (interaction.type == lekh::tsf::CandidateInteractionType::CommitRequested && interaction.candidate) {
+        return commitCandidate(context, *interaction.candidate);
+      }
+      return false;
+    }
+  }
+
   const lekh::tsf::RequestMetadata request = nextRequestMetadata(L"key", kLekhHotPathTimeoutMs);
   const std::optional<std::wstring> response = ipc_.request(
     lekh::tsf::makeProcessKeyRequest(
@@ -329,31 +375,88 @@ bool LekhTextService::processKey(ITfContext* context, WPARAM wParam, LPARAM lPar
     return false;
   }
 
+  return applyDecision(context, *decision);
+}
+
+bool LekhTextService::commitCandidate(ITfContext* context, const lekh::tsf::Candidate& candidate) {
+  if (candidate.id.empty() || session_.sessionId.empty() || serverInstanceId_.empty() || context != activeContext_) {
+    return false;
+  }
+  const lekh::tsf::RequestMetadata request = nextRequestMetadata(L"candidate", kLekhHotPathTimeoutMs);
+  const std::optional<std::wstring> response = ipc_.request(
+    lekh::tsf::makeCommitCandidateRequest(request, session_, candidate.id),
+    kLekhHotPathTimeoutMs
+  );
+  if (!response) {
+    abandonDaemonSession();
+    return false;
+  }
+  std::optional<lekh::tsf::EngineDecision> decision = lekh::tsf::parseCommitCandidateResponse(
+    *response,
+    request,
+    serverInstanceId_,
+    session_
+  );
+  if (!decision || decision->action == lekh::tsf::EngineAction::PassThrough) {
+    abandonDaemonSession();
+    return false;
+  }
+  if (decision->action == lekh::tsf::EngineAction::Compose) {
+    decision->compositionText = candidate.text;
+    decision->displayText = candidate.text;
+    decision->caret = candidate.text.size();
+  }
+  return applyDecision(context, *decision);
+}
+
+bool LekhTextService::applyDecision(ITfContext* context, const lekh::tsf::EngineDecision& decision) {
+  if (decision.action == lekh::tsf::EngineAction::PassThrough) return false;
+
   const bool applied = lekh::tsf::applyEngineDecision(
     context,
     clientId_,
     &activeComposition_,
-    *decision
+    decision
   );
   if (!applied) {
     abandonDaemonSession();
     return false;
   }
 
-  const bool compositionRequired = decision->action == lekh::tsf::EngineAction::Compose && !decision->displayText.empty();
-  const bool compositionMustEnd = decision->action == lekh::tsf::EngineAction::Commit ||
-    decision->action == lekh::tsf::EngineAction::Cancel || decision->displayText.empty();
+  const bool compositionRequired = decision.action == lekh::tsf::EngineAction::Compose && !decision.displayText.empty();
+  const bool compositionMustEnd = decision.action == lekh::tsf::EngineAction::Commit ||
+    decision.action == lekh::tsf::EngineAction::Cancel || decision.displayText.empty();
   if ((compositionRequired && !activeComposition_) ||
       (compositionMustEnd && activeComposition_ &&
        !lekh::tsf::finishActiveComposition(context, clientId_, &activeComposition_))) {
     contextSuppressed_ = true;
     endDaemonSession();
     lekh::tsf::releaseActiveComposition(&activeComposition_);
+    return true;
   }
+  updateCandidateUi(decision);
   return true;
 }
 
+void LekhTextService::updateCandidateUi(const lekh::tsf::EngineDecision& decision) {
+  const bool show = decision.action == lekh::tsf::EngineAction::Compose && decision.shouldShowCandidateUi;
+  candidateState_.update(decision.candidates, show);
+  if (!candidateState_.visible()) {
+    candidateWindow_.hide();
+    return;
+  }
+  if (!candidateWindow_.show(candidateState_.candidates(), candidateState_.selectedIndex())) {
+    candidateState_.reset();
+  }
+}
+
+void LekhTextService::resetCandidateUi() {
+  candidateWindow_.hide();
+  candidateState_.reset();
+}
+
 void LekhTextService::endDaemonSession() {
+  resetCandidateUi();
   if (session_.sessionId.empty()) return;
   const lekh::tsf::SessionHandle endingSession = session_;
   session_ = {};
