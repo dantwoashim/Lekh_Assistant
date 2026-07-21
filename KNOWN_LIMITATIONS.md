@@ -13,3 +13,9 @@ This proves the final native TSF text-mutation path without substituting clipboa
 CI verifies the complete headless candidate interaction state machine for digits 1–8, Up/Down, Space, and Enter. It also compiles the concrete non-activating Win32 renderer on x64 and ARM64 and verifies that a digit-selected candidate reaches the real TSF test sink as exact Devanagari text.
 
 CI does not capture and inspect candidate-window pixels inside a physical Notepad, browser, or Word session. Rendering and application-specific placement therefore remain documented real-hardware validation gaps rather than claimed results.
+
+## Windows distribution
+
+The Windows installer is unsigned. Windows may show an unknown-publisher or SmartScreen warning, and no claim of Microsoft trust, signing, or certification is made. The input method uses machine-wide COM and TSF registration, so installation and removal require administrator approval through Windows User Account Control.
+
+The silent install/startup/daemon/uninstall lifecycle is CI-verified for the x64 installer. Windows ARM64 compiles and passes the native service tests on an ARM64 runner, but an ARM64 installer artifact is not yet produced by the current packaging configuration.

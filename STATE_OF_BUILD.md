@@ -271,3 +271,41 @@ CI compiles the renderer and verifies its state and final text mutation, but it
 does not perform a pixel-level visual inspection inside a physical Notepad,
 browser, or Word session. That exact distinction is recorded in
 `KNOWN_LIMITATIONS.md`.
+
+## B3 Windows installer lifecycle evidence
+
+Revision `416575f181d67291e11290daa688d08cdf93f944` passed the complete
+silent installer lifecycle in
+[CI run 29842059755](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29842059755).
+All four architecture jobs in that run were green. The executable installer
+lifecycle ran in the
+[Windows x64 job 88673155934](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29842059755/job/88673155934);
+the Windows ARM64 job built and tested the native service but intentionally
+skipped the x64-only installer steps.
+
+The job built the unsigned artifact
+`Lekh-Keyboard-Companion-0.1.0-week1-Setup-x64.exe` directly from the tested
+revision, then ran `scripts/test-windows-installer.ps1` in silent mode. The
+receipt proves all of the following on a clean, isolated Windows runner target:
+
+- installation produced the companion executable, native TSF DLL, native pipe
+  broker, and deterministic daemon;
+- machine-wide COM registration pointed at the installed TSF DLL and the TSF
+  input profile existed;
+- the current-user background startup entry contained the installed companion
+  command;
+- the installed broker stayed running and completed a real IPC v2 protocol
+  negotiation with the deterministic daemon after two readiness attempts;
+- silent uninstall removed installed files, installed processes, the startup
+  entry, COM registration, and the TSF profile.
+
+The exact lifecycle result was:
+
+```text
+INSTALL: running the unsigned NSIS artifact silently.
+INSTALL: artifacts, COM, TSF, and startup entry verified.
+SERVICE CHECK: daemon protocol negotiation passed ... after 2 attempt(s).
+INSTALL: TSF registration and installed artifacts verified.
+UNINSTALL: running the installed uninstaller silently.
+CLEAN: files, processes, startup entry, COM registration, and TSF profile were removed.
+```
