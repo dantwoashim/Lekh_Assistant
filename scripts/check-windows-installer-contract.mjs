@@ -64,13 +64,14 @@ requireText(source.installer, "!macro customCheckAppRunning", "NSIS must use a b
 requireText(source.installer, 'nsProcess::_FindProcess /NOUNLOAD "${APP_EXECUTABLE_FILENAME}"', "NSIS must check the companion without PowerShell/WMI.");
 requireText(source.installer, "lekh_pipe_broker_found:", "NSIS pipe-broker guard is absent.");
 requireText(source.installer, "lekh_tsf_dll_found:", "NSIS missing-DLL guard is absent.");
-requireText(source.installer, `ExecWait 'regsvr32.exe /s "${installedDll}"' $0`, "NSIS must capture regsvr32's exit code.");
+requireText(source.installer, `ExecWait '"$WINDIR\\Sysnative\\regsvr32.exe" /s "${installedDll}"' $0`, "NSIS must use native 64-bit regsvr32 and capture its exit code.");
 requireText(source.installer, "IfErrors lekh_tsf_registration_failed", "NSIS must handle a regsvr32 launch error.");
 requireText(source.installer, "IntCmp $0 0 lekh_tsf_registration_complete", "NSIS must reject a nonzero regsvr32 exit code.");
 requireText(source.installer, "lekh_tsf_registration_failed:", "NSIS registration failure handler is absent.");
 requireText(source.installer, "No working keyboard was installed.", "NSIS must not disguise registration failure as a usable keyboard.");
-requireText(source.installer, "Abort", "NSIS must abort failed native registration.");
-requireText(source.installer, `ExecWait 'regsvr32.exe /u /s "${installedDll}"'`, "Uninstall must unregister the same DLL that install registered.");
+requireText(source.installer, "/SD IDOK", "NSIS failure dialogs must not block silent installation.");
+requireText(source.installer, "SetErrorLevel 1", "NSIS must report failed native registration to automation.");
+requireText(source.installer, `ExecWait '"$WINDIR\\Sysnative\\regsvr32.exe" /u /s "${installedDll}"'`, "Uninstall must unregister the same DLL with native 64-bit regsvr32.");
 requireText(source.installer, 'start "" /B "$INSTDIR\\Lekh Keyboard Companion.exe" --background', "Install must detach the companion through a bounded launcher.");
 requireText(source.installer, '"$INSTDIR\\Lekh Keyboard Companion.exe" --background', "Install must persist the companion in background mode.");
 requireText(source.installer, 'taskkill.exe /F /T /IM "Lekh Keyboard Companion.exe"', "Uninstall must stop the companion process tree before deleting files.");

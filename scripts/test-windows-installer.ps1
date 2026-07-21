@@ -55,7 +55,7 @@ function Invoke-CheckedProcess {
       Write-Host "DIAGNOSTICS: registryExists=$([bool](Test-Path -LiteralPath $key)) key=$key"
     }
     Get-Process -ErrorAction SilentlyContinue |
-      Where-Object { $_.ProcessName -match "Lekh|Uninstall|Setup" } |
+      Where-Object { $_.ProcessName -match "Lekh|Uninstall|Setup|regsvr32" } |
       ForEach-Object { Write-Host "DIAGNOSTICS: process=$($_.ProcessName) pid=$($_.Id)" }
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     $process.WaitForExit()
