@@ -198,6 +198,10 @@ describe("Windows TSF source safety contract", () => {
   it("routes the public endpoint through the contained native broker", () => {
     const broker = read("LekhPipeBroker.cpp");
     const backend = read("LekhDaemonBackend.cpp");
+    const generatedProtocol = readFileSync(
+      join(root, "native/shared/ipc/generated/LekhIPCProtocol.generated.h"),
+      "utf8"
+    );
     const cmake = read("CMakeLists.txt");
     const companion = readFileSync(join(root, "electron/main.cjs"), "utf8");
     expect(broker).toContain("CreateNamedPipeW");
@@ -205,6 +209,10 @@ describe("Windows TSF source safety contract", () => {
     expect(broker).toContain("PIPE_REJECT_REMOTE_CLIENTS");
     expect(broker).toContain("security.validatePipeHandle(pipe.get())");
     expect(broker).toContain("lekh::ipc::kMaximumActiveConnections");
+    expect(generatedProtocol).toContain("kControlDeadlineMilliseconds = 5000");
+    expect(broker).toContain("lekh::ipc::kControlDeadlineMilliseconds");
+    expect(broker).toContain("isProtocolNegotiation(*request)");
+    expect(broker).toContain("operationDeadline");
     expect(broker).toContain("verifyBackendReadiness(backend)");
     expect(broker).toContain("kMaximumConnections - kWorkerCount - 1");
     expect(backend).toContain("PROC_THREAD_ATTRIBUTE_HANDLE_LIST");

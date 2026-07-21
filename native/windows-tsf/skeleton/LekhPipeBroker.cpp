@@ -22,12 +22,17 @@
 namespace {
 
 constexpr std::size_t kMaximumFrameBytes = lekh::ipc::kMaximumFrameBytes;
-constexpr DWORD kClientDeadlineMilliseconds = static_cast<DWORD>(lekh::ipc::kHotPathDeadlineMilliseconds);
+constexpr DWORD kHotPathDeadlineMilliseconds = static_cast<DWORD>(lekh::ipc::kHotPathDeadlineMilliseconds);
+constexpr DWORD kControlDeadlineMilliseconds = static_cast<DWORD>(lekh::ipc::kControlDeadlineMilliseconds);
 constexpr std::size_t kMaximumConnections = lekh::ipc::kMaximumActiveConnections;
 constexpr std::size_t kWorkerCount = 8;
 static_assert(kMaximumConnections > kWorkerCount + 1);
 constexpr std::size_t kQueueCapacity = kMaximumConnections - kWorkerCount - 1;
 using Deadline = std::chrono::steady_clock::time_point;
+
+bool isProtocolNegotiation(const std::string& request) {
+  return request.find("\"type\":\"protocol.negotiate\"") != std::string::npos;
+}
 
 class UniqueHandle final {
 public:
@@ -229,7 +234,7 @@ UniqueHandle createClientPipe(
     static_cast<DWORD>(kMaximumConnections),
     static_cast<DWORD>(kMaximumFrameBytes),
     static_cast<DWORD>(kMaximumFrameBytes),
-    kClientDeadlineMilliseconds,
+    kHotPathDeadlineMilliseconds,
     security.attributes()
   ));
   if (!pipe.valid() || !security.validatePipeHandle(pipe.get())) return {};
@@ -348,13 +353,16 @@ bool verifyBackendReadiness(lekh::pipe::DaemonBackend& backend) {
 }
 
 void serveClient(HANDLE pipe, lekh::pipe::DaemonBackend& backend) {
-  const Deadline deadline = std::chrono::steady_clock::now() +
-    std::chrono::milliseconds(kClientDeadlineMilliseconds);
-  const std::optional<std::string> request = readClientFrame(pipe, deadline);
-  const std::optional<DWORD> backendTimeout = remainingMilliseconds(deadline);
+  const Deadline hotPathDeadline = std::chrono::steady_clock::now() +
+    std::chrono::milliseconds(kHotPathDeadlineMilliseconds);
+  const std::optional<std::string> request = readClientFrame(pipe, hotPathDeadline);
+  const Deadline operationDeadline = request && isProtocolNegotiation(*request)
+    ? std::chrono::steady_clock::now() + std::chrono::milliseconds(kControlDeadlineMilliseconds)
+    : hotPathDeadline;
+  const std::optional<DWORD> backendTimeout = remainingMilliseconds(operationDeadline);
   if (request && backendTimeout) {
     const std::optional<std::string> response = backend.request(*request + "\n", *backendTimeout);
-    if (response) writeClientFrame(pipe, *response, deadline);
+    if (response) writeClientFrame(pipe, *response, operationDeadline);
   }
   closeConnectedPipe(pipe);
 }

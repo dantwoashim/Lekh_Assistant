@@ -13,6 +13,7 @@ inline constexpr std::size_t kMaximumIdentifierLength = 256;
 inline constexpr std::size_t kMaximumTextLength = 16384;
 inline constexpr std::size_t kMaximumCompositionLength = 128;
 inline constexpr std::uint32_t kHotPathDeadlineMilliseconds = 50;
+inline constexpr std::uint32_t kControlDeadlineMilliseconds = 5000;
 inline constexpr std::size_t kMaximumActiveConnections = 16;
 inline constexpr std::size_t kMaximumPendingRequestsPerConnection = 32;
 inline constexpr std::size_t kMaximumClientInstances = 64;

@@ -323,6 +323,7 @@ function generateCpp(value) {
     `inline constexpr std::size_t kMaximumTextLength = ${value.limits.maximumTextLength};\n` +
     `inline constexpr std::size_t kMaximumCompositionLength = ${value.limits.maximumCompositionLength};\n` +
     `inline constexpr std::uint32_t kHotPathDeadlineMilliseconds = ${value.limits.hotPathDeadlineMs};\n` +
+    `inline constexpr std::uint32_t kControlDeadlineMilliseconds = ${value.limits.controlDeadlineMs};\n` +
     `inline constexpr std::size_t kMaximumActiveConnections = ${value.limits.maximumActiveConnections};\n` +
     `inline constexpr std::size_t kMaximumPendingRequestsPerConnection = ${value.limits.maximumPendingRequestsPerConnection};\n` +
     `inline constexpr std::size_t kMaximumClientInstances = ${value.limits.maximumClientInstances};\n` +
