@@ -95,6 +95,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build and test Windows TSF service
+        shell: pwsh
+        run: |
+          & ".\native\windows-tsf\skeleton\build.ps1" `
+            -Architecture "${{ matrix.architecture }}"
+
       - name: Run deterministic v1 unit tests
         run: npm run test:v1
 
@@ -103,12 +109,6 @@ jobs:
 
       - name: Verify IPC contract
         run: npm run check:ipc-schema
-
-      - name: Build and test Windows TSF service
-        shell: pwsh
-        run: |
-          & ".\native\windows-tsf\skeleton\build.ps1" `
-            -Architecture "${{ matrix.architecture }}"
 
       - name: Verify Windows packaging contract
         if: matrix.architecture == 'x64'

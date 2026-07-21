@@ -392,7 +392,8 @@ bool applyEngineDecision(
   ITfContext* context,
   TfClientId clientId,
   ITfComposition** activeComposition,
-  const EngineDecision& decision
+  const EngineDecision& decision,
+  EditSessionDiagnostics* diagnostics
 ) {
   if (!context || clientId == TF_CLIENTID_NULL || !activeComposition || decision.action == EngineAction::PassThrough) return false;
   auto* editSession = new DocumentEditSession(context, activeComposition, decision);
@@ -403,6 +404,11 @@ bool applyEngineDecision(
     TF_ES_SYNC | TF_ES_READWRITE,
     &sessionResult
   );
+  if (diagnostics) {
+    diagnostics->requestResult = requestResult;
+    diagnostics->sessionResult = sessionResult;
+    diagnostics->hostTextMutated = editSession->hostTextMutated();
+  }
   // A host mutation is the decisive no-key-loss signal. DoEditSession can
   // report a later composition-ownership failure after inserting text; if
   // rollback also fails, passing the original key through would duplicate it.

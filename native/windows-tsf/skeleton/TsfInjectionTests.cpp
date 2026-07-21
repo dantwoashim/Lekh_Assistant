@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -197,6 +198,8 @@ public:
     LONG* end,
     TS_TEXTCHANGE* change
   ) override {
+    ++insertionCalls_;
+    lastInsertionFlags_ = flags;
     const LONG insertionStart = selectionStart_;
     const LONG insertionEnd = selectionEnd_;
     if ((flags & TS_IAS_QUERYONLY) != 0) {
@@ -295,6 +298,8 @@ public:
   }
 
   const std::wstring& text() const { return text_; }
+  ULONG insertionCalls() const { return insertionCalls_; }
+  DWORD lastInsertionFlags() const { return lastInsertionFlags_; }
 
 private:
   ~TestTextStore() {
@@ -337,6 +342,8 @@ private:
   std::wstring text_;
   LONG selectionStart_ = 0;
   LONG selectionEnd_ = 0;
+  ULONG insertionCalls_ = 0;
+  DWORD lastInsertionFlags_ = 0;
 };
 
 } // namespace
@@ -379,10 +386,23 @@ int main() {
   EngineDecision commit;
   commit.action = EngineAction::Commit;
   commit.committedText = L"\u0928\u092e\u0938\u094d\u0924\u0947";
-  require(
-    applyEngineDecision(context, clientId, &activeComposition, commit),
-    "TSF commit edit session did not inject the deterministic Devanagari result"
+  EditSessionDiagnostics commitDiagnostics;
+  const bool commitApplied = applyEngineDecision(
+    context,
+    clientId,
+    &activeComposition,
+    commit,
+    &commitDiagnostics
   );
+  if (!commitApplied) {
+    std::cerr << "commit diagnostics: target_length=" << sink->text().size()
+              << " insertion_calls=" << sink->insertionCalls()
+              << " insertion_flags=0x" << std::hex << sink->lastInsertionFlags()
+              << " request_hresult=0x" << static_cast<std::uint32_t>(commitDiagnostics.requestResult)
+              << " session_hresult=0x" << static_cast<std::uint32_t>(commitDiagnostics.sessionResult)
+              << " host_mutated=" << (commitDiagnostics.hostTextMutated ? "true" : "false") << '\n';
+  }
+  require(commitApplied, "TSF commit edit session did not inject the deterministic Devanagari result");
   require(activeComposition == nullptr, "TSF composition remained active after commit");
   require(
     sink->text() == L"Latin remains: \u0928\u092e\u0938\u094d\u0924\u0947",
