@@ -79,6 +79,8 @@ requireText(source.lifecycle, "Invoke-DaemonHealthCheck", "The installer lifecyc
 requireText(source.lifecycle, 'client = "windows-tsf"', "The installer health request must identify as a supported native Windows client.");
 requireText(source.lifecycle, '$requestBytes = $encoding.GetBytes($request + "`n")', "The installer health frame must be prepared before the fail-closed pipe connection opens.");
 requireText(source.lifecycle, '$pipe.Write($requestBytes, 0, $requestBytes.Length)', "The installer health check must write the prepared frame directly within the broker deadline.");
+requireText(source.lifecycle, '$readyDeadline = [DateTime]::UtcNow.AddSeconds(30)', "The lifecycle check must allow bounded cold-start and broker-restart time.");
+requireText(source.lifecycle, 'did not become ready within 30 seconds', "The lifecycle check must report a bounded endpoint-readiness failure.");
 requireText(source.lifecycle, "The installer did not register the TSF input profile.", "The lifecycle test must verify TSF registration.");
 requireText(source.lifecycle, "COM registration remained after uninstall.", "The lifecycle test must reject leftover COM registration.");
 requireText(source.lifecycle, "TSF profile registration remained after uninstall.", "The lifecycle test must reject leftover TSF registration.");

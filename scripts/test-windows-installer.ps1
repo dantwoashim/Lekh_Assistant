@@ -100,39 +100,44 @@ function Get-InstalledProcesses {
 function Invoke-DaemonHealthCheck {
   $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
   $pipeName = "LekhKeyboard-$sid"
-  $sentAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-  $request = @{
-    id = "installer-health-1"
-    type = "protocol.negotiate"
-    version = 2
-    sentAt = $sentAt
-    deadlineAt = $sentAt + 5000
-    clientInstanceId = "windows-installer-ci"
-    requestSequence = 1
-    payload = @{
-      client = "windows-tsf"
-      supportedVersions = @(2)
-    }
-  } | ConvertTo-Json -Compress -Depth 5
-
-  # Prepare the exact wire frame before connecting. The installed broker uses
-  # the same 50 ms fail-closed deadline as TSF, so allocating StreamWriter and
-  # its buffers after Connect can consume the request window on a cold runner.
   $encoding = [System.Text.UTF8Encoding]::new($false)
-  $requestBytes = $encoding.GetBytes($request + "`n")
+  $readyDeadline = [DateTime]::UtcNow.AddSeconds(30)
+  $attempt = 0
+  $lastFailure = "No connection attempt completed."
 
-  $pipe = [System.IO.Pipes.NamedPipeClientStream]::new(
-    ".",
-    $pipeName,
-    [System.IO.Pipes.PipeDirection]::InOut,
-    [System.IO.Pipes.PipeOptions]::None
-  )
-  try {
-    $pipe.Connect(5000)
-    $pipe.Write($requestBytes, 0, $requestBytes.Length)
-    $pipe.Flush()
-    $reader = [System.IO.StreamReader]::new($pipe, $encoding, $false, 1024, $true)
+  do {
+    $attempt += 1
+    $requestId = "installer-health-$attempt"
+    $sentAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $request = @{
+      id = $requestId
+      type = "protocol.negotiate"
+      version = 2
+      sentAt = $sentAt
+      deadlineAt = $sentAt + 5000
+      clientInstanceId = "windows-installer-ci"
+      requestSequence = $attempt
+      payload = @{
+        client = "windows-tsf"
+        supportedVersions = @(2)
+      }
+    } | ConvertTo-Json -Compress -Depth 5
+
+    # Prepare the complete frame before Connect so the first client write is
+    # immediate even while a cold companion is restarting its native broker.
+    $requestBytes = $encoding.GetBytes($request + "`n")
+    $pipe = [System.IO.Pipes.NamedPipeClientStream]::new(
+      ".",
+      $pipeName,
+      [System.IO.Pipes.PipeDirection]::InOut,
+      [System.IO.Pipes.PipeOptions]::None
+    )
+    $reader = $null
     try {
+      $pipe.Connect(1000)
+      $pipe.Write($requestBytes, 0, $requestBytes.Length)
+      $pipe.Flush()
+      $reader = [System.IO.StreamReader]::new($pipe, $encoding, $false, 1024, $true)
       $read = $reader.ReadLineAsync()
       if (!$read.Wait([TimeSpan]::FromSeconds(5))) {
         throw "The installed daemon did not answer its named-pipe health request."
@@ -142,17 +147,24 @@ function Invoke-DaemonHealthCheck {
         throw "The installed daemon closed its named pipe without a health response."
       }
       $response = $responseLine | ConvertFrom-Json
-      if ($response.id -ne "installer-health-1" -or $response.type -ne "protocol.negotiate" -or
+      if ($response.id -ne $requestId -or $response.type -ne "protocol.negotiate" -or
           $response.ok -ne $true -or $response.payload.selectedVersion -ne 2) {
         throw "The installed daemon returned an invalid negotiation response: $responseLine"
       }
-      Write-Host "SERVICE CHECK: daemon protocol negotiation passed on $pipeName."
+      Write-Host "SERVICE CHECK: daemon protocol negotiation passed on $pipeName after $attempt attempt(s)."
+      return
+    } catch {
+      $lastFailure = $_.Exception.Message
     } finally {
-      try { $reader.Dispose() } catch { Write-Host "DIAGNOSTICS: reader cleanup observed a closed pipe." }
+      if ($reader) {
+        try { $reader.Dispose() } catch { Write-Host "DIAGNOSTICS: reader cleanup observed a closed pipe." }
+      }
+      try { $pipe.Dispose() } catch { Write-Host "DIAGNOSTICS: pipe cleanup observed a closed pipe." }
     }
-  } finally {
-    try { $pipe.Dispose() } catch { Write-Host "DIAGNOSTICS: pipe cleanup observed a closed pipe." }
-  }
+    Start-Sleep -Milliseconds 250
+  } while ([DateTime]::UtcNow -lt $readyDeadline)
+
+  throw "The installed daemon did not become ready within 30 seconds. Last failure: $lastFailure"
 }
 
 try {
