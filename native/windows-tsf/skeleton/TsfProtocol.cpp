@@ -7,6 +7,7 @@
 #include <cwctype>
 #include <limits>
 #include <map>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -276,6 +277,12 @@ const JsonValue* member(const JsonValue& value, const wchar_t* key, JsonType typ
   return &found->second;
 }
 
+const JsonValue* anyMember(const JsonValue& value, const wchar_t* key) {
+  if (value.type != JsonType::Object) return nullptr;
+  const auto found = value.object.find(key);
+  return found == value.object.end() ? nullptr : &found->second;
+}
+
 constexpr double kMaximumSafeJsonInteger = 9007199254740991.0;
 
 bool matchesSafeInteger(const JsonValue* value, std::uint64_t expected) {
@@ -329,6 +336,51 @@ bool hasSessionEpoch(const JsonValue& root, std::uint64_t expectedEpoch) {
   return expectedEpoch > 0 && matchesSafeInteger(member(root, L"sessionEpoch", JsonType::Number), expectedEpoch);
 }
 
+bool parseOptionalStringMember(
+  const JsonValue& value,
+  const wchar_t* key,
+  std::size_t maximumLength,
+  std::wstring& output
+) {
+  const JsonValue* candidate = anyMember(value, key);
+  if (!candidate) return true;
+  if (candidate->type != JsonType::String || candidate->string.size() > maximumLength) return false;
+  output = candidate->string;
+  return true;
+}
+
+bool parseCandidateList(
+  const JsonValue& payload,
+  std::vector<Candidate>& output,
+  bool& shouldShowCandidateUi
+) {
+  const JsonValue* candidates = member(payload, L"candidates", JsonType::Array);
+  const JsonValue* shouldShow = member(payload, L"shouldShowCandidateUI", JsonType::Boolean);
+  if (!candidates || !shouldShow || candidates->array.size() > kMaximumCandidateCount) return false;
+
+  std::set<std::wstring> identifiers;
+  output.clear();
+  output.reserve(candidates->array.size());
+  for (const JsonValue& value : candidates->array) {
+    const JsonValue* id = member(value, L"id", JsonType::String);
+    const JsonValue* text = member(value, L"text", JsonType::String);
+    if (!id || id->string.empty() || id->string.size() > 256 || !text || text->string.size() > 16384 ||
+        !identifiers.insert(id->string).second) {
+      return false;
+    }
+    Candidate candidate;
+    candidate.id = id->string;
+    candidate.text = text->string;
+    if (!parseOptionalStringMember(value, L"label", 16384, candidate.label) ||
+        !parseOptionalStringMember(value, L"shortcut", 256, candidate.shortcut)) {
+      return false;
+    }
+    output.push_back(std::move(candidate));
+  }
+  shouldShowCandidateUi = shouldShow->boolean && !output.empty();
+  return !shouldShow->boolean || !output.empty();
+}
+
 const wchar_t* commandType(SessionCommand command) {
   return command == SessionCommand::Cancel ? L"session.cancel" : L"session.end";
 }
@@ -376,6 +428,21 @@ std::wstring makeProcessKeyRequest(
     L",\"timestamp\":" + std::to_wstring(key.timestamp) +
     L",\"platform\":\"windows-tsf\",\"nativeCode\":" + std::to_wstring(key.nativeCode) +
     L"}}}";
+}
+
+std::wstring makeCommitCandidateRequest(
+  const RequestMetadata& metadata,
+  const SessionHandle& session,
+  const std::wstring& candidateId
+) {
+  const std::wstring prefix = requestPrefix(metadata, L"session.commitCandidate");
+  if (prefix.empty() || session.sessionId.empty() || session.sessionEpoch == 0 ||
+      candidateId.empty() || candidateId.size() > 256) {
+    return L"";
+  }
+  return prefix + L"{\"sessionId\":\"" + escapeJson(session.sessionId) +
+    L"\",\"sessionEpoch\":" + std::to_wstring(session.sessionEpoch) +
+    L",\"candidateId\":\"" + escapeJson(candidateId) + L"\"}}";
 }
 
 std::wstring makeSessionRequest(
@@ -440,6 +507,7 @@ std::optional<EngineDecision> parseProcessKeyResponse(
   const JsonValue* display = payload ? member(*payload, L"displayText", JsonType::String) : nullptr;
   const JsonValue* caret = payload ? member(*payload, L"caret", JsonType::Number) : nullptr;
   if (!sessionId || sessionId->string != expectedSession.sessionId || !action || !composition || !display || !caret ||
+      composition->string.size() > 128 || display->string.size() > 16384 ||
       caret->number < 0 || caret->number > static_cast<double>(std::numeric_limits<std::size_t>::max()) ||
       std::floor(caret->number) != caret->number || caret->number > static_cast<double>(composition->string.size())) {
     return std::nullopt;
@@ -449,6 +517,9 @@ std::optional<EngineDecision> parseProcessKeyResponse(
   decision.compositionText = composition->string;
   decision.displayText = display->string;
   decision.caret = static_cast<std::size_t>(caret->number);
+  if (!payload || !parseCandidateList(*payload, decision.candidates, decision.shouldShowCandidateUi)) {
+    return std::nullopt;
+  }
   if (action->string == L"passThrough" || action->string == L"errorFallback") {
     decision.action = EngineAction::PassThrough;
   } else if (action->string == L"compose") {
@@ -460,6 +531,50 @@ std::optional<EngineDecision> parseProcessKeyResponse(
     decision.committedText = committed->string;
   } else if (action->string == L"cancel") {
     decision.action = EngineAction::Cancel;
+  } else {
+    return std::nullopt;
+  }
+  return decision;
+}
+
+std::optional<EngineDecision> parseCommitCandidateResponse(
+  const std::wstring& response,
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId,
+  const SessionHandle& expectedSession
+) {
+  const std::optional<JsonValue> root = parseResponse(response);
+  if (!root || !hasExactEnvelope(*root, request, L"session.commitCandidate", expectedServerInstanceId) ||
+      !hasSessionEpoch(*root, expectedSession.sessionEpoch)) {
+    return std::nullopt;
+  }
+  const JsonValue* payload = member(*root, L"payload", JsonType::Object);
+  const JsonValue* sessionId = payload ? member(*payload, L"sessionId", JsonType::String) : nullptr;
+  const JsonValue* action = payload ? member(*payload, L"action", JsonType::String) : nullptr;
+  const JsonValue* committed = payload ? member(*payload, L"committedText", JsonType::String) : nullptr;
+  const JsonValue* commitEpoch = payload ? member(*payload, L"commitEpoch", JsonType::Number) : nullptr;
+  const JsonValue* memoryRecorded = payload ? member(*payload, L"memoryRecorded", JsonType::Boolean) : nullptr;
+  const JsonValue* schemaVersion = payload ? member(*payload, L"schemaVersion", JsonType::Number) : nullptr;
+  if (!sessionId || sessionId->string != expectedSession.sessionId || !action || !committed ||
+      committed->string.size() > 16384 || !commitEpoch || !memoryRecorded ||
+      !matchesSafeInteger(schemaVersion, 1)) {
+    return std::nullopt;
+  }
+
+  EngineDecision decision;
+  if (action->string == L"commit") {
+    if (committed->string.empty() || commitEpoch->number < 1 ||
+        commitEpoch->number > kMaximumSafeJsonInteger || std::floor(commitEpoch->number) != commitEpoch->number) {
+      return std::nullopt;
+    }
+    decision.action = EngineAction::Commit;
+    decision.committedText = committed->string;
+  } else if (action->string == L"compose") {
+    if (!committed->string.empty() || !matchesSafeInteger(commitEpoch, 0)) return std::nullopt;
+    decision.action = EngineAction::Compose;
+  } else if (action->string == L"passThrough" || action->string == L"errorFallback") {
+    if (!committed->string.empty() || !matchesSafeInteger(commitEpoch, 0)) return std::nullopt;
+    decision.action = EngineAction::PassThrough;
   } else {
     return std::nullopt;
   }

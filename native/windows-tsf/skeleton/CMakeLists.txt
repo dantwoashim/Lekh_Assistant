@@ -9,6 +9,10 @@ add_library(LekhTsfProtocol STATIC
   TsfProtocol.cpp
 )
 
+add_library(LekhCandidateState STATIC
+  CandidateState.cpp
+)
+
 add_library(LekhWindowsIdentity STATIC
   LekhWindowsIdentity.cpp
 )
@@ -27,6 +31,8 @@ add_library(LekhDaemonBackend STATIC
 
 target_compile_features(LekhTsfProtocol PUBLIC cxx_std_20)
 target_include_directories(LekhTsfProtocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(LekhCandidateState PUBLIC cxx_std_20)
+target_include_directories(LekhCandidateState PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(LekhWindowsIdentity PUBLIC cxx_std_20)
 target_compile_definitions(LekhWindowsIdentity PRIVATE
   UNICODE
@@ -120,6 +126,7 @@ target_link_libraries(LekhPipeBroker PRIVATE
 
 if(MSVC)
   target_compile_options(LekhTsfProtocol PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  target_compile_options(LekhCandidateState PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhWindowsIdentity PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhPipeServerIdentity PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhPipeSecurity PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
@@ -148,6 +155,13 @@ if(BUILD_TESTING)
     target_compile_options(LekhTsfProtocolTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   endif()
   add_test(NAME LekhTsfProtocolTests COMMAND LekhTsfProtocolTests)
+
+  add_executable(LekhCandidateStateTests CandidateStateTests.cpp)
+  target_link_libraries(LekhCandidateStateTests PRIVATE LekhCandidateState)
+  if(MSVC)
+    target_compile_options(LekhCandidateStateTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  endif()
+  add_test(NAME LekhCandidateStateTests COMMAND LekhCandidateStateTests)
 
   add_executable(LekhTsfInjectionTests
     InputScopeGuids.cpp

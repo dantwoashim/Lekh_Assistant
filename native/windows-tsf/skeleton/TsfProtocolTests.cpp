@@ -90,17 +90,24 @@ int main() {
     L"{\"id\":\"key_1\",\"type\":\"session.processKeyStroke\",\"version\":2,\"ok\":true,"
     L"\"serverInstanceId\":\"server-1\",\"requestSequence\":3,\"sessionEpoch\":7,"
     L"\"payload\":{\"sessionId\":\"session-1\",\"action\":\"compose\",\"compositionText\":\"ka\","
-    L"\"displayText\":\"\\u0915\\u093e\",\"caret\":2}}";
+    L"\"displayText\":\"\\u0915\\u093e\",\"caret\":2,\"candidates\":[{\"id\":\"ka-1\","
+    L"\"text\":\"\\u0915\\u093e\",\"label\":\"ka\",\"type\":\"word\",\"confidence\":0.9,"
+    L"\"reason\":[],\"shortcut\":\"1\"}],\"shouldShowCandidateUI\":true}}";
   const auto compose = parseProcessKeyResponse(composeResponse, keyMetadata, L"server-1", expectedSession);
   require(compose && compose->action == EngineAction::Compose, "valid compose response rejected");
   require(compose->displayText == L"\u0915\u093e", "escaped Unicode was not decoded");
+  require(compose->shouldShowCandidateUi && compose->candidates.size() == 1, "candidate list was not parsed");
+  require(compose->candidates[0].id == L"ka-1" && compose->candidates[0].text == L"\u0915\u093e" &&
+    compose->candidates[0].label == L"ka" && compose->candidates[0].shortcut == L"1",
+    "candidate fields were not preserved");
 
   const RequestMetadata commitMetadata = request(L"key_2", 4, 89, 139);
   const std::wstring commitResponse =
     L"{\"id\":\"key_2\",\"type\":\"session.processKeyStroke\",\"version\":2,\"ok\":true,"
     L"\"serverInstanceId\":\"server-1\",\"requestSequence\":4,\"sessionEpoch\":7,"
     L"\"payload\":{\"sessionId\":\"session-1\",\"action\":\"commit\",\"compositionText\":\"\","
-    L"\"displayText\":\"\",\"committedText\":\"\\u0915\\u093e \",\"caret\":0}}";
+    L"\"displayText\":\"\",\"committedText\":\"\\u0915\\u093e \",\"caret\":0,\"candidates\":[],"
+    L"\"shouldShowCandidateUI\":false}}";
   const auto commit = parseProcessKeyResponse(commitResponse, commitMetadata, L"server-1", expectedSession);
   require(commit && commit->action == EngineAction::Commit, "valid commit response rejected");
   require(commit->committedText == L"\u0915\u093e ", "committed text was not decoded");
@@ -110,7 +117,8 @@ int main() {
   require(!parseProcessKeyResponse(
     L"{\"id\":\"key_1\",\"type\":\"session.processKeyStroke\",\"version\":2,\"ok\":true,"
     L"\"serverInstanceId\":\"server-1\",\"requestSequence\":3,\"sessionEpoch\":7,"
-    L"\"payload\":{\"sessionId\":\"session-1\",\"action\":\"unknown\",\"compositionText\":\"\",\"displayText\":\"\",\"caret\":0}}",
+    L"\"payload\":{\"sessionId\":\"session-1\",\"action\":\"unknown\",\"compositionText\":\"\","
+    L"\"displayText\":\"\",\"caret\":0,\"candidates\":[],\"shouldShowCandidateUI\":false}}",
     keyMetadata,
     L"server-1",
     expectedSession
@@ -118,7 +126,8 @@ int main() {
   require(!parseProcessKeyResponse(
     L"{\"id\":\"key_1\",\"type\":\"session.processKeyStroke\",\"version\":2,\"ok\":true,"
     L"\"serverInstanceId\":\"server-1\",\"requestSequence\":3,\"sessionEpoch\":7,"
-    L"\"payload\":{\"sessionId\":\"session-1\",\"action\":\"compose\",\"compositionText\":\"\",\"displayText\":\"\\ud800\",\"caret\":0}}",
+    L"\"payload\":{\"sessionId\":\"session-1\",\"action\":\"compose\",\"compositionText\":\"\","
+    L"\"displayText\":\"\\ud800\",\"caret\":0,\"candidates\":[],\"shouldShowCandidateUI\":false}}",
     keyMetadata,
     L"server-1",
     expectedSession
@@ -130,19 +139,39 @@ int main() {
     L"server-1"
   ), "non-ASCII JSON digit accepted");
 
-  const RequestMetadata endMetadata = request(L"end_1", 5, 99, 149);
+  const RequestMetadata selectMetadata = request(L"select_1", 5, 90, 140);
+  const std::wstring selectRequest = makeCommitCandidateRequest(selectMetadata, expectedSession, L"ka-1");
+  require(selectRequest.find(L"\"type\":\"session.commitCandidate\"") != std::wstring::npos,
+    "candidate commit type missing");
+  require(selectRequest.find(L"\"candidateId\":\"ka-1\"") != std::wstring::npos,
+    "candidate identifier missing");
+  const std::wstring selectResponse =
+    L"{\"id\":\"select_1\",\"type\":\"session.commitCandidate\",\"version\":2,\"ok\":true,"
+    L"\"serverInstanceId\":\"server-1\",\"requestSequence\":5,\"sessionEpoch\":7,"
+    L"\"payload\":{\"sessionId\":\"session-1\",\"action\":\"commit\","
+    L"\"committedText\":\"\\u0915\\u093e\",\"commitEpoch\":1,\"consumedRange\":[0,2],"
+    L"\"followupCandidates\":[],\"memoryRecorded\":false,\"schemaVersion\":1}}";
+  const auto selected = parseCommitCandidateResponse(selectResponse, selectMetadata, L"server-1", expectedSession);
+  require(selected && selected->action == EngineAction::Commit && selected->committedText == L"\u0915\u093e",
+    "valid candidate commit response rejected");
+  require(!parseCommitCandidateResponse(selectResponse, selectMetadata, L"server-1", {L"session-1", 8}),
+    "stale candidate commit epoch accepted");
+  require(makeCommitCandidateRequest(selectMetadata, expectedSession, L"").empty(),
+    "empty candidate identifier was serialized");
+
+  const RequestMetadata endMetadata = request(L"end_1", 6, 99, 149);
   const std::wstring endRequest = makeSessionRequest(endMetadata, expectedSession, SessionCommand::End);
   require(endRequest.find(L"\"type\":\"session.end\"") != std::wstring::npos, "end request type missing");
   require(parseSessionResponse(
     L"{\"id\":\"end_1\",\"type\":\"session.end\",\"version\":2,\"ok\":true,"
-    L"\"serverInstanceId\":\"server-1\",\"requestSequence\":5,\"sessionEpoch\":7,\"payload\":{\"ended\":true}}",
+    L"\"serverInstanceId\":\"server-1\",\"requestSequence\":6,\"sessionEpoch\":7,\"payload\":{\"ended\":true}}",
     endMetadata,
     L"server-1",
     expectedSession,
     SessionCommand::End
   ), "valid end response rejected");
 
-  RequestMetadata invalidDeadline = request(L"invalid", 6, 100, 99);
+  RequestMetadata invalidDeadline = request(L"invalid", 7, 100, 99);
   require(makeBeginSessionRequest(invalidDeadline).empty(), "invalid deadline metadata was serialized");
 
   std::cout << "TSF protocol v2 tests passed\n";

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace lekh::tsf {
 
@@ -48,12 +49,23 @@ struct SessionHandle {
   std::uint64_t sessionEpoch = 0;
 };
 
+inline constexpr std::size_t kMaximumCandidateCount = 8;
+
+struct Candidate {
+  std::wstring id;
+  std::wstring text;
+  std::wstring label;
+  std::wstring shortcut;
+};
+
 struct EngineDecision {
   EngineAction action = EngineAction::PassThrough;
   std::wstring compositionText;
   std::wstring displayText;
   std::wstring committedText;
   std::size_t caret = 0;
+  std::vector<Candidate> candidates;
+  bool shouldShowCandidateUi = false;
 };
 
 std::wstring makeProtocolNegotiationRequest(const RequestMetadata& metadata);
@@ -64,6 +76,12 @@ std::wstring makeProcessKeyRequest(
   const RequestMetadata& metadata,
   const SessionHandle& session,
   const KeyEvent& key
+);
+
+std::wstring makeCommitCandidateRequest(
+  const RequestMetadata& metadata,
+  const SessionHandle& session,
+  const std::wstring& candidateId
 );
 
 std::wstring makeSessionRequest(
@@ -84,6 +102,13 @@ std::optional<SessionHandle> parseBeginSessionResponse(
 );
 
 std::optional<EngineDecision> parseProcessKeyResponse(
+  const std::wstring& response,
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId,
+  const SessionHandle& expectedSession
+);
+
+std::optional<EngineDecision> parseCommitCandidateResponse(
   const std::wstring& response,
   const RequestMetadata& request,
   const std::wstring& expectedServerInstanceId,
