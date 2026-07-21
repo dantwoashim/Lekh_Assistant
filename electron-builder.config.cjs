@@ -1,3 +1,9 @@
+const windowsArchitecture = (process.env.LEKH_WINDOWS_ARCHITECTURE || "x64").toLowerCase();
+if (!["x64", "arm64"].includes(windowsArchitecture)) {
+  throw new Error(`Unsupported LEKH_WINDOWS_ARCHITECTURE: ${windowsArchitecture}`);
+}
+const windowsNativeBuildDirectory = windowsArchitecture === "arm64" ? "build-ARM64" : "build";
+
 module.exports = {
   appId: "com.lekh.keyboard.companion",
   productName: "Lekh Keyboard Companion",
@@ -21,11 +27,11 @@ module.exports = {
       filter: ["**/*"]
     },
     {
-      from: "native/windows-tsf/skeleton",
-      to: "native/windows-tsf",
+      from: `native/windows-tsf/skeleton/${windowsNativeBuildDirectory}`,
+      to: "native/windows-tsf/build",
       filter: [
-        "build/bin/Release/LekhTextService.dll",
-        "build/bin/Release/LekhPipeBroker.exe"
+        "bin/Release/LekhTextService.dll",
+        "bin/Release/LekhPipeBroker.exe"
       ]
     },
     {
@@ -46,7 +52,7 @@ module.exports = {
     target: [
       {
         target: "nsis",
-        arch: ["x64"]
+        arch: [windowsArchitecture]
       }
     ]
   },

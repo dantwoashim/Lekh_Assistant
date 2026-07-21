@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
@@ -8,9 +8,25 @@ const root = process.cwd();
 const startedAt = performance.now();
 const signed = process.argv.includes("--signed");
 const unsigned = process.argv.includes("--unsigned") || !signed;
+const supportedArchitectures = new Map([
+  ["x64", { cmake: "x64", buildDirectory: "build", electronBuilder: "x64" }],
+  ["arm64", { cmake: "ARM64", buildDirectory: "build-ARM64", electronBuilder: "arm64" }]
+]);
+const requestedArchitecture = (
+  optionValue("--architecture") ?? process.env.LEKH_WINDOWS_ARCHITECTURE ?? "x64"
+).toLowerCase();
+const architecture = supportedArchitectures.get(requestedArchitecture);
 const reportPath = join(root, "reports", signed ? "windows-signed-package-report.json" : "windows-unsigned-package-report.json");
-const tsfDll = join(root, "native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhTextService.dll");
-const pipeBroker = join(root, "native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhPipeBroker.exe");
+
+if (!architecture) {
+  finish("failed", {
+    reason: `Unsupported Windows architecture ${JSON.stringify(requestedArchitecture)}.`,
+    supportedArchitectures: [...supportedArchitectures.keys()]
+  }, 1);
+}
+
+const tsfDll = join(root, "native", "windows-tsf", "skeleton", architecture.buildDirectory, "bin", "Release", "LekhTextService.dll");
+const pipeBroker = join(root, "native", "windows-tsf", "skeleton", architecture.buildDirectory, "bin", "Release", "LekhPipeBroker.exe");
 
 function finish(status, details, exitCode) {
   mkdirSync(join(root, "reports"), { recursive: true });
@@ -23,6 +39,7 @@ function finish(status, details, exitCode) {
         suite: signed ? "windows-signed-installer" : "windows-unsigned-installer",
         durationMs: Math.round(performance.now() - startedAt),
         status,
+        architecture: architecture?.electronBuilder ?? requestedArchitecture,
         ...details
       },
       null,
@@ -65,7 +82,10 @@ if (process.platform !== "win32" && !process.env.LEKH_ALLOW_CROSS_WINDOWS_PACKAG
 }
 
 if (process.platform === "win32") {
-  const nativeBuild = runNode(join(root, "scripts", "build-windows-tsf.mjs"));
+  const nativeBuild = runNode(join(root, "scripts", "build-windows-tsf.mjs"), [
+    "--architecture",
+    architecture.cmake
+  ]);
   if (nativeBuild.status !== 0) {
     finish("failed", {
       step: "windows-tsf-build",
@@ -127,12 +147,13 @@ if (serviceWorker.status !== 0) {
 
 const env = {
   ...process.env,
+  LEKH_WINDOWS_ARCHITECTURE: architecture.electronBuilder,
   ...(unsigned ? { CSC_IDENTITY_AUTO_DISCOVERY: "false" } : {})
 };
 const electronBuilderBin = join(root, "node_modules", "electron-builder", "cli.js");
 const builder = runNode(
   electronBuilderBin,
-  ["--win", "nsis", "--x64", "--publish=never", "--config", "electron-builder.config.cjs"],
+  ["--win", "nsis", `--${architecture.electronBuilder}`, "--publish=never", "--config", "electron-builder.config.cjs"],
   { env, timeout: 300_000 }
 );
 if (builder.status !== 0) {
@@ -150,11 +171,17 @@ if (builder.status !== 0) {
 }
 
 const releaseDir = join(root, "release");
-const exe = existsSync(releaseDir)
-  ? findInstallerExe(releaseDir)
-  : undefined;
-if (!exe) {
-  finish("failed", { step: "artifact", reason: "No Windows installer .exe found in release/." }, 1);
+const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+const exe = join(
+  releaseDir,
+  `Lekh-Keyboard-Companion-${packageVersion}-Setup-${architecture.electronBuilder}.exe`
+);
+if (!existsSync(exe)) {
+  finish("failed", {
+    step: "artifact",
+    reason: "The architecture-specific Windows installer was not found.",
+    expectedArtifact: exe
+  }, 1);
 }
 
 finish(signed ? "passed-signed" : "passed-unsigned-dev", { artifact: exe, signed: !unsigned }, 0);
@@ -168,15 +195,9 @@ function runNode(script, args = [], options = {}) {
   });
 }
 
-function findInstallerExe(dir) {
-  const entries = readdirSync(dir);
-  for (const entry of entries) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      const nested = findInstallerExe(full);
-      if (nested) return nested;
-    }
-    if (/Setup.*\.exe$|\.exe$/i.test(entry)) return full;
-  }
-  return undefined;
+function optionValue(name) {
+  const equalsArgument = process.argv.find((argument) => argument.startsWith(`${name}=`));
+  if (equalsArgument) return equalsArgument.slice(name.length + 1);
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
 }

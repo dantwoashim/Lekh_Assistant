@@ -26,15 +26,19 @@ const failures = [];
 
 requireText(source.build, canonicalBuildSegments, "TSF build output changed without updating the installer contract.");
 requireText(source.build, canonicalBrokerBuildSegments, "Pipe-broker build output changed without updating the installer contract.");
-requireText(source.builder, 'from: "native/windows-tsf/skeleton"', "electron-builder no longer packages the TSF build tree.");
-requireText(source.builder, 'to: "native/windows-tsf"', "electron-builder TSF destination changed.");
-requireText(source.builder, '"build/bin/Release/LekhTextService.dll"', "electron-builder no longer includes the TSF DLL.");
-requireText(source.builder, '"build/bin/Release/LekhPipeBroker.exe"', "electron-builder no longer includes the pipe broker.");
+requireText(source.build, '["arm64", { cmake: "ARM64", buildDirectory: "build-ARM64" }]', "TSF build no longer supports the CI ARM64 architecture.");
+requireText(source.builder, "native/windows-tsf/skeleton/${windowsNativeBuildDirectory}", "electron-builder no longer selects the architecture-specific TSF build tree.");
+requireText(source.builder, 'to: "native/windows-tsf/build"', "electron-builder TSF destination changed.");
+requireText(source.builder, '"bin/Release/LekhTextService.dll"', "electron-builder no longer includes the TSF DLL.");
+requireText(source.builder, '"bin/Release/LekhPipeBroker.exe"', "electron-builder no longer includes the pipe broker.");
+requireText(source.builder, "arch: [windowsArchitecture]", "electron-builder no longer packages the requested Windows architecture.");
 requireText(source.builder, "runAfterFinish: false", "electron-builder must not launch a second companion after custom installation.");
 requireText(source.builder, "perMachine: true", "The TSF installer must request the machine-wide registration context required by Windows.");
 requireText(source.package, '"scripts", "build-windows-tsf.mjs"', "Windows packaging must build the TSF DLL first.");
-requireText(source.package, '"native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhTextService.dll"', "Package preflight does not point to the canonical TSF DLL.");
-requireText(source.package, '"native", "windows-tsf", "skeleton", "build", "bin", "Release", "LekhPipeBroker.exe"', "Package preflight does not point to the canonical pipe broker.");
+requireText(source.package, '["arm64", { cmake: "ARM64", buildDirectory: "build-ARM64", electronBuilder: "arm64" }]', "Windows packaging no longer supports the CI ARM64 architecture.");
+requireText(source.package, '"native", "windows-tsf", "skeleton", architecture.buildDirectory, "bin", "Release", "LekhTextService.dll"', "Package preflight does not point to the architecture-specific TSF DLL.");
+requireText(source.package, '"native", "windows-tsf", "skeleton", architecture.buildDirectory, "bin", "Release", "LekhPipeBroker.exe"', "Package preflight does not point to the architecture-specific pipe broker.");
+requireText(source.package, "LEKH_WINDOWS_ARCHITECTURE: architecture.electronBuilder", "Windows packaging does not bind electron-builder to the native architecture.");
 requireText(source.package, "A companion-only installer is forbidden.", "Package preflight must fail closed when the TSF DLL is absent.");
 requireText(source.package, "An unprotected daemon endpoint is forbidden.", "Package preflight must fail closed when the pipe broker is absent.");
 
@@ -100,7 +104,9 @@ const report = {
   status: failures.length === 0 ? "passed" : "failed",
   buildArtifacts: [
     "native/windows-tsf/skeleton/build/bin/Release/LekhTextService.dll",
-    "native/windows-tsf/skeleton/build/bin/Release/LekhPipeBroker.exe"
+    "native/windows-tsf/skeleton/build/bin/Release/LekhPipeBroker.exe",
+    "native/windows-tsf/skeleton/build-ARM64/bin/Release/LekhTextService.dll",
+    "native/windows-tsf/skeleton/build-ARM64/bin/Release/LekhPipeBroker.exe"
   ],
   installedArtifacts: [installedDll, installedBroker],
   installerPathReferences: installedPathCount,

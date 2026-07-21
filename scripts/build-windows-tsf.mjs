@@ -7,6 +7,21 @@ import { spawnSync } from "node:child_process";
 const root = process.cwd();
 const startedAt = performance.now();
 const reportPath = join(root, "reports", "windows-tsf-build-report.json");
+const supportedArchitectures = new Map([
+  ["x64", { cmake: "x64", buildDirectory: "build" }],
+  ["arm64", { cmake: "ARM64", buildDirectory: "build-ARM64" }]
+]);
+const requestedArchitecture = (
+  optionValue("--architecture") ?? process.env.LEKH_WINDOWS_ARCHITECTURE ?? "x64"
+).toLowerCase();
+const architecture = supportedArchitectures.get(requestedArchitecture);
+
+if (!architecture) {
+  finish("failed", {
+    reason: `Unsupported Windows architecture ${JSON.stringify(requestedArchitecture)}.`,
+    supportedArchitectures: [...supportedArchitectures.keys()]
+  }, 1);
+}
 
 function finish(status, details, exitCode) {
   mkdirSync(join(root, "reports"), { recursive: true });
@@ -51,8 +66,8 @@ if (cmakeVersion.status !== 0) {
 }
 
 const sourceDir = join(root, "native", "windows-tsf", "skeleton");
-const buildDir = join(sourceDir, "build");
-const configure = spawnSync("cmake", ["-S", sourceDir, "-B", buildDir, "-A", "x64"], { encoding: "utf8", stdio: "pipe" });
+const buildDir = join(sourceDir, architecture.buildDirectory);
+const configure = spawnSync("cmake", ["-S", sourceDir, "-B", buildDir, "-A", architecture.cmake], { encoding: "utf8", stdio: "pipe" });
 if (configure.status !== 0) {
   finish("failed", { step: "configure", stdout: configure.stdout, stderr: configure.stderr }, configure.status ?? 1);
 }
@@ -80,7 +95,15 @@ if (!existsSync(broker)) {
 }
 
 finish("passed", {
+  architecture: architecture.cmake,
   artifacts: [dll, broker],
   cmake: cmakeVersion.stdout.split("\n")[0],
   nativeTests: "passed"
 }, 0);
+
+function optionValue(name) {
+  const equalsArgument = process.argv.find((argument) => argument.startsWith(`${name}=`));
+  if (equalsArgument) return equalsArgument.slice(name.length + 1);
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
