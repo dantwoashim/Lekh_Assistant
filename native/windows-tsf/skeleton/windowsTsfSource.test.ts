@@ -229,6 +229,8 @@ describe("Windows TSF source safety contract", () => {
     expect(companion).toContain("startWindowsPipeBrokerIfAvailable()");
     expect(companion).toContain('spawn(brokerPath, []');
     expect(companion).not.toContain('[daemonPath, "--named-pipe"]');
+    expect(companion).toContain('label: "Exit Lekh Keyboard Companion"');
+    expect(companion).toContain("click: () => app.quit()");
   });
 
   it.skipIf(process.platform === "win32")("compiles and runs the portable native protocol tests", () => {

@@ -177,6 +177,15 @@ function installApplicationMenu() {
         { role: "quit" }
       ]
     }] : []),
+    ...(process.platform === "win32" ? [{
+      label: "File",
+      submenu: [
+        {
+          label: "Exit Lekh Keyboard Companion",
+          click: () => app.quit()
+        }
+      ]
+    }] : []),
     {
       label: "Edit",
       submenu: [
