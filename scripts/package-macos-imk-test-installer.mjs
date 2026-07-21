@@ -519,7 +519,7 @@ print_unsigned_first_run_instructions() {
 handle_unsigned_first_run() {
   [[ "$UNSIGNED_BUILD" == "1" ]] || return 0
   local quarantined_path=""
-  quarantined_path="$("$RESOURCE_DIR/detect-quarantine" "$APP_BUNDLE" "$0" "$RELEASE_FOLDER" 2>/dev/null || true)"
+  quarantined_path="$(/bin/bash "$RESOURCE_DIR/detect-quarantine" "$APP_BUNDLE" "$0" "$RELEASE_FOLDER" 2>/dev/null || true)"
   if [[ -n "$quarantined_path" ]]; then
     echo "LEKH_UNSIGNED_FIRST_RUN_STATUS=quarantined"
     echo "LEKH_UNSIGNED_FIRST_RUN_TARGET=$quarantined_path"
@@ -1149,6 +1149,7 @@ if (signingIdentity === "-") {
       `HOME=${walkthroughHome}`,
       "LEKH_INSTALLER_NO_DIALOG=1",
       "LEKH_INSTALLER_WALKTHROUGH_ONLY=1",
+      "/bin/bash",
       join(extractedInstaller, "Contents", "MacOS", "install-lekh-keyboard")
     ],
     { cwd: extractedRoot }

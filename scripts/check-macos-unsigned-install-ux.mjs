@@ -57,12 +57,13 @@ try {
   const packager = readFileSync(packagerPath, "utf8");
   const readme = readFileSync(readmePath, "utf8");
   for (const required of [
-    '"$RESOURCE_DIR/detect-quarantine"',
+    '/bin/bash "$RESOURCE_DIR/detect-quarantine"',
     "LEKH_UNSIGNED_FIRST_RUN_STATUS=quarantined",
     "Control-click or right-click Lekh Keyboard Test Installer.app.",
     "Choose Open, then click Open again.",
     "xattr -dr com.apple.quarantine",
     "LEKH_INSTALLER_WALKTHROUGH_ONLY",
+    '"LEKH_INSTALLER_WALKTHROUGH_ONLY=1",\n      "/bin/bash"',
     "LEKH_MACOS_PACKAGE_WALKTHROUGH_ONLY",
     "verify-unsigned-first-run-walkthrough"
   ]) {
@@ -87,7 +88,7 @@ const resultLines = [
   "PASS — first run reports the detected quarantine state in plain language.",
   "PASS — Control-click/right-click → Open is the preferred opening path.",
   "PASS — the fallback is one xattr command scoped to the installer app.",
-  "PASS — packaged ZIP verification executes the no-install walkthrough path.",
+  "PASS — packaged ZIP verification executes the post-approval no-install walkthrough path.",
   "RESULT — C2 unsigned first-run walkthrough passed."
 ];
 const receipt = `# C2 macOS Unsigned First-Run Walkthrough\n\nCommand: \`node scripts/check-macos-unsigned-install-ux.mjs --check-receipt\`\n\n\`\`\`text\n${resultLines.join("\n")}\n\`\`\`\n`;
