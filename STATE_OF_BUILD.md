@@ -452,3 +452,35 @@ passed all four jobs in
 
 Experienced-typist validation remains frozen as `BACKLOG_V2.md` item `V2-015`;
 the v1.0 release does not claim that validation.
+
+## E2 v1.0.0 artifacts and checksum evidence
+
+Revision `e342d1f269222eee4a04c83a5ae7099e01d000c5` passed the complete
+four-target workflow and release-bundle job in
+[CI run 29850032455](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29850032455).
+
+| Target | E2 result | Job evidence |
+|---|---|---|
+| macOS Apple Silicon | Full deterministic suite, app build, IPC and first-run checks, Swift input method, 31-row shared behavior contract, universal package build, and artifact upload passed | [job 88700348901](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29850032455/job/88700348901) |
+| macOS Intel x64 | Full deterministic suite, app build, IPC and first-run checks, Swift input method, and 31-row shared behavior contract passed; the matrix intentionally reused the single universal artifact built on Apple Silicon | [job 88700348777](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29850032455/job/88700348777) |
+| Windows x64 | Native TSF build/tests, deterministic suite, app build, IPC and packaging contracts, unsigned installer build, complete silent install/service/uninstall lifecycle, and artifact upload passed | [job 88700348878](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29850032455/job/88700348878) |
+| Windows ARM64 | Native TSF build/tests, deterministic suite, app build, and IPC contract passed; the unverified ARM64 installer remained intentionally unpublished | [job 88700348899](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29850032455/job/88700348899) |
+| Combined release bundle | Downloaded the two same-run installers, generated `SHA256SUMS.txt` and rendered release notes, then uploaded all four files together | [job 88701524632](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29850032455/job/88701524632) |
+
+The published artifact is
+[`lekh-assistant-v1.0.0-release-candidate`](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29850032455/artifacts/8503091019).
+It contains the universal macOS ZIP, verified Windows x64 installer,
+`SHA256SUMS.txt`, and release notes rendered from those exact files. A local
+download and independent `shasum -a 256 -c SHA256SUMS.txt` check returned `OK`
+for both installers:
+
+```text
+222827ebfca9d529a3b427d6aa35ace5bf1a8077c57c43ee9cea4352b2074c30  Lekh-Keyboard-Test-Installer.zip
+02702fbc72c6b7e06f3fb2ab80722eb12e26c0719222bb100ea68e56cf4e38e2  Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe
+```
+
+The macOS artifact is universal (`arm64` and `x86_64`), ad-hoc signed, and
+contains no neural model. The Windows x64 install/start/uninstall lifecycle is
+CI-verified. Windows ARM64 compilation and tests are CI-verified, but its
+installer is not shipped because its lifecycle is not; that limitation is
+recorded in `KNOWN_LIMITATIONS.md`.

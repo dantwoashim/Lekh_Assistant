@@ -1,8 +1,8 @@
 # Lekh Assistant v1.0 Release Notes
 
-Status: release-candidate notes. The final v1.0.0 version bump, CI-built
-artifacts, and SHA-256 values are added in checklist item E2. No placeholder
-hash is represented as a release checksum.
+Status: v1.0.0 release candidate. The checksum block below belongs to the cited
+CI release bundle. CI regenerates this block from the installers it packages
+together.
 
 ## What is included
 
@@ -57,7 +57,7 @@ Windows:
    checking the downloaded file name.
 3. Press Windows key + Space and choose Lekh Keyboard Nepali.
 
-## Verification completed before E2
+## Verification
 
 - Four-target CI is green on macOS ARM64, macOS Intel x64, Windows x64, and
   Windows ARM64.
@@ -99,5 +99,11 @@ release.
 
 ## Artifact checksums
 
-E2 will replace this paragraph with the SHA-256 block generated from the final
-CI artifacts. Until then, there are no final v1.0.0 artifact checksums.
+Generated from the two installers collected in
+[E2 CI run 29850032455](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29850032455)
+and published with them in artifact `lekh-assistant-v1.0.0-release-candidate`:
+
+```text
+222827ebfca9d529a3b427d6aa35ace5bf1a8077c57c43ee9cea4352b2074c30  Lekh-Keyboard-Test-Installer.zip
+02702fbc72c6b7e06f3fb2ab80722eb12e26c0719222bb100ea68e56cf4e38e2  Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe
+```

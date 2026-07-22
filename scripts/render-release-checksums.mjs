@@ -63,8 +63,8 @@ if (checksumHeadingIndex < 0 || notes.indexOf(checksumHeading, checksumHeadingIn
 
 const renderedNotes = `${notes.slice(0, checksumHeadingIndex)}${checksumBlock}`
   .replace(
-    /Status: release-candidate notes\.[\s\S]*?hash is represented as a release checksum\./u,
-    "Status: CI-built v1.0.0 release candidate. The SHA-256 block below was generated from the installers in this release bundle."
+    /Status:[\s\S]*?\n\n## What is included/u,
+    "Status: CI-built v1.0.0 release candidate. The SHA-256 block below was generated from the installers in this release bundle.\n\n## What is included"
   )
   .replace("## Verification completed before E2", "## Verification");
 
