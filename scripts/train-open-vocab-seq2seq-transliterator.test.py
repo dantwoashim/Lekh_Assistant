@@ -11,6 +11,7 @@ import platform
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 import torch
 from torch import nn
 
@@ -79,6 +80,92 @@ class TrainerContractTests(unittest.TestCase):
             lock_record = TRAINER.read_json(lock_path)
             self.assertEqual(lock_record["status"], "completed")
             self.assertEqual(lock_record["exportRunId"], args.export_run_id)
+
+    def test_split_artifact_publication_is_all_or_nothing(self) -> None:
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-split-publication-test-", dir=temporary_root) as directory:
+            root = Path(directory)
+            targets = [root / f"Target{index}.artifact" for index in range(4)]
+            staging = [root / f".Target{index}.staging.artifact" for index in range(4)]
+            for index, target in enumerate(targets):
+                target.mkdir()
+                (target / "payload.bin").write_bytes(f"old-{index}".encode("utf-8"))
+            for index, stage in enumerate(staging[:3]):
+                stage.mkdir()
+                (stage / "payload.bin").write_bytes(f"new-{index}".encode("utf-8"))
+
+            with self.assertRaisesRegex(RuntimeError, "not a safe directory"):
+                TRAINER.publish_directories_atomically(list(zip(staging, targets)))
+            self.assertEqual(
+                [(target / "payload.bin").read_bytes() for target in targets],
+                [f"old-{index}".encode("utf-8") for index in range(4)],
+            )
+
+            staging[3].mkdir()
+            (staging[3] / "payload.bin").write_bytes(b"new-3")
+            original_replace = TRAINER.os.replace
+            failed = False
+
+            def fail_second_publish(source: object, destination: object) -> None:
+                nonlocal failed
+                if Path(source) == staging[1] and not failed:
+                    failed = True
+                    raise OSError("injected publication failure")
+                original_replace(source, destination)
+
+            with mock.patch.object(TRAINER.os, "replace", side_effect=fail_second_publish):
+                with self.assertRaisesRegex(OSError, "injected publication failure"):
+                    TRAINER.publish_directories_atomically(list(zip(staging, targets)))
+            self.assertEqual(
+                [(target / "payload.bin").read_bytes() for target in targets],
+                [f"old-{index}".encode("utf-8") for index in range(4)],
+            )
+            self.assertFalse(list(root.glob(".*.backup.*")))
+            staging[0].mkdir()
+            (staging[0] / "payload.bin").write_bytes(b"new-0")
+            TRAINER.publish_directories_atomically(list(zip(staging, targets)))
+            self.assertEqual(
+                [(target / "payload.bin").read_bytes() for target in targets],
+                [f"new-{index}".encode("utf-8") for index in range(4)],
+            )
+
+    def test_split_artifact_inventory_rejects_stale_and_partial_sets(self) -> None:
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-split-inventory-test-", dir=temporary_root) as directory:
+            root = Path(directory)
+            args = TRAINER.parse_args([
+                "--config", str(TRAINER.ROOT / "data/neural/training/open-vocab-bigru-attention-v1.config.json"),
+                "--out-dir", str(root / "run"),
+                "--compiled-model", str(root / "Attention.mlmodelc"),
+                "--manifest", str(root / "Attention.manifest.json"),
+                "--vocab-metadata", str(root / "Attention.vocab.json"),
+            ], {})
+            paths = TRAINER.attention_artifact_paths(args)
+            for role in ("encoder", "decoderStep"):
+                for kind in ("mlpackage", "compiledModel"):
+                    path = paths[role][kind]
+                    path.mkdir(parents=True, exist_ok=False)
+                    (path / "payload.bin").write_bytes(f"{role}-{kind}".encode("utf-8"))
+            artifacts = TRAINER.attention_artifact_evidence_from_paths(paths)
+            export = {
+                "runtimeModelContract": TRAINER.ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+                "artifacts": artifacts,
+                "totalCompiledBytes": sum(item["compiledBytes"] for item in artifacts.values()),
+                "totalPackageBytes": sum(item["mlpackageBytes"] for item in artifacts.values()),
+            }
+            self.assertEqual(TRAINER.verified_attention_artifact_evidence(args, export), artifacts)
+
+            encoder_package_file = paths["encoder"]["mlpackage"] / "payload.bin"
+            encoder_package_file.write_bytes(encoder_package_file.read_bytes() + b"stale")
+            with self.assertRaisesRegex(SystemExit, "stale, partial, or mismatched"):
+                TRAINER.verified_attention_artifact_evidence(args, export)
+
+            encoder_package_file.write_bytes(b"encoder-mlpackage")
+            TRAINER.shutil.rmtree(paths["decoderStep"]["compiledModel"])
+            with self.assertRaisesRegex(SystemExit, "Missing directory artifact"):
+                TRAINER.verified_attention_artifact_evidence(args, export)
 
     def test_artifact_hashing_rejects_symlinks_and_special_files(self) -> None:
         temporary_root = TRAINER.ROOT / ".tmp"
@@ -458,6 +545,185 @@ class TrainerContractTests(unittest.TestCase):
             rtol=TRAINER.COREML_PARITY_RTOL,
             atol=TRAINER.COREML_PARITY_ATOL,
         ))
+
+    @unittest.skipUnless(
+        platform.system() == "Darwin" and TRAINER.ct is not None,
+        "Compiled split Core ML publication requires macOS and coremltools",
+    )
+    def test_attention_split_pipeline_attests_staging_and_preserves_prior_targets_on_parity_failure(self) -> None:
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-attention-split-pipeline-test-", dir=temporary_root) as directory:
+            root = Path(directory)
+            gold_suite_path = root / "gold.jsonl"
+            gold_suite_path.write_text(
+                json.dumps({"id": "split_gold_000001", "input": "a"}) + "\n",
+                encoding="utf-8",
+            )
+            gold_suite = {
+                "id": "split-pipeline-fixture",
+                "path": gold_suite_path.relative_to(TRAINER.ROOT).as_posix(),
+                "sha256": TRAINER.sha256_file(gold_suite_path),
+                "rows": 1,
+            }
+            gold_manifest = root / "gold-manifest.json"
+            gold_manifest.write_text(json.dumps({
+                "schemaVersion": 2,
+                "corpusSha256": TRAINER.gold_corpus_sha256([gold_suite]),
+                "suites": [gold_suite],
+            }), encoding="utf-8")
+            out_dir = root / "run"
+            args = TRAINER.parse_args([
+                "--config", str(TRAINER.ROOT / "data/neural/training/open-vocab-bigru-attention-v1.config.json"),
+                "--gold-manifest", str(gold_manifest),
+                "--out-dir", str(out_dir),
+                "--compiled-model", str(root / "Attention.mlmodelc"),
+                "--manifest", str(root / "Attention.manifest.json"),
+                "--vocab-metadata", str(root / "Attention.vocab.json"),
+                "--embedding-dim", "4",
+                "--hidden-dim", "8",
+                "--attention-dim", "6",
+                "--layers", "2",
+                "--dropout", "0",
+                "--max-input-len", "8",
+                "--max-output-len", "8",
+                "--beam-width", "2",
+                "--maximum-candidates", "2",
+            ], {})
+            args.training_run_id = "1" * 32
+            args.training_config["architecture"]["minimumParameterCount"] = 1
+            args.training_config["architecture"]["maximumParameterCount"] = 10_000_000
+            args.training_config["architecture"]["maximumCompiledBytes"] = 16 * 1024 * 1024
+            input_vocab = {
+                TRAINER.PAD: 0,
+                TRAINER.SOS: 1,
+                TRAINER.EOS: 2,
+                TRAINER.UNK: 3,
+                "a": 4,
+                "b": 5,
+            }
+            output_vocab = {
+                TRAINER.PAD: 0,
+                TRAINER.SOS: 1,
+                TRAINER.EOS: 2,
+                TRAINER.UNK: 3,
+                "क": 4,
+                "ख": 5,
+                "ग": 6,
+            }
+            torch.manual_seed(37)
+            model = TRAINER.build_model_from_runtime_config(
+                len(input_vocab),
+                len(output_vocab),
+                TRAINER.checkpoint_runtime_config(args),
+            ).eval()
+            checkpoint = {
+                "modelId": TRAINER.ATTENTION_MODEL_ID,
+                "trainingRunId": args.training_run_id,
+                "config": TRAINER.checkpoint_runtime_config(args),
+                "inputVocab": input_vocab,
+                "outputVocab": output_vocab,
+                "stateDict": model.state_dict(),
+                "parameterCount": sum(parameter.numel() for parameter in model.parameters()),
+                "datasetManifestSha256": "d" * 64,
+                "vocabMetadataSha256": "e" * 64,
+                "trainingSourceCounts": {"test-fixture": 1},
+            }
+            out_dir.mkdir(parents=True)
+            torch.save(checkpoint, TRAINER.checkpoint_path(args))
+            training_report = {
+                "trainingRunId": args.training_run_id,
+                "checkpointSha256": TRAINER.sha256_file(TRAINER.checkpoint_path(args)),
+            }
+            TRAINER.training_report_path(args).write_text(
+                json.dumps(training_report),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                TRAINER,
+                "train_model",
+                return_value={"model": model, "checkpoint": checkpoint, "report": training_report},
+            ):
+                export_report = TRAINER.run_pipeline(args)
+
+            runtime_manifest = TRAINER.read_json(args.manifest)
+            coreml_export = export_report["coremlExport"]
+            self.assertEqual(export_report["status"], "passed-open-vocab-attention-split-candidate")
+            self.assertEqual(
+                export_report["runtimeModelContract"],
+                TRAINER.ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+            )
+            self.assertEqual(export_report["sourceCheckpointSha256"], training_report["checkpointSha256"])
+            self.assertEqual(export_report["tensorContract"], coreml_export["tensorContract"])
+            self.assertEqual(
+                export_report["prePublicationValidation"],
+                coreml_export["prePublicationValidation"],
+            )
+            self.assertEqual(coreml_export["prePublicationValidation"]["status"], "passed")
+            self.assertEqual(
+                coreml_export["prePublicationValidation"]["phase"],
+                "pre-publication-staging",
+            )
+            self.assertEqual(export_report["compiledModels"], coreml_export["artifacts"])
+            self.assertEqual(runtime_manifest["compiledModels"], coreml_export["artifacts"])
+            self.assertEqual(runtime_manifest["tensorContract"], coreml_export["tensorContract"])
+            self.assertEqual(
+                runtime_manifest["sha256"]["sourceCheckpoint"],
+                training_report["checkpointSha256"],
+            )
+            self.assertEqual(coreml_export["artifactValidation"]["status"], "passed")
+            self.assertEqual(export_report["predictionsBackend"], "coreml-compiled-split-attention-models")
+            for role in ("encoder", "decoderStep"):
+                artifact = export_report["compiledModels"][role]
+                self.assertGreater(artifact["compiledBytes"], 0)
+                self.assertGreater(artifact["mlpackageBytes"], 0)
+                self.assertEqual(len(artifact["compiledSha256"]), 64)
+                self.assertEqual(len(artifact["mlpackageSha256"]), 64)
+                self.assertEqual(
+                    runtime_manifest["sha256"]["compiledModels"][role],
+                    artifact["compiledSha256"],
+                )
+
+            prior_artifacts = TRAINER.attention_artifact_evidence_from_paths(
+                TRAINER.attention_artifact_paths(args)
+            )
+            with mock.patch.object(
+                TRAINER,
+                "validate_attention_compiled_known_answer",
+                side_effect=SystemExit("injected staged parity failure"),
+            ):
+                with self.assertRaisesRegex(SystemExit, "injected staged parity failure"):
+                    TRAINER.export_coreml(model, checkpoint, args)
+            self.assertEqual(
+                TRAINER.attention_artifact_evidence_from_paths(
+                    TRAINER.attention_artifact_paths(args)
+                ),
+                prior_artifacts,
+            )
+
+            checkpoint_bytes = TRAINER.checkpoint_path(args).read_bytes()
+            TRAINER.checkpoint_path(args).write_bytes(checkpoint_bytes + b"stale")
+            with self.assertRaisesRegex(SystemExit, "exact checkpoint bytes"):
+                TRAINER.load_verified_compiled_attention_coreml(
+                    model,
+                    checkpoint,
+                    args,
+                    coreml_export,
+                )
+            TRAINER.checkpoint_path(args).write_bytes(checkpoint_bytes)
+
+            decoder_compiled = TRAINER.attention_artifact_paths(args)["decoderStep"]["compiledModel"]
+            _, compiled_files = TRAINER.secure_directory_files(decoder_compiled)
+            tampered_file = compiled_files[0][1]
+            tampered_file.write_bytes(tampered_file.read_bytes() + b"stale")
+            with self.assertRaisesRegex(SystemExit, "stale, partial, or mismatched"):
+                TRAINER.load_verified_compiled_attention_coreml(
+                    model,
+                    checkpoint,
+                    args,
+                    coreml_export,
+                )
 
     def test_attention_checkpoint_reload_uses_recorded_family(self) -> None:
         runtime_config = {

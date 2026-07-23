@@ -52,6 +52,7 @@ ATTENTION_MODEL_ID = "lekh-open-vocab-bigru-attention-v1"
 BASELINE_ARCHITECTURE_FAMILY = "gru-encoder-decoder-seq2seq"
 ATTENTION_ARCHITECTURE_FAMILY = "bidirectional-gru-additive-attention-seq2seq"
 ADDITIVE_ATTENTION = "bahdanau-additive"
+ATTENTION_INCREMENTAL_RUNTIME_CONTRACT = "split-attention-incremental-v1"
 VOCAB_METADATA_PATH = ROOT / "models/macos/LekhNeuralTransliterator.vocab.json"
 GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v2.json"
 CONFIG_PATH = ROOT / "data/neural/training/open-vocab-seq2seq-v1.config.json"
@@ -101,6 +102,36 @@ def measurements_path(args: argparse.Namespace) -> Path:
 
 def mlpackage_path(args: argparse.Namespace) -> Path:
     return args.out_dir / "LekhNeuralTransliterator.mlpackage"
+
+
+def attention_encoder_mlpackage_path(args: argparse.Namespace) -> Path:
+    return args.out_dir / "LekhNeuralTransliteratorEncoder.mlpackage"
+
+
+def attention_decoder_mlpackage_path(args: argparse.Namespace) -> Path:
+    return args.out_dir / "LekhNeuralTransliteratorDecoderStep.mlpackage"
+
+
+def attention_compiled_model_path(args: argparse.Namespace, role: str) -> Path:
+    suffix = "".join(args.compiled_model.suffixes)
+    stem = args.compiled_model.name[:-len(suffix)] if suffix else args.compiled_model.name
+    role_suffixes = {"encoder": "Encoder", "decoderStep": "DecoderStep"}
+    if role not in role_suffixes:
+        raise ValueError(f"Unknown attention Core ML artifact role: {role}")
+    return args.compiled_model.with_name(f"{stem}{role_suffixes[role]}{suffix}")
+
+
+def attention_artifact_paths(args: argparse.Namespace) -> dict[str, dict[str, Path]]:
+    return {
+        "encoder": {
+            "mlpackage": attention_encoder_mlpackage_path(args),
+            "compiledModel": attention_compiled_model_path(args, "encoder"),
+        },
+        "decoderStep": {
+            "mlpackage": attention_decoder_mlpackage_path(args),
+            "compiledModel": attention_compiled_model_path(args, "decoderStep"),
+        },
+    }
 
 
 def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None = None) -> argparse.Namespace:
@@ -833,6 +864,65 @@ def publish_directory(staging: Path, target: Path) -> None:
         raise
     if moved_existing:
         safe_remove_sibling_directory(backup, target.parent)
+
+
+def publish_directories_atomically(publications: list[tuple[Path, Path]]) -> None:
+    """Publish a closed set of sibling directory artifacts as one transaction."""
+    if not publications:
+        raise RuntimeError("Atomic artifact publication requires at least one directory.")
+    staging_paths = [staging.resolve() for staging, _ in publications]
+    target_paths = [target.resolve() for _, target in publications]
+    if len(set(staging_paths)) != len(staging_paths) or len(set(target_paths)) != len(target_paths):
+        raise RuntimeError("Atomic artifact publication paths must be unique.")
+    if set(staging_paths) & set(target_paths):
+        raise RuntimeError("Staged and target artifact paths must not overlap.")
+
+    backups: dict[Path, Path] = {}
+    for staging, target in publications:
+        if staging.is_symlink() or not staging.is_dir():
+            raise RuntimeError(f"Staged artifact is not a safe directory: {staging}")
+        if staging.resolve().parent != target.resolve().parent:
+            raise RuntimeError("Staged and target artifact directories must share a parent filesystem.")
+        if target.is_symlink() or (target.exists() and not target.is_dir()):
+            raise RuntimeError(f"Refusing to replace unsafe artifact target: {target}")
+        backup = staging_sibling(target, "backup")
+        if backup.exists() or backup.is_symlink():
+            raise RuntimeError(f"Artifact backup path unexpectedly exists: {backup}")
+        backups[target] = backup
+
+    moved_existing: list[Path] = []
+    published: list[Path] = []
+    try:
+        for _, target in publications:
+            if target.exists():
+                os.replace(target, backups[target])
+                moved_existing.append(target)
+        for staging, target in publications:
+            os.replace(staging, target)
+            published.append(target)
+    except Exception:
+        rollback_errors: list[str] = []
+        for target in reversed(published):
+            try:
+                safe_remove_sibling_directory(target, target.parent)
+            except Exception as error:
+                rollback_errors.append(f"remove {target}: {error}")
+        for target in reversed(moved_existing):
+            backup = backups[target]
+            try:
+                if target.exists() or target.is_symlink():
+                    raise RuntimeError(f"rollback target unexpectedly exists: {target}")
+                os.replace(backup, target)
+            except Exception as error:
+                rollback_errors.append(f"restore {target}: {error}")
+        if rollback_errors:
+            raise RuntimeError(
+                "Atomic artifact publication failed and rollback was incomplete: "
+                + "; ".join(rollback_errors)
+            )
+        raise
+    for target in moved_existing:
+        safe_remove_sibling_directory(backups[target], target.parent)
 
 
 def safe_remove_sibling_directory(path: Path, approved_parent: Path) -> None:
@@ -2254,6 +2344,73 @@ class CompiledCoreMLBackend:
         return logits
 
 
+class CompiledAttentionIncrementalCoreMLBackend:
+    def __init__(
+        self,
+        encoder_model: Any,
+        decoder_step_model: Any,
+        tensor_contract: dict[str, Any],
+        artifacts: dict[str, dict[str, Any]],
+        artifact_paths: dict[str, dict[str, Path]],
+    ):
+        self.encoder_model = encoder_model
+        self.decoder_step_model = decoder_step_model
+        self.tensor_contract = tensor_contract
+        self.artifacts = copy.deepcopy(artifacts)
+        self.artifact_paths = artifact_paths
+
+    def verify_artifacts(self) -> None:
+        observed = attention_artifact_evidence_from_paths(self.artifact_paths)
+        if observed != self.artifacts:
+            raise SystemExit("Split attention Core ML artifacts changed during exact-artifact execution.")
+
+    def encode(self, input_ids: np.ndarray) -> dict[str, np.ndarray]:
+        result = self.encoder_model.predict({"inputIds": input_ids})
+        return validate_attention_prediction_outputs(
+            result,
+            self.tensor_contract["encoder"]["outputs"],
+            "compiled attention encoder",
+        )
+
+    def predict_step(
+        self,
+        decoder_token_ids: np.ndarray,
+        decoder_hidden: np.ndarray,
+        encoder_context: dict[str, np.ndarray],
+    ) -> dict[str, np.ndarray]:
+        result = self.decoder_step_model.predict({
+            "decoderTokenIds": decoder_token_ids,
+            "decoderHidden": decoder_hidden,
+            "encoderOutputs": encoder_context["encoderOutputs"],
+            "encoderEnergy": encoder_context["encoderEnergy"],
+            "validMask": encoder_context["validMask"],
+        })
+        return validate_attention_prediction_outputs(
+            result,
+            self.tensor_contract["decoderStep"]["outputs"],
+            "compiled attention decoder step",
+        )
+
+
+def validate_attention_prediction_outputs(
+    result: Any,
+    expected: dict[str, dict[str, Any]],
+    label: str,
+) -> dict[str, np.ndarray]:
+    if not isinstance(result, dict) or set(result) != set(expected):
+        raise SystemExit(f"{label} returned unexpected output names.")
+    validated: dict[str, np.ndarray] = {}
+    for name, requirement in expected.items():
+        value = np.asarray(result[name])
+        required_shape = tuple(requirement["shape"])
+        if value.shape != required_shape:
+            raise SystemExit(f"{label} output {name} has shape {value.shape}, expected {required_shape}.")
+        if value.dtype.kind != "f" or not np.isfinite(value).all():
+            raise SystemExit(f"{label} output {name} is non-floating or non-finite.")
+        validated[name] = value.astype(np.float16, copy=False)
+    return validated
+
+
 def validate_coreml_feature_contract(coreml_model: Any, checkpoint: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     specification = coreml_model.get_spec()
     inputs = {feature.name: feature for feature in specification.description.input}
@@ -2281,6 +2438,35 @@ def validate_coreml_feature_contract(coreml_model: Any, checkpoint: dict[str, An
         "decoderInputIds": {"shape": expected_input_shapes["decoderInputIds"], "dataType": "INT32"},
         "logits": {"shape": expected_output_shape, "dataType": "FLOAT16"},
     }
+
+
+def validate_attention_incremental_coreml_feature_contract(
+    encoder_model: Any,
+    decoder_step_model: Any,
+    tensor_contract: dict[str, Any],
+) -> None:
+    int32_type = ct.proto.FeatureTypes_pb2.ArrayFeatureType.INT32
+    float16_type = ct.proto.FeatureTypes_pb2.ArrayFeatureType.FLOAT16
+    data_types = {"INT32": int32_type, "FLOAT16": float16_type}
+
+    for role, model in (("encoder", encoder_model), ("decoderStep", decoder_step_model)):
+        specification = model.get_spec()
+        observed_groups = {
+            "inputs": {feature.name: feature for feature in specification.description.input},
+            "outputs": {feature.name: feature for feature in specification.description.output},
+        }
+        for group, observed in observed_groups.items():
+            expected = tensor_contract[role][group]
+            if set(observed) != set(expected):
+                raise SystemExit(f"Split attention {role} {group} do not match the derived tensor contract.")
+            for name, requirement in expected.items():
+                multi_array = observed[name].type.multiArrayType
+                expected_type = data_types.get(requirement["dataType"])
+                if list(multi_array.shape) != requirement["shape"] or multi_array.dataType != expected_type:
+                    raise SystemExit(
+                        f"Split attention {role} {group[:-1]} {name} does not match "
+                        f"{requirement['dataType']} {requirement['shape']}."
+                    )
 
 
 def known_answer_tensors(checkpoint: dict[str, Any], args: argparse.Namespace) -> tuple[np.ndarray, np.ndarray]:
@@ -2367,6 +2553,391 @@ def validate_coreml_known_answer(
         "maximumAbsoluteLogitError": float(
             np.max(np.abs(observed.astype(np.float64) - expected.astype(np.float64)))
         ),
+        "relativeTolerance": COREML_PARITY_RTOL,
+        "absoluteTolerance": COREML_PARITY_ATOL,
+    }
+
+
+def attention_artifact_evidence_from_paths(
+    paths: dict[str, dict[str, Path]],
+) -> dict[str, dict[str, Any]]:
+    evidence: dict[str, dict[str, Any]] = {}
+    if set(paths) != {"encoder", "decoderStep"}:
+        raise SystemExit("Split attention artifact inventory must contain encoder and decoderStep.")
+    for role in ("encoder", "decoderStep"):
+        role_paths = paths[role]
+        if set(role_paths) != {"mlpackage", "compiledModel"}:
+            raise SystemExit(f"Split attention {role} artifact paths are incomplete.")
+        package = role_paths["mlpackage"]
+        compiled = role_paths["compiledModel"]
+        evidence[role] = {
+            "role": role,
+            "mlpackage": rel(package),
+            "mlpackageBytes": directory_bytes(package),
+            "mlpackageSha256": directory_sha256(package),
+            "compiledModel": rel(compiled),
+            "compiledBytes": directory_bytes(compiled),
+            "compiledSha256": directory_sha256(compiled),
+        }
+    return evidence
+
+
+def attention_artifact_content_evidence(
+    artifacts: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    return {
+        role: {
+            field: artifacts[role][field]
+            for field in (
+                "mlpackageBytes",
+                "mlpackageSha256",
+                "compiledBytes",
+                "compiledSha256",
+            )
+        }
+        for role in ("encoder", "decoderStep")
+    }
+
+
+def verified_attention_prepublication_validation(
+    validation: Any,
+    source_checkpoint_sha256: str,
+    tensor_contract: dict[str, Any],
+    artifact_content: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    required_fields = {
+        "status",
+        "phase",
+        "sourceCheckpointSha256",
+        "runtimeModelContract",
+        "featureContractSha256",
+        "artifactContent",
+        "knownAnswerInputSha256",
+        "maximumAbsoluteEncoderError",
+        "maximumAbsoluteLogitError",
+        "maximumAbsoluteHiddenStateError",
+        "relativeTolerance",
+        "absoluteTolerance",
+    }
+    if not isinstance(validation, dict) or set(validation) != required_fields:
+        raise SystemExit("Split attention pre-publication attestation evidence is incomplete.")
+    if (
+        validation["status"] != "passed"
+        or validation["phase"] != "pre-publication-staging"
+        or validation["sourceCheckpointSha256"] != source_checkpoint_sha256
+        or validation["runtimeModelContract"] != ATTENTION_INCREMENTAL_RUNTIME_CONTRACT
+        or validation["featureContractSha256"] != sha256_json(tensor_contract)
+        or validation["artifactContent"] != artifact_content
+        or not isinstance(validation["knownAnswerInputSha256"], str)
+        or not re.fullmatch(r"[a-f0-9]{64}", validation["knownAnswerInputSha256"])
+        or validation["relativeTolerance"] != COREML_PARITY_RTOL
+        or validation["absoluteTolerance"] != COREML_PARITY_ATOL
+    ):
+        raise SystemExit("Split attention pre-publication attestation does not match the published bytes.")
+    for field in (
+        "maximumAbsoluteEncoderError",
+        "maximumAbsoluteLogitError",
+        "maximumAbsoluteHiddenStateError",
+    ):
+        value = validation[field]
+        if not isinstance(value, (int, float)) or not math.isfinite(float(value)) or value < 0:
+            raise SystemExit("Split attention pre-publication parity evidence is invalid.")
+    return validation
+
+
+def verified_attention_artifact_evidence(
+    args: argparse.Namespace,
+    export: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    if export.get("runtimeModelContract") != ATTENTION_INCREMENTAL_RUNTIME_CONTRACT:
+        raise SystemExit("Split attention export is missing its runtime model contract.")
+    expected = export.get("artifacts")
+    if not isinstance(expected, dict) or set(expected) != {"encoder", "decoderStep"}:
+        raise SystemExit("Split attention export has a partial artifact inventory.")
+    observed = attention_artifact_evidence_from_paths(attention_artifact_paths(args))
+    if observed != expected:
+        raise SystemExit("Split attention export artifacts are stale, partial, or mismatched.")
+    total_compiled_bytes = sum(item["compiledBytes"] for item in observed.values())
+    total_package_bytes = sum(item["mlpackageBytes"] for item in observed.values())
+    if (
+        export.get("totalCompiledBytes") != total_compiled_bytes
+        or export.get("totalPackageBytes") != total_package_bytes
+    ):
+        raise SystemExit("Split attention export aggregate sizes do not match its artifacts.")
+    return observed
+
+
+def validate_attention_checkpoint_export_binding(
+    pytorch_model: nn.Module,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+    export: dict[str, Any],
+) -> str:
+    if args.model_id != ATTENTION_MODEL_ID or checkpoint.get("modelId") != ATTENTION_MODEL_ID:
+        raise SystemExit("Split attention export requires the attention challenger checkpoint.")
+    if not isinstance(pytorch_model, BidirectionalAttentionSeq2Seq):
+        raise SystemExit("Split attention export requires the attention challenger model family.")
+    if checkpoint.get("config") != checkpoint_runtime_config(args):
+        raise SystemExit("Split attention export checkpoint dimensions do not match this invocation.")
+    if checkpoint.get("trainingRunId") != args.training_run_id:
+        raise SystemExit("Split attention export checkpoint belongs to another training run.")
+    checkpoint_sha256 = validate_attention_checkpoint_file_binding(
+        pytorch_model,
+        checkpoint,
+        args,
+    )
+    if export.get("sourceCheckpointSha256") != checkpoint_sha256:
+        raise SystemExit("Split attention export is not bound to the exact checkpoint bytes.")
+    return checkpoint_sha256
+
+
+def validate_attention_checkpoint_file_binding(
+    pytorch_model: nn.Module,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> str:
+    source_path = checkpoint_path(args)
+    try:
+        with open_regular_binary(source_path, "attention checkpoint") as handle:
+            source_checkpoint = torch.load(handle, map_location="cpu", weights_only=True)
+    except Exception as error:
+        raise SystemExit("Split attention checkpoint failed safe tensor-only loading.") from error
+    if not isinstance(source_checkpoint, dict):
+        raise SystemExit("Split attention checkpoint payload must be an object.")
+    source_metadata = {key: value for key, value in source_checkpoint.items() if key != "stateDict"}
+    expected_metadata = {key: value for key, value in checkpoint.items() if key != "stateDict"}
+    if source_metadata != expected_metadata:
+        raise SystemExit("Split attention checkpoint file metadata does not match the in-memory checkpoint.")
+    source_state = source_checkpoint.get("stateDict")
+    checkpoint_state = checkpoint.get("stateDict")
+    model_state = pytorch_model.state_dict()
+    if not isinstance(source_state, dict) or not isinstance(checkpoint_state, dict):
+        raise SystemExit("Split attention checkpoint is missing its state dictionary.")
+    if set(source_state) != set(checkpoint_state) or set(source_state) != set(model_state):
+        raise SystemExit("Split attention checkpoint state dictionary keys do not match the model.")
+    for name in sorted(source_state):
+        source_tensor = source_state[name]
+        checkpoint_tensor = checkpoint_state[name]
+        model_tensor = model_state[name]
+        if (
+            not isinstance(source_tensor, torch.Tensor)
+            or not isinstance(checkpoint_tensor, torch.Tensor)
+            or not torch.equal(source_tensor.cpu(), checkpoint_tensor.cpu())
+            or not torch.equal(source_tensor.cpu(), model_tensor.detach().cpu())
+        ):
+            raise SystemExit(f"Split attention checkpoint tensor {name} does not match the exported model.")
+    return sha256_file(source_path)
+
+
+def load_verified_compiled_attention_coreml(
+    pytorch_model: nn.Module,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+    export: dict[str, Any],
+) -> tuple[CompiledAttentionIncrementalCoreMLBackend, dict[str, Any]]:
+    if ct is None:
+        raise SystemExit(f"Core ML validation is unavailable: {COREML_IMPORT_ERROR}")
+    checkpoint_sha256 = validate_attention_checkpoint_export_binding(
+        pytorch_model,
+        checkpoint,
+        args,
+        export,
+    )
+    tensor_contract = export.get("tensorContract")
+    expected_contract = attention_incremental_tensor_contract(
+        pytorch_model,
+        args.max_input_len,
+        args.beam_width,
+    )
+    if tensor_contract != expected_contract:
+        raise SystemExit("Split attention export tensor contract does not match the bound checkpoint.")
+    artifacts = verified_attention_artifact_evidence(args, export)
+    verified_attention_prepublication_validation(
+        export.get("prePublicationValidation"),
+        checkpoint_sha256,
+        tensor_contract,
+        attention_artifact_content_evidence(artifacts),
+    )
+    paths = attention_artifact_paths(args)
+    backend, parity = attest_compiled_attention_artifacts(
+        pytorch_model,
+        checkpoint,
+        args,
+        paths,
+        artifacts,
+        tensor_contract,
+        "published",
+    )
+    return backend, {
+        "status": "passed",
+        "sourceCheckpointSha256": checkpoint_sha256,
+        "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+        "tensorContract": tensor_contract,
+        "artifacts": artifacts,
+        **parity,
+    }
+
+
+def attest_compiled_attention_artifacts(
+    pytorch_model: nn.Module,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+    paths: dict[str, dict[str, Path]],
+    artifacts: dict[str, dict[str, Any]],
+    tensor_contract: dict[str, Any],
+    phase: str,
+) -> tuple[CompiledAttentionIncrementalCoreMLBackend, dict[str, Any]]:
+    try:
+        encoder_package = ct.models.MLModel(str(paths["encoder"]["mlpackage"]))
+        decoder_package = ct.models.MLModel(str(paths["decoderStep"]["mlpackage"]))
+        encoder_compiled = ct.models.CompiledMLModel(str(paths["encoder"]["compiledModel"]))
+        decoder_compiled = ct.models.CompiledMLModel(str(paths["decoderStep"]["compiledModel"]))
+    except Exception as error:
+        raise SystemExit(f"Unable to load the exact {phase} split attention Core ML artifacts.") from error
+    validate_attention_incremental_coreml_feature_contract(
+        encoder_package,
+        decoder_package,
+        tensor_contract,
+    )
+    backend = CompiledAttentionIncrementalCoreMLBackend(
+        encoder_compiled,
+        decoder_compiled,
+        tensor_contract,
+        artifacts,
+        paths,
+    )
+    parity = validate_attention_compiled_known_answer(backend, pytorch_model, checkpoint, args)
+    return backend, parity
+
+
+def validate_staged_attention_coreml(
+    pytorch_model: nn.Module,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+    paths: dict[str, dict[str, Path]],
+    tensor_contract: dict[str, Any],
+    source_checkpoint_sha256: str,
+) -> dict[str, Any]:
+    observed_checkpoint_sha256 = validate_attention_checkpoint_file_binding(
+        pytorch_model,
+        checkpoint,
+        args,
+    )
+    if observed_checkpoint_sha256 != source_checkpoint_sha256:
+        raise SystemExit("Checkpoint bytes changed before staged split attention attestation.")
+    expected_contract = attention_incremental_tensor_contract(
+        pytorch_model,
+        args.max_input_len,
+        args.beam_width,
+    )
+    if tensor_contract != expected_contract:
+        raise SystemExit("Staged split attention tensor contract does not match the checkpoint.")
+    staged_artifacts = attention_artifact_evidence_from_paths(paths)
+    _, parity = attest_compiled_attention_artifacts(
+        pytorch_model,
+        checkpoint,
+        args,
+        paths,
+        staged_artifacts,
+        tensor_contract,
+        "staged",
+    )
+    return {
+        "status": "passed",
+        "phase": "pre-publication-staging",
+        "sourceCheckpointSha256": source_checkpoint_sha256,
+        "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+        "featureContractSha256": sha256_json(tensor_contract),
+        "artifactContent": attention_artifact_content_evidence(staged_artifacts),
+        **parity,
+    }
+
+
+def validate_attention_compiled_known_answer(
+    backend: CompiledAttentionIncrementalCoreMLBackend,
+    pytorch_model: nn.Module,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    input_ids, decoder_row = known_answer_tensors(checkpoint, args)
+    decoder_ids = np.repeat(decoder_row, args.beam_width, axis=0)
+    lexical_output_ids = [
+        token_id for token, token_id in sorted(checkpoint["outputVocab"].items(), key=lambda item: item[1])
+        if token not in SPECIAL
+    ]
+    for lane in range(args.beam_width):
+        decoder_ids[lane, 1] = lexical_output_ids[lane % len(lexical_output_ids)]
+
+    encoder_result = backend.encode(input_ids)
+    with torch.no_grad():
+        expected_encoder = CoreMLAttentionEncoderWrapper(pytorch_model.eval().to("cpu"))(
+            torch.from_numpy(input_ids)
+        )
+    encoder_names = ("encoderOutputs", "encoderEnergy", "validMask", "initialDecoderHidden")
+    maximum_encoder_error = 0.0
+    for name, expected in zip(encoder_names, expected_encoder):
+        observed = encoder_result[name].astype(np.float32)
+        expected_array = expected.detach().cpu().numpy()
+        error = float(np.max(np.abs(observed.astype(np.float64) - expected_array.astype(np.float64))))
+        maximum_encoder_error = max(maximum_encoder_error, error)
+        if not np.allclose(observed, expected_array, rtol=COREML_PARITY_RTOL, atol=COREML_PARITY_ATOL):
+            raise SystemExit(
+                f"Exact compiled attention encoder output {name} diverges from the bound checkpoint; "
+                f"max error={error}."
+            )
+
+    context = {
+        "encoderOutputs": encoder_result["encoderOutputs"],
+        "encoderEnergy": encoder_result["encoderEnergy"],
+        "validMask": encoder_result["validMask"],
+    }
+    hidden = np.repeat(encoder_result["initialDecoderHidden"], args.beam_width, axis=1)
+    compiled_steps: list[np.ndarray] = []
+    for index in range(decoder_ids.shape[1]):
+        step = backend.predict_step(decoder_ids[:, index : index + 1], hidden, context)
+        compiled_steps.append(step["stepLogits"].astype(np.float32)[:, None, :])
+        hidden = step["nextDecoderHidden"]
+    compiled_logits = np.concatenate(compiled_steps, axis=1)
+    with torch.no_grad():
+        expected_logits, expected_hidden = run_attention_incrementally(
+            pytorch_model,
+            torch.from_numpy(input_ids),
+            torch.from_numpy(decoder_ids),
+        )
+    expected_logits_array = expected_logits.detach().cpu().numpy()
+    expected_hidden_array = expected_hidden.detach().cpu().numpy()
+    maximum_logit_error = float(np.max(np.abs(
+        compiled_logits.astype(np.float64) - expected_logits_array.astype(np.float64)
+    )))
+    maximum_hidden_error = float(np.max(np.abs(
+        hidden.astype(np.float64) - expected_hidden_array.astype(np.float64)
+    )))
+    if not np.allclose(
+        compiled_logits,
+        expected_logits_array,
+        rtol=COREML_PARITY_RTOL,
+        atol=COREML_PARITY_ATOL,
+    ):
+        raise SystemExit(
+            "Exact compiled attention decoder logits diverge from the bound checkpoint; "
+            f"max error={maximum_logit_error}."
+        )
+    if not np.allclose(
+        hidden.astype(np.float32),
+        expected_hidden_array,
+        rtol=COREML_PARITY_RTOL,
+        atol=COREML_PARITY_ATOL,
+    ):
+        raise SystemExit(
+            "Exact compiled attention decoder state diverges from the bound checkpoint; "
+            f"max error={maximum_hidden_error}."
+        )
+    backend.verify_artifacts()
+    return {
+        "knownAnswerInputSha256": hashlib.sha256(input_ids.tobytes() + decoder_ids.tobytes()).hexdigest(),
+        "maximumAbsoluteEncoderError": maximum_encoder_error,
+        "maximumAbsoluteLogitError": maximum_logit_error,
+        "maximumAbsoluteHiddenStateError": maximum_hidden_error,
         "relativeTolerance": COREML_PARITY_RTOL,
         "absoluteTolerance": COREML_PARITY_ATOL,
     }
@@ -2491,8 +3062,90 @@ def decode_coreml_candidates(
     return decode_token_sequences(token_sequences, output_vocab, args.maximum_candidates)
 
 
+def decode_attention_coreml_candidates(
+    backend: CompiledAttentionIncrementalCoreMLBackend,
+    text: str,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> list[str]:
+    input_vocab = checkpoint["inputVocab"]
+    output_vocab = checkpoint["outputVocab"]
+    normalized = normalize_input(text)
+    if not normalized or any(
+        token not in input_vocab or input_vocab[token] == input_vocab[UNK]
+        for token in normalized
+    ):
+        return []
+    input_ids = np.asarray(
+        [encode(list(normalized), input_vocab, args.max_input_len, add_sos=False)],
+        dtype=np.int32,
+    )
+    encoded = backend.encode(input_ids)
+    context = {
+        "encoderOutputs": encoded["encoderOutputs"],
+        "encoderEnergy": encoded["encoderEnergy"],
+        "validMask": encoded["validMask"],
+    }
+    initial_hidden = encoded["initialDecoderHidden"][:, 0, :]
+    beams: list[tuple[list[int], float, np.ndarray]] = [
+        ([output_vocab[SOS]], 0.0, initial_hidden.copy()),
+    ]
+    completed: list[tuple[list[int], float]] = []
+    invalid_ids = {output_vocab[PAD], output_vocab[SOS], output_vocab[UNK]}
+    vocabulary_size = len(output_vocab)
+    for _ in range(decoder_max_steps(len(normalized), args.max_output_len)):
+        active: list[tuple[list[int], float, np.ndarray]] = []
+        for ids, score, state in beams:
+            if ids[-1] == output_vocab[EOS]:
+                completed.append((ids, score))
+            else:
+                active.append((ids, score, state))
+        if not active:
+            break
+        token_ids = np.full((args.beam_width, 1), output_vocab[PAD], dtype=np.int32)
+        hidden_shape = backend.tensor_contract["decoderStep"]["inputs"]["decoderHidden"]["shape"]
+        hidden = np.zeros(tuple(hidden_shape), dtype=np.float16)
+        for lane, (ids, _, state) in enumerate(active[:args.beam_width]):
+            token_ids[lane, 0] = ids[-1]
+            hidden[:, lane, :] = state
+        step = backend.predict_step(token_ids, hidden, context)
+        logits = step["stepLogits"].astype(np.float64)
+        next_hidden = step["nextDecoderHidden"]
+        next_beams: list[tuple[list[int], float, np.ndarray]] = []
+        for lane, (ids, score, _) in enumerate(active[:args.beam_width]):
+            log_probabilities = log_softmax_numpy(logits[lane])
+            eligible = [token_id for token_id in range(vocabulary_size) if token_id not in invalid_ids]
+            eligible.sort(key=lambda token_id: (-float(log_probabilities[token_id]), token_id))
+            state = next_hidden[:, lane, :].copy()
+            for token_id in eligible[:args.beam_width]:
+                next_beams.append((
+                    ids + [token_id],
+                    score + float(log_probabilities[token_id]),
+                    state.copy(),
+                ))
+        if not next_beams:
+            break
+        next_beams.sort(key=lambda item: beam_rank_key((item[0], item[1])))
+        beams = next_beams[:args.beam_width]
+    ranked = sorted(
+        completed + [(ids, score) for ids, score, _ in beams],
+        key=beam_rank_key,
+    )
+    unique: list[list[int]] = []
+    seen: set[tuple[int, ...]] = set()
+    for ids, _ in ranked:
+        identity = tuple(ids)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(ids)
+        if len(unique) >= args.maximum_candidates:
+            break
+    return decode_token_sequences(unique, output_vocab, args.maximum_candidates)
+
+
 def write_gold_predictions(
-    backend: CompiledCoreMLBackend,
+    backend: CompiledCoreMLBackend | CompiledAttentionIncrementalCoreMLBackend,
     checkpoint: dict[str, Any],
     args: argparse.Namespace,
 ) -> dict[str, Any]:
@@ -2503,7 +3156,10 @@ def write_gold_predictions(
     try:
         with staging.open("x", encoding="utf-8") as handle:
             for row in rows:
-                candidates = decode_coreml_candidates(backend, row["input"], checkpoint, args)
+                if isinstance(backend, CompiledAttentionIncrementalCoreMLBackend):
+                    candidates = decode_attention_coreml_candidates(backend, row["input"], checkpoint, args)
+                else:
+                    candidates = decode_coreml_candidates(backend, row["input"], checkpoint, args)
                 handle.write(json.dumps({"id": row["id"], "input": row["input"], "candidates": candidates[:args.maximum_candidates]}, ensure_ascii=False) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
@@ -2513,18 +3169,171 @@ def write_gold_predictions(
     _, verified_again = load_verified_gold_rows(args)
     if verified_again != gold_evidence:
         raise SystemExit("Gold corpus changed during exact-artifact prediction generation.")
-    if directory_sha256(args.compiled_model) != backend.compiled_sha256:
-        raise SystemExit("Compiled Core ML bytes changed during gold prediction generation.")
+    if isinstance(backend, CompiledAttentionIncrementalCoreMLBackend):
+        backend.verify_artifacts()
+        backend_evidence = {
+            "backend": "coreml-compiled-split-attention-models",
+            "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+            "compiledModels": backend.artifacts,
+        }
+    else:
+        if directory_sha256(args.compiled_model) != backend.compiled_sha256:
+            raise SystemExit("Compiled Core ML bytes changed during gold prediction generation.")
+        backend_evidence = {
+            "backend": "coreml-compiled-model",
+            "compiledModel": rel(args.compiled_model),
+            "compiledModelSha256": backend.compiled_sha256,
+        }
     return {
-        "backend": "coreml-compiled-model",
-        "compiledModel": rel(args.compiled_model),
-        "compiledModelSha256": backend.compiled_sha256,
+        **backend_evidence,
         "trainingRunId": args.training_run_id,
         "exportRunId": args.export_run_id,
         **gold_evidence,
         "predictions": rel(output_path),
         "predictionsSha256": sha256_file(output_path),
     }
+
+
+def export_attention_incremental_coreml(
+    model: nn.Module,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    if args.model_id != ATTENTION_MODEL_ID or checkpoint.get("modelId") != ATTENTION_MODEL_ID:
+        raise SystemExit("Split attention publication requires the attention challenger checkpoint.")
+    if not isinstance(model, BidirectionalAttentionSeq2Seq):
+        raise SystemExit("Split attention publication requires BidirectionalAttentionSeq2Seq.")
+    if checkpoint.get("trainingRunId") != args.training_run_id:
+        raise SystemExit("Split attention publication checkpoint belongs to another training run.")
+    if checkpoint.get("config") != checkpoint_runtime_config(args):
+        raise SystemExit("Split attention publication checkpoint dimensions do not match this invocation.")
+    source_checkpoint_sha256 = validate_attention_checkpoint_file_binding(model, checkpoint, args)
+    targets = attention_artifact_paths(args)
+    staged_paths = {
+        role: {
+            kind: staging_sibling(target, "staging")
+            for kind, target in role_targets.items()
+        }
+        for role, role_targets in targets.items()
+    }
+    compile_outputs = {
+        role: {
+            "coremltools": staging_sibling(
+                args.out_dir / f"LekhNeuralTransliterator{role}.coremltools.mlmodelc",
+                "compile",
+            ),
+            "xcode": staging_sibling(args.out_dir / f"coreml-{role}-compiled", "compile"),
+        }
+        for role in ("encoder", "decoderStep")
+    }
+    temporary_directories = [
+        path
+        for role_paths in (*staged_paths.values(), *compile_outputs.values())
+        for path in role_paths.values()
+    ]
+    try:
+        converted = convert_attention_incremental_coreml_for_testing(
+            model,
+            max_input_len=args.max_input_len,
+            beam_width=args.beam_width,
+            minimum_deployment_target=ct.target.macOS13,
+        )
+        tensor_contract = converted["contract"]
+        expected_contract = attention_incremental_tensor_contract(
+            model,
+            args.max_input_len,
+            args.beam_width,
+        )
+        if tensor_contract != expected_contract:
+            raise RuntimeError("Converted split attention tensor contract changed unexpectedly.")
+        converted_models = {
+            "encoder": converted["encoderModel"],
+            "decoderStep": converted["decoderStepModel"],
+        }
+        for role in ("encoder", "decoderStep"):
+            package_staging = staged_paths[role]["mlpackage"]
+            compiled_staging = staged_paths[role]["compiledModel"]
+            package_staging.parent.mkdir(parents=True, exist_ok=True)
+            converted_models[role].save(str(package_staging))
+            compiled = ct.models.MLModel(str(package_staging)).get_compiled_model_path()
+            if not compiled or not Path(compiled).exists():
+                compiled = compile_mlpackage_with_coremltools(
+                    package_staging,
+                    compile_outputs[role]["coremltools"],
+                )
+            if not compiled or not Path(compiled).exists():
+                compiled = compile_mlpackage_with_xcode(
+                    package_staging,
+                    compile_outputs[role]["xcode"],
+                )
+            if not compiled or not Path(compiled).exists():
+                raise RuntimeError(f"Core ML compilation returned no compiled {role} path.")
+            compiled_source = normalize_compiled_model_path(Path(compiled))
+            secure_directory_files(compiled_source, require_repo_containment=False)
+            shutil.copytree(compiled_source, compiled_staging)
+            secure_directory_files(package_staging)
+            secure_directory_files(compiled_staging)
+
+        staged_content = {
+            role: {
+                "mlpackageBytes": directory_bytes(staged_paths[role]["mlpackage"]),
+                "mlpackageSha256": directory_sha256(staged_paths[role]["mlpackage"]),
+                "compiledBytes": directory_bytes(staged_paths[role]["compiledModel"]),
+                "compiledSha256": directory_sha256(staged_paths[role]["compiledModel"]),
+            }
+            for role in ("encoder", "decoderStep")
+        }
+        prepublication_validation = validate_staged_attention_coreml(
+            model,
+            checkpoint,
+            args,
+            staged_paths,
+            tensor_contract,
+            source_checkpoint_sha256,
+        )
+        verified_attention_prepublication_validation(
+            prepublication_validation,
+            source_checkpoint_sha256,
+            tensor_contract,
+            staged_content,
+        )
+        publications = [
+            (staged_paths[role][kind], targets[role][kind])
+            for role in ("encoder", "decoderStep")
+            for kind in ("mlpackage", "compiledModel")
+        ]
+        publish_directories_atomically(publications)
+        artifacts = attention_artifact_evidence_from_paths(targets)
+        for role in ("encoder", "decoderStep"):
+            if any(artifacts[role][field] != value for field, value in staged_content[role].items()):
+                raise RuntimeError(f"Published split attention {role} bytes differ from staging.")
+        return {
+            "status": "passed",
+            "trainingRunId": args.training_run_id,
+            "exportRunId": args.export_run_id,
+            "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+            "sourceCheckpointSha256": source_checkpoint_sha256,
+            "tensorContract": tensor_contract,
+            "prePublicationValidation": prepublication_validation,
+            "artifacts": artifacts,
+            "totalCompiledBytes": sum(item["compiledBytes"] for item in artifacts.values()),
+            "totalPackageBytes": sum(item["mlpackageBytes"] for item in artifacts.values()),
+        }
+    except Exception as error:  # pragma: no cover - conversion is environment-dependent.
+        return {
+            "status": "failed",
+            "trainingRunId": args.training_run_id,
+            "exportRunId": args.export_run_id,
+            "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+            "sourceCheckpointSha256": source_checkpoint_sha256,
+            "error": repr(error),
+        }
+    finally:
+        for temporary in temporary_directories:
+            try:
+                safe_remove_sibling_directory(temporary, temporary.parent)
+            except Exception:
+                pass
 
 
 def export_coreml(model: nn.Module, checkpoint: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
@@ -2537,6 +3346,8 @@ def export_coreml(model: nn.Module, checkpoint: dict[str, Any], args: argparse.N
             "exportRunId": args.export_run_id,
             "error": f"coremltools import failed: {COREML_IMPORT_ERROR}",
         }
+    if args.model_id == ATTENTION_MODEL_ID:
+        return export_attention_incremental_coreml(model, checkpoint, args)
     model.eval()
     wrapper = CoreMLWrapper(model).eval()
     example_input = torch.zeros((1, args.max_input_len), dtype=torch.int32)
@@ -2639,7 +3450,7 @@ def compile_mlpackage_with_xcode(package_path: Path, output_dir: Path) -> Path |
 
 def benchmark_coreml(
     args: argparse.Namespace,
-    backend: CompiledCoreMLBackend,
+    backend: CompiledCoreMLBackend | CompiledAttentionIncrementalCoreMLBackend,
     checkpoint: dict[str, Any],
 ) -> dict[str, Any]:
     arch = platform.machine()
@@ -2656,21 +3467,44 @@ def benchmark_coreml(
     }
     output_path = measurements_path(args)
     try:
-        result["artifact"] = rel(args.compiled_model)
         input_ids, decoder_ids = known_answer_tensors(checkpoint, args)
+        if isinstance(backend, CompiledAttentionIncrementalCoreMLBackend):
+            result["artifact"] = attention_benchmark_artifact_identity(args)
+
+            def invoke() -> None:
+                encoded = backend.encode(input_ids)
+                context = {
+                    "encoderOutputs": encoded["encoderOutputs"],
+                    "encoderEnergy": encoded["encoderEnergy"],
+                    "validMask": encoded["validMask"],
+                }
+                hidden = np.repeat(encoded["initialDecoderHidden"], args.beam_width, axis=1)
+                tokens = np.repeat(decoder_ids[:, :1], args.beam_width, axis=0)
+                backend.predict_step(tokens, hidden, context)
+        else:
+            result["artifact"] = rel(args.compiled_model)
+
+            def invoke() -> None:
+                backend.predict(input_ids, decoder_ids)
+
         for _ in range(10):
-            backend.predict(input_ids, decoder_ids)
+            invoke()
         durations = []
         for _ in range(120):
             started = time.perf_counter()
-            backend.predict(input_ids, decoder_ids)
+            invoke()
             durations.append((time.perf_counter() - started) * 1000)
         result["p50Ms"] = round(float(np.percentile(durations, 50)), 6)
         result["p95Ms"] = round(float(np.percentile(durations, 95)), 6)
         result["p99Ms"] = round(float(np.percentile(durations, 99)), 6)
     except Exception as error:
         result["error"] = repr(error)
-    if directory_sha256(args.compiled_model) != backend.compiled_sha256:
+    if isinstance(backend, CompiledAttentionIncrementalCoreMLBackend):
+        try:
+            backend.verify_artifacts()
+        except SystemExit as error:
+            result["error"] = str(error)
+    elif directory_sha256(args.compiled_model) != backend.compiled_sha256:
         result["error"] = "Compiled Core ML bytes changed during benchmark execution."
     write_json(output_path, {"generatedAt": iso_now(), "devices": [result]})
     return result
@@ -2686,7 +3520,19 @@ def valid_benchmark_result(result: dict[str, Any], args: argparse.Namespace) -> 
         and all(isinstance(result.get(key), (int, float)) and math.isfinite(float(result[key])) and result[key] >= 0
                 for key in ("p50Ms", "p95Ms", "p99Ms"))
         and isinstance(result.get("artifact"), str)
-        and result["artifact"] == rel(args.compiled_model)
+        and result["artifact"] == (
+            attention_benchmark_artifact_identity(args)
+            if args.model_id == ATTENTION_MODEL_ID
+            else rel(args.compiled_model)
+        )
+    )
+
+
+def attention_benchmark_artifact_identity(args: argparse.Namespace) -> str:
+    paths = attention_artifact_paths(args)
+    return "+".join(
+        rel(paths[role]["compiledModel"])
+        for role in ("encoder", "decoderStep")
     )
 
 
@@ -2761,6 +3607,14 @@ def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], trainin
     checkpoint_sha256 = sha256_file(checkpoint_path(args))
     if training_report.get("checkpointSha256") != checkpoint_sha256:
         raise SystemExit("Refusing to publish a runtime manifest for a stale checkpoint report.")
+    if coreml.get("runtimeModelContract") == ATTENTION_INCREMENTAL_RUNTIME_CONTRACT:
+        return write_attention_incremental_manifest(
+            args,
+            checkpoint,
+            coreml,
+            benchmark,
+            checkpoint_sha256,
+        )
     model_bytes = directory_bytes(args.compiled_model) if args.compiled_model.exists() else 0
     compiled_sha = directory_sha256(args.compiled_model) if args.compiled_model.exists() else ""
     if not compiled_sha or compiled_sha != coreml.get("compiledSha256"):
@@ -2840,6 +3694,153 @@ def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], trainin
     return manifest
 
 
+def attention_tensor_contract_from_checkpoint(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    config = checkpoint.get("config") or {}
+    if (
+        checkpoint.get("modelId") != ATTENTION_MODEL_ID
+        or config.get("architecture_family") != ATTENTION_ARCHITECTURE_FAMILY
+        or config.get("attention") != ADDITIVE_ATTENTION
+    ):
+        raise SystemExit("Cannot derive the split tensor contract from a non-attention checkpoint.")
+    layers = int(config["layers"])
+    hidden_dim = int(config["hidden_dim"])
+    attention_dim = int(config["attention_dim"])
+    max_input_len = int(config["max_input_len"])
+    beam_width = int(config["beam_width"])
+    output_vocab_size = len(checkpoint["outputVocab"])
+    return {
+        "encoder": {
+            "inputs": {
+                "inputIds": {"shape": [1, max_input_len], "dataType": "INT32"},
+            },
+            "outputs": {
+                "encoderOutputs": {"shape": [1, max_input_len, hidden_dim * 2], "dataType": "FLOAT16"},
+                "encoderEnergy": {"shape": [1, max_input_len, attention_dim], "dataType": "FLOAT16"},
+                "validMask": {"shape": [1, max_input_len], "dataType": "FLOAT16"},
+                "initialDecoderHidden": {"shape": [layers, 1, hidden_dim], "dataType": "FLOAT16"},
+            },
+        },
+        "decoderStep": {
+            "inputs": {
+                "decoderTokenIds": {"shape": [beam_width, 1], "dataType": "INT32"},
+                "decoderHidden": {"shape": [layers, beam_width, hidden_dim], "dataType": "FLOAT16"},
+                "encoderOutputs": {"shape": [1, max_input_len, hidden_dim * 2], "dataType": "FLOAT16"},
+                "encoderEnergy": {"shape": [1, max_input_len, attention_dim], "dataType": "FLOAT16"},
+                "validMask": {"shape": [1, max_input_len], "dataType": "FLOAT16"},
+            },
+            "outputs": {
+                "stepLogits": {"shape": [beam_width, output_vocab_size], "dataType": "FLOAT16"},
+                "nextDecoderHidden": {"shape": [layers, beam_width, hidden_dim], "dataType": "FLOAT16"},
+            },
+        },
+    }
+
+
+def write_attention_incremental_manifest(
+    args: argparse.Namespace,
+    checkpoint: dict[str, Any],
+    coreml: dict[str, Any],
+    benchmark: dict[str, Any],
+    checkpoint_sha256: str,
+) -> dict[str, Any]:
+    if coreml.get("sourceCheckpointSha256") != checkpoint_sha256:
+        raise SystemExit("Refusing to publish split attention artifacts from stale checkpoint bytes.")
+    tensor_contract = coreml.get("tensorContract")
+    if tensor_contract != attention_tensor_contract_from_checkpoint(checkpoint):
+        raise SystemExit("Refusing to publish a stale split attention tensor contract.")
+    artifacts = verified_attention_artifact_evidence(args, coreml)
+    verified_attention_prepublication_validation(
+        coreml.get("prePublicationValidation"),
+        checkpoint_sha256,
+        tensor_contract,
+        attention_artifact_content_evidence(artifacts),
+    )
+    artifact_validation = coreml.get("artifactValidation") or {}
+    if (
+        artifact_validation.get("status") != "passed"
+        or artifact_validation.get("sourceCheckpointSha256") != checkpoint_sha256
+        or artifact_validation.get("runtimeModelContract") != ATTENTION_INCREMENTAL_RUNTIME_CONTRACT
+        or artifact_validation.get("tensorContract") != tensor_contract
+        or artifact_validation.get("artifacts") != artifacts
+    ):
+        raise SystemExit("Refusing to publish split attention artifacts without exact compiled parity attestation.")
+    model_bytes = sum(item["compiledBytes"] for item in artifacts.values())
+    contract_issues = runtime_artifact_contract_issues(args, checkpoint, model_bytes)
+    if contract_issues:
+        raise SystemExit(f"Refusing to write an invalid native runtime artifact: {'; '.join(contract_issues)}")
+    context = args.training_config["context"]
+    configured_rescorer = context["languageModelRescorer"]
+    training_sources = sorted(
+        source for source, count in checkpoint.get("trainingSourceCounts", {}).items()
+        if int(count) > 0
+    )
+    manifest = {
+        "schemaVersion": 2,
+        "trainingRunId": args.training_run_id,
+        "exportRunId": args.export_run_id,
+        "selectedArtifact": checkpoint["modelId"],
+        "runtime": "CoreML",
+        "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+        "tensorContract": tensor_contract,
+        "compiledModels": artifacts,
+        "localOnly": True,
+        "neuralTailOnly": True,
+        "productionEligible": False,
+        "architecture": args.effective_training_config["architecture"]["family"],
+        "openVocabulary": True,
+        "tokenization": "unicode-grapheme-character",
+        "decoder": "beam-search",
+        "beamSearch": {"enabled": True, "beamWidth": args.beam_width, "maxOutputGraphemes": args.max_output_len},
+        "languageModelRescorer": {
+            "enabled": bool(configured_rescorer["enabled"]),
+            "source": str(configured_rescorer["source"]),
+            "weight": float(configured_rescorer["weight"]),
+        },
+        "contextWindowWords": int(context["previousWords"]),
+        "parameterCount": int(checkpoint["parameterCount"]),
+        "modelBytes": model_bytes,
+        "trainingSources": training_sources,
+        "datasetReports": ["reports/neural-open-vocab-dataset-report.json"],
+        "evaluationReports": ["reports/neural-open-vocab-evaluation.json"],
+        "benchmarkReports": ["reports/neural-coreml-device-benchmark.json"],
+        "metrics": {
+            "tailTop1Accuracy": -1,
+            "tailTop3Accuracy": -1,
+            "chatConventionTop1Accuracy": -1,
+            "chatConventionTop3Accuracy": -1,
+            "namesTop3Accuracy": -1,
+            "protectedFalseConversionRate": -1,
+            "singleTokenPhraseExpansionRate": -1,
+            "secureFieldInferenceCount": -1,
+        },
+        "performance": {
+            "p50Ms": benchmark.get("p50Ms") if benchmark.get("p50Ms") is not None else 999,
+            "p95Ms": benchmark.get("p95Ms") if benchmark.get("p95Ms") is not None else 999,
+            "p99Ms": benchmark.get("p99Ms") if benchmark.get("p99Ms") is not None else 999,
+            "targetP99Ms": 3,
+            "measuredOnDevice": benchmark.get("p99Ms") is not None,
+            "devices": [benchmark],
+        },
+        "requiredCases": REQUIRED_CASES,
+        "sha256": {
+            "compiledModels": {
+                role: artifacts[role]["compiledSha256"]
+                for role in ("encoder", "decoderStep")
+            },
+            "mlpackages": {
+                role: artifacts[role]["mlpackageSha256"]
+                for role in ("encoder", "decoderStep")
+            },
+            "sourceCheckpoint": checkpoint_sha256,
+            "trainingDatasetManifest": checkpoint["datasetManifestSha256"],
+            "vocabMetadata": checkpoint.get("vocabMetadataSha256", "0" * 64),
+        },
+        "limitations": production_blockers(),
+    }
+    write_json(args.manifest, manifest)
+    return manifest
+
+
 def runtime_artifact_contract_issues(
     args: argparse.Namespace,
     checkpoint: dict[str, Any],
@@ -2899,15 +3900,27 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("Training and export publication identities must be distinct.")
     coreml = export_coreml(model, checkpoint, args)
     export_succeeded = coreml.get("status") == "passed"
+    split_attention_export = (
+        export_succeeded
+        and coreml.get("runtimeModelContract") == ATTENTION_INCREMENTAL_RUNTIME_CONTRACT
+    )
     prediction_evidence: dict[str, Any] | None = None
     if export_succeeded:
-        backend, artifact_validation = load_verified_compiled_coreml(
-            model,
-            checkpoint,
-            args,
-            str(coreml["compiledSha256"]),
-            str(coreml["mlpackageSha256"]),
-        )
+        if split_attention_export:
+            backend, artifact_validation = load_verified_compiled_attention_coreml(
+                model,
+                checkpoint,
+                args,
+                coreml,
+            )
+        else:
+            backend, artifact_validation = load_verified_compiled_coreml(
+                model,
+                checkpoint,
+                args,
+                str(coreml["compiledSha256"]),
+                str(coreml["mlpackageSha256"]),
+            )
         coreml = {**coreml, "artifactValidation": artifact_validation}
         prediction_evidence = write_gold_predictions(backend, checkpoint, args)
         benchmark = benchmark_coreml(args, backend, checkpoint)
@@ -2920,12 +3933,20 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     runtime_contract_issues = runtime_artifact_contract_issues(
         args,
         checkpoint,
-        directory_bytes(args.compiled_model) if export_succeeded else 0,
+        (
+            int(coreml["totalCompiledBytes"])
+            if split_attention_export
+            else directory_bytes(args.compiled_model) if export_succeeded else 0
+        ),
     )
     publishable = benchmark_succeeded and prediction_evidence is not None and not runtime_contract_issues
     manifest = write_manifest(args, checkpoint, training_report, coreml, benchmark) if publishable else None
     if publishable:
-        export_status = "passed-open-vocab-seq2seq-candidate"
+        export_status = (
+            "passed-open-vocab-attention-split-candidate"
+            if split_attention_export
+            else "passed-open-vocab-seq2seq-candidate"
+        )
     elif args.skip_coreml:
         export_status = "passed-training-candidate-coreml-export-skipped"
     elif export_succeeded:
@@ -2939,12 +3960,18 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("Training run identity changed before export-report publication.")
     if training_report.get("checkpointSha256") != checkpoint_sha256:
         raise SystemExit("Checkpoint bytes changed before export-report publication.")
-    compiled_sha256 = directory_sha256(args.compiled_model) if export_succeeded else None
-    if export_succeeded and compiled_sha256 != coreml.get("compiledSha256"):
-        raise SystemExit("Compiled Core ML bytes changed before export-report publication.")
-    mlpackage_sha256 = directory_sha256(mlpackage_path(args)) if export_succeeded else None
-    if export_succeeded and mlpackage_sha256 != coreml.get("mlpackageSha256"):
-        raise SystemExit("Core ML package bytes changed before export-report publication.")
+    if split_attention_export:
+        compiled_models = verified_attention_artifact_evidence(args, coreml)
+        compiled_sha256 = None
+        mlpackage_sha256 = None
+    else:
+        compiled_models = None
+        compiled_sha256 = directory_sha256(args.compiled_model) if export_succeeded else None
+        if export_succeeded and compiled_sha256 != coreml.get("compiledSha256"):
+            raise SystemExit("Compiled Core ML bytes changed before export-report publication.")
+        mlpackage_sha256 = directory_sha256(mlpackage_path(args)) if export_succeeded else None
+        if export_succeeded and mlpackage_sha256 != coreml.get("mlpackageSha256"):
+            raise SystemExit("Core ML package bytes changed before export-report publication.")
     if prediction_evidence:
         if prediction_evidence.get("predictionsSha256") != sha256_file(predictions_path(args)):
             raise SystemExit("Gold prediction bytes changed before export-report publication.")
@@ -2983,15 +4010,23 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         "goldRows": prediction_evidence.get("goldRows") if prediction_evidence else None,
         "measurements": rel(measurements_path(args)) if export_succeeded else None,
         "measurementsSha256": sha256_file(measurements_path(args)) if export_succeeded else None,
-        "compiledModel": rel(args.compiled_model) if export_succeeded else None,
+        "compiledModel": rel(args.compiled_model) if export_succeeded and not split_attention_export else None,
         "compiledModelSha256": compiled_sha256,
-        "mlpackage": rel(mlpackage_path(args)) if export_succeeded else None,
+        "mlpackage": rel(mlpackage_path(args)) if export_succeeded and not split_attention_export else None,
         "mlpackageSha256": mlpackage_sha256,
         "manifest": rel(args.manifest) if manifest else None,
         "manifestSha256": sha256_file(args.manifest) if manifest else None,
         "productionEligible": bool(manifest and manifest["productionEligible"]),
         "productionBlockers": production_blockers(),
     }
+    if split_attention_export:
+        export_report.update({
+            "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+            "sourceCheckpointSha256": checkpoint_sha256,
+            "tensorContract": coreml["tensorContract"],
+            "prePublicationValidation": coreml["prePublicationValidation"],
+            "compiledModels": compiled_models,
+        })
     write_json(export_report_path(args), export_report)
 
     print(json.dumps({
