@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 2,
+  "suiteVersion": "v1",
+  "releaseId": "aksharantar-nepali-official-test-v1",
+  "status": "official-public-benchmark-locked",
+  "note": "Official Aksharantar Nepali test rows, kept outside Lekh training. Duplicate normalized Roman inputs are one metric unit with all official native outputs treated as acceptable.",
+  "corpusSha256": "7cad3a39cc68abaa2b74413aea1528e46eb8a1465e69213f9f8e5886c6484091",
+  "reviewTierPolicy": {
+    "official-public-benchmark": "Released Aksharantar benchmark evidence; not represented as project human review."
+  },
+  "upstream": {
+    "sourceId": "ai4bharat-aksharantar-nepali",
+    "repository": "https://huggingface.co/datasets/ai4bharat/Aksharantar",
+    "paper": "https://arxiv.org/abs/2205.03018",
+    "license": "CC-BY as declared for manually collected Aksharantar benchmark data",
+    "importedManifest": "data/private/neural/ai4bharat-aksharantar-nepali/manifest.json",
+    "importedManifestSha256": "603b93fecf9ba7e5ae7e8fe54473367916224fc4817eae5a16a75415403b448e",
+    "importedTsvSha256": "bb08741fb817859b8b1440ade7b632042b58b02f04f24c2fd21002d3b7844d66",
+    "upstreamArchiveSha256": "8bdcc5957d701ea36b63c00c713b43bc30902774b70736737d480e77929de92c"
+  },
+  "uniqueInputPolicy": "trim-lowercase-NFC-collapse-whitespace",
+  "duplicateInputPolicy": "collapse-to-one-metric-unit-with-acceptable-output-set",
+  "trainingUse": "forbidden-evaluation-only",
+  "suites": [
+    {
+      "id": "aksharantar-native-frequent",
+      "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/native-frequent.jsonl",
+      "sha256": "1f982f3eee5f42ebde2837d9994aca5d735b4d67d7aaa4f256314e71bf7a6786",
+      "rows": 2088,
+      "category": "romanized-token",
+      "benchmarkBucket": "native-frequent"
+    },
+    {
+      "id": "aksharantar-indian-names",
+      "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/indian-names.jsonl",
+      "sha256": "d13fede9f065a93370cad1996cda96a38dde3d9c235089282910fd392501c56e",
+      "rows": 1173,
+      "category": "name",
+      "benchmarkBucket": "indian-name"
+    },
+    {
+      "id": "aksharantar-foreign-names",
+      "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/foreign-names.jsonl",
+      "sha256": "3f920b20ca30c9cd6d22ac6fa809c5dea261dbab59e6dda63cd1330c286031b3",
+      "rows": 817,
+      "category": "name",
+      "benchmarkBucket": "foreign-name"
+    }
+  ]
+}

@@ -1,5 +1,13 @@
 # Third-Party Notices
 
+## AI4Bharat Aksharantar
+
+- Source: `https://huggingface.co/datasets/ai4bharat/Aksharantar`
+- Paper: `https://aclanthology.org/2023.findings-emnlp.4/`
+- License: manually collected benchmark data is released under CC-BY; mined and existing-source data is released under CC0, as declared by the dataset card.
+- Use in this repository: the content-addressed official Nepali test split is evaluation-only evidence for the experimental neural transliterator. It is never admitted to training.
+- Attribution: Yash Madhani, Sushane Parthan, Priyanka Bedekar, Gokul Nc, Ruchi Khapra, Anoop Kunchukuttan, Pratyush Kumar, and Mitesh Khapra, “Aksharantar,” Findings of EMNLP 2023.
+
 ## dictionary-ne 2.0.0
 
 - Source: `https://github.com/wooorm/dictionaries/tree/main/dictionaries/ne`

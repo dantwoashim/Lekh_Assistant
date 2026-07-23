@@ -80,6 +80,8 @@
     "check:token-completions:production": "node scripts/check-token-completion-index.mjs --production",
     "neural:source:syubraj": "node scripts/import-syubraj-neural-dataset.mjs",
     "neural:source:aksharantar:nepali": "node scripts/import-aksharantar-nepali-dataset.mjs",
+    "neural:benchmark:aksharantar:build": "node scripts/build-aksharantar-neural-benchmark.mjs",
+    "neural:benchmark:aksharantar:check": "node scripts/validate-aksharantar-neural-benchmark.mjs",
     "neural:teacher:download": "node scripts/download-neural-teacher-model.mjs --extract",
     "neural:student:setup": "python3.11 -m venv .tmp/coreml-student-venv && .tmp/coreml-student-venv/bin/python -m pip install --upgrade pip setuptools wheel && .tmp/coreml-student-venv/bin/python -m pip install coremltools==8.3.0 numpy==2.2.6",
     "neural:student:build": "test -x .tmp/coreml-student-venv/bin/python || npm run neural:student:setup; .tmp/coreml-student-venv/bin/python scripts/train-coreml-student-transliterator.py",

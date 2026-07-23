@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
   evaluateNeuralPredictions,
@@ -19,7 +19,7 @@ const predictionsPath = args.get("predictions") ?? (
     : undefined
 );
 const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-open-vocab-evaluation-production.json" : "neural-open-vocab-evaluation.json");
-const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v2.json");
+const goldManifestPath = resolve(root, args.get("gold-manifest") ?? "data/neural/gold/manifest.v2.json");
 const datasetManifestPath = join(root, "data", "generated", "neural-open-vocab", "manifest.json");
 const failures = [];
 const warnings = [];
@@ -59,6 +59,14 @@ const metricsBySplit = predictionValidation.metricsReportable
       ])
     )
   : null;
+const metricsBySuite = predictionValidation.metricsReportable
+  ? Object.fromEntries(
+      [...new Set(goldRows.map((row) => row.suiteId))].sort().map((suiteId) => [
+        suiteId,
+        evaluateNeuralPredictions(goldRows.filter((row) => row.suiteId === suiteId), predictionValidation, "all")
+      ])
+    )
+  : null;
 if (predictionsPath && !predictionValidation.metricsReportable) {
   failures.push("neural-evaluation.aggregate-metrics-unreportable");
 }
@@ -92,6 +100,7 @@ finish(status, failures.length === 0 ? 0 : 1, {
   promotionSplit: "test",
   metrics,
   metricsBySplit,
+  metricsBySuite,
   predictionValidation: {
     exactCoverage: predictionValidation.exactCoverage,
     metricsReportable: predictionValidation.metricsReportable,

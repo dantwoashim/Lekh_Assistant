@@ -83,7 +83,8 @@
         "lekh-name-lexicon-v1",
         "lekh-ambiguity-gold-v1",
         "lekh-protected-token-gold-v1",
-        "lekh-adversarial-neural-tail-gold-v1"
+        "lekh-adversarial-neural-tail-gold-v1",
+        "ai4bharat-aksharantar-nepali-test"
       ]
     },
     "reviewTier": {
@@ -92,7 +93,8 @@
         "native-speaker-reviewed",
         "linguist-reviewed",
         "dual-reviewed",
-        "adjudicated-gold"
+        "adjudicated-gold",
+        "official-public-benchmark"
       ]
     },
     "reviewer": {
@@ -104,7 +106,8 @@
         "project-internal-contract-seed",
         "project-owned",
         "open-license-reviewed",
-        "consented-private-derived"
+        "consented-private-derived",
+        "CC-BY"
       ]
     },
     "split": {
