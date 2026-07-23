@@ -1,25 +1,27 @@
 {
   "schemaVersion": 2,
   "implementationContractVersion": 1,
-  "phase": "phase4-training-export-contract",
-  "modelId": "lekh-open-vocab-seq2seq-v1",
+  "phase": "challenger-bigru-additive-attention",
+  "modelId": "lekh-open-vocab-bigru-attention-v1",
   "artifact": {
-    "compiledModel": "models/macos/LekhNeuralTransliterator.mlmodelc",
-    "manifest": "models/macos/LekhNeuralTransliterator.manifest.json",
+    "compiledModel": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.mlmodelc",
+    "manifest": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.manifest.json",
+    "vocabMetadata": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.vocab.json",
     "runtime": "CoreML",
     "localOnly": true,
     "neuralTailOnly": true
   },
   "architecture": {
-    "family": "gru-encoder-decoder-seq2seq",
+    "family": "bidirectional-gru-additive-attention-seq2seq",
     "openVocabulary": true,
     "tokenization": "unicode-grapheme-character",
     "encoderLayers": 2,
     "decoderLayers": 2,
-    "embeddingDim": 96,
+    "embeddingDim": 128,
     "hiddenDim": 256,
-    "attention": "none",
-    "dropout": 0.12,
+    "attentionDim": 256,
+    "attention": "bahdanau-additive",
+    "dropout": 0.15,
     "minimumParameterCount": 1000000,
     "maximumParameterCount": 5000000,
     "maximumCompiledBytes": 16777216
@@ -85,9 +87,9 @@
     "seed": 42,
     "maximumTrainRows": 1000000,
     "maximumDevRows": 50000,
-    "maximumEpochs": 8,
-    "batchSize": 256,
-    "learningRate": 0.002,
+    "maximumEpochs": 10,
+    "batchSize": 192,
+    "learningRate": 0.0015,
     "labelSmoothing": 0.05,
     "gradientClipNorm": 1,
     "earlyStopping": {
@@ -99,18 +101,19 @@
     }
   },
   "export": {
-    "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/checkpoint.pt",
-    "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlpackage",
-    "compiledModel": "models/macos/LekhNeuralTransliterator.mlmodelc",
-    "manifest": "models/macos/LekhNeuralTransliterator.manifest.json",
+    "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/checkpoint.pt",
+    "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlpackage",
+    "compiledModel": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.mlmodelc",
+    "manifest": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.manifest.json",
+    "vocabMetadata": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.vocab.json",
     "reports": {
       "dataset": "reports/neural-open-vocab-dataset-report.json",
-      "evaluation": "reports/neural-open-vocab-evaluation.json",
-      "benchmark": "reports/neural-coreml-device-benchmark.json",
+      "evaluation": "reports/neural-bigru-attention-evaluation.json",
+      "benchmark": "reports/neural-bigru-attention-coreml-benchmark.json",
       "phase3": "reports/neural-distillation-plan-report.json",
-      "phase4": "reports/neural-training-contract-report.json",
-      "phase5": "reports/neural-open-vocab-evaluation.json",
-      "phase6": "reports/neural-native-integration-report.json"
+      "phase4": "reports/neural-bigru-attention-training-contract-report.json",
+      "phase5": "reports/neural-bigru-attention-evaluation.json",
+      "phase6": "reports/neural-bigru-attention-native-integration-report.json"
     }
   },
   "productionGates": {

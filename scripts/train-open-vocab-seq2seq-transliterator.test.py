@@ -182,6 +182,114 @@ class TrainerContractTests(unittest.TestCase):
 
         self.assertTrue(torch.equal(compact_hidden, padded_hidden))
 
+    def test_attention_challenger_is_isolated_and_has_padding_invariant_shapes(self) -> None:
+        args = TRAINER.parse_args([
+            "--config",
+            "data/neural/training/open-vocab-bigru-attention-v1.config.json",
+        ], {})
+        self.assertEqual(args.model_id, TRAINER.ATTENTION_MODEL_ID)
+        self.assertEqual(args.architecture_family, TRAINER.ATTENTION_ARCHITECTURE_FAMILY)
+        self.assertEqual(args.attention_type, TRAINER.ADDITIVE_ATTENTION)
+        self.assertNotEqual(args.out_dir, TRAINER.CONFIG_PATH.parent)
+        baseline = TRAINER.parse_args([], {})
+        self.assertNotEqual(args.out_dir, baseline.out_dir)
+        self.assertNotEqual(args.compiled_model, baseline.compiled_model)
+        self.assertNotEqual(args.manifest, baseline.manifest)
+        self.assertNotEqual(args.vocab_metadata, baseline.vocab_metadata)
+        with self.assertRaisesRegex(SystemExit, "cannot replace baseline artifacts"):
+            TRAINER.parse_args([
+                "--config",
+                "data/neural/training/open-vocab-bigru-attention-v1.config.json",
+                "--compiled-model",
+                str(baseline.compiled_model),
+            ], {})
+        production_model = TRAINER.build_model_from_runtime_config(
+            30,
+            150,
+            TRAINER.checkpoint_runtime_config(args),
+        )
+        parameter_count = sum(parameter.numel() for parameter in production_model.parameters())
+        architecture = args.training_config["architecture"]
+        self.assertGreaterEqual(parameter_count, architecture["minimumParameterCount"])
+        self.assertLessEqual(parameter_count, architecture["maximumParameterCount"])
+
+        runtime_config = {
+            "model_id": TRAINER.ATTENTION_MODEL_ID,
+            "architecture_family": TRAINER.ATTENTION_ARCHITECTURE_FAMILY,
+            "attention": TRAINER.ADDITIVE_ATTENTION,
+            "embedding_dim": 4,
+            "hidden_dim": 8,
+            "attention_dim": 6,
+            "layers": 2,
+            "dropout": 0.0,
+            "max_input_len": 8,
+            "max_output_len": 8,
+            "beam_width": 2,
+            "maximum_candidates": 2,
+        }
+        torch.manual_seed(13)
+        attention_model = TRAINER.build_model_from_runtime_config(8, 9, runtime_config).eval()
+        baseline_model = TRAINER.Seq2Seq(8, 9, embedding_dim=4, hidden_dim=8, layers=2, dropout=0.0).eval()
+        decoder_ids = torch.tensor([[1, 4, 5, 0, 0, 0, 0]], dtype=torch.long)
+        compact = torch.tensor([[4, 5, 2]], dtype=torch.long)
+        padded = torch.tensor([[4, 5, 2, 0, 0, 0, 0, 0]], dtype=torch.long)
+        poisoned_padding = torch.tensor([[4, 5, 2, 7, 6, 5, 4, 7]], dtype=torch.long)
+
+        with torch.no_grad():
+            compact_logits = attention_model(compact, decoder_ids)
+            attention_logits = attention_model(padded, decoder_ids)
+            poisoned_logits = attention_model(poisoned_padding, decoder_ids)
+            baseline_logits = baseline_model(padded, decoder_ids)
+
+        self.assertEqual(tuple(attention_logits.shape), (1, 7, 9))
+        self.assertEqual(tuple(baseline_logits.shape), (1, 7, 9))
+        self.assertTrue(torch.allclose(compact_logits, attention_logits, rtol=1e-6, atol=1e-6))
+        self.assertTrue(torch.equal(attention_logits, poisoned_logits))
+
+    def test_attention_checkpoint_reload_uses_recorded_family(self) -> None:
+        runtime_config = {
+            "model_id": TRAINER.ATTENTION_MODEL_ID,
+            "architecture_family": TRAINER.ATTENTION_ARCHITECTURE_FAMILY,
+            "attention": TRAINER.ADDITIVE_ATTENTION,
+            "embedding_dim": 4,
+            "hidden_dim": 8,
+            "attention_dim": 6,
+            "layers": 2,
+            "dropout": 0.0,
+            "max_input_len": 8,
+            "max_output_len": 8,
+            "beam_width": 2,
+            "maximum_candidates": 2,
+        }
+        input_vocab = {TRAINER.PAD: 0, TRAINER.SOS: 1, TRAINER.EOS: 2, TRAINER.UNK: 3, "a": 4}
+        output_vocab = {TRAINER.PAD: 0, TRAINER.SOS: 1, TRAINER.EOS: 2, TRAINER.UNK: 3, "क": 4}
+        torch.manual_seed(17)
+        original = TRAINER.build_model_from_runtime_config(5, 5, runtime_config).eval()
+        payload = {
+            "modelId": TRAINER.ATTENTION_MODEL_ID,
+            "config": runtime_config,
+            "inputVocab": input_vocab,
+            "outputVocab": output_vocab,
+            "stateDict": original.state_dict(),
+        }
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-attention-checkpoint-test-", dir=temporary_root) as directory:
+            path = Path(directory) / "checkpoint.pt"
+            torch.save(payload, path)
+            reloaded_payload = torch.load(path, map_location="cpu", weights_only=True)
+            reloaded = TRAINER.load_model_from_checkpoint_payload(reloaded_payload).eval()
+
+        self.assertIsInstance(reloaded, TRAINER.BidirectionalAttentionSeq2Seq)
+        input_ids = torch.tensor([[4, 2, 0, 0, 0, 0, 0, 0]], dtype=torch.long)
+        decoder_ids = torch.tensor([[1, 4, 0, 0, 0, 0, 0]], dtype=torch.long)
+        with torch.no_grad():
+            self.assertTrue(torch.equal(original(input_ids, decoder_ids), reloaded(input_ids, decoder_ids)))
+
+        mismatched = {**reloaded_payload, "modelId": TRAINER.MODEL_ID}
+        with self.assertRaisesRegex(SystemExit, "inconsistent"):
+            TRAINER.load_model_from_checkpoint_payload(mismatched)
+
     def test_secondary_human_provenance_is_pinned_during_sampling(self) -> None:
         rows = [
             {"id": "public", "sourceIds": ["ai4bharat-aksharantar-nepali"]},
@@ -607,6 +715,67 @@ class TrainerContractTests(unittest.TestCase):
             perturbed = TRAINER.CompiledCoreMLBackend(PerturbedModel(), (1, 31, 9), "a" * 64)
             with self.assertRaisesRegex(SystemExit, "diverge"):
                 TRAINER.validate_coreml_known_answer(perturbed, model, checkpoint, args)
+
+    @unittest.skipUnless(platform.system() == "Darwin" and TRAINER.ct is not None, "Core ML export requires macOS and coremltools")
+    def test_tiny_attention_challenger_coreml_full_prefix_parity(self) -> None:
+        runtime_config = {
+            "model_id": TRAINER.ATTENTION_MODEL_ID,
+            "architecture_family": TRAINER.ATTENTION_ARCHITECTURE_FAMILY,
+            "attention": TRAINER.ADDITIVE_ATTENTION,
+            "embedding_dim": 4,
+            "hidden_dim": 8,
+            "attention_dim": 6,
+            "layers": 2,
+            "dropout": 0.0,
+            "max_input_len": 8,
+            "max_output_len": 8,
+            "beam_width": 2,
+            "maximum_candidates": 2,
+        }
+        torch.manual_seed(19)
+        model = TRAINER.build_model_from_runtime_config(8, 9, runtime_config).eval()
+        wrapper = TRAINER.CoreMLWrapper(model).eval()
+        input_ids = torch.tensor([[4, 5, 2, 0, 0, 0, 0, 0]], dtype=torch.int32)
+        decoder_ids = torch.tensor([[1, 4, 5, 2, 0, 0, 0]], dtype=torch.int32)
+        traced = torch.jit.trace(wrapper, (input_ids, decoder_ids))
+        converted = TRAINER.ct.convert(
+            traced,
+            convert_to="mlprogram",
+            minimum_deployment_target=TRAINER.ct.target.macOS13,
+            inputs=[
+                TRAINER.ct.TensorType(name="inputIds", shape=input_ids.shape, dtype=TRAINER.np.int32),
+                TRAINER.ct.TensorType(name="decoderInputIds", shape=decoder_ids.shape, dtype=TRAINER.np.int32),
+            ],
+            outputs=[TRAINER.ct.TensorType(name="logits")],
+        )
+
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-attention-coreml-test-", dir=temporary_root) as directory:
+            package_path = Path(directory) / "Attention.mlpackage"
+            converted.save(str(package_path))
+            coreml_model = TRAINER.ct.models.MLModel(str(package_path))
+            parity_inputs = [
+                input_ids,
+                torch.tensor([[4, 2, 0, 0, 0, 0, 0, 0]], dtype=torch.int32),
+                torch.tensor([[4, 5, 6, 7, 2, 0, 0, 0]], dtype=torch.int32),
+            ]
+            for parity_input in parity_inputs:
+                with torch.no_grad():
+                    expected = wrapper(parity_input, decoder_ids).numpy()
+                observed = coreml_model.predict({
+                    "inputIds": parity_input.numpy(),
+                    "decoderInputIds": decoder_ids.numpy(),
+                })["logits"]
+                self.assertEqual(tuple(observed.shape), (1, 7, 9))
+                self.assertTrue(
+                    TRAINER.np.allclose(
+                        observed,
+                        expected,
+                        rtol=TRAINER.COREML_PARITY_RTOL,
+                        atol=TRAINER.COREML_PARITY_ATOL,
+                    )
+                )
 
 
 def row(identifier: str, input_text: str, target: str) -> dict[str, object]:

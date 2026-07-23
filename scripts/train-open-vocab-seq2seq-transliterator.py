@@ -48,6 +48,10 @@ else:
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_ID = "lekh-open-vocab-seq2seq-v1"
+ATTENTION_MODEL_ID = "lekh-open-vocab-bigru-attention-v1"
+BASELINE_ARCHITECTURE_FAMILY = "gru-encoder-decoder-seq2seq"
+ATTENTION_ARCHITECTURE_FAMILY = "bidirectional-gru-additive-attention-seq2seq"
+ADDITIVE_ATTENTION = "bahdanau-additive"
 VOCAB_METADATA_PATH = ROOT / "models/macos/LekhNeuralTransliterator.vocab.json"
 GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v2.json"
 CONFIG_PATH = ROOT / "data/neural/training/open-vocab-seq2seq-v1.config.json"
@@ -128,13 +132,25 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
     parser.add_argument("--out-dir", type=Path, default=(ROOT / config["export"]["sourceCheckpoint"]).parent)
     parser.add_argument("--compiled-model", type=Path, default=ROOT / config["export"]["compiledModel"])
     parser.add_argument("--manifest", type=Path, default=ROOT / config["export"]["manifest"])
-    parser.add_argument("--vocab-metadata", type=Path, default=VOCAB_METADATA_PATH)
+    parser.add_argument(
+        "--vocab-metadata",
+        type=Path,
+        default=ROOT / config["export"].get("vocabMetadata", rel(VOCAB_METADATA_PATH)),
+    )
     add_configurable_argument(parser, "--max-train-rows", int, training_run["maximumTrainRows"], "LEKH_NEURAL_MAX_TRAIN_ROWS", environment)
     add_configurable_argument(parser, "--max-dev-rows", int, training_run["maximumDevRows"], "LEKH_NEURAL_MAX_DEV_ROWS", environment)
     add_configurable_argument(parser, "--epochs", int, training_run["maximumEpochs"], "LEKH_NEURAL_EPOCHS", environment)
     add_configurable_argument(parser, "--batch-size", int, training_run["batchSize"], "LEKH_NEURAL_BATCH_SIZE", environment)
     add_configurable_argument(parser, "--embedding-dim", int, architecture["embeddingDim"], "LEKH_NEURAL_EMBEDDING_DIM", environment)
     add_configurable_argument(parser, "--hidden-dim", int, architecture["hiddenDim"], "LEKH_NEURAL_HIDDEN_DIM", environment)
+    add_configurable_argument(
+        parser,
+        "--attention-dim",
+        int,
+        architecture.get("attentionDim", architecture["hiddenDim"]),
+        "LEKH_NEURAL_ATTENTION_DIM",
+        environment,
+    )
     add_configurable_argument(parser, "--layers", int, encoder_layers, "LEKH_NEURAL_LAYERS", environment)
     add_configurable_argument(parser, "--dropout", float, architecture["dropout"], "LEKH_NEURAL_DROPOUT", environment)
     add_configurable_argument(parser, "--max-input-len", int, decoder["maxInputGraphemes"], "LEKH_NEURAL_MAX_INPUT_LEN", environment)
@@ -150,9 +166,12 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
     parser.add_argument("--skip-train", action="store_true")
     parser.add_argument("--skip-coreml", action="store_true")
     args = parser.parse_args(argv)
+    args.training_config = config
+    args.model_id = str(config["modelId"])
+    args.architecture_family = str(architecture["family"])
+    args.attention_type = str(architecture["attention"])
     validate_effective_args(args, early_stopping)
     validate_output_paths(args)
-    args.training_config = config
     args.training_contract_sha256 = sha256_file(config_path)
     args.config = config_path
     args.early_stopping_enabled = bool(early_stopping["enabled"])
@@ -198,13 +217,43 @@ def add_configurable_argument(
 def validate_executable_config(config: dict[str, Any]) -> None:
     if config.get("schemaVersion") != 2 or config.get("implementationContractVersion") != 1:
         raise SystemExit("Training config must use schemaVersion 2 and implementationContractVersion 1.")
-    if config.get("modelId") != MODEL_ID:
-        raise SystemExit(f"Training config modelId must be {MODEL_ID}.")
     architecture = config.get("architecture") or {}
-    if architecture.get("family") != "gru-encoder-decoder-seq2seq":
-        raise SystemExit("Only the executable GRU encoder-decoder seq2seq architecture is supported.")
-    if architecture.get("attention") != "none":
-        raise SystemExit("Attention is not implemented; the executable training config must declare attention=none.")
+    family = architecture.get("family")
+    supported_architectures = {
+        BASELINE_ARCHITECTURE_FAMILY: {
+            "modelId": MODEL_ID,
+            "attention": "none",
+            "export": {
+                "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/checkpoint.pt",
+                "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlpackage",
+                "compiledModel": "models/macos/LekhNeuralTransliterator.mlmodelc",
+                "manifest": "models/macos/LekhNeuralTransliterator.manifest.json",
+                "vocabMetadata": rel(VOCAB_METADATA_PATH),
+            },
+        },
+        ATTENTION_ARCHITECTURE_FAMILY: {
+            "modelId": ATTENTION_MODEL_ID,
+            "attention": ADDITIVE_ATTENTION,
+            "export": {
+                "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/checkpoint.pt",
+                "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlpackage",
+                "compiledModel": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.mlmodelc",
+                "manifest": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.manifest.json",
+                "vocabMetadata": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.vocab.json",
+            },
+        },
+    }
+    binding = supported_architectures.get(family)
+    if binding is None:
+        raise SystemExit(f"Unsupported executable architecture family: {family!r}.")
+    if config.get("modelId") != binding["modelId"]:
+        raise SystemExit(f"Training config modelId must be {binding['modelId']} for {family}.")
+    if architecture.get("attention") != binding["attention"]:
+        raise SystemExit(
+            f"Architecture {family} requires attention={binding['attention']}."
+        )
+    if family == ATTENTION_ARCHITECTURE_FAMILY and int(architecture.get("attentionDim", 0)) <= 0:
+        raise SystemExit("The attention challenger requires a positive architecture.attentionDim.")
     context = config.get("context") or {}
     if int(context.get("previousWords", -1)) != 0 or (context.get("languageModelRescorer") or {}).get("enabled") is not False:
         raise SystemExit("Context rescoring is not implemented; the executable config must keep it disabled.")
@@ -224,19 +273,20 @@ def validate_executable_config(config: dict[str, Any]) -> None:
     }
     if config.get("training", {}).get("samplingPolicy") != expected_sampling_policy:
         raise SystemExit("Training config samplingPolicy must match the executable deterministic source-stratified policy.")
-    expected_export = {
-        "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/checkpoint.pt",
-        "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlpackage",
-        "compiledModel": "models/macos/LekhNeuralTransliterator.mlmodelc",
-        "manifest": "models/macos/LekhNeuralTransliterator.manifest.json",
-    }
+    expected_export = binding["export"]
     for field, expected in expected_export.items():
-        if config.get("export", {}).get(field) != expected:
+        observed = config.get("export", {}).get(field)
+        if field == "vocabMetadata" and observed is None:
+            observed = rel(VOCAB_METADATA_PATH)
+        if observed != expected:
             raise SystemExit(f"Training config export.{field} must equal {expected}.")
     if config.get("artifact", {}).get("compiledModel") != expected_export["compiledModel"]:
         raise SystemExit("Training config artifact.compiledModel must match export.compiledModel.")
     if config.get("artifact", {}).get("manifest") != expected_export["manifest"]:
         raise SystemExit("Training config artifact.manifest must match export.manifest.")
+    artifact_vocab = config.get("artifact", {}).get("vocabMetadata")
+    if artifact_vocab is not None and artifact_vocab != expected_export["vocabMetadata"]:
+        raise SystemExit("Training config artifact.vocabMetadata must match export.vocabMetadata.")
 
 
 def validate_effective_args(args: argparse.Namespace, early_stopping: dict[str, Any]) -> None:
@@ -247,6 +297,7 @@ def validate_effective_args(args: argparse.Namespace, early_stopping: dict[str, 
         "batch_size": args.batch_size,
         "embedding_dim": args.embedding_dim,
         "hidden_dim": args.hidden_dim,
+        "attention_dim": args.attention_dim,
         "layers": args.layers,
         "max_input_len": args.max_input_len,
         "max_output_len": args.max_output_len,
@@ -293,6 +344,25 @@ def validate_output_paths(args: argparse.Namespace) -> None:
     require_safe_output_path(args.compiled_model, [model_root, temporary_root], "compiled model", suffix=".mlmodelc", directory=True)
     require_safe_output_path(args.manifest, [model_root, temporary_root], "runtime manifest", suffix=".json")
     require_safe_output_path(args.vocab_metadata, [model_root, temporary_root], "vocabulary metadata", suffix=".json")
+    if args.model_id == ATTENTION_MODEL_ID:
+        protected_baseline_paths = {
+            "output directory": (ROOT / "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1").resolve(),
+            "compiled model": (ROOT / "models/macos/LekhNeuralTransliterator.mlmodelc").resolve(),
+            "runtime manifest": (ROOT / "models/macos/LekhNeuralTransliterator.manifest.json").resolve(),
+            "vocabulary metadata": VOCAB_METADATA_PATH.resolve(),
+        }
+        selected_paths = {
+            "output directory": args.out_dir.resolve(),
+            "compiled model": args.compiled_model.resolve(),
+            "runtime manifest": args.manifest.resolve(),
+            "vocabulary metadata": args.vocab_metadata.resolve(),
+        }
+        collisions = [label for label, path in selected_paths.items() if path == protected_baseline_paths[label]]
+        if collisions:
+            raise SystemExit(
+                "Attention challenger outputs cannot replace baseline artifacts: "
+                + ", ".join(collisions)
+            )
 
 
 def require_safe_output_path(
@@ -336,6 +406,7 @@ def configured_training_config(config: dict[str, Any]) -> dict[str, Any]:
             "decoderLayers": int(architecture["decoderLayers"]),
             "embeddingDim": int(architecture["embeddingDim"]),
             "hiddenDim": int(architecture["hiddenDim"]),
+            "attentionDim": int(architecture.get("attentionDim", architecture["hiddenDim"])),
             "attention": architecture["attention"],
             "dropout": float(architecture["dropout"]),
         },
@@ -374,6 +445,7 @@ def effective_training_config(args: argparse.Namespace, config: dict[str, Any]) 
         "decoderLayers": args.layers,
         "embeddingDim": args.embedding_dim,
         "hiddenDim": args.hidden_dim,
+        "attentionDim": args.attention_dim,
         "dropout": args.dropout,
     })
     decoder = effective["decoder"]
@@ -403,6 +475,7 @@ def effective_training_config(args: argparse.Namespace, config: dict[str, Any]) 
 
 def configured_artifact_inputs(config_path: Path, config: dict[str, Any]) -> dict[str, Any]:
     checkpoint = ROOT / config["export"]["sourceCheckpoint"]
+    vocab_metadata = ROOT / config["export"].get("vocabMetadata", rel(VOCAB_METADATA_PATH))
     return {
         "trainingConfig": artifact_path_value(config_path),
         "datasetManifest": artifact_path_value(ROOT / config["training"]["datasetManifest"]),
@@ -410,7 +483,7 @@ def configured_artifact_inputs(config_path: Path, config: dict[str, Any]) -> dic
         "outDir": artifact_path_value(checkpoint.parent),
         "compiledModel": artifact_path_value(ROOT / config["export"]["compiledModel"]),
         "manifest": artifact_path_value(ROOT / config["export"]["manifest"]),
-        "vocabMetadata": artifact_path_value(VOCAB_METADATA_PATH),
+        "vocabMetadata": artifact_path_value(vocab_metadata),
     }
 
 
@@ -470,6 +543,7 @@ def collect_training_overrides(
         "architecture.decoderLayers": ("--layers", "LEKH_NEURAL_LAYERS"),
         "architecture.embeddingDim": ("--embedding-dim", "LEKH_NEURAL_EMBEDDING_DIM"),
         "architecture.hiddenDim": ("--hidden-dim", "LEKH_NEURAL_HIDDEN_DIM"),
+        "architecture.attentionDim": ("--attention-dim", "LEKH_NEURAL_ATTENTION_DIM"),
         "architecture.dropout": ("--dropout", "LEKH_NEURAL_DROPOUT"),
         "decoder.beamWidth": ("--beam-width", "LEKH_NEURAL_BEAM_WIDTH"),
         "decoder.maxInputGraphemes": ("--max-input-len", "LEKH_NEURAL_MAX_INPUT_LEN"),
@@ -1093,8 +1167,182 @@ class Seq2Seq(nn.Module):
         return self.projection(decoded)
 
 
+class BidirectionalPaddedInvariantEncoder(nn.Module):
+    """Stacked bidirectional GRU encoder whose recurrent states stop at EOS."""
+
+    def __init__(self, embedding_dim: int, hidden_dim: int, layers: int, dropout: float):
+        super().__init__()
+        self.forward_layers = nn.ModuleList([
+            nn.GRU(embedding_dim if layer == 0 else hidden_dim * 2, hidden_dim, num_layers=1, batch_first=True)
+            for layer in range(layers)
+        ])
+        self.backward_layers = nn.ModuleList([
+            nn.GRU(embedding_dim if layer == 0 else hidden_dim * 2, hidden_dim, num_layers=1, batch_first=True)
+            for layer in range(layers)
+        ])
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(
+        self,
+        embedded: torch.Tensor,
+        input_ids: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        eos_positions = input_ids.eq(SPECIAL.index(EOS)).to(torch.int64).argmax(dim=1)
+        positions = torch.arange(input_ids.shape[1], device=input_ids.device).view(1, -1)
+        valid_mask = positions.le(eos_positions.view(-1, 1))
+        expanded_mask = valid_mask.unsqueeze(-1).to(embedded.dtype)
+        source_positions = positions.view(1, 1, -1)
+        desired_source_positions = eos_positions.view(-1, 1, 1) - positions.view(1, -1, 1)
+        reverse_matrix = source_positions.eq(desired_source_positions).to(embedded.dtype)
+        eos_selector = input_ids.eq(SPECIAL.index(EOS)).unsqueeze(1).to(embedded.dtype)
+
+        forward_input = embedded * expanded_mask
+        backward_input = torch.bmm(reverse_matrix, forward_input)
+        encoder_states: list[torch.Tensor] = []
+        encoded = forward_input
+        for layer_index, (forward_layer, backward_layer) in enumerate(
+            zip(self.forward_layers, self.backward_layers)
+        ):
+            forward_output, _ = forward_layer(forward_input)
+            backward_reversed_output, _ = backward_layer(backward_input)
+            backward_output = torch.bmm(reverse_matrix, backward_reversed_output)
+            encoded = torch.cat((forward_output, backward_output), dim=-1) * expanded_mask
+
+            forward_state = torch.bmm(eos_selector, forward_output).squeeze(1)
+            backward_state = torch.bmm(eos_selector, backward_reversed_output).squeeze(1)
+            encoder_states.append(torch.cat((forward_state, backward_state), dim=-1))
+
+            if layer_index + 1 < len(self.forward_layers):
+                forward_input = self.dropout(encoded) * expanded_mask
+                backward_input = torch.bmm(reverse_matrix, forward_input)
+
+        return encoded, torch.stack(encoder_states, dim=0), valid_mask
+
+
+class AdditiveAttention(nn.Module):
+    def __init__(self, encoder_dim: int, decoder_dim: int, attention_dim: int):
+        super().__init__()
+        self.encoder_projection = nn.Linear(encoder_dim, attention_dim, bias=False)
+        self.decoder_projection = nn.Linear(decoder_dim, attention_dim, bias=False)
+        self.energy_projection = nn.Linear(attention_dim, 1, bias=False)
+
+    def forward(
+        self,
+        encoder_outputs: torch.Tensor,
+        decoder_outputs: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        encoder_energy = self.encoder_projection(encoder_outputs).unsqueeze(1)
+        decoder_energy = self.decoder_projection(decoder_outputs).unsqueeze(2)
+        scores = self.energy_projection(torch.tanh(encoder_energy + decoder_energy)).squeeze(-1)
+        mask = valid_mask.unsqueeze(1).to(scores.dtype)
+        masked_scores = scores + (mask - 1.0) * 10_000.0
+        weights = torch.softmax(masked_scores, dim=-1)
+        return torch.bmm(weights, encoder_outputs), weights
+
+
+class BidirectionalAttentionSeq2Seq(nn.Module):
+    """Bidirectional GRU encoder and full-prefix additive-attention decoder."""
+
+    def __init__(
+        self,
+        input_vocab_size: int,
+        output_vocab_size: int,
+        embedding_dim: int,
+        hidden_dim: int,
+        layers: int,
+        dropout: float,
+        attention_dim: int,
+    ):
+        super().__init__()
+        self.input_embedding = nn.Embedding(input_vocab_size, embedding_dim, padding_idx=0)
+        self.output_embedding = nn.Embedding(output_vocab_size, embedding_dim, padding_idx=0)
+        self.encoder = BidirectionalPaddedInvariantEncoder(embedding_dim, hidden_dim, layers, dropout)
+        self.hidden_bridges = nn.ModuleList([
+            nn.Linear(hidden_dim * 2, hidden_dim)
+            for _ in range(layers)
+        ])
+        self.decoder = nn.GRU(
+            embedding_dim,
+            hidden_dim,
+            num_layers=layers,
+            batch_first=True,
+            dropout=dropout if layers > 1 else 0,
+        )
+        self.attention = AdditiveAttention(hidden_dim * 2, hidden_dim, attention_dim)
+        self.context_fusion = nn.Linear(hidden_dim * 3, hidden_dim)
+        self.projection = nn.Linear(hidden_dim, output_vocab_size)
+
+    def encode_context(
+        self,
+        input_ids: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        encoder_outputs, encoder_states, valid_mask = self.encoder(
+            self.input_embedding(input_ids),
+            input_ids,
+        )
+        decoder_states = [
+            torch.tanh(bridge(encoder_states[index]))
+            for index, bridge in enumerate(self.hidden_bridges)
+        ]
+        return encoder_outputs, torch.stack(decoder_states, dim=0), valid_mask
+
+    def forward(self, input_ids: torch.Tensor, decoder_input_ids: torch.Tensor) -> torch.Tensor:
+        encoder_outputs, decoder_hidden, valid_mask = self.encode_context(input_ids)
+        decoder_outputs, _ = self.decoder(self.output_embedding(decoder_input_ids), decoder_hidden)
+        context, _ = self.attention(encoder_outputs, decoder_outputs, valid_mask)
+        fused = torch.tanh(self.context_fusion(torch.cat((decoder_outputs, context), dim=-1)))
+        return self.projection(fused)
+
+
+def build_model_from_runtime_config(
+    input_vocab_size: int,
+    output_vocab_size: int,
+    runtime_config: dict[str, Any],
+) -> nn.Module:
+    family = runtime_config.get("architecture_family")
+    attention = runtime_config.get("attention")
+    common = {
+        "input_vocab_size": input_vocab_size,
+        "output_vocab_size": output_vocab_size,
+        "embedding_dim": int(runtime_config["embedding_dim"]),
+        "hidden_dim": int(runtime_config["hidden_dim"]),
+        "layers": int(runtime_config["layers"]),
+        "dropout": float(runtime_config["dropout"]),
+    }
+    if family == BASELINE_ARCHITECTURE_FAMILY and attention == "none":
+        return Seq2Seq(**common)
+    if family == ATTENTION_ARCHITECTURE_FAMILY and attention == ADDITIVE_ATTENTION:
+        return BidirectionalAttentionSeq2Seq(
+            **common,
+            attention_dim=int(runtime_config["attention_dim"]),
+        )
+    raise SystemExit(
+        f"Checkpoint names an unsupported architecture binding: family={family!r}, attention={attention!r}."
+    )
+
+
+def load_model_from_checkpoint_payload(checkpoint: dict[str, Any]) -> nn.Module:
+    runtime_config = checkpoint.get("config")
+    if not isinstance(runtime_config, dict):
+        raise SystemExit("Checkpoint is missing its recorded runtime architecture config.")
+    if runtime_config.get("model_id") != checkpoint.get("modelId"):
+        raise SystemExit("Checkpoint modelId is inconsistent with its recorded runtime architecture config.")
+    input_vocab = checkpoint.get("inputVocab")
+    output_vocab = checkpoint.get("outputVocab")
+    state_dict = checkpoint.get("stateDict")
+    if not isinstance(input_vocab, dict) or not isinstance(output_vocab, dict) or not isinstance(state_dict, dict):
+        raise SystemExit("Checkpoint is missing model vocabulary or state-dictionary data.")
+    model = build_model_from_runtime_config(len(input_vocab), len(output_vocab), runtime_config)
+    try:
+        model.load_state_dict(state_dict)
+    except RuntimeError as error:
+        raise SystemExit("Checkpoint state dictionary does not match its recorded architecture family.") from error
+    return model
+
+
 class CoreMLWrapper(nn.Module):
-    def __init__(self, model: Seq2Seq):
+    def __init__(self, model: nn.Module):
         super().__init__()
         self.model = model
 
@@ -1125,7 +1373,7 @@ def weighted_token_cross_entropy(
 
 @torch.no_grad()
 def evaluate_weighted_token_loss(
-    model: Seq2Seq,
+    model: nn.Module,
     loader: DataLoader,
     device: torch.device,
     loss_fn: nn.CrossEntropyLoss,
@@ -1155,8 +1403,12 @@ def sampled_rows_sha256(rows: list[dict[str, Any]]) -> str:
 
 def checkpoint_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
     return {
+        "model_id": args.model_id,
+        "architecture_family": args.architecture_family,
+        "attention": args.attention_type,
         "embedding_dim": args.embedding_dim,
         "hidden_dim": args.hidden_dim,
+        "attention_dim": args.attention_dim,
         "layers": args.layers,
         "dropout": args.dropout,
         "max_input_len": args.max_input_len,
@@ -1188,7 +1440,11 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("Early stopping requires a non-empty dev selection.")
     input_vocab = build_vocab(train_rows, "input")
     output_vocab = build_vocab(train_rows, "output")
-    model = Seq2Seq(len(input_vocab), len(output_vocab), args.embedding_dim, args.hidden_dim, args.layers, args.dropout)
+    model = build_model_from_runtime_config(
+        len(input_vocab),
+        len(output_vocab),
+        checkpoint_runtime_config(args),
+    )
     device = device_for_training()
     model.to(device)
 
@@ -1270,7 +1526,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
     train_sample_sha256 = sampled_rows_sha256(train_rows)
     dev_sample_sha256 = sampled_rows_sha256(dev_rows)
     checkpoint = {
-        "modelId": MODEL_ID,
+        "modelId": args.model_id,
         "trainingRunId": args.training_run_id,
         "stateDict": model.cpu().state_dict(),
         "inputVocab": input_vocab,
@@ -1322,7 +1578,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "generatedAt": iso_now(),
         "command": "python scripts/train-open-vocab-seq2seq-transliterator.py",
         "status": "passed-training-checkpoint",
-        "modelId": MODEL_ID,
+        "modelId": args.model_id,
         "trainingRunId": args.training_run_id,
         "trainingComplete": True,
         "trainingExecutionModes": args.execution_modes,
@@ -1407,6 +1663,8 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("Checkpoint failed safe tensor-only loading; refusing untrusted pickle content.") from error
     if not is_run_identifier(checkpoint.get("trainingRunId")):
         raise SystemExit("Checkpoint is missing a valid trainingRunId.")
+    if checkpoint.get("modelId") != args.model_id:
+        raise SystemExit("Checkpoint modelId does not match the selected training config.")
     args.training_run_id = checkpoint["trainingRunId"]
     for field in ("datasetSplitSha256", "datasetManifestSha256", "datasetContentSha256"):
         if not checkpoint.get(field):
@@ -1458,15 +1716,7 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("Checkpoint vocabulary metadata is missing; historical provenance cannot be backfilled from current inputs.")
     if checkpoint["vocabMetadataSha256"] != sha256_file(args.vocab_metadata):
         raise SystemExit("Checkpoint vocabulary metadata digest does not match the current vocabulary artifact.")
-    model = Seq2Seq(
-        len(checkpoint["inputVocab"]),
-        len(checkpoint["outputVocab"]),
-        checkpoint["config"]["embedding_dim"],
-        checkpoint["config"]["hidden_dim"],
-        checkpoint["config"]["layers"],
-        checkpoint["config"]["dropout"],
-    )
-    model.load_state_dict(checkpoint["stateDict"])
+    model = load_model_from_checkpoint_payload(checkpoint)
     model.eval()
     validate_checkpoint_runtime_bindings(args, checkpoint, model)
     for field in (
@@ -1511,7 +1761,7 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
 def validate_checkpoint_runtime_bindings(
     args: argparse.Namespace,
     checkpoint: dict[str, Any],
-    model: Seq2Seq,
+    model: nn.Module,
 ) -> None:
     if checkpoint.get("config") != checkpoint_runtime_config(args):
         raise SystemExit("Checkpoint runtime dimensions do not match the effective training config.")
@@ -1543,7 +1793,7 @@ def validate_checkpoint_runtime_bindings(
 
 @torch.no_grad()
 def decode_candidates(
-    model: Seq2Seq,
+    model: nn.Module,
     text: str,
     input_vocab: dict[str, int],
     output_vocab: dict[str, int],
@@ -1695,7 +1945,7 @@ def decode_token_sequences(
     return candidates
 
 
-def evaluate_model(model: Seq2Seq, rows: list[dict[str, Any]], input_vocab: dict[str, int], output_vocab: dict[str, int], args: argparse.Namespace, device: torch.device) -> dict[str, Any]:
+def evaluate_model(model: nn.Module, rows: list[dict[str, Any]], input_vocab: dict[str, int], output_vocab: dict[str, int], args: argparse.Namespace, device: torch.device) -> dict[str, Any]:
     model.eval().to("cpu")
     sample_limit = min(len(rows), 800)
     sample = deterministic_source_sample(rows, sample_limit, args.seed + 2, "internal-evaluation")
@@ -1806,7 +2056,7 @@ def known_answer_tensors(checkpoint: dict[str, Any], args: argparse.Namespace) -
 
 
 def load_verified_compiled_coreml(
-    pytorch_model: Seq2Seq,
+    pytorch_model: nn.Module,
     checkpoint: dict[str, Any],
     args: argparse.Namespace,
     expected_compiled_sha256: str,
@@ -1840,7 +2090,7 @@ def load_verified_compiled_coreml(
 
 def validate_coreml_known_answer(
     backend: CompiledCoreMLBackend,
-    pytorch_model: Seq2Seq,
+    pytorch_model: nn.Module,
     checkpoint: dict[str, Any],
     args: argparse.Namespace,
 ) -> dict[str, Any]:
@@ -2022,7 +2272,7 @@ def write_gold_predictions(
     }
 
 
-def export_coreml(model: Seq2Seq, checkpoint: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+def export_coreml(model: nn.Module, checkpoint: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     if args.skip_coreml:
         return {"status": "skipped", "trainingRunId": args.training_run_id, "exportRunId": args.export_run_id}
     if ct is None:
@@ -2190,7 +2440,7 @@ def write_vocab_metadata(input_vocab: dict[str, int], output_vocab: dict[str, in
     output_by_id = tokens_by_id(output_vocab)
     payload = {
         "schemaVersion": 1,
-        "modelId": MODEL_ID,
+        "modelId": args.model_id,
         "generatedAt": iso_now(),
         "tokenization": "unicode-grapheme-character",
         "input": {
@@ -2282,7 +2532,7 @@ def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], trainin
         "schemaVersion": 2,
         "trainingRunId": args.training_run_id,
         "exportRunId": args.export_run_id,
-        "selectedArtifact": MODEL_ID,
+        "selectedArtifact": checkpoint["modelId"],
         "runtime": "CoreML",
         "localOnly": True,
         "neuralTailOnly": True,
@@ -2387,7 +2637,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         loaded = load_checkpoint(args)
     else:
         loaded = train_model(args)
-    model: Seq2Seq = loaded["model"]
+    model: nn.Module = loaded["model"]
     checkpoint: dict[str, Any] = loaded["checkpoint"]
     training_report: dict[str, Any] = loaded["report"]
     if args.training_run_id == args.export_run_id:
@@ -2454,7 +2704,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     export_report: dict[str, Any] = {
         "generatedAt": iso_now(),
         "status": export_status,
-        "modelId": MODEL_ID,
+        "modelId": args.model_id,
         "trainingRunId": args.training_run_id,
         "exportRunId": args.export_run_id,
         "executionModes": args.execution_modes,
