@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-23T01:39:52Z",
+  "generatedAt": "2026-07-23T02:12:35Z",
   "command": "python scripts/benchmark-historical-neural-artifact.py --allow-quarantined-historical-artifact",
   "status": "measured-quarantined-historical-baseline",
   "promotionEligible": false,
@@ -14,18 +14,18 @@
     "vocabMetadata": "ef9afae8de2bf190a4c93d4c9395520a2d3df0bf03b2108fa1eb73eba3c17249"
   },
   "benchmarkManifest": "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
-  "benchmarkManifestSha256": "214215d84728d373c1bc4e154126af541ef22b91ea320fb29326cb08d258f92d",
-  "benchmarkCorpusSha256": "7cad3a39cc68abaa2b74413aea1528e46eb8a1465e69213f9f8e5886c6484091",
+  "benchmarkManifestSha256": "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f",
+  "benchmarkCorpusSha256": "149d44c4e8832b91908c4bccfb67e60abcdf8ed99a1d873dc60ef7d0a130744a",
   "predictions": ".tmp/neural-historical-aksharantar-predictions.jsonl",
-  "predictionsSha256": "0004d410019d0e681662bb5a508c57112c880ee87e0880ab3c4e7e78d5c711ae",
+  "predictionsSha256": "59364db7655108e5ff75c5caf5f3c97437a3f3a7547c2470cdc96aa238d24670",
   "beamWidth": 4,
   "maximumCandidates": 4,
   "metrics": {
-    "rows": 4078,
-    "top1Accuracy": 0.463953,
-    "top3Accuracy": 0.66822,
-    "meanReciprocalRank": 0.565392,
-    "characterErrorRate": 0.240211
+    "rows": 4085,
+    "top1Accuracy": 0.464627,
+    "top3Accuracy": 0.668788,
+    "meanReciprocalRank": 0.566014,
+    "characterErrorRate": 0.239861
   },
   "metricsBySuite": {
     "aksharantar-foreign-names": {
@@ -36,26 +36,26 @@
       "characterErrorRate": 0.385514
     },
     "aksharantar-indian-names": {
-      "rows": 1173,
-      "top1Accuracy": 0.303495,
-      "top3Accuracy": 0.514066,
-      "meanReciprocalRank": 0.410983,
-      "characterErrorRate": 0.332751
+      "rows": 1176,
+      "top1Accuracy": 0.304422,
+      "top3Accuracy": 0.515306,
+      "meanReciprocalRank": 0.412061,
+      "characterErrorRate": 0.332115
     },
     "aksharantar-native-frequent": {
-      "rows": 2088,
-      "top1Accuracy": 0.636494,
-      "top3Accuracy": 0.835249,
-      "meanReciprocalRank": 0.734076,
-      "characterErrorRate": 0.131369
+      "rows": 2092,
+      "top1Accuracy": 0.637189,
+      "top3Accuracy": 0.835564,
+      "meanReciprocalRank": 0.734584,
+      "characterErrorRate": 0.131118
     }
   },
   "latencyMs": {
-    "samples": 4078,
-    "p50": 28.056062,
-    "p95": 64.353083,
-    "p99": 86.102583,
-    "maximum": 116.198667
+    "samples": 4085,
+    "p50": 28.388083,
+    "p95": 69.773333,
+    "p99": 90.149375,
+    "maximum": 112.061459
   },
   "limitations": [
     "The checkpoint predates current leakage and provenance corrections and is permanently quarantined.",
