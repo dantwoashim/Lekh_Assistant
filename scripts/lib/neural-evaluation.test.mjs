@@ -29,8 +29,8 @@ describe("neural evaluation", () => {
     ]);
     const validation = validateNeuralPredictionRows(rows, goldRows);
     expect(validation.issueCodes).toEqual([]);
-    const testMetrics = evaluateNeuralPredictions(goldRows, validation.predictionsById, "test");
-    const allMetrics = evaluateNeuralPredictions(goldRows, validation.predictionsById, "all");
+    const testMetrics = evaluateNeuralPredictions(goldRows, validation, "test");
+    const allMetrics = evaluateNeuralPredictions(goldRows, validation, "all");
     expect(testMetrics.tailTop1Accuracy).toBe(1);
     expect(allMetrics.tailTop1Accuracy).toBe(0.8);
     expect(testMetrics.evaluatedBuckets.adversarial).toBe(1);
@@ -47,6 +47,43 @@ describe("neural evaluation", () => {
     expect(validation.issueCodes).toContain("neural-evaluation.candidate-duplicate:test-one");
     expect(validation.issueCodes).toContain("neural-evaluation.prediction-id-unknown:unknown");
     expect(validation.issueCodes).toContain("neural-evaluation.prediction-id-missing:test-chat");
+    expect(validation.metricsReportable).toBe(false);
+    expect(evaluateNeuralPredictions(goldRows, validation, "test")).toBeNull();
+  });
+
+  it("makes metrics unreportable when a normalized prediction input mismatches gold", () => {
+    const rows = validPredictionRows();
+    rows.find((row) => row.id === "test-one").input = "not-vato";
+    const validation = validateNeuralPredictionRows(rows, goldRows);
+    expect(validation.issueCodes).toContain("neural-evaluation.prediction-input-mismatch:test-one");
+    expect(validation.metricsReportable).toBe(false);
+    expect(evaluateNeuralPredictions(goldRows, validation, "test")).toBeNull();
+  });
+
+  it("rejects duplicate normalized gold inputs before aggregate metrics", () => {
+    const duplicate = gold("test-duplicate", " VATO ", "test", "adversarial-safety", ["बाटो"], ["भाटो"]);
+    const duplicateGold = [...goldRows, duplicate];
+    const rows = [...validPredictionRows(), { id: duplicate.id, input: "vato", candidates: ["बाटो"] }];
+    const validation = validateNeuralPredictionRows(rows, duplicateGold);
+    expect(validation.issueCodes).toContain("neural-evaluation.gold-input-duplicate:test-one:test-duplicate");
+    expect(validation.metricsReportable).toBe(false);
+    expect(evaluateNeuralPredictions(duplicateGold, validation, "test")).toBeNull();
+  });
+
+  it("makes metrics unreportable when a prediction is missing", () => {
+    const rows = validPredictionRows().filter((row) => row.id !== "test-chat");
+    const validation = validateNeuralPredictionRows(rows, goldRows);
+    expect(validation.issueCodes).toContain("neural-evaluation.prediction-id-missing:test-chat");
+    expect(validation.metricsReportable).toBe(false);
+    expect(evaluateNeuralPredictions(goldRows, validation, "test")).toBeNull();
+  });
+
+  it("makes metrics unreportable when an extra prediction is present", () => {
+    const rows = [...validPredictionRows(), { id: "extra", input: "extra", candidates: [] }];
+    const validation = validateNeuralPredictionRows(rows, goldRows);
+    expect(validation.issueCodes).toContain("neural-evaluation.prediction-id-unknown:extra");
+    expect(validation.metricsReportable).toBe(false);
+    expect(evaluateNeuralPredictions(goldRows, validation, "test")).toBeNull();
   });
 
   it("turns forbidden and protected candidates into hard safety failures", () => {
@@ -60,7 +97,8 @@ describe("neural evaluation", () => {
     ]);
     const validation = validateNeuralPredictionRows(rows, goldRows);
     expect(validation.issueCodes).toContain("neural-evaluation.protected-row-produced-candidate:test-protected");
-    const metrics = evaluateNeuralPredictions(goldRows, validation.predictionsById, "test");
+    expect(validation.metricsReportable).toBe(true);
+    const metrics = evaluateNeuralPredictions(goldRows, validation, "test");
     expect(validateNeuralEvaluationSafety(metrics).issueCodes).toEqual([
       "neural-evaluation.protected-false-conversion",
       "neural-evaluation.forbidden-candidate",
@@ -84,4 +122,15 @@ function gold(id, input, split, suiteId, acceptable, forbiddenOutputs) {
 
 function predictions(rows) {
   return rows.map(([id, input, candidates]) => ({ id, input, candidates }));
+}
+
+function validPredictionRows() {
+  return predictions([
+    ["train-one", "bato", ["बाटो"]],
+    ["test-one", "vato", ["बाटो"]],
+    ["test-chat", "xau", ["छौ"]],
+    ["test-name", "niraj", ["नीरज"]],
+    ["test-adversarial", "xaina", ["छैन"]],
+    ["test-protected", "GitHub", []]
+  ]);
 }

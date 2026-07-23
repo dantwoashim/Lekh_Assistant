@@ -42,19 +42,32 @@ if (predictionsPath) {
 
 const predictionValidation = predictionsPath
   ? validateNeuralPredictionRows(predictionRows, goldRows)
-  : { valid: true, issueCodes: [], predictionsById: new Map() };
+  : {
+      valid: true,
+      exactCoverage: false,
+      metricsReportable: false,
+      issueCodes: [],
+      predictionsById: new Map()
+    };
 failures.push(...predictionValidation.issueCodes);
-const metrics = evaluateNeuralPredictions(goldRows, predictionValidation.predictionsById, "test");
-const metricsBySplit = Object.fromEntries(
-  ["train", "dev", "test", "all"].map((split) => [
-    split,
-    evaluateNeuralPredictions(goldRows, predictionValidation.predictionsById, split)
-  ])
-);
-const safetyValidation = validateNeuralEvaluationSafety(metrics);
-failures.push(...safetyValidation.issueCodes);
+const metrics = evaluateNeuralPredictions(goldRows, predictionValidation, "test");
+const metricsBySplit = predictionValidation.metricsReportable
+  ? Object.fromEntries(
+      ["train", "dev", "test", "all"].map((split) => [
+        split,
+        evaluateNeuralPredictions(goldRows, predictionValidation, split)
+      ])
+    )
+  : null;
+if (predictionsPath && !predictionValidation.metricsReportable) {
+  failures.push("neural-evaluation.aggregate-metrics-unreportable");
+}
+if (metrics) {
+  const safetyValidation = validateNeuralEvaluationSafety(metrics);
+  failures.push(...safetyValidation.issueCodes);
+}
 
-if (production) {
+if (production && metrics) {
   requireMinimum("tailTop1Accuracy", metrics.tailTop1Accuracy, 0.88);
   requireMinimum("tailTop3Accuracy", metrics.tailTop3Accuracy, 0.96);
   requireMinimum("chatConventionTop1Accuracy", metrics.chatConventionTop1Accuracy, 0.92);
@@ -80,7 +93,8 @@ finish(status, failures.length === 0 ? 0 : 1, {
   metrics,
   metricsBySplit,
   predictionValidation: {
-    exactCoverage: predictionsPath ? predictionValidation.valid : false,
+    exactCoverage: predictionValidation.exactCoverage,
+    metricsReportable: predictionValidation.metricsReportable,
     issueCodes: predictionValidation.issueCodes
   },
   failures,

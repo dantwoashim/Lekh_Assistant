@@ -8,6 +8,14 @@ function normalizedText(value) {
   return String(value ?? "").normalize("NFC");
 }
 
+function normalizedInput(value) {
+  return normalizedText(value).trim().toLowerCase().replace(/\s+/gu, " ");
+}
+
+function isModelOutcomeIssue(issue) {
+  return issue.startsWith("neural-evaluation.protected-row-produced-candidate:");
+}
+
 function round(value) {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
@@ -15,6 +23,7 @@ function round(value) {
 export function validateNeuralPredictionRows(predictionRows, goldRows) {
   const issues = [];
   const goldById = new Map();
+  const goldByNormalizedInput = new Map();
   const predictionsById = new Map();
 
   if (!Array.isArray(goldRows) || goldRows.length === 0) {
@@ -27,12 +36,23 @@ export function validateNeuralPredictionRows(predictionRows, goldRows) {
   }
 
   for (const gold of goldRows) {
-    if (!isRecord(gold) || typeof gold.id !== "string" || gold.id.length === 0) {
+    if (!isRecord(gold) || typeof gold.id !== "string" || gold.id.length === 0 ||
+        typeof gold.input !== "string" || normalizedInput(gold.input).length === 0) {
       issues.push("neural-evaluation.gold-row-invalid");
       continue;
     }
-    if (goldById.has(gold.id)) issues.push(`neural-evaluation.gold-id-duplicate:${gold.id}`);
+    if (goldById.has(gold.id)) {
+      issues.push(`neural-evaluation.gold-id-duplicate:${gold.id}`);
+      continue;
+    }
     goldById.set(gold.id, gold);
+    const inputIdentity = normalizedInput(gold.input);
+    const existingInput = goldByNormalizedInput.get(inputIdentity);
+    if (existingInput) {
+      issues.push(`neural-evaluation.gold-input-duplicate:${existingInput.id}:${gold.id}`);
+    } else {
+      goldByNormalizedInput.set(inputIdentity, gold);
+    }
   }
 
   for (const [index, row] of predictionRows.entries()) {
@@ -58,7 +78,9 @@ export function validateNeuralPredictionRows(predictionRows, goldRows) {
       issues.push(`neural-evaluation.prediction-id-unknown:${row.id}`);
       continue;
     }
-    if (row.input !== gold.input) issues.push(`neural-evaluation.prediction-input-mismatch:${row.id}`);
+    if (normalizedInput(row.input) !== normalizedInput(gold.input)) {
+      issues.push(`neural-evaluation.prediction-input-mismatch:${row.id}`);
+    }
 
     const seenCandidates = new Set();
     for (const candidate of row.candidates) {
@@ -84,19 +106,29 @@ export function validateNeuralPredictionRows(predictionRows, goldRows) {
   return result();
 
   function result() {
+    const issueCodes = [...new Set(issues)].sort();
+    const integrityIssues = issueCodes.filter((issue) => !isModelOutcomeIssue(issue));
     return Object.freeze({
-      valid: issues.length === 0,
-      issueCodes: Object.freeze([...new Set(issues)].sort()),
+      valid: issueCodes.length === 0,
+      exactCoverage: integrityIssues.length === 0,
+      metricsReportable: integrityIssues.length === 0,
+      issueCodes: Object.freeze(issueCodes),
       predictionsById,
       goldById
     });
   }
 }
 
-export function evaluateNeuralPredictions(goldRows, predictionsById, split = "test") {
+export function evaluateNeuralPredictions(goldRows, predictionValidation, split = "test") {
   if (split !== "all" && !splitNames.includes(split)) {
     throw new TypeError(`Unsupported neural evaluation split: ${split}`);
   }
+  if (!isRecord(predictionValidation) || !(predictionValidation.predictionsById instanceof Map) ||
+      typeof predictionValidation.metricsReportable !== "boolean") {
+    throw new TypeError("Neural metrics require a prediction-validation result.");
+  }
+  if (!predictionValidation.metricsReportable) return null;
+  const { predictionsById } = predictionValidation;
   const rows = split === "all" ? goldRows : goldRows.filter((row) => row.split === split);
   const buckets = {
     tail: rows.filter((row) => row.expectedAction === "produce-candidate"),
