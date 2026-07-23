@@ -224,7 +224,7 @@ open class LekhInputController: IMKInputController {
   private let secureInputActive: () -> Bool
   private let latencyTelemetry = LekhLatencyRingBuffer()
   private let candidateState = LekhCandidateController()
-  private let neuralCandidateService = LekhNeuralCandidateService.shared
+  private let neuralCandidateService: any LekhNeuralCandidateServing
   /// Browsing state controls presentation only. Commit authority is the
   /// snapshot-bound receipt below and is never inferred from highlighting.
   private var candidateBrowsingActive = false
@@ -271,11 +271,13 @@ open class LekhInputController: IMKInputController {
 
   public init(
     engineClient: LekhEngineClient = LekhNativeEngineClient(),
-    secureInputActive: @escaping () -> Bool = { IsSecureEventInputEnabled() }
+    secureInputActive: @escaping () -> Bool = { IsSecureEventInputEnabled() },
+    neuralCandidateService: any LekhNeuralCandidateServing = LekhNeuralCandidateService.shared.makeScopedClient()
   ) {
     LekhNativePreferences.registerDefaults()
     self.engineClient = engineClient
     self.secureInputActive = secureInputActive
+    self.neuralCandidateService = neuralCandidateService
     super.init()
     observeSharedPreferencesChanges()
     configureModeFromDefaults()
@@ -286,6 +288,7 @@ open class LekhInputController: IMKInputController {
     LekhNativePreferences.registerDefaults()
     self.engineClient = Self.defaultEngineClient()
     self.secureInputActive = { IsSecureEventInputEnabled() }
+    self.neuralCandidateService = LekhNeuralCandidateService.shared.makeScopedClient()
     super.init(server: server, delegate: delegate, client: inputClient)
     self.candidatePanel = IMKCandidates(server: server, panelType: kIMKSingleRowSteppingCandidatePanel)
     self.candidatePanel?.setDismissesAutomatically(true)

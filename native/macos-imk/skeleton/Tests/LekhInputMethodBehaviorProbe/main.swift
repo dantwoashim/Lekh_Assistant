@@ -134,6 +134,77 @@ private final class ProbeTextInputClient: NSObject, IMKTextInput {
   }
 }
 
+/// Intentionally ignores cancellation when a completion is delivered. This
+/// models Core ML's best-effort cancellation semantics and proves that the
+/// controller's own secure/session/client guards reject a result that escapes
+/// after the corresponding lifecycle boundary.
+private final class DelayedNeuralCandidateService: LekhNeuralCandidateServing {
+  private struct Request {
+    let rawInput: String
+    let secureInputActive: Bool
+    let completion: ([String]) -> Void
+  }
+
+  private let lock = NSLock()
+  private var requests: [Request] = []
+  private var cancellations = 0
+
+  var requestCount: Int {
+    lock.lock()
+    let count = requests.count
+    lock.unlock()
+    return count
+  }
+
+  var cancelCount: Int {
+    lock.lock()
+    let count = cancellations
+    lock.unlock()
+    return count
+  }
+
+  func rawInput(at index: Int) -> String? {
+    lock.lock()
+    let input = requests.indices.contains(index) ? requests[index].rawInput : nil
+    lock.unlock()
+    return input
+  }
+
+  func secureInputWasActive(at index: Int) -> Bool? {
+    lock.lock()
+    let active = requests.indices.contains(index) ? requests[index].secureInputActive : nil
+    lock.unlock()
+    return active
+  }
+
+  func candidates(
+    for rawInput: String,
+    secureInputActive: Bool,
+    completion: @escaping ([String]) -> Void
+  ) {
+    lock.lock()
+    requests.append(Request(
+      rawInput: rawInput,
+      secureInputActive: secureInputActive,
+      completion: completion
+    ))
+    lock.unlock()
+  }
+
+  func cancelPending() {
+    lock.lock()
+    cancellations += 1
+    lock.unlock()
+  }
+
+  func completeRequest(at index: Int, with candidates: [String]) {
+    lock.lock()
+    let completion = requests.indices.contains(index) ? requests[index].completion : nil
+    lock.unlock()
+    completion?(candidates)
+  }
+}
+
 /// Keeps controller-boundary tests focused on IMK ownership and pass-through
 /// semantics without scheduling hundreds of AppKit surface renders from a
 /// manually constructed controller that has no backing IMKServer client.
@@ -1177,6 +1248,246 @@ private func assertCandidateInteractionStartsPassiveAndPagesSafely() {
   require(controller.currentState().selectedIndex == nil, "Dismissal must restore the passive state")
 }
 
+private func controllerCandidateStrings(
+  _ controller: LekhInputController,
+  client: ProbeTextInputClient
+) -> [String] {
+  (controller.candidates(client) ?? []).compactMap { $0 as? String }
+}
+
+private func assertDelayedNeuralTailLifecycleSafety() {
+  let modeKey = LekhNativePreferences.Keys.nativeTypingMode
+  let previousMode = UserDefaults.standard.object(forKey: modeKey)
+  let previousInlineComposition = ProcessInfo.processInfo.environment["LEKH_IMK_INLINE_COMPOSITION"]
+  defer {
+    if let previousMode {
+      UserDefaults.standard.set(previousMode, forKey: modeKey)
+    } else {
+      UserDefaults.standard.removeObject(forKey: modeKey)
+    }
+    if let previousInlineComposition {
+      setenv("LEKH_IMK_INLINE_COMPOSITION", previousInlineComposition, 1)
+    } else {
+      unsetenv("LEKH_IMK_INLINE_COMPOSITION")
+    }
+    UserDefaults.standard.synchronize()
+  }
+
+  UserDefaults.standard.set(LekhNativeTypingMode.romanizedTraditional.rawValue, forKey: modeKey)
+  UserDefaults.standard.synchronize()
+  setenv("LEKH_IMK_INLINE_COMPOSITION", "1", 1)
+
+  do {
+    let service = DelayedNeuralCandidateService()
+    let controller = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      neuralCandidateService: service
+    )
+    let client = ProbeTextInputClient()
+    require(controller.inputText("qzx", client: client), "The injectable neural seam must receive an OOV composition")
+    require(
+      service.requestCount == 1 &&
+        service.rawInput(at: 0) == "qzx" &&
+        service.secureInputWasActive(at: 0) == false,
+      "A normal OOV composition must issue exactly one nonsecure neural-tail request"
+    )
+    service.completeRequest(at: 0, with: ["न्यूरल"])
+    require(
+      controllerCandidateStrings(controller, client: client).contains("न्यूरल"),
+      "A current delayed neural response must merge only as an explicit candidate tail"
+    )
+    require(client.committedTextMutations.isEmpty, "Displaying a neural tail must never commit host text")
+  }
+
+  do {
+    var secure = false
+    let service = DelayedNeuralCandidateService()
+    let controller = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      secureInputActive: { secure },
+      neuralCandidateService: service
+    )
+    let client = ProbeTextInputClient()
+    require(controller.inputText("qzv", client: client), "The secure-transition probe must establish pending neural work")
+    require(service.requestCount == 1, "The secure-transition probe must capture one delayed request")
+    let cancellationsBeforeTransition = service.cancelCount
+    secure = true
+    require(!controller.inputText("x", client: client), "The first secure callback must fail open to the host")
+    require(
+      service.cancelCount > cancellationsBeforeTransition && service.requestCount == 1,
+      "Entering secure input must cancel pending work without issuing secure inference"
+    )
+    service.completeRequest(at: 0, with: ["सुरक्षित-ढिलो"])
+    secure = false
+    require(
+      !controllerCandidateStrings(controller, client: client).contains("सुरक्षित-ढिलो") &&
+        client.committedTextMutations.isEmpty,
+      "A completion escaping cancellation during secure input must not survive or commit after secure input ends"
+    )
+  }
+
+  do {
+    let service = DelayedNeuralCandidateService()
+    let controller = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      neuralCandidateService: service
+    )
+    let originalClient = ProbeTextInputClient()
+    let newlyFocusedClient = ProbeTextInputClient()
+    require(controller.inputText("qzj", client: originalClient), "The focus-switch probe must establish pending neural work")
+    require(controller.inputText("x", client: newlyFocusedClient), "The new client must establish its own raw composition")
+    service.completeRequest(at: 0, with: ["गलत-एप"])
+    require(
+      !controllerCandidateStrings(controller, client: newlyFocusedClient).contains("गलत-एप") &&
+        (controller.composedString(newlyFocusedClient) as? String) == "x" &&
+        originalClient.committedTextMutations.isEmpty && newlyFocusedClient.committedTextMutations.isEmpty,
+      "A delayed response from the old client must not enter or mutate the newly focused client"
+    )
+  }
+
+  do {
+    let service = DelayedNeuralCandidateService()
+    let controller = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      neuralCandidateService: service
+    )
+    let client = ProbeTextInputClient()
+    require(controller.inputText("qzk", client: client), "The deactivation probe must establish pending neural work")
+    let cancellationsBeforeDeactivation = service.cancelCount
+    controller.deactivateServer(client)
+    service.completeRequest(at: 0, with: ["निष्क्रिय-ढिलो"])
+    require(
+      service.cancelCount > cancellationsBeforeDeactivation &&
+        controllerCandidateStrings(controller, client: client).isEmpty &&
+        client.committedTextMutations.last == "qzk",
+      "Controller deactivation must cancel the tail, preserve raw source, and reject a late completion"
+    )
+  }
+
+  do {
+    let service = DelayedNeuralCandidateService()
+    let controller = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      neuralCandidateService: service
+    )
+    let client = ProbeTextInputClient()
+    require(controller.inputText("qzm", client: client), "The cancellation probe must establish pending neural work")
+    let cancellationsBeforeReset = service.cancelCount
+    controller.resetSession()
+    service.completeRequest(at: 0, with: ["रद्द-ढिलो"])
+    require(
+      service.cancelCount > cancellationsBeforeReset &&
+        controllerCandidateStrings(controller, client: client).isEmpty &&
+        client.committedTextMutations.isEmpty,
+      "Explicit session cancellation must reject an uncooperative late completion without host mutation"
+    )
+  }
+
+  do {
+    let service = DelayedNeuralCandidateService()
+    let controller = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      neuralCandidateService: service
+    )
+    let client = ProbeTextInputClient()
+    require(controller.inputText("qzn", client: client), "The stale-request probe must establish its first request")
+    require(controller.inputText("v", client: client), "Continued typing must establish a newer request")
+    require(
+      service.requestCount == 2 && service.rawInput(at: 1) == "qznv",
+      "Continued typing must snapshot the complete newer raw token"
+    )
+    service.completeRequest(at: 0, with: ["पुरानो-अनुरोध"])
+    require(
+      !controllerCandidateStrings(controller, client: client).contains("पुरानो-अनुरोध"),
+      "An older raw-input request must not merge into the newer composition"
+    )
+    service.completeRequest(at: 1, with: ["नयाँ-अनुरोध"])
+    require(
+      controllerCandidateStrings(controller, client: client).contains("नयाँ-अनुरोध"),
+      "The current request must remain eligible after an older request is rejected"
+    )
+  }
+
+  do {
+    let service = DelayedNeuralCandidateService()
+    let controller = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      neuralCandidateService: service
+    )
+    let client = ProbeTextInputClient()
+    require(controller.inputText("qzp", client: client), "The stale-session probe must establish its first request")
+    controller.resetSession()
+    require(controller.inputText("qzp", client: client), "The stale-session probe must recreate the same raw token")
+    require(service.requestCount == 2, "The same raw token in a new session must create a distinct request")
+    service.completeRequest(at: 0, with: ["पुरानो-सत्र"])
+    require(
+      !controllerCandidateStrings(controller, client: client).contains("पुरानो-सत्र"),
+      "Matching raw text must not make a response from an ended session current"
+    )
+    service.completeRequest(at: 1, with: ["नयाँ-सत्र"])
+    require(
+      controllerCandidateStrings(controller, client: client).contains("नयाँ-सत्र"),
+      "The matching response from the current session must still merge"
+    )
+  }
+
+  do {
+    let firstService = DelayedNeuralCandidateService()
+    let secondService = DelayedNeuralCandidateService()
+    let firstController = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      neuralCandidateService: firstService
+    )
+    let secondController = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      neuralCandidateService: secondService
+    )
+    let firstClient = ProbeTextInputClient()
+    let secondClient = ProbeTextInputClient()
+    require(firstController.inputText("qzq", client: firstClient), "The first controller must start independent neural work")
+    require(secondController.inputText("qzr", client: secondClient), "The second controller must start independent neural work")
+    let secondCancellationCount = secondService.cancelCount
+    firstController.resetSession()
+    require(
+      secondService.cancelCount == secondCancellationCount,
+      "Cancelling one controller must not cancel another controller's scoped neural service"
+    )
+    secondService.completeRequest(at: 0, with: ["दोस्रो-नियन्त्रक"])
+    firstService.completeRequest(at: 0, with: ["पहिलो-रद्द"])
+    require(
+      controllerCandidateStrings(secondController, client: secondClient).contains("दोस्रो-नियन्त्रक") &&
+        !controllerCandidateStrings(firstController, client: firstClient).contains("पहिलो-रद्द"),
+      "Cross-controller cancellation must preserve the other controller's current neural response"
+    )
+  }
+
+  do {
+    let service = DelayedNeuralCandidateService()
+    let controller = LekhInputController(
+      engineClient: LekhNativeEngineClient(),
+      neuralCandidateService: service
+    )
+    let client = ProbeTextInputClient()
+    require(controller.inputText("qzs", client: client), "The mode-switch probe must establish pending neural work")
+    let cancellationsBeforeModeSwitch = service.cancelCount
+    let modeSwitchModifiers = Int(NSEvent.ModifierFlags([.control, .option]).rawValue)
+    require(
+      controller.inputText("1", key: 18, modifiers: modeSwitchModifiers, client: client),
+      "The direct mode shortcut must switch away from the active Romanized-to-Traditional mode"
+    )
+    service.completeRequest(at: 0, with: ["पुरानो-मोड"])
+    require(
+      service.cancelCount > cancellationsBeforeModeSwitch &&
+        !controllerCandidateStrings(controller, client: client).contains("पुरानो-मोड") &&
+        (controller.composedString(client) as? String) == "" &&
+        client.committedTextMutations.last == "qzs",
+      "A mode switch must preserve raw source and reject the previous mode's late neural response"
+    )
+  }
+
+  print("native-neural-controller-lifecycle=secure,focus,deactivate,mode,cancel,stale-request,stale-session,cross-controller passed")
+}
+
 private func assertEveryControllerCallbackFailsOpenUnderSecureInput() {
   typealias Callback = (LekhInputController, ProbeTextInputClient) -> Bool
   let keyEvent: () -> NSEvent = {
@@ -1762,6 +2073,7 @@ assertPersonalizationResetClearsLiveRankingState()
 assertRepositoryCuratedTokenQualityContract()
 assertSharedTokenPackNativeConformance()
 assertCandidateInteractionStartsPassiveAndPagesSafely()
+assertDelayedNeuralTailLifecycleSafety()
 assertEveryControllerCallbackFailsOpenUnderSecureInput()
 assertInputTextBatchesAndOptionLayerAreLossless()
 assertControllerCloseRestoresRawSource()

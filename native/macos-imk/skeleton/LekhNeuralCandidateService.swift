@@ -175,7 +175,24 @@ public enum LekhNeuralBeamSearch {
   }
 }
 
-public final class LekhNeuralCandidateService {
+/// Controller-facing boundary for the optional neural candidate tail.
+///
+/// Keeping this interface smaller than the Core ML implementation lets the
+/// controller prove lifecycle safety with a deliberately delayed service. A
+/// production controller receives its own scoped view of the shared model, so
+/// cancellation in one host client cannot invalidate another controller's
+/// request generation.
+public protocol LekhNeuralCandidateServing: AnyObject {
+  func candidates(
+    for rawInput: String,
+    secureInputActive: Bool,
+    completion: @escaping ([String]) -> Void
+  )
+
+  func cancelPending()
+}
+
+public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   public static let shared = LekhNeuralCandidateService()
 
   // The candidate service currently receives one active token and returns an
@@ -187,7 +204,8 @@ public final class LekhNeuralCandidateService {
 
   private let queue = DispatchQueue(label: "com.lekh.inputmethod.neural-candidate-tail", qos: .userInitiated)
   private let requestLock = NSLock()
-  private var requestGeneration: UInt64 = 0
+  private let defaultRequestScope = UUID()
+  private var requestGenerations: [UUID: UInt64] = [:]
   private let runtimeStateLock = NSLock()
   private var runtimeState: LekhNeuralRuntimeState = .loading
   private var model: MLModel?
@@ -211,15 +229,36 @@ public final class LekhNeuralCandidateService {
     }
   }
 
+  /// Returns an independently cancellable view over the verified shared model.
+  /// The wrapper owns only request-generation state; model loading and compiled
+  /// weights remain shared across every controller.
+  public func makeScopedClient() -> any LekhNeuralCandidateServing {
+    LekhScopedNeuralCandidateService(service: self)
+  }
+
   public func candidates(
     for rawInput: String,
     secureInputActive: Bool,
     completion: @escaping ([String]) -> Void
   ) {
+    candidates(
+      for: rawInput,
+      secureInputActive: secureInputActive,
+      requestScope: defaultRequestScope,
+      completion: completion
+    )
+  }
+
+  fileprivate func candidates(
+    for rawInput: String,
+    secureInputActive: Bool,
+    requestScope: UUID,
+    completion: @escaping ([String]) -> Void
+  ) {
     // Every request, including a secure-field transition, invalidates work for
     // the previous composition. This prevents a queue of stale per-keystroke
     // beam decodes from accumulating behind the user's current token.
-    let generation = beginRequest()
+    let generation = beginRequest(in: requestScope)
     // neverInvokeInSecureFields: secure fields never run model inference, log, learn, or retain typed content.
     guard !secureInputActive else {
       completion([])
@@ -236,11 +275,11 @@ public final class LekhNeuralCandidateService {
     }
 
     queue.async { [weak self, model = runtime.model, vocab = runtime.vocab] in
-      guard let self, self.isCurrentRequest(generation) else { return }
+      guard let self, self.isCurrentRequest(generation, in: requestScope) else { return }
       let started = DispatchTime.now().uptimeNanoseconds
       let budgetNanoseconds: UInt64 = 45_000_000
       let shouldCancel = { [weak self] in
-        guard let self, self.isCurrentRequest(generation) else { return true }
+        guard let self, self.isCurrentRequest(generation, in: requestScope) else { return true }
         return DispatchTime.now().uptimeNanoseconds - started >= budgetNanoseconds
       }
       let result = (try? Self.predictCandidates(
@@ -249,9 +288,9 @@ public final class LekhNeuralCandidateService {
         input: normalized,
         shouldCancel: shouldCancel
       )) ?? []
-      guard self.isCurrentRequest(generation) else { return }
+      guard self.isCurrentRequest(generation, in: requestScope) else { return }
       DispatchQueue.main.async {
-        guard self.isCurrentRequest(generation) else { return }
+        guard self.isCurrentRequest(generation, in: requestScope) else { return }
         completion(result)
       }
     }
@@ -261,7 +300,17 @@ public final class LekhNeuralCandidateService {
   /// invoking a completion. Controllers call this on composition cancellation,
   /// deactivation, and before entering secure input.
   public func cancelPending() {
-    _ = beginRequest()
+    cancelPending(in: defaultRequestScope)
+  }
+
+  fileprivate func cancelPending(in requestScope: UUID) {
+    _ = beginRequest(in: requestScope)
+  }
+
+  fileprivate func releaseRequestScope(_ requestScope: UUID) {
+    requestLock.lock()
+    requestGenerations.removeValue(forKey: requestScope)
+    requestLock.unlock()
   }
 
   private func inferenceSnapshot() -> (
@@ -345,17 +394,17 @@ public final class LekhNeuralCandidateService {
     runtimeStateLock.unlock()
   }
 
-  private func beginRequest() -> UInt64 {
+  private func beginRequest(in requestScope: UUID) -> UInt64 {
     requestLock.lock()
-    requestGeneration &+= 1
-    let generation = requestGeneration
+    let generation = (requestGenerations[requestScope] ?? 0) &+ 1
+    requestGenerations[requestScope] = generation
     requestLock.unlock()
     return generation
   }
 
-  private func isCurrentRequest(_ generation: UInt64) -> Bool {
+  private func isCurrentRequest(_ generation: UInt64, in requestScope: UUID) -> Bool {
     requestLock.lock()
-    let current = requestGeneration == generation
+    let current = requestGenerations[requestScope] == generation
     requestLock.unlock()
     return current
   }
@@ -1037,6 +1086,36 @@ public final class LekhNeuralCandidateService {
 
   private static func multiArrayOutput(from prediction: MLFeatureProvider) -> MLMultiArray? {
     prediction.featureValue(for: "logits")?.multiArrayValue
+  }
+}
+
+private final class LekhScopedNeuralCandidateService: LekhNeuralCandidateServing {
+  private let service: LekhNeuralCandidateService
+  private let requestScope = UUID()
+
+  init(service: LekhNeuralCandidateService) {
+    self.service = service
+  }
+
+  deinit {
+    service.releaseRequestScope(requestScope)
+  }
+
+  func candidates(
+    for rawInput: String,
+    secureInputActive: Bool,
+    completion: @escaping ([String]) -> Void
+  ) {
+    service.candidates(
+      for: rawInput,
+      secureInputActive: secureInputActive,
+      requestScope: requestScope,
+      completion: completion
+    )
+  }
+
+  func cancelPending() {
+    service.cancelPending(in: requestScope)
   }
 }
 
