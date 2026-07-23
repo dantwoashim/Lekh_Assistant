@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "indicxlit-v1-nepali-aksharantar-comparison-v1",
+  "status": "measured-external-comparison",
+  "note": "Exact AI4Bharat IndicXlit v1.0 outputs on Lekh's locked Nepali Aksharantar benchmark. This is comparison evidence, not a bundled model, production candidate, training source, or promotion claim.",
+  "trainingUse": "forbidden-comparison-only",
+  "teacher": {
+    "name": "AI4Bharat IndicXlit Roman-to-Indic",
+    "version": "v1.0",
+    "targetLanguage": "ne",
+    "repository": "https://github.com/AI4Bharat/IndicXlit",
+    "release": "https://github.com/AI4Bharat/IndicXlit/releases/tag/v1.0",
+    "paper": "https://arxiv.org/abs/2205.03018",
+    "officialSourceCommit": "802803ee0afc7a8703815bb3eb79f99f061797a1",
+    "officialInferenceSourcePath": "app/ai4bharat/transliteration/transformer/custom_interactive.py",
+    "officialInferenceSourceSha256": "80ddf115152722bd45270cc9b4927b25041bd7b2f6430443de8e54173b1f2b48",
+    "modelArchive": {
+      "name": "indicxlit-en-indic-v1.0.zip",
+      "bytes": 126832968,
+      "sha256": "31dabc448c14dfac03015763d35cc4c895d8ee2b831fe23c64a5c5aea4f169ca"
+    },
+    "checkpoint": {
+      "pathInArchive": "transformer/indicxlit.pt",
+      "sha256": "2f03fe0dfb2edc40f3c11f9293c4feda4fa8ed5366fec2981391606f224a09f7"
+    },
+    "officialPythonWrapper": {
+      "package": "ai4bharat-transliteration",
+      "version": "1.1.3",
+      "wheel": "ai4bharat_transliteration-1.1.3-py3-none-any.whl",
+      "sha256": "12bdbb613b12561878dffcf01636904ccc79d1940b34b046ee08dc1c9ec95ac4"
+    },
+    "unigramDictionary": {
+      "usedDuringBenchmark": false,
+      "reason": "The measured protocol intentionally uses the official unreranked beam output so it is directly comparable with the paper's primary Table 12 result.",
+      "archive": "word_prob_dicts.zip",
+      "archiveBytes": 850493322,
+      "archiveSha256": "f88a388e248d9c73a17f9c167a22108ea79726b0ef05968e450e5692e3308d04",
+      "nepaliPathInArchive": "word_prob_dicts/ne_word_prob_dict.json",
+      "nepaliBytes": 382237259,
+      "nepaliSha256": "818f0bff55316d49c2bd3915428619638e346bdddd8226e9c7784e5c17d5ed63"
+    }
+  },
+  "benchmark": {
+    "releaseId": "aksharantar-nepali-official-test-v1",
+    "manifest": "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+    "manifestSha256": "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f",
+    "corpusSha256": "149d44c4e8832b91908c4bccfb67e60abcdf8ed99a1d873dc60ef7d0a130744a",
+    "rows": 4085,
+    "metricUnit": "unique-normalized-input-with-acceptable-output-set",
+    "suites": [
+      {
+        "id": "aksharantar-native-frequent",
+        "benchmarkBucket": "native-frequent",
+        "rows": 2092,
+        "sha256": "90620f225711febc5b9255983e6a3f682df3fc0973b27accde5b96896d66a071"
+      },
+      {
+        "id": "aksharantar-indian-names",
+        "benchmarkBucket": "indian-name",
+        "rows": 1176,
+        "sha256": "70004bac0af45cab25908fbcb6e7d15939099dd7c16e3c41c25ee6ef0ec242b3"
+      },
+      {
+        "id": "aksharantar-foreign-names",
+        "benchmarkBucket": "foreign-name",
+        "rows": 817,
+        "sha256": "3f920b20ca30c9cd6d22ac6fa809c5dea261dbab59e6dda63cd1330c286031b3"
+      }
+    ]
+  },
+  "predictionArtifact": {
+    "path": "data/neural/benchmarks/indicxlit-v1/nepali-aksharantar-v1.predictions.jsonl",
+    "sha256": "9a31848dd11244b7ac13d95174ac3af2b5e1925e02667cf4f4a98d079247e44c",
+    "bytes": 1068825,
+    "rows": 4085,
+    "candidatesPerRow": 4,
+    "fields": [
+      "id",
+      "input",
+      "benchmarkBucket",
+      "acceptable",
+      "candidates"
+    ]
+  },
+  "protocol": {
+    "beam": 4,
+    "nbest": 4,
+    "batchSize": 32,
+    "unigramReranking": false,
+    "candidateNormalization": "NFC-and-remove-model-token-spaces",
+    "topKScoring": [
+      1,
+      3
+    ]
+  },
+  "auditReport": "data/neural/audits/indicxlit-v1-nepali-comparison.json",
+  "licenses": {
+    "modelAndCode": "MIT",
+    "benchmark": "CC-BY as declared for manually collected Aksharantar benchmark data"
+  }
+}

@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "status": "measured-external-comparison",
+  "conclusion": "The quarantined historical Lekh model is materially below the reproducible IndicXlit v1.0 Nepali ceiling on every locked benchmark bucket. IndicXlit is comparison evidence only; it was not bundled, promoted, used for training, or attached to the v1.0 product path.",
+  "metricUnit": "unique-normalized-input-with-acceptable-output-set",
+  "commands": {
+    "officialInference": ".tmp/indicxlit-benchmark/venv39/bin/python .tmp/indicxlit-benchmark/run_benchmark.py",
+    "dependencyFreeValidation": "node scripts/validate-indicxlit-v1-nepali-comparison.mjs"
+  },
+  "evidence": {
+    "comparisonManifest": "data/neural/benchmarks/indicxlit-v1/manifest.json",
+    "comparisonManifestSha256": "c3bd96c57a322455026df920dab74dc214113bb2a33aa67f6420805b195c52c6",
+    "benchmarkManifest": "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+    "benchmarkManifestSha256": "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f",
+    "benchmarkCorpusSha256": "149d44c4e8832b91908c4bccfb67e60abcdf8ed99a1d873dc60ef7d0a130744a",
+    "predictions": "data/neural/benchmarks/indicxlit-v1/nepali-aksharantar-v1.predictions.jsonl",
+    "predictionsSha256": "9a31848dd11244b7ac13d95174ac3af2b5e1925e02667cf4f4a98d079247e44c",
+    "predictionRows": 4085,
+    "historicalLekhReport": "reports/neural-historical-aksharantar-baseline.json",
+    "historicalLekhReportSha256": "89ac2d060f0e6af0481813a1b0807d1708127c732a21999f2ed8754bf96d7cb8"
+  },
+  "teacher": {
+    "name": "AI4Bharat IndicXlit Roman-to-Indic v1.0",
+    "targetLanguage": "ne",
+    "releaseUrl": "https://github.com/AI4Bharat/IndicXlit/releases/tag/v1.0",
+    "officialSourceCommit": "802803ee0afc7a8703815bb3eb79f99f061797a1",
+    "modelArchiveSha256": "31dabc448c14dfac03015763d35cc4c895d8ee2b831fe23c64a5c5aea4f169ca",
+    "checkpointSha256": "2f03fe0dfb2edc40f3c11f9293c4feda4fa8ed5366fec2981391606f224a09f7",
+    "officialInferenceSourceSha256": "80ddf115152722bd45270cc9b4927b25041bd7b2f6430443de8e54173b1f2b48",
+    "officialWrapperWheelSha256": "12bdbb613b12561878dffcf01636904ccc79d1940b34b046ee08dc1c9ec95ac4",
+    "dictionaryArchiveSha256": "f88a388e248d9c73a17f9c167a22108ea79726b0ef05968e450e5692e3308d04",
+    "nepaliDictionarySha256": "818f0bff55316d49c2bd3915428619638e346bdddd8226e9c7784e5c17d5ed63"
+  },
+  "protocol": {
+    "beam": 4,
+    "nbest": 4,
+    "batchSize": 32,
+    "unigramReranking": false,
+    "dictionaryUsed": false,
+    "candidateNormalization": "NFC-and-remove-model-token-spaces",
+    "accuracyDefinition": "A row is correct at k when any of the first k normalized predictions equals any normalized acceptable output.",
+    "latencySamplePolicy": "Full-corpus throughput uses batches of 32. Interactive latency uses 256 evenly spaced rows after 8 warmups, one input per call."
+  },
+  "environment": {
+    "platform": "macOS-26.2-arm64-arm-64bit",
+    "machine": "Apple M4 arm64",
+    "python": "3.9.6",
+    "torch": "1.13.1",
+    "fairseq": "0.12.2",
+    "numpy": "1.26.4",
+    "device": "cpu",
+    "mpsAvailableButUnusedByOfficialInference": true,
+    "torchThreads": 10,
+    "isolation": "All model, source, archive, wheel, dictionary, and Python-environment files remained under ignored .tmp/indicxlit-benchmark; no repository dependency or runtime was changed."
+  },
+  "accuracy": {
+    "native-frequent": {
+      "rows": 2092,
+      "top1Hits": 1682,
+      "top1Accuracy": 0.8040152963671128,
+      "top3Hits": 1915,
+      "top3Accuracy": 0.9153919694072657
+    },
+    "indian-name": {
+      "rows": 1176,
+      "top1Hits": 648,
+      "top1Accuracy": 0.5510204081632653,
+      "top3Hits": 904,
+      "top3Accuracy": 0.7687074829931972
+    },
+    "foreign-name": {
+      "rows": 817,
+      "top1Hits": 401,
+      "top1Accuracy": 0.4908200734394125,
+      "top3Hits": 581,
+      "top3Accuracy": 0.7111383108935129
+    },
+    "all": {
+      "rows": 4085,
+      "top1Hits": 2731,
+      "top1Accuracy": 0.6685434516523868,
+      "top3Hits": 3400,
+      "top3Accuracy": 0.8323133414932681
+    },
+    "all-names": {
+      "rows": 1993,
+      "top1Hits": 1049,
+      "top1Accuracy": 0.5263421976919217,
+      "top3Hits": 1485,
+      "top3Accuracy": 0.7451078775715002
+    }
+  },
+  "latencyMs": {
+    "initialization": 1231.0426659999998,
+    "fullCorpus": {
+      "rows": 4085,
+      "batchSize": 32,
+      "wall": 32447.284875,
+      "modelInference": 29283.522605895996,
+      "wallMeanPerInput": 7.943031793145655,
+      "inputsPerSecond": 125.89651231950728
+    },
+    "interactiveSingleInput": {
+      "samples": 256,
+      "minimum": 17.116209000000993,
+      "mean": 32.49758068359357,
+      "p50": 30.344999999996958,
+      "p95": 52.97058300000401,
+      "p99": 57.15466699999894,
+      "maximum": 63.16966600000029
+    }
+  },
+  "publishedProtocolCheck": {
+    "purpose": "The close match to AI4Bharat's published unreranked Nepali values is an independent protocol sanity check, not a substitute for the committed row-level evidence.",
+    "officialUnrerankedTop1": {
+      "native-frequent": 0.8017,
+      "indian-name": 0.5545,
+      "foreign-name": 0.4914
+    },
+    "measuredMinusPublished": {
+      "native-frequent": 0.0023152963671128,
+      "indian-name": -0.0034795918367347,
+      "foreign-name": -0.0005799265605875
+    },
+    "officialRerankedTop1ReferenceOnly": {
+      "native-frequent": 0.8662,
+      "indian-name": 0.624,
+      "foreign-name": 0.5562
+    },
+    "rerankedProtocolRunLocally": false,
+    "expectedDifferenceReason": "Lekh's locked corpus collapses duplicate normalized Roman inputs and accepts every official target variant, whereas the paper reports its upstream benchmark rows."
+  },
+  "comparisonToQuarantinedHistoricalLekh": {
+    "lekhStatus": "measured-quarantined-historical-baseline",
+    "lekhPromotionEligible": false,
+    "metricCaveat": "Lekh metrics are the six-decimal values preserved in its historical report; IndicXlit values are exact hit fractions.",
+    "overall": {
+      "lekhTop1": 0.464627,
+      "indicXlitTop1": 0.6685434516523868,
+      "indicXlitMinusLekhTop1": 0.2039164516523868,
+      "lekhTop3": 0.668788,
+      "indicXlitTop3": 0.8323133414932681,
+      "indicXlitMinusLekhTop3": 0.1635253414932681
+    },
+    "native-frequent": {
+      "lekhTop1": 0.637189,
+      "indicXlitTop1": 0.8040152963671128,
+      "indicXlitMinusLekhTop1": 0.1668262963671128,
+      "lekhTop3": 0.835564,
+      "indicXlitTop3": 0.9153919694072657,
+      "indicXlitMinusLekhTop3": 0.0798279694072657
+    },
+    "indian-name": {
+      "lekhTop1": 0.304422,
+      "indicXlitTop1": 0.5510204081632653,
+      "indicXlitMinusLekhTop1": 0.2465984081632653,
+      "lekhTop3": 0.515306,
+      "indicXlitTop3": 0.7687074829931972,
+      "indicXlitMinusLekhTop3": 0.2534014829931972
+    },
+    "foreign-name": {
+      "lekhTop1": 0.253366,
+      "indicXlitTop1": 0.4908200734394125,
+      "indicXlitMinusLekhTop1": 0.2374540734394125,
+      "lekhTop3": 0.462668,
+      "indicXlitTop3": 0.7111383108935129,
+      "indicXlitMinusLekhTop3": 0.2484703108935129
+    }
+  },
+  "limitations": [
+    "This measures the external IndicXlit model, not the neural artifact currently shipped or selected by Lekh.",
+    "The historical Lekh checkpoint is quarantined because it predates current leakage and provenance corrections; its scores are diagnostic only.",
+    "IndicXlit latency was measured with its official Fairseq CPU inference on one Apple M4 host and is not directly comparable to Lekh's Python/Core ML historical harness or packaged service.",
+    "The official unigram reranker was deliberately disabled, so the locally measured accuracy is lower than AI4Bharat's separate reranked reference.",
+    "The committed predictions include benchmark targets for auditability and are permanently forbidden as training data.",
+    "No claim is made about sentence context, proofread quality, Traditional/Preeti typing, Windows behavior, power use, installer behavior, or production safety."
+  ],
+  "sources": [
+    "https://github.com/AI4Bharat/IndicXlit",
+    "https://github.com/AI4Bharat/IndicXlit/releases/tag/v1.0",
+    "https://pypi.org/project/ai4bharat-transliteration/",
+    "https://arxiv.org/abs/2205.03018"
+  ]
+}

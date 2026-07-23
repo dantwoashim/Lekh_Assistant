@@ -82,6 +82,7 @@
     "neural:source:aksharantar:nepali": "node scripts/import-aksharantar-nepali-dataset.mjs",
     "neural:benchmark:aksharantar:build": "node scripts/build-aksharantar-neural-benchmark.mjs",
     "neural:benchmark:aksharantar:check": "node scripts/validate-aksharantar-neural-benchmark.mjs",
+    "neural:benchmark:indicxlit:check": "node scripts/validate-indicxlit-v1-nepali-comparison.mjs",
     "neural:baseline:historical": ".tmp/neural-seq2seq-venv/bin/python scripts/benchmark-historical-neural-artifact.py --allow-quarantined-historical-artifact",
     "neural:teacher:download": "node scripts/download-neural-teacher-model.mjs --extract",
     "neural:student:setup": "python3.11 -m venv .tmp/coreml-student-venv && .tmp/coreml-student-venv/bin/python -m pip install --upgrade pip setuptools wheel && .tmp/coreml-student-venv/bin/python -m pip install coremltools==8.3.0 numpy==2.2.6",
