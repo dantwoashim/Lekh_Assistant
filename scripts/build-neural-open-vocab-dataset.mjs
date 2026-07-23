@@ -19,6 +19,11 @@ import {
   LeakageSafeSplitPlanner,
   novelSourceIdsForLineages
 } from "./lib/neural-source-lineage.mjs";
+import {
+  DEVANAGARI_WORD_SEQUENCE_VALIDATOR_ID,
+  partitionDevanagariWordTargets,
+  validateDevanagariWordSequence
+} from "./lib/devanagari-word-sequence.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -295,6 +300,10 @@ function addCleanRow(candidate, location) {
     if (/\s/.test(target)) return reject("phrase-output-rejected", 1);
     if (/[A-Za-z]/.test(target)) return reject("latin-output-rejected", 1);
     if (!/[\u0900-\u097F]/.test(target)) return reject("non-devanagari-output-rejected", 1);
+    const targetValidation = validateDevanagariWordSequence(target);
+    if (!targetValidation.valid) {
+      return reject(`invalid-devanagari-word:${targetValidation.primaryIssueCode}`, 1);
+    }
   } else if (target !== null) {
     return reject("negative-row-with-target", 1);
   }
@@ -303,7 +312,7 @@ function addCleanRow(candidate, location) {
   splitPlanner.add(input, target, candidate.split);
   const provisionalSplit = "train";
   const acceptable = candidate.action === "produce-candidate"
-    ? Array.from(new Set((candidate.acceptable ?? [target]).map(normalizeOutput).filter(Boolean))).filter((value) => !/\s/.test(value) && !/[A-Za-z]/.test(value))
+    ? validatedAcceptableTargets(target, candidate.acceptable ?? [])
     : [];
   const rowKey = `${candidate.action}\u0000${input}\u0000${target ?? "<NO_NEURAL_CANDIDATE>"}`;
   if (rowsByKey.has(rowKey)) {
@@ -373,6 +382,16 @@ function validateCleanRows(rows, splitRows) {
       if (row.target && row.target.normalize("NFC") !== row.target) failures.push(`Non-NFC target in row ${row.id}`);
       if (row.target && /\s/.test(row.target)) failures.push(`Phrase target escaped cleaning in row ${row.id}`);
       if (row.target && /[A-Za-z]/.test(row.target)) failures.push(`Latin target escaped cleaning in row ${row.id}`);
+      const targetValidation = validateDevanagariWordSequence(row.target);
+      if (!targetValidation.valid) {
+        failures.push(`Invalid Devanagari word target escaped cleaning in row ${row.id}: ${targetValidation.issueCodes.join(",")}`);
+      }
+      for (const acceptable of row.acceptable) {
+        const acceptableValidation = validateDevanagariWordSequence(acceptable);
+        if (!acceptableValidation.valid) {
+          failures.push(`Invalid acceptable Devanagari target escaped cleaning in row ${row.id}: ${acceptableValidation.issueCodes.join(",")}`);
+        }
+      }
       const key = `${row.input}\u0000${row.target}`;
       const splits = splitByPair.get(key) ?? new Set();
       splits.add(row.split);
@@ -640,6 +659,17 @@ function normalizeOutput(value) {
   return String(value ?? "").trim().normalize("NFC").replace(/\s+/g, " ");
 }
 
+function validatedAcceptableTargets(primaryTarget, aliases) {
+  const partition = partitionDevanagariWordTargets(
+    primaryTarget,
+    aliases.map(normalizeOutput)
+  );
+  for (const rejectedAlias of partition.rejected) {
+    reject(`invalid-acceptable-word:${rejectedAlias.primaryIssueCode}`, 1);
+  }
+  return [...partition.accepted];
+}
+
 function reject(reason, count) {
   rejected[reason] = (rejected[reason] ?? 0) + count;
 }
@@ -671,6 +701,7 @@ function datasetProvenance() {
     builder: lockedFile(builderPath),
     sourceRegistry: lockedFile(registryPath),
     rowSchema: lockedFile(rowSchemaPath),
+    targetValidator: lockedFile(join(root, "scripts", "lib", "devanagari-word-sequence.mjs")),
     goldRelease: {
       ...lockedFile(goldManifestPath),
       releaseId: goldManifest?.releaseId ?? null,
@@ -797,6 +828,8 @@ function cleaningPolicy() {
     activeTokenOnly: true,
     rejectWhitespaceOutputs: true,
     rejectLatinOutputs: true,
+    rejectMalformedDevanagariWordSequences: true,
+    devanagariWordSequenceValidator: DEVANAGARI_WORD_SEQUENCE_VALIDATOR_ID,
     rejectPhraseSources: true,
     splitPolicy: "connected normalized-input-and-target components; test overrides dev and train; dev overrides train",
     committedGoldPolicy: "reserved-held-out-identities-never-inserted-as-training-rows",
