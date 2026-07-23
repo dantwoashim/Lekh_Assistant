@@ -23,6 +23,11 @@ const reportPath = args.get("report") ?? join(ROOT, "reports", production ? "neu
 const modelGraphPath = join(modelDir, "model.espresso.net");
 const baselineArtifact = "lekh-small-coreml-student-v1";
 const productionArtifact = "lekh-open-vocab-seq2seq-v1";
+const canonicalTrainingSource = "ai4bharat-aksharantar-nepali";
+const blockedMirrorSources = [
+  "syubraj-roman2nepali-transliteration",
+  "saugatkafley-nepali-roman-transliteration"
+];
 const failures = [];
 const warnings = [];
 
@@ -68,9 +73,12 @@ if (!manifestExists) {
   }
   if (manifest.localOnly !== true) failures.push("Model manifest must declare localOnly=true.");
   const trainingSources = new Set((manifest.trainingSources ?? []).map(String));
-  for (const requiredSource of ["syubraj-roman2nepali-transliteration"]) {
-    if (!trainingSources.has(requiredSource)) {
-      failures.push(`Model manifest trainingSources must include ${requiredSource}.`);
+  if (!trainingSources.has(canonicalTrainingSource)) {
+    failures.push(`Model manifest trainingSources must include canonical source ${canonicalTrainingSource}.`);
+  }
+  for (const mirrorSource of blockedMirrorSources) {
+    if (trainingSources.has(mirrorSource)) {
+      failures.push(`Model manifest must not count blocked lineage mirror ${mirrorSource} as training evidence.`);
     }
   }
   if (manifest.neuralTailOnly !== true) failures.push("Model manifest must declare neuralTailOnly=true.");
@@ -128,7 +136,9 @@ const report = {
     deterministicFastPathFirst: true,
     neuralTailOnly: true,
     noNetworkInference: true,
-    noTextTelemetry: true
+    noTextTelemetry: true,
+    canonicalTrainingSource,
+    blockedMirrorSources
   }
 };
 

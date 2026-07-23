@@ -20,43 +20,61 @@ const reportPath = args.get("report") ?? join(ROOT, "reports", production ? "neu
 const manifestPath = args.get("manifest") ?? join(ROOT, "models", "macos", "LekhNeuralTransliterator.manifest.json");
 const modelDir = args.get("model") ?? join(ROOT, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
 const modelGraphPath = join(modelDir, "model.espresso.net");
+const canonicalTrainingSource = "ai4bharat-aksharantar-nepali";
+const blockedMirrorSources = [
+  "syubraj-roman2nepali-transliteration",
+  "saugatkafley-nepali-roman-transliteration"
+];
 
 const sources = [
   {
-    id: "syubraj-roman2nepali-transliteration",
+    id: canonicalTrainingSource,
     role: "primary-training-pairs",
+    kind: "dataset",
+    url: "https://huggingface.co/datasets/ai4bharat/Aksharantar",
+    license: "mixed-public-license-by-upstream-row-family",
+    rows: null,
+    decision: "selected-canonical-source-after-local-import-and-license-validation",
+    reason: "Official Aksharantar Nepali is the canonical public lineage source; upstream validation/test rows remain evaluation-only and training uses the declared local train selection.",
+    shippingUse: "train-or-distill-only",
+    rawDataCommitted: false,
+    lineageId: "aksharantar-nepali-public-lineage",
+    canonicalTrainingSource,
+    independentEvidence: true
+  },
+  {
+    id: "syubraj-roman2nepali-transliteration",
+    role: "provenance-only-lineage-mirror",
     kind: "dataset",
     url: "https://huggingface.co/datasets/syubraj/roman2nepali-transliteration",
     license: "MIT",
-    rows: 2_400_218,
-    decision: "selected-for-training-after-local-import",
-    reason: "Nepali Romanized to Devanagari pairs with train/validation splits and a permissive page license.",
-    shippingUse: "train-or-distill-only",
-    rawDataCommitted: false
+    rows: 0,
+    observedLocalMirrorRows: 2_400_218,
+    countedTrainingRows: 0,
+    decision: "blocked-lineage-duplicate",
+    reason: "This mirror overlaps the canonical Aksharantar Nepali lineage and cannot add training rows, weight, corroboration, or independent evidence.",
+    shippingUse: "local-provenance-review-only",
+    rawDataCommitted: false,
+    lineageId: "aksharantar-nepali-public-lineage",
+    canonicalTrainingSource,
+    independentEvidence: false
   },
   {
     id: "saugatkafley-nepali-roman-transliteration",
-    role: "source-dataset-cross-check",
+    role: "provenance-only-lineage-mirror",
     kind: "dataset",
     url: "https://huggingface.co/datasets/Saugatkafley/Nepali-Roman-Transliteration",
     license: "MIT",
-    rows: 2_400_218,
-    decision: "selected-for-source-review-and-dedup",
-    reason: "Source dataset for the derived syubraj mirror; useful for provenance review and duplicate checks.",
-    shippingUse: "train-or-distill-only",
-    rawDataCommitted: false
-  },
-  {
-    id: "ai4bharat-aksharantar-nep",
-    role: "benchmark-and-augmentation",
-    kind: "dataset",
-    url: "https://huggingface.co/datasets/ai4bharat/Aksharantar",
-    license: "CC-family-on-Hugging-Face-card",
-    rows: 26_000_000,
-    decision: "selected-for-benchmark-pending-license-review",
-    reason: "Large Indic transliteration benchmark includes Nepali and supports native/foreign/frequent/rare split analysis.",
-    shippingUse: "evaluation-or-training-after-license-review",
-    rawDataCommitted: false
+    rows: 0,
+    observedLocalMirrorRows: 2_400_218,
+    countedTrainingRows: 0,
+    decision: "blocked-lineage-duplicate",
+    reason: "This source belongs to the same mirror lineage and is retained only for local provenance investigation.",
+    shippingUse: "local-provenance-review-only",
+    rawDataCommitted: false,
+    lineageId: "aksharantar-nepali-public-lineage",
+    canonicalTrainingSource,
+    independentEvidence: false
   },
   {
     id: "ai4bharat-indicxlit",
@@ -130,8 +148,8 @@ const shippingPlan = {
 const failures = [];
 const warnings = [];
 
-if (!sources.some((source) => source.role === "primary-training-pairs" && source.decision.startsWith("selected"))) {
-  failures.push("No primary training-pair source is selected.");
+if (!sources.some((source) => source.id === canonicalTrainingSource && source.role === "primary-training-pairs" && source.decision.startsWith("selected"))) {
+  failures.push(`Canonical primary training-pair source ${canonicalTrainingSource} is not selected.`);
 }
 
 for (const source of sources) {
@@ -142,6 +160,13 @@ for (const source of sources) {
     failures.push(`Raw upstream data must not be committed for ${source.id}.`);
   }
 }
+for (const mirrorSource of blockedMirrorSources) {
+  const source = sources.find((candidate) => candidate.id === mirrorSource);
+  if (!source || source.decision !== "blocked-lineage-duplicate" || source.independentEvidence !== false ||
+      source.canonicalTrainingSource !== canonicalTrainingSource || source.countedTrainingRows !== 0) {
+    failures.push(`Mirror source ${mirrorSource} must remain blocked behind canonical source ${canonicalTrainingSource}.`);
+  }
+}
 
 const manifestExists = existsSync(manifestPath);
 const modelExists = existsSync(modelDir);
@@ -150,8 +175,13 @@ let manifest = null;
 if (manifestExists) {
   manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const sourceIds = new Set((manifest.trainingSources ?? []).map(String));
-  for (const required of ["syubraj-roman2nepali-transliteration"]) {
-    if (!sourceIds.has(required)) failures.push(`Model manifest must include training source ${required}.`);
+  if (!sourceIds.has(canonicalTrainingSource)) {
+    failures.push(`Model manifest must include canonical training source ${canonicalTrainingSource}.`);
+  }
+  for (const mirrorSource of blockedMirrorSources) {
+    if (sourceIds.has(mirrorSource)) {
+      failures.push(`Model manifest must not count blocked lineage mirror ${mirrorSource} as training evidence.`);
+    }
   }
   if (production) {
     validateProductionModel(manifest, modelGraph);
@@ -176,6 +206,10 @@ finish(failures.length === 0 ? "passed" : "failed", {
   production,
   sources,
   shippingPlan,
+  sourceLineagePolicy: {
+    canonicalTrainingSource,
+    blockedMirrorSources
+  },
   model: relative(ROOT, modelDir),
   manifest: relative(ROOT, manifestPath),
   modelExists,

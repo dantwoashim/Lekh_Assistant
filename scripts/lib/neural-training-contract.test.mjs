@@ -29,7 +29,7 @@ describe("neural training implementation contract", () => {
     const config = currentConfig();
     config.architecture.hiddenDim = 192;
     config.architecture.attention = "additive";
-    config.decoder.beamWidth = 4;
+    config.decoder.beamWidth = 9;
     config.decoder.maximumCandidates = 8;
     config.trainingRun.labelSmoothing = 0;
     config.trainingRun.earlyStopping.restoreBestWeights = false;
@@ -43,13 +43,33 @@ describe("neural training implementation contract", () => {
     expect(result.failures).toEqual(expect.arrayContaining([
       expect.stringContaining("hiddenDim"),
       expect.stringContaining("attention mechanism"),
-      expect.stringContaining("native v1 width of 2"),
+      expect.stringContaining("beamWidth must be an integer in 2..8"),
       expect.stringContaining("maximumCandidates must equal beamWidth"),
       expect.stringContaining("labelSmoothing"),
       expect.stringContaining("restore the best weights"),
       expect.stringContaining("sourceMultipliers must be empty"),
       expect.stringContaining("export.compiledModel"),
       expect.stringContaining("requires context rescoring to remain disabled")
+    ]));
+  });
+
+  it("requires canonical Aksharantar and rejects same-lineage mirrors", () => {
+    const config = currentConfig();
+    config.training.requiredSources = config.training.requiredSources
+      .filter((source) => source !== "ai4bharat-aksharantar-nepali");
+    config.training.requiredSources.push(
+      "syubraj-roman2nepali-transliteration",
+      "saugatkafley-nepali-roman-transliteration"
+    );
+    config.training.splitPolicy = "stable-hash-by-normalized-input";
+
+    const result = validateNeuralTrainingConfig(config);
+
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.stringContaining("connected normalized inputs and targets"),
+      expect.stringContaining("missing required training source ai4bharat-aksharantar-nepali"),
+      expect.stringContaining("blocked lineage mirror syubraj-roman2nepali-transliteration"),
+      expect.stringContaining("blocked lineage mirror saugatkafley-nepali-roman-transliteration")
     ]));
   });
 

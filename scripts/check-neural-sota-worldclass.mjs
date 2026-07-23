@@ -41,8 +41,16 @@ const reports = Object.fromEntries(
 const modelExists = existsSync(join(root, modelDir));
 const manifest = existsSync(join(root, manifestPath)) ? readJsonReport(manifestPath, production) : null;
 const datasetRows = Number(reports.phase2Dataset?.totalRows);
-const syubrajRows = Number(reports.phase2Dataset?.sourceCounts?.["syubraj-roman2nepali-transliteration"] ?? 0);
-const aksharantarRows = Number(reports.phase2Dataset?.sourceCounts?.["ai4bharat-aksharantar-nepali"] ?? 0);
+const canonicalTrainingSource = "ai4bharat-aksharantar-nepali";
+const blockedMirrorSources = [
+  "syubraj-roman2nepali-transliteration",
+  "saugatkafley-nepali-roman-transliteration"
+];
+const aksharantarRows = Number(reports.phase2Dataset?.sourceCounts?.[canonicalTrainingSource] ?? 0);
+const blockedMirrorRows = Object.fromEntries(blockedMirrorSources.map((sourceId) => [
+  sourceId,
+  Number(reports.phase2Dataset?.sourceCounts?.[sourceId] ?? 0)
+]));
 
 requireDevStatus("phase0Contract", /^passed$/u);
 requireDevStatus("phase1Gold", /^passed-/u);
@@ -61,11 +69,13 @@ requireDevStatus("readiness", /^passed$/u);
 if (!Number.isFinite(datasetRows) || datasetRows < 1_000_000) {
   failures.push(`Phase 10 requires >=1,000,000 generated open-vocab rows; found ${datasetRows || 0}.`);
 }
-if (!Number.isFinite(syubrajRows) || syubrajRows < 1_000_000) {
-  failures.push(`Phase 10 requires >=1,000,000 syubraj source rows in the generated dataset; found ${syubrajRows || 0}.`);
-}
 if (!Number.isFinite(aksharantarRows) || aksharantarRows < 1_000_000) {
-  failures.push(`Phase 10 requires >=1,000,000 Aksharantar Nepali source rows in the generated dataset; found ${aksharantarRows || 0}.`);
+  failures.push(`Phase 10 requires >=1,000,000 canonical ${canonicalTrainingSource} rows in the generated dataset; found ${aksharantarRows || 0}.`);
+}
+for (const [sourceId, rows] of Object.entries(blockedMirrorRows)) {
+  if (!Number.isFinite(rows) || rows !== 0) {
+    failures.push(`Phase 10 requires blocked lineage mirror ${sourceId} to contribute 0 rows; found ${Number.isFinite(rows) ? rows : "invalid"}.`);
+  }
 }
 if (!existsSync(join(root, rejectedManifest))) failures.push("Rejected closed-vocabulary manifest must remain quarantined under models/rejected.");
 if (existsSync(join(root, oldNeuralSwift))) failures.push("Old synchronous/closed-vocab LekhNeuralTransliterator.swift must remain deleted.");
@@ -93,6 +103,15 @@ if (!manifest) {
   }
   if (manifest.openVocabulary !== true) failures.push("Production neural manifest must declare openVocabulary=true.");
   if (manifest.neuralTailOnly !== true) failures.push("Production neural manifest must declare neuralTailOnly=true.");
+  const manifestTrainingSources = new Set((manifest.trainingSources ?? []).map(String));
+  if (!manifestTrainingSources.has(canonicalTrainingSource)) {
+    failures.push(`Production neural manifest must include canonical training source ${canonicalTrainingSource}.`);
+  }
+  for (const mirrorSource of blockedMirrorSources) {
+    if (manifestTrainingSources.has(mirrorSource)) {
+      failures.push(`Production neural manifest must not count blocked lineage mirror ${mirrorSource} as training evidence.`);
+    }
+  }
 }
 if (!modelExists) {
   if (production) failures.push("Production Phase 10 requires compiled Core ML model.");
@@ -124,8 +143,11 @@ finish(status, failures.length === 0 ? 0 : 1, {
   modelExists,
   manifestExists: Boolean(manifest),
   datasetRows,
-  syubrajRows,
   aksharantarRows,
+  sourceLineagePolicy: {
+    canonicalTrainingSource,
+    blockedMirrorRows
+  },
   reportFiles,
   reportStatuses: Object.fromEntries(Object.entries(reports).map(([key, report]) => [key, report?.status ?? null])),
   verdict: production && failures.length === 0

@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 
 const MODEL_ID = "lekh-open-vocab-seq2seq-v1";
+const CANONICAL_PUBLIC_SOURCE = "ai4bharat-aksharantar-nepali";
+const BLOCKED_MIRROR_SOURCES = [
+  "syubraj-roman2nepali-transliteration",
+  "saugatkafley-nepali-roman-transliteration"
+];
 
 export function configuredNeuralTrainingContract(config) {
   return {
@@ -66,7 +71,6 @@ export function validateNeuralTrainingConfig(config) {
   requireIntegerInRange(decoder?.maxInputGraphemes, 2, 64, "Config maxInputGraphemes");
   requireIntegerInRange(decoder?.maxOutputGraphemes, 2, 64, "Config maxOutputGraphemes");
   requireIntegerInRange(decoder?.maximumCandidates, 1, 8, "Config maximumCandidates");
-  if (decoder?.beamWidth !== 2) failures.push("Config beamWidth must equal the latency-evidenced native v1 width of 2.");
   if (decoder?.maximumCandidates !== decoder?.beamWidth) {
     failures.push("Config maximumCandidates must equal beamWidth so Python evidence and the native runtime expose the same candidate bound.");
   }
@@ -88,7 +92,11 @@ export function validateNeuralTrainingConfig(config) {
   const training = config.training;
   requireEqual(training?.datasetManifest, "data/generated/neural-open-vocab/manifest.json", "Config must use the canonical immutable dataset manifest path.");
   requireEqual(training?.normalization, "NFC", "Config normalization must be NFC.");
-  requireEqual(training?.splitPolicy, "stable-hash-by-normalized-input", "Config split policy must prevent normalized-input leakage.");
+  requireEqual(
+    training?.splitPolicy,
+    "connected-normalized-input-and-target-with-heldout-precedence",
+    "Config split policy must keep connected normalized inputs and targets together with held-out precedence."
+  );
   requireEqual(training?.samplingPolicy?.type, "deterministic-source-stratified-sampling", "Config sampling policy must match the executable source-stratified sampler.");
   requireEqual(training?.samplingPolicy?.version, 1, "Config sampling policy version must be 1.");
   requireEqual(training?.samplingPolicy?.sourceQuotaWeight, "square-root-of-source-row-count", "Config sampling source quota weight must match the implementation.");
@@ -108,13 +116,18 @@ export function validateNeuralTrainingConfig(config) {
   requireEqual(training?.loss, "weighted-label-smoothed-sequence-cross-entropy", "Config loss must describe weighted label-smoothed token loss.");
   requireEqual(training?.optimizer, "adamw", "Config optimizer must be AdamW.");
   for (const requiredSource of [
-    "syubraj-roman2nepali-transliteration",
+    CANONICAL_PUBLIC_SOURCE,
     "human-reviewed-lekh-gold-v1",
     "lekh-chat-conventions-v1",
     "lekh-name-lexicon-v1"
   ]) {
     if (!training?.requiredSources?.includes(requiredSource)) {
       failures.push(`Config missing required training source ${requiredSource}.`);
+    }
+  }
+  for (const mirrorSource of BLOCKED_MIRROR_SOURCES) {
+    if (training?.requiredSources?.includes(mirrorSource)) {
+      failures.push(`Config must not count blocked lineage mirror ${mirrorSource} as a required training source.`);
     }
   }
   for (const suite of [
