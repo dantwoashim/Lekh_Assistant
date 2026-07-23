@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   evaluateNeuralPredictions,
@@ -60,14 +61,132 @@ describe("neural evaluation", () => {
     expect(evaluateNeuralPredictions(goldRows, validation, "test")).toBeNull();
   });
 
-  it("rejects duplicate normalized gold inputs before aggregate metrics", () => {
-    const duplicate = gold("test-duplicate", " VATO ", "test", "adversarial-safety", ["बाटो"], ["भाटो"]);
-    const duplicateGold = [...goldRows, duplicate];
-    const rows = [...validPredictionRows(), { id: duplicate.id, input: "vato", candidates: ["बाटो"] }];
+  it("accepts the five intentional repeated assertions in the current gold release", () => {
+    const currentGold = loadCurrentGoldRows();
+    const duplicateInputs = normalizedDuplicateInputs(currentGold);
+    expect(duplicateInputs).toEqual(["mero", "namaste", "nepal", "swasthya", "xaina"]);
+
+    const rows = currentGold.map((row) => ({
+      id: row.id,
+      input: row.input,
+      candidates: row.expectedAction === "produce-candidate" ? row.acceptable.slice(0, 1) : []
+    }));
+    const validation = validateNeuralPredictionRows(rows, currentGold);
+    expect(validation.issueCodes).toEqual([]);
+    expect(validation.exactCoverage).toBe(true);
+
+    const metrics = evaluateNeuralPredictions(currentGold, validation, "all");
+    expect(metrics).toMatchObject({
+      metricUnit: "suite-assertion",
+      rowCount: 47,
+      suiteAssertionCount: 47,
+      distinctInputContextCount: 42,
+      repeatedSuiteAssertionCount: 5
+    });
+
+    const missingAlias = validateNeuralPredictionRows(
+      rows.filter((row) => row.id !== "gold_romanized_token_000007"),
+      currentGold
+    );
+    expect(missingAlias.issueCodes).toContain(
+      "neural-evaluation.prediction-id-missing:gold_romanized_token_000007"
+    );
+    expect(missingAlias.metricsReportable).toBe(false);
+  });
+
+  it("allows cross-suite categories and stricter forbidden-output supersets", () => {
+    const duplicateGold = [
+      {
+        ...gold("test-general", "vato", "test", "romanized-token", ["बाटो", "वाटो"], ["भाटो"]),
+        previousContext: ["MERO"]
+      },
+      {
+        ...gold(
+          "test-safety",
+          " VATO ",
+          "test",
+          "adversarial-safety",
+          ["वाटो", "बाटो"],
+          ["भाटो", "बाटोमा"]
+        ),
+        previousContext: ["mero"]
+      }
+    ];
+    const rows = [
+      { id: "test-general", input: "vato", candidates: ["बाटो", "वाटो"] },
+      { id: "test-safety", input: "VATO", candidates: ["बाटो", "वाटो"] }
+    ];
     const validation = validateNeuralPredictionRows(rows, duplicateGold);
-    expect(validation.issueCodes).toContain("neural-evaluation.gold-input-duplicate:test-one:test-duplicate");
+    expect(validation.issueCodes).toEqual([]);
+    expect(evaluateNeuralPredictions(duplicateGold, validation, "test")).toMatchObject({
+      metricUnit: "suite-assertion",
+      suiteAssertionCount: 2,
+      distinctInputContextCount: 1,
+      repeatedSuiteAssertionCount: 1
+    });
+  });
+
+  it.each([
+    {
+      name: "target",
+      change: { acceptable: ["वाटो"], expected: ["वाटो"] },
+      issue: "neural-evaluation.gold-input-duplicate-target-conflict:test-general:test-conflict"
+    },
+    {
+      name: "action",
+      change: { expectedAction: "no-neural-candidate", acceptable: [], expected: [] },
+      issue: "neural-evaluation.gold-input-duplicate-action-conflict:test-general:test-conflict"
+    },
+    {
+      name: "context",
+      change: { previousContext: ["timro"] },
+      issue: "neural-evaluation.gold-input-duplicate-context-conflict:test-general:test-conflict"
+    },
+    {
+      name: "split",
+      change: { split: "dev" },
+      issue: "neural-evaluation.gold-input-duplicate-split-conflict:test-general:test-conflict"
+    },
+    {
+      name: "suite identity",
+      change: { suiteId: "romanized-token" },
+      issue: "neural-evaluation.gold-input-duplicate-same-suite:test-general:test-conflict"
+    }
+  ])("fails closed on a repeated-input $name conflict", ({ change, issue }) => {
+    const baseline = {
+      ...gold("test-general", "vato", "test", "romanized-token", ["बाटो"], []),
+      previousContext: ["mero"]
+    };
+    const conflict = {
+      ...gold("test-conflict", "VATO", "test", "adversarial-safety", ["बाटो"], ["भाटो"]),
+      previousContext: ["mero"],
+      ...change
+    };
+    const validation = validateNeuralPredictionRows([
+      { id: baseline.id, input: baseline.input, candidates: ["बाटो"] },
+      { id: conflict.id, input: conflict.input, candidates: ["बाटो"] }
+    ], [baseline, conflict]);
+    expect(validation.issueCodes).toContain(issue);
     expect(validation.metricsReportable).toBe(false);
-    expect(evaluateNeuralPredictions(duplicateGold, validation, "test")).toBeNull();
+    expect(evaluateNeuralPredictions([baseline, conflict], validation, "test")).toBeNull();
+  });
+
+  it.each([
+    { name: "content", candidates: ["बाटो"] },
+    { name: "ordering", candidates: ["वाटो", "बाटो"] }
+  ])("rejects suite-aware candidate $name for compatible assertions", ({ candidates }) => {
+    const duplicateGold = [
+      gold("test-general", "vato", "test", "romanized-token", ["बाटो", "वाटो"], []),
+      gold("test-safety", "VATO", "test", "adversarial-safety", ["वाटो", "बाटो"], ["भाटो"])
+    ];
+    const validation = validateNeuralPredictionRows([
+      { id: "test-general", input: "vato", candidates: ["बाटो", "वाटो"] },
+      { id: "test-safety", input: "vato", candidates }
+    ], duplicateGold);
+    expect(validation.issueCodes).toContain(
+      "neural-evaluation.duplicate-assertion-prediction-divergence:test-general:test-safety"
+    );
+    expect(validation.metricsReportable).toBe(false);
   });
 
   it("makes metrics unreportable when a prediction is missing", () => {
@@ -133,8 +252,33 @@ function gold(id, input, split, suiteId, acceptable, forbiddenOutputs) {
     expectedAction: "produce-candidate",
     acceptable,
     expected: acceptable.slice(0, 1),
-    forbiddenOutputs
+    forbiddenOutputs,
+    previousContext: []
   };
+}
+
+function loadCurrentGoldRows() {
+  const manifest = JSON.parse(
+    readFileSync(new URL("../../data/neural/gold/manifest.v2.json", import.meta.url), "utf8")
+  );
+  return manifest.suites.flatMap((suite) =>
+    readFileSync(new URL(`../../${suite.path}`, import.meta.url), "utf8")
+      .split(/\n/u)
+      .filter(Boolean)
+      .map((line) => ({ ...JSON.parse(line), suiteId: suite.id }))
+  );
+}
+
+function normalizedDuplicateInputs(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    const input = row.input.normalize("NFC").trim().toLowerCase().replace(/\s+/gu, " ");
+    counts.set(input, (counts.get(input) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([input]) => input)
+    .sort();
 }
 
 function predictions(rows) {

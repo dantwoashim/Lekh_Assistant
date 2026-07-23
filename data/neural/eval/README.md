@@ -62,6 +62,20 @@ Rules:
 - `forbiddenOutputs` contains unsafe outputs that must never be emitted.
 - `previousContext` contains at most two committed tokens.
 - `split` must be one of `train`, `dev`, or `test`.
+- Evaluation metrics use **suite assertions** as their unit: every gold row is
+  one assertion for its suite, including a compatible assertion repeated in a
+  second suite. Reports expose `metricUnit: "suite-assertion"`,
+  `suiteAssertionCount`, and `distinctInputContextCount`; the assertion count
+  must not be described as a count of unique inputs.
+- A normalized input may repeat in different suites only in the same split,
+  with identical normalized `previousContext`, `expectedAction`, and
+  normalized acceptable-output set. Categories and `forbiddenOutputs` remain
+  suite-specific and may differ or add stricter forbidden-output supersets.
+- Predictions for compatible repeated assertions must contain the exact same
+  candidates in the exact same order for every row ID. This preserves exact
+  per-ID coverage without allowing suite-aware prediction gaming.
+- A same-suite duplicate or any repeated-input conflict in context, split,
+  action, or acceptable targets makes aggregate metrics unreportable.
 - A normalized input must not appear across multiple splits, even with a
   different output.
 - A normalized input-output pair must not appear across multiple splits.

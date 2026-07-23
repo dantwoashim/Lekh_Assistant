@@ -1,4 +1,5 @@
 const splitNames = Object.freeze(["train", "dev", "test"]);
+const metricUnit = "suite-assertion";
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -10,6 +11,30 @@ function normalizedText(value) {
 
 function normalizedInput(value) {
   return normalizedText(value).trim().toLowerCase().replace(/\s+/gu, " ");
+}
+
+function normalizedContext(row) {
+  const context = row.previousContext ?? [];
+  if (!Array.isArray(context) || context.some((token) => typeof token !== "string")) return null;
+  return context.map((token) => normalizedInput(token));
+}
+
+function normalizedAcceptableSet(row) {
+  const acceptable = row.acceptableOutputs ?? row.acceptable ?? row.expected ?? [];
+  if (!Array.isArray(acceptable) || acceptable.some((candidate) => typeof candidate !== "string")) {
+    return null;
+  }
+  return [...new Set(acceptable.map((candidate) => normalizedText(candidate)))].sort();
+}
+
+function sameOrderedValues(left, right) {
+  return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
+    left.every((value, index) => value === right[index]);
+}
+
+function inputContextIdentity(row) {
+  const context = normalizedContext(row);
+  return context === null ? null : JSON.stringify([normalizedInput(row.input), context]);
 }
 
 function isModelOutcomeIssue(issue) {
@@ -24,6 +49,7 @@ export function validateNeuralPredictionRows(predictionRows, goldRows) {
   const issues = [];
   const goldById = new Map();
   const goldByNormalizedInput = new Map();
+  const compatibleDuplicateGroups = [];
   const predictionsById = new Map();
 
   if (!Array.isArray(goldRows) || goldRows.length === 0) {
@@ -47,12 +73,53 @@ export function validateNeuralPredictionRows(predictionRows, goldRows) {
     }
     goldById.set(gold.id, gold);
     const inputIdentity = normalizedInput(gold.input);
-    const existingInput = goldByNormalizedInput.get(inputIdentity);
-    if (existingInput) {
-      issues.push(`neural-evaluation.gold-input-duplicate:${existingInput.id}:${gold.id}`);
-    } else {
-      goldByNormalizedInput.set(inputIdentity, gold);
+    const inputGroup = goldByNormalizedInput.get(inputIdentity) ?? [];
+    inputGroup.push(gold);
+    goldByNormalizedInput.set(inputIdentity, inputGroup);
+  }
+
+  for (const inputGroup of goldByNormalizedInput.values()) {
+    if (inputGroup.length < 2) continue;
+    const anchor = inputGroup[0];
+    const anchorContext = normalizedContext(anchor);
+    const anchorAcceptable = normalizedAcceptableSet(anchor);
+    const suiteOwners = new Map();
+    let compatible = true;
+
+    for (const row of inputGroup) {
+      if (typeof row.suiteId !== "string" || row.suiteId.length === 0) {
+        issues.push(`neural-evaluation.gold-input-duplicate-suite-invalid:${anchor.id}:${row.id}`);
+        compatible = false;
+      } else if (suiteOwners.has(row.suiteId)) {
+        issues.push(
+          `neural-evaluation.gold-input-duplicate-same-suite:${suiteOwners.get(row.suiteId).id}:${row.id}`
+        );
+        compatible = false;
+      } else {
+        suiteOwners.set(row.suiteId, row);
+      }
     }
+
+    for (const row of inputGroup.slice(1)) {
+      if (!sameOrderedValues(anchorContext, normalizedContext(row))) {
+        issues.push(`neural-evaluation.gold-input-duplicate-context-conflict:${anchor.id}:${row.id}`);
+        compatible = false;
+      }
+      if (anchor.split !== row.split) {
+        issues.push(`neural-evaluation.gold-input-duplicate-split-conflict:${anchor.id}:${row.id}`);
+        compatible = false;
+      }
+      if (anchor.expectedAction !== row.expectedAction) {
+        issues.push(`neural-evaluation.gold-input-duplicate-action-conflict:${anchor.id}:${row.id}`);
+        compatible = false;
+      }
+      if (!sameOrderedValues(anchorAcceptable, normalizedAcceptableSet(row))) {
+        issues.push(`neural-evaluation.gold-input-duplicate-target-conflict:${anchor.id}:${row.id}`);
+        compatible = false;
+      }
+    }
+
+    if (compatible) compatibleDuplicateGroups.push(inputGroup);
   }
 
   for (const [index, row] of predictionRows.entries()) {
@@ -101,6 +168,18 @@ export function validateNeuralPredictionRows(predictionRows, goldRows) {
 
   for (const id of goldById.keys()) {
     if (!predictionsById.has(id)) issues.push(`neural-evaluation.prediction-id-missing:${id}`);
+  }
+
+  for (const duplicateGroup of compatibleDuplicateGroups) {
+    const anchor = duplicateGroup[0];
+    const anchorPrediction = predictionsById.get(anchor.id);
+    if (!anchorPrediction) continue;
+    for (const row of duplicateGroup.slice(1)) {
+      const prediction = predictionsById.get(row.id);
+      if (prediction && !sameOrderedValues(anchorPrediction.candidates, prediction.candidates)) {
+        issues.push(`neural-evaluation.duplicate-assertion-prediction-divergence:${anchor.id}:${row.id}`);
+      }
+    }
   }
 
   return result();
@@ -158,10 +237,17 @@ export function evaluateNeuralPredictions(goldRows, predictionValidation, split 
   const hasPhraseCandidate = (row) =>
     (predictionsById.get(row.id)?.candidates ?? []).some((candidate) => /\s/u.test(String(candidate)));
   const producedCandidate = (row) => (predictionsById.get(row.id)?.candidates ?? []).length > 0;
+  const inputContextIdentities = new Set(
+    rows.map((row) => inputContextIdentity(row) ?? `invalid-context:${row.id}`)
+  );
 
   return Object.freeze({
     split,
+    metricUnit,
     rowCount: rows.length,
+    suiteAssertionCount: rows.length,
+    distinctInputContextCount: inputContextIdentities.size,
+    repeatedSuiteAssertionCount: rows.length - inputContextIdentities.size,
     tailTop1Accuracy: top(buckets.tail, 1),
     tailTop3Accuracy: top(buckets.tail, 3),
     chatConventionTop1Accuracy: top(buckets.chat, 1),
