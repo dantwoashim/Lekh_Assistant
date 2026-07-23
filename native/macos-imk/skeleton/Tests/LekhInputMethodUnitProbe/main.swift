@@ -1,4 +1,5 @@
 import AppKit
+import CoreML
 import Foundation
 import LekhInputMethod
 
@@ -555,6 +556,490 @@ private func verifyNeuralDecoderContract() {
   }
 }
 
+private final class FakeNeuralModel: LekhNeuralModelPredicting {
+  typealias Handler = (MLFeatureProvider) throws -> MLFeatureProvider
+
+  private let handler: Handler
+  private(set) var callCount = 0
+
+  init(_ handler: @escaping Handler) {
+    self.handler = handler
+  }
+
+  func prediction(from input: MLFeatureProvider) throws -> MLFeatureProvider {
+    callCount += 1
+    return try handler(input)
+  }
+}
+
+private func neuralArray(
+  shape: [Int],
+  dataType: MLMultiArrayDataType,
+  values: [Double] = []
+) -> MLMultiArray {
+  guard let array = try? MLMultiArray(
+    shape: shape.map(NSNumber.init(value:)),
+    dataType: dataType
+  ) else {
+    require(false, "Neural MLMultiArray fixture must allocate")
+    fatalError()
+  }
+  for index in 0..<array.count {
+    array[index] = NSNumber(value: index < values.count ? values[index] : 0)
+  }
+  return array
+}
+
+private func neuralProvider(_ arrays: [String: MLMultiArray]) -> MLFeatureProvider {
+  let dictionary = arrays.mapValues { MLFeatureValue(multiArray: $0) }
+  guard let provider = try? MLDictionaryFeatureProvider(dictionary: dictionary) else {
+    require(false, "Neural feature-provider fixture must allocate")
+    fatalError()
+  }
+  return provider
+}
+
+private func splitEncoderOutput(
+  contract: LekhNeuralSplitAttentionContract,
+  initialHiddenShape: [Int]? = nil
+) -> MLFeatureProvider {
+  neuralProvider([
+    "encoderOutputs": neuralArray(
+      shape: [1, contract.maxInputLength, contract.encoderWidth],
+      dataType: .float16
+    ),
+    "encoderEnergy": neuralArray(
+      shape: [1, contract.maxInputLength, contract.attentionWidth],
+      dataType: .float16
+    ),
+    "validMask": neuralArray(
+      shape: [1, contract.maxInputLength],
+      dataType: .float16,
+      values: [1, 1, 1]
+    ),
+    "initialDecoderHidden": neuralArray(
+      shape: initialHiddenShape ?? [contract.decoderLayers, 1, contract.hiddenWidth],
+      dataType: .float16,
+      values: [10, 11, 20, 21]
+    )
+  ])
+}
+
+private func verifySplitAttentionRuntime() {
+  let contract = LekhNeuralSplitAttentionContract(
+    maxInputLength: 4,
+    encoderWidth: 4,
+    attentionWidth: 3,
+    decoderLayers: 2,
+    beamWidth: 4,
+    hiddenWidth: 2,
+    vocabularySize: 6
+  )
+  let inputIds = neuralArray(
+    shape: [1, contract.maxInputLength],
+    dataType: .int32,
+    values: [4, 5, 2, 0]
+  )
+  let firstStepLogits = [-20.0, -20.0, 3.0, -20.0, 2.0, 2.0]
+  let laterStepLogits = [-20.0, -20.0, 4.0, -20.0, 1.0, 1.0]
+  let encoder = FakeNeuralModel { provider in
+    require(Set(provider.featureNames) == Set(["inputIds"]), "Split encoder must receive only inputIds")
+    return splitEncoderOutput(contract: contract)
+  }
+  var packedTokens: [[Int]] = []
+  var packedHidden: [[Double]] = []
+  let decoder = FakeNeuralModel { provider in
+    guard let tokens = provider.featureValue(for: "decoderTokenIds")?.multiArrayValue,
+          let hidden = provider.featureValue(for: "decoderHidden")?.multiArrayValue else {
+      require(false, "Split decoder must receive token and hidden tensors")
+      return neuralProvider([:])
+    }
+    packedTokens.append((0..<tokens.count).map { tokens[$0].intValue })
+    packedHidden.append((0..<hidden.count).map { hidden[$0].doubleValue })
+    let logitsRow = packedTokens.count == 1 ? firstStepLogits : laterStepLogits
+    let logits = (0..<contract.beamWidth).flatMap { _ in logitsRow }
+    var nextHidden = Array(
+      repeating: 0.0,
+      count: contract.decoderLayers * contract.beamWidth * contract.hiddenWidth
+    )
+    for layer in 0..<contract.decoderLayers {
+      for lane in 0..<contract.beamWidth {
+        for unit in 0..<contract.hiddenWidth {
+          let offset = (layer * contract.beamWidth + lane) * contract.hiddenWidth + unit
+          nextHidden[offset] = Double((layer + 1) * 100 + lane * 10 + unit)
+        }
+      }
+    }
+    return neuralProvider([
+      "stepLogits": neuralArray(
+        shape: [contract.beamWidth, contract.vocabularySize],
+        dataType: .float16,
+        values: logits
+      ),
+      "nextDecoderHidden": neuralArray(
+        shape: [contract.decoderLayers, contract.beamWidth, contract.hiddenWidth],
+        dataType: .float16,
+        values: nextHidden
+      )
+    ])
+  }
+
+  do {
+    let observed = try LekhNeuralSplitAttentionRuntime.rank(
+      models: .init(encoder: encoder, decoderStep: decoder),
+      contract: contract,
+      inputIds: inputIds,
+      padTokenId: 0,
+      sosTokenId: 1,
+      eosTokenId: 2,
+      invalidTokenIds: [0, 1, 3],
+      maxSteps: 2
+    )
+    let expected = try LekhNeuralBeamSearch.rank(
+      vocabularySize: contract.vocabularySize,
+      sosTokenId: 1,
+      eosTokenId: 2,
+      invalidTokenIds: [0, 1, 3],
+      beamWidth: contract.beamWidth,
+      maxSteps: 2
+    ) { prefix, _ in
+      prefix == [1] ? firstStepLogits : laterStepLogits
+    }
+    require(
+      observed.map(\.tokenIds) == expected.map(\.tokenIds),
+      "Split recurrent ranking must preserve legacy/Python EOS and tie semantics"
+    )
+    require(encoder.callCount == 1, "Split inference must encode exactly once")
+    require(decoder.callCount == 2, "Split inference must call the decoder at most once per live step")
+    require(packedTokens == [[1, 0, 0, 0], [4, 5, 0, 0]], "Split lanes must pad fewer than four live beams")
+    require(
+      packedHidden[0] == [10, 11, 0, 0, 0, 0, 0, 0, 20, 21, 0, 0, 0, 0, 0, 0],
+      "Initial recurrent state must occupy only the first live lane"
+    )
+    require(
+      packedHidden[1] == [100, 101, 100, 101, 0, 0, 0, 0, 200, 201, 200, 201, 0, 0, 0, 0],
+      "Sibling beams must inherit the exact parent next-state while unused lanes remain zero"
+    )
+  } catch {
+    require(false, "Split attention recurrent fixture failed: \(error)")
+  }
+
+  let malformedEncoder = FakeNeuralModel { _ in
+    splitEncoderOutput(contract: contract, initialHiddenShape: [2, 1, 3])
+  }
+  let unreachableDecoder = FakeNeuralModel { _ in neuralProvider([:]) }
+  do {
+    _ = try LekhNeuralSplitAttentionRuntime.rank(
+      models: .init(encoder: malformedEncoder, decoderStep: unreachableDecoder),
+      contract: contract,
+      inputIds: inputIds,
+      padTokenId: 0,
+      sosTokenId: 1,
+      eosTokenId: 2,
+      invalidTokenIds: [0, 1, 3],
+      maxSteps: 1
+    )
+    require(false, "Malformed split encoder output must fail closed")
+  } catch LekhNeuralSplitAttentionFailure.encoderOutputInvalid {
+    require(unreachableDecoder.callCount == 0, "Malformed encoder output must prevent decoder inference")
+  } catch {
+    require(false, "Malformed split encoder raised the wrong failure: \(error)")
+  }
+
+  let validEncoder = FakeNeuralModel { _ in splitEncoderOutput(contract: contract) }
+  let malformedDecoder = FakeNeuralModel { _ in
+    neuralProvider([
+      "stepLogits": neuralArray(shape: [4, 5], dataType: .float16),
+      "nextDecoderHidden": neuralArray(shape: [2, 4, 2], dataType: .float16)
+    ])
+  }
+  do {
+    _ = try LekhNeuralSplitAttentionRuntime.rank(
+      models: .init(encoder: validEncoder, decoderStep: malformedDecoder),
+      contract: contract,
+      inputIds: inputIds,
+      padTokenId: 0,
+      sosTokenId: 1,
+      eosTokenId: 2,
+      invalidTokenIds: [0, 1, 3],
+      maxSteps: 1
+    )
+    require(false, "Malformed split decoder output must fail closed")
+  } catch LekhNeuralSplitAttentionFailure.decoderOutputInvalid {
+    // Expected.
+  } catch {
+    require(false, "Malformed split decoder raised the wrong failure: \(error)")
+  }
+
+  let cancelledEncoder = FakeNeuralModel { _ in splitEncoderOutput(contract: contract) }
+  do {
+    _ = try LekhNeuralSplitAttentionRuntime.rank(
+      models: .init(encoder: cancelledEncoder, decoderStep: unreachableDecoder),
+      contract: contract,
+      inputIds: inputIds,
+      padTokenId: 0,
+      sosTokenId: 1,
+      eosTokenId: 2,
+      invalidTokenIds: [0, 1, 3],
+      maxSteps: 1,
+      shouldCancel: { true }
+    )
+    require(false, "A stale request must cancel before encoder inference")
+  } catch LekhNeuralSplitAttentionFailure.cancelled {
+    require(cancelledEncoder.callCount == 0, "Pre-cancelled inference must make zero model calls")
+  } catch {
+    require(false, "Pre-cancelled split inference raised the wrong failure: \(error)")
+  }
+
+  var cancelAfterEncoder = false
+  let cancellingEncoder = FakeNeuralModel { _ in
+    cancelAfterEncoder = true
+    return splitEncoderOutput(contract: contract)
+  }
+  do {
+    _ = try LekhNeuralSplitAttentionRuntime.rank(
+      models: .init(encoder: cancellingEncoder, decoderStep: unreachableDecoder),
+      contract: contract,
+      inputIds: inputIds,
+      padTokenId: 0,
+      sosTokenId: 1,
+      eosTokenId: 2,
+      invalidTokenIds: [0, 1, 3],
+      maxSteps: 1,
+      shouldCancel: { cancelAfterEncoder }
+    )
+    require(false, "Cancellation after encoder inference must suppress decoding")
+  } catch LekhNeuralSplitAttentionFailure.cancelled {
+    require(unreachableDecoder.callCount == 0, "Post-encoder cancellation must make zero decoder calls")
+  } catch {
+    require(false, "Post-encoder cancellation raised the wrong failure: \(error)")
+  }
+
+  var cancelAfterDecoder = false
+  let finalEncoder = FakeNeuralModel { _ in splitEncoderOutput(contract: contract) }
+  let cancellingDecoder = FakeNeuralModel { _ in
+    cancelAfterDecoder = true
+    return neuralProvider([
+      "stepLogits": neuralArray(shape: [4, 6], dataType: .float16),
+      "nextDecoderHidden": neuralArray(shape: [2, 4, 2], dataType: .float16)
+    ])
+  }
+  do {
+    _ = try LekhNeuralSplitAttentionRuntime.rank(
+      models: .init(encoder: finalEncoder, decoderStep: cancellingDecoder),
+      contract: contract,
+      inputIds: inputIds,
+      padTokenId: 0,
+      sosTokenId: 1,
+      eosTokenId: 2,
+      invalidTokenIds: [0, 1, 3],
+      maxSteps: 1,
+      shouldCancel: { cancelAfterDecoder }
+    )
+    require(false, "Cancellation after decoder inference must suppress stale output")
+  } catch LekhNeuralSplitAttentionFailure.cancelled {
+    require(cancellingDecoder.callCount == 1, "Post-decoder cancellation must stop after that call")
+  } catch {
+    require(false, "Post-decoder cancellation raised the wrong failure: \(error)")
+  }
+}
+
+private func verifySplitAttentionManifestContract() {
+  let hashA = String(repeating: "a", count: 64)
+  let hashB = String(repeating: "b", count: 64)
+  let hashC = String(repeating: "c", count: 64)
+  let hashD = String(repeating: "d", count: 64)
+  let inputTokens = ["<pad>", "<s>", "</s>", "<unk>", "a"]
+  let outputTokens = ["<pad>", "<s>", "</s>", "<unk>", "क"]
+  let vocabulary: [String: Any] = [
+    "maxLength": 4,
+    "tokensById": inputTokens,
+    "idsByToken": Dictionary(uniqueKeysWithValues: inputTokens.enumerated().map { ($0.element, $0.offset) }),
+    "padId": 0,
+    "sosId": 1,
+    "eosId": 2,
+    "unkId": 3
+  ]
+  var outputVocabulary = vocabulary
+  outputVocabulary["maxLength"] = 8
+  outputVocabulary["tokensById"] = outputTokens
+  outputVocabulary["idsByToken"] = Dictionary(
+    uniqueKeysWithValues: outputTokens.enumerated().map { ($0.element, $0.offset) }
+  )
+  let vocab: [String: Any] = [
+    "schemaVersion": 1,
+    "modelId": "lekh-open-vocab-bigru-attention-v1",
+    "generatedAt": "2026-07-23T00:00:00Z",
+    "tokenization": "unicode-grapheme-character",
+    "input": vocabulary,
+    "output": outputVocabulary,
+    "decoder": [
+      "type": "beam-search",
+      "beamWidth": 4,
+      "rejectWhitespaceCandidates": true,
+      "rejectLatinCandidates": true
+    ],
+    "dataset": [
+      "manifest": "data/neural/dataset.json",
+      "manifestSha256": hashA,
+      "splitSha256": ["train": hashA, "dev": hashB, "test": hashC]
+    ],
+    "nativeRuntimePolicy": [
+      "asyncOnly": true,
+      "neverInvokeInSecureFields": true,
+      "failOpenRawTypingOnError": true,
+      "neuralTailOnly": true
+    ]
+  ]
+  let encoderArtifact: [String: Any] = [
+    "role": "encoder",
+    "mlpackage": "models/macos/challengers/Encoder.mlpackage",
+    "mlpackageBytes": 90,
+    "mlpackageSha256": hashB,
+    "compiledModel": "models/macos/challengers/Encoder.mlmodelc",
+    "compiledBytes": 100,
+    "compiledSha256": hashA
+  ]
+  let decoderArtifact: [String: Any] = [
+    "role": "decoderStep",
+    "mlpackage": "models/macos/challengers/DecoderStep.mlpackage",
+    "mlpackageBytes": 110,
+    "mlpackageSha256": hashD,
+    "compiledModel": "models/macos/challengers/DecoderStep.mlmodelc",
+    "compiledBytes": 120,
+    "compiledSha256": hashC
+  ]
+  let tensorContract: [String: Any] = [
+    "encoder": [
+      "inputs": ["inputIds": ["shape": [1, 4], "dataType": "INT32"]],
+      "outputs": [
+        "encoderOutputs": ["shape": [1, 4, 4], "dataType": "FLOAT16"],
+        "encoderEnergy": ["shape": [1, 4, 3], "dataType": "FLOAT16"],
+        "validMask": ["shape": [1, 4], "dataType": "FLOAT16"],
+        "initialDecoderHidden": ["shape": [2, 1, 2], "dataType": "FLOAT16"]
+      ]
+    ],
+    "decoderStep": [
+      "inputs": [
+        "decoderTokenIds": ["shape": [4, 1], "dataType": "INT32"],
+        "decoderHidden": ["shape": [2, 4, 2], "dataType": "FLOAT16"],
+        "encoderOutputs": ["shape": [1, 4, 4], "dataType": "FLOAT16"],
+        "encoderEnergy": ["shape": [1, 4, 3], "dataType": "FLOAT16"],
+        "validMask": ["shape": [1, 4], "dataType": "FLOAT16"]
+      ],
+      "outputs": [
+        "stepLogits": ["shape": [4, 5], "dataType": "FLOAT16"],
+        "nextDecoderHidden": ["shape": [2, 4, 2], "dataType": "FLOAT16"]
+      ]
+    ]
+  ]
+  let manifest: [String: Any] = [
+    "schemaVersion": 2,
+    "trainingRunId": String(repeating: "1", count: 32),
+    "exportRunId": String(repeating: "2", count: 32),
+    "selectedArtifact": "lekh-open-vocab-bigru-attention-v1",
+    "runtime": "CoreML",
+    "runtimeModelContract": "split-attention-incremental-v1",
+    "tensorContract": tensorContract,
+    "compiledModels": ["encoder": encoderArtifact, "decoderStep": decoderArtifact],
+    "localOnly": true,
+    "neuralTailOnly": true,
+    "productionEligible": false,
+    "architecture": "bidirectional-gru-additive-attention-seq2seq",
+    "openVocabulary": true,
+    "tokenization": "unicode-grapheme-character",
+    "decoder": "beam-search",
+    "beamSearch": ["enabled": true, "beamWidth": 4, "maxOutputGraphemes": 8],
+    "languageModelRescorer": ["enabled": false, "source": "none", "weight": 0],
+    "contextWindowWords": 0,
+    "parameterCount": 1_000_000,
+    "modelBytes": 220,
+    "trainingSources": [],
+    "datasetReports": ["reports/dataset.json"],
+    "evaluationReports": ["reports/evaluation.json"],
+    "benchmarkReports": ["reports/benchmark.json"],
+    "metrics": [
+      "tailTop1Accuracy": -1,
+      "tailTop3Accuracy": -1,
+      "chatConventionTop1Accuracy": -1,
+      "chatConventionTop3Accuracy": -1,
+      "namesTop3Accuracy": -1,
+      "protectedFalseConversionRate": -1,
+      "singleTokenPhraseExpansionRate": -1,
+      "secureFieldInferenceCount": -1
+    ],
+    "performance": [
+      "p50Ms": 999,
+      "p95Ms": 999,
+      "p99Ms": 999,
+      "targetP99Ms": 3,
+      "measuredOnDevice": false,
+      "devices": [[
+        "name": "fixture",
+        "macOS": "13",
+        "architecture": "arm64",
+        "packagedApp": false,
+        "secureFieldInferenceCount": -1,
+        "p50Ms": 999,
+        "p95Ms": 999,
+        "p99Ms": 999,
+        "artifact": "Encoder.mlmodelc+DecoderStep.mlmodelc"
+      ]]
+    ],
+    "requiredCases": [
+      "vato": "बाटो", "bato": "बाटो", "baato": "बाटो", "chha": "छ",
+      "cha": "छ", "xa": "छ", "xaina": "छैन"
+    ],
+    "sha256": [
+      "compiledModels": ["encoder": hashA, "decoderStep": hashC],
+      "mlpackages": ["encoder": hashB, "decoderStep": hashD],
+      "sourceCheckpoint": hashA,
+      "trainingDatasetManifest": hashA,
+      "vocabMetadata": hashD
+    ],
+    "limitations": ["experimental"]
+  ]
+
+  func validates(_ candidate: [String: Any]) -> Bool {
+    guard let manifestData = try? JSONSerialization.data(withJSONObject: candidate),
+          let vocabData = try? JSONSerialization.data(withJSONObject: vocab) else { return false }
+    return LekhNeuralCandidateService.validatesSplitManifestContract(
+      manifestData: manifestData,
+      vocabData: vocabData
+    )
+  }
+
+  require(validates(manifest), "The exact two-artifact split manifest contract must parse")
+
+  var partial = manifest
+  var partialModels = partial["compiledModels"] as! [String: Any]
+  partialModels.removeValue(forKey: "decoderStep")
+  partial["compiledModels"] = partialModels
+  require(!validates(partial), "A partial split artifact pair must fail closed")
+
+  var stale = manifest
+  var staleModels = stale["compiledModels"] as! [String: Any]
+  var staleEncoder = staleModels["encoder"] as! [String: Any]
+  staleEncoder["compiledSha256"] = hashD
+  staleModels["encoder"] = staleEncoder
+  stale["compiledModels"] = staleModels
+  require(!validates(stale), "A split artifact hash detached from sha256 bindings must fail closed")
+
+  var malformed = manifest
+  var malformedContract = malformed["tensorContract"] as! [String: Any]
+  var malformedDecoder = malformedContract["decoderStep"] as! [String: Any]
+  var malformedOutputs = malformedDecoder["outputs"] as! [String: Any]
+  malformedOutputs["stepLogits"] = ["shape": [3, 5], "dataType": "FLOAT16"]
+  malformedDecoder["outputs"] = malformedOutputs
+  malformedContract["decoderStep"] = malformedDecoder
+  malformed["tensorContract"] = malformedContract
+  require(!validates(malformed), "A decoder tensor shape detached from fixed beam width must fail closed")
+
+  var openWorld = manifest
+  openWorld["unexpected"] = true
+  require(!validates(openWorld), "An unknown split manifest field must fail closed")
+}
+
 private func verifyNeuralManifestIdentityPolicy() {
   let trainingRunId = "0123456789abcdef0123456789abcdef"
   let exportRunId = "fedcba9876543210fedcba9876543210"
@@ -634,5 +1119,7 @@ verifyRuntimeActivationGate()
 verifyCandidatePointerGate()
 verifyNeuralInputAdmissionPolicy()
 verifyNeuralDecoderContract()
+verifySplitAttentionRuntime()
+verifySplitAttentionManifestContract()
 verifyNeuralManifestIdentityPolicy()
 print("PASS: native candidate, delimiter, four-mode, neural admission, decoder, and manifest identity contracts")

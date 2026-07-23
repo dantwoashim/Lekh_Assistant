@@ -175,6 +175,369 @@ public enum LekhNeuralBeamSearch {
   }
 }
 
+public protocol LekhNeuralModelPredicting: AnyObject {
+  func prediction(from input: MLFeatureProvider) throws -> MLFeatureProvider
+}
+
+public struct LekhNeuralSplitAttentionModels {
+  public let encoder: any LekhNeuralModelPredicting
+  public let decoderStep: any LekhNeuralModelPredicting
+
+  public init(
+    encoder: any LekhNeuralModelPredicting,
+    decoderStep: any LekhNeuralModelPredicting
+  ) {
+    self.encoder = encoder
+    self.decoderStep = decoderStep
+  }
+}
+
+public struct LekhNeuralSplitAttentionContract: Equatable {
+  public let maxInputLength: Int
+  public let encoderWidth: Int
+  public let attentionWidth: Int
+  public let decoderLayers: Int
+  public let beamWidth: Int
+  public let hiddenWidth: Int
+  public let vocabularySize: Int
+
+  public init(
+    maxInputLength: Int,
+    encoderWidth: Int,
+    attentionWidth: Int,
+    decoderLayers: Int,
+    beamWidth: Int,
+    hiddenWidth: Int,
+    vocabularySize: Int
+  ) {
+    self.maxInputLength = maxInputLength
+    self.encoderWidth = encoderWidth
+    self.attentionWidth = attentionWidth
+    self.decoderLayers = decoderLayers
+    self.beamWidth = beamWidth
+    self.hiddenWidth = hiddenWidth
+    self.vocabularySize = vocabularySize
+  }
+
+  fileprivate var isValid: Bool {
+    (4...128).contains(maxInputLength) &&
+      encoderWidth > 0 &&
+      attentionWidth > 0 &&
+      decoderLayers > 0 &&
+      (2...8).contains(beamWidth) &&
+      hiddenWidth > 0 &&
+      vocabularySize >= 5
+  }
+}
+
+public enum LekhNeuralSplitAttentionFailure: Error, Equatable {
+  case cancelled
+  case invalidConfiguration
+  case inputInvalid
+  case encoderOutputInvalid
+  case decoderOutputInvalid
+}
+
+/// Fixed-width recurrent decoder for the split attention Core ML contract.
+/// The encoder runs once. Every live step packs up to `beamWidth` hypotheses
+/// into stable lanes and zero-fills unused lanes, matching the Python exporter.
+public enum LekhNeuralSplitAttentionRuntime {
+  private struct StatefulHypothesis {
+    let hypothesis: LekhNeuralBeamHypothesis
+    let hidden: [Double]
+  }
+
+  public static func rank(
+    models: LekhNeuralSplitAttentionModels,
+    contract: LekhNeuralSplitAttentionContract,
+    inputIds: MLMultiArray,
+    padTokenId: Int,
+    sosTokenId: Int,
+    eosTokenId: Int,
+    invalidTokenIds: Set<Int>,
+    maxSteps: Int,
+    shouldCancel: () -> Bool = { false }
+  ) throws -> [LekhNeuralBeamHypothesis] {
+    guard contract.isValid,
+          maxSteps >= 0,
+          validArray(inputIds, shape: [1, contract.maxInputLength], dataType: .int32),
+          (0..<contract.vocabularySize).contains(padTokenId),
+          (0..<contract.vocabularySize).contains(sosTokenId),
+          (0..<contract.vocabularySize).contains(eosTokenId),
+          sosTokenId != eosTokenId,
+          !invalidTokenIds.contains(eosTokenId),
+          invalidTokenIds.allSatisfy({ (0..<contract.vocabularySize).contains($0) }) else {
+      throw LekhNeuralSplitAttentionFailure.invalidConfiguration
+    }
+
+    let encoderInput = try MLDictionaryFeatureProvider(dictionary: [
+      "inputIds": MLFeatureValue(multiArray: inputIds)
+    ])
+    let encoderPrediction = try checkedPrediction(
+      model: models.encoder,
+      input: encoderInput,
+      shouldCancel: shouldCancel
+    )
+    guard Set(encoderPrediction.featureNames) == Set([
+      "encoderOutputs", "encoderEnergy", "validMask", "initialDecoderHidden"
+    ]),
+      let encoderOutputs = encoderPrediction.featureValue(for: "encoderOutputs")?.multiArrayValue,
+      let encoderEnergy = encoderPrediction.featureValue(for: "encoderEnergy")?.multiArrayValue,
+      let validMask = encoderPrediction.featureValue(for: "validMask")?.multiArrayValue,
+      let initialHidden = encoderPrediction.featureValue(for: "initialDecoderHidden")?.multiArrayValue,
+      validArray(
+        encoderOutputs,
+        shape: [1, contract.maxInputLength, contract.encoderWidth],
+        dataType: .float16
+      ),
+      validArray(
+        encoderEnergy,
+        shape: [1, contract.maxInputLength, contract.attentionWidth],
+        dataType: .float16
+      ),
+      validArray(validMask, shape: [1, contract.maxInputLength], dataType: .float16),
+      validArray(
+        initialHidden,
+        shape: [contract.decoderLayers, 1, contract.hiddenWidth],
+        dataType: .float16
+      ),
+      finiteArray(encoderOutputs),
+      finiteArray(encoderEnergy),
+      finiteArray(validMask),
+      finiteArray(initialHidden) else {
+      throw LekhNeuralSplitAttentionFailure.encoderOutputInvalid
+    }
+    let initialState = (0..<(contract.decoderLayers * contract.hiddenWidth)).map {
+      initialHidden[$0].doubleValue
+    }
+    guard initialState.allSatisfy(\.isFinite) else {
+      throw LekhNeuralSplitAttentionFailure.encoderOutputInvalid
+    }
+
+    var active = [StatefulHypothesis(
+      hypothesis: LekhNeuralBeamHypothesis(
+        tokenIds: [sosTokenId],
+        accumulatedLogProbability: 0
+      ),
+      hidden: initialState
+    )]
+    var completed: [LekhNeuralBeamHypothesis] = []
+
+    for _ in 0..<maxSteps {
+      guard !shouldCancel() else { throw LekhNeuralSplitAttentionFailure.cancelled }
+      var live: [StatefulHypothesis] = []
+      for item in active {
+        if item.hypothesis.tokenIds.last == eosTokenId {
+          completed.append(item.hypothesis)
+        } else {
+          live.append(item)
+        }
+      }
+      guard !live.isEmpty else {
+        active = []
+        break
+      }
+      guard live.count <= contract.beamWidth else {
+        throw LekhNeuralSplitAttentionFailure.invalidConfiguration
+      }
+
+      let decoderTokenIds = try MLMultiArray(
+        shape: [NSNumber(value: contract.beamWidth), 1],
+        dataType: .int32
+      )
+      let decoderHidden = try MLMultiArray(
+        shape: [
+          NSNumber(value: contract.decoderLayers),
+          NSNumber(value: contract.beamWidth),
+          NSNumber(value: contract.hiddenWidth)
+        ],
+        dataType: .float16
+      )
+      for lane in 0..<contract.beamWidth {
+        decoderTokenIds[lane] = NSNumber(value: padTokenId)
+      }
+      for index in 0..<decoderHidden.count {
+        decoderHidden[index] = 0
+      }
+      for (lane, item) in live.enumerated() {
+        guard let tokenId = item.hypothesis.tokenIds.last,
+              item.hidden.count == contract.decoderLayers * contract.hiddenWidth else {
+          throw LekhNeuralSplitAttentionFailure.invalidConfiguration
+        }
+        decoderTokenIds[lane] = NSNumber(value: tokenId)
+        for layer in 0..<contract.decoderLayers {
+          for unit in 0..<contract.hiddenWidth {
+            decoderHidden[hiddenOffset(
+              layer: layer,
+              lane: lane,
+              unit: unit,
+              contract: contract
+            )] = NSNumber(value: item.hidden[layer * contract.hiddenWidth + unit])
+          }
+        }
+      }
+
+      let decoderInput = try MLDictionaryFeatureProvider(dictionary: [
+        "decoderTokenIds": MLFeatureValue(multiArray: decoderTokenIds),
+        "decoderHidden": MLFeatureValue(multiArray: decoderHidden),
+        "encoderOutputs": MLFeatureValue(multiArray: encoderOutputs),
+        "encoderEnergy": MLFeatureValue(multiArray: encoderEnergy),
+        "validMask": MLFeatureValue(multiArray: validMask)
+      ])
+      let decoderPrediction = try checkedPrediction(
+        model: models.decoderStep,
+        input: decoderInput,
+        shouldCancel: shouldCancel
+      )
+      guard Set(decoderPrediction.featureNames) == Set(["stepLogits", "nextDecoderHidden"]),
+            let stepLogits = decoderPrediction.featureValue(for: "stepLogits")?.multiArrayValue,
+            let nextDecoderHidden = decoderPrediction.featureValue(
+              for: "nextDecoderHidden"
+            )?.multiArrayValue,
+            validArray(
+              stepLogits,
+              shape: [contract.beamWidth, contract.vocabularySize],
+              dataType: .float16
+            ),
+            validArray(
+              nextDecoderHidden,
+              shape: [contract.decoderLayers, contract.beamWidth, contract.hiddenWidth],
+              dataType: .float16
+            ) else {
+        throw LekhNeuralSplitAttentionFailure.decoderOutputInvalid
+      }
+
+      var next: [StatefulHypothesis] = []
+      for (lane, item) in live.enumerated() {
+        let logits = (0..<contract.vocabularySize).map {
+          stepLogits[lane * contract.vocabularySize + $0].doubleValue
+        }
+        guard logits.allSatisfy(\.isFinite) else {
+          throw LekhNeuralSplitAttentionFailure.decoderOutputInvalid
+        }
+        let logProbabilities = logSoftmax(logits)
+        let selectedTokenIds = (0..<contract.vocabularySize)
+          .filter { !invalidTokenIds.contains($0) && logProbabilities[$0].isFinite }
+          .sorted { left, right in
+            if logProbabilities[left] != logProbabilities[right] {
+              return logProbabilities[left] > logProbabilities[right]
+            }
+            return left < right
+          }
+          .prefix(contract.beamWidth)
+        let laneState = (0..<contract.decoderLayers).flatMap { layer in
+          (0..<contract.hiddenWidth).map { unit in
+            nextDecoderHidden[hiddenOffset(
+              layer: layer,
+              lane: lane,
+              unit: unit,
+              contract: contract
+            )].doubleValue
+          }
+        }
+        guard laneState.allSatisfy(\.isFinite) else {
+          throw LekhNeuralSplitAttentionFailure.decoderOutputInvalid
+        }
+        for tokenId in selectedTokenIds {
+          next.append(StatefulHypothesis(
+            hypothesis: LekhNeuralBeamHypothesis(
+              tokenIds: item.hypothesis.tokenIds + [tokenId],
+              accumulatedLogProbability:
+                item.hypothesis.accumulatedLogProbability + logProbabilities[tokenId]
+            ),
+            hidden: laneState
+          ))
+        }
+      }
+      guard !next.isEmpty else {
+        active = []
+        break
+      }
+      active = Array(next.sorted(by: statefulRanksBefore).prefix(contract.beamWidth))
+    }
+
+    guard !shouldCancel() else { throw LekhNeuralSplitAttentionFailure.cancelled }
+    completed.append(contentsOf: active.map(\.hypothesis))
+    var seen = Set<[Int]>()
+    return completed
+      .sorted(by: ranksBefore)
+      .filter { seen.insert($0.tokenIds).inserted }
+      .prefix(contract.beamWidth)
+      .map { $0 }
+  }
+
+  private static func checkedPrediction(
+    model: any LekhNeuralModelPredicting,
+    input: MLFeatureProvider,
+    shouldCancel: () -> Bool
+  ) throws -> MLFeatureProvider {
+    guard !shouldCancel() else { throw LekhNeuralSplitAttentionFailure.cancelled }
+    let prediction = try model.prediction(from: input)
+    guard !shouldCancel() else { throw LekhNeuralSplitAttentionFailure.cancelled }
+    return prediction
+  }
+
+  private static func validArray(
+    _ array: MLMultiArray,
+    shape: [Int],
+    dataType: MLMultiArrayDataType
+  ) -> Bool {
+    array.dataType == dataType && array.shape.map(\.intValue) == shape
+  }
+
+  private static func finiteArray(_ array: MLMultiArray) -> Bool {
+    (0..<array.count).allSatisfy { array[$0].doubleValue.isFinite }
+  }
+
+  private static func hiddenOffset(
+    layer: Int,
+    lane: Int,
+    unit: Int,
+    contract: LekhNeuralSplitAttentionContract
+  ) -> Int {
+    (layer * contract.beamWidth + lane) * contract.hiddenWidth + unit
+  }
+
+  private static func logSoftmax(_ logits: [Double]) -> [Double] {
+    guard let maximum = logits.max() else { return [] }
+    let exponentialSum = logits.reduce(0) { $0 + Foundation.exp($1 - maximum) }
+    guard exponentialSum.isFinite, exponentialSum > 0 else {
+      return Array(repeating: -.infinity, count: logits.count)
+    }
+    let normalizer = maximum + Foundation.log(exponentialSum)
+    return logits.map { $0 - normalizer }
+  }
+
+  private static func statefulRanksBefore(
+    _ left: StatefulHypothesis,
+    _ right: StatefulHypothesis
+  ) -> Bool {
+    ranksBefore(left.hypothesis, right.hypothesis)
+  }
+
+  private static func ranksBefore(
+    _ left: LekhNeuralBeamHypothesis,
+    _ right: LekhNeuralBeamHypothesis
+  ) -> Bool {
+    if left.normalizedScore != right.normalizedScore {
+      return left.normalizedScore > right.normalizedScore
+    }
+    return left.tokenIds.lexicographicallyPrecedes(right.tokenIds)
+  }
+}
+
+private final class LekhCoreMLModelPredictor: LekhNeuralModelPredicting {
+  let model: MLModel
+
+  init(_ model: MLModel) {
+    self.model = model
+  }
+
+  func prediction(from input: MLFeatureProvider) throws -> MLFeatureProvider {
+    try model.prediction(from: input)
+  }
+}
+
 /// Controller-facing boundary for the optional neural candidate tail.
 ///
 /// Keeping this interface smaller than the Core ML implementation lets the
@@ -208,7 +571,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   private var requestGenerations: [UUID: UInt64] = [:]
   private let runtimeStateLock = NSLock()
   private var runtimeState: LekhNeuralRuntimeState = .loading
-  private var model: MLModel?
+  private var modelRuntime: LekhNeuralModelRuntime?
   private var vocab: LekhNeuralVocabMetadata?
   private var inputAdmissionPolicy: LekhNeuralInputAdmissionPolicy?
 
@@ -217,6 +580,24 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     let status = runtimeState.status
     runtimeStateLock.unlock()
     return status
+  }
+
+  /// Pure parser/contract seam used by native probes before any Core ML model
+  /// is opened. Production loading runs these same closed-shape checks.
+  public static func validatesSplitManifestContract(
+    manifestData: Data,
+    vocabData: Data
+  ) -> Bool {
+    do {
+      try validateResourceJSONShape(manifestData: manifestData, vocabData: vocabData)
+      let manifest = try JSONDecoder().decode(LekhNeuralManifest.self, from: manifestData)
+      let vocab = try JSONDecoder().decode(LekhNeuralVocabMetadata.self, from: vocabData)
+      guard manifest.runtimeModelContract == "split-attention-incremental-v1" else { return false }
+      try validateArtifactContract(manifest: manifest, vocab: vocab)
+      return true
+    } catch {
+      return false
+    }
   }
 
   public init(bundle: Bundle = .main) {
@@ -274,7 +655,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       return
     }
 
-    queue.async { [weak self, model = runtime.model, vocab = runtime.vocab] in
+    queue.async { [weak self, modelRuntime = runtime.modelRuntime, vocab = runtime.vocab] in
       guard let self, self.isCurrentRequest(generation, in: requestScope) else { return }
       let started = DispatchTime.now().uptimeNanoseconds
       let budgetNanoseconds: UInt64 = 45_000_000
@@ -283,7 +664,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
         return DispatchTime.now().uptimeNanoseconds - started >= budgetNanoseconds
       }
       let result = (try? Self.predictCandidates(
-        model: model,
+        modelRuntime: modelRuntime,
         vocab: vocab,
         input: normalized,
         shouldCancel: shouldCancel
@@ -314,14 +695,14 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   }
 
   private func inferenceSnapshot() -> (
-    model: MLModel,
+    modelRuntime: LekhNeuralModelRuntime,
     vocab: LekhNeuralVocabMetadata,
     inputAdmissionPolicy: LekhNeuralInputAdmissionPolicy
   )? {
     runtimeStateLock.lock()
     defer { runtimeStateLock.unlock() }
-    guard runtimeState.canInfer, let model, let vocab, let inputAdmissionPolicy else { return nil }
-    return (model, vocab, inputAdmissionPolicy)
+    guard runtimeState.canInfer, let modelRuntime, let vocab, let inputAdmissionPolicy else { return nil }
+    return (modelRuntime, vocab, inputAdmissionPolicy)
   }
 
   private func loadVerifiedRuntime(bundle: Bundle) {
@@ -344,7 +725,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
         // semantic known-answer attestation as a production artifact; hashes
         // and model I/O shape alone do not prove that inference is usable.
         loadedState = Self.verifyKnownAnswers(
-          model: artifact.model,
+          modelRuntime: artifact.modelRuntime,
           vocab: artifact.vocab,
           cases: artifact.manifest.requiredCases
         ) ? .experimentalReady : .gated(.knownAnswerAttestationFailed)
@@ -362,7 +743,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     }
 
     runtimeStateLock.lock()
-    model = verifiedArtifact?.model
+    modelRuntime = verifiedArtifact?.modelRuntime
     vocab = verifiedArtifact?.vocab
     inputAdmissionPolicy = verifiedArtifact.map { artifact in
       Self.makeInputAdmissionPolicy(
@@ -378,7 +759,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       // attestation completes, deterministic typing remains available and
       // neural requests continue to fail open with no candidates.
       let passed = Self.verifyKnownAnswers(
-        model: artifact.model,
+        modelRuntime: artifact.modelRuntime,
         vocab: artifact.vocab,
         cases: artifact.manifest.requiredCases
       )
@@ -410,6 +791,31 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   }
 
   private static func predictCandidates(
+    modelRuntime: LekhNeuralModelRuntime,
+    vocab: LekhNeuralVocabMetadata,
+    input: String,
+    shouldCancel: () -> Bool
+  ) throws -> [String] {
+    switch modelRuntime {
+    case .legacy(let model):
+      return try predictLegacyCandidates(
+        model: model,
+        vocab: vocab,
+        input: input,
+        shouldCancel: shouldCancel
+      )
+    case .splitAttention(let models, let contract):
+      return try predictSplitAttentionCandidates(
+        models: models,
+        contract: contract,
+        vocab: vocab,
+        input: input,
+        shouldCancel: shouldCancel
+      )
+    }
+  }
+
+  private static func predictLegacyCandidates(
     model: MLModel,
     vocab: LekhNeuralVocabMetadata,
     input: String,
@@ -452,6 +858,37 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
             !output.contains(candidate) else { continue }
       output.append(candidate)
       if output.count >= beamWidth { break }
+    }
+    return output
+  }
+
+  private static func predictSplitAttentionCandidates(
+    models: LekhNeuralSplitAttentionModels,
+    contract: LekhNeuralSplitAttentionContract,
+    vocab: LekhNeuralVocabMetadata,
+    input: String,
+    shouldCancel: () -> Bool
+  ) throws -> [String] {
+    let inputIds = try encodedInput(input, vocab: vocab)
+    let maxSteps = min(vocab.output.maxLength - 1, input.count + 8)
+    let hypotheses = try LekhNeuralSplitAttentionRuntime.rank(
+      models: models,
+      contract: contract,
+      inputIds: inputIds,
+      padTokenId: vocab.output.padId,
+      sosTokenId: vocab.output.sosId,
+      eosTokenId: vocab.output.eosId,
+      invalidTokenIds: [vocab.output.padId, vocab.output.unkId, vocab.output.sosId],
+      maxSteps: maxSteps,
+      shouldCancel: shouldCancel
+    )
+    guard !shouldCancel() else { return [] }
+    var output: [String] = []
+    for hypothesis in hypotheses {
+      let candidate = decode(ids: hypothesis.tokenIds, vocab: vocab)
+      guard isSafeCandidate(candidate), !output.contains(candidate) else { continue }
+      output.append(candidate)
+      if output.count >= contract.beamWidth { break }
     }
     return output
   }
@@ -578,9 +1015,6 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     ), let vocabURL = bundle.url(
       forResource: "LekhNeuralTransliterator.vocab",
       withExtension: "json"
-    ), let modelURL = bundle.url(
-      forResource: "LekhNeuralTransliterator",
-      withExtension: "mlmodelc"
     ) else {
       throw LekhNeuralGateFailure.resourceMissing
     }
@@ -602,24 +1036,76 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     guard sha256(vocabData) == manifest.sha256.vocabMetadata else {
       throw LekhNeuralGateFailure.vocabHashMismatch
     }
-    let modelIdentity = try sha256Directory(modelURL)
-    guard modelIdentity.bytes == manifest.modelBytes else {
-      throw LekhNeuralGateFailure.modelSizeMismatch
+    let modelRuntime: LekhNeuralModelRuntime
+    if manifest.runtimeModelContract == "split-attention-incremental-v1" {
+      guard let compiledModels = manifest.compiledModels,
+            let tensorContract = manifest.tensorContract else {
+        throw LekhNeuralGateFailure.artifactContractInvalid
+      }
+      let encoderURL = try compiledModelResourceURL(
+        bundle: bundle,
+        recordedPath: compiledModels.encoder.compiledModel
+      )
+      let decoderURL = try compiledModelResourceURL(
+        bundle: bundle,
+        recordedPath: compiledModels.decoderStep.compiledModel
+      )
+      guard encoderURL.standardizedFileURL != decoderURL.standardizedFileURL else {
+        throw LekhNeuralGateFailure.artifactContractInvalid
+      }
+      let encoderIdentity = try sha256Directory(encoderURL)
+      let decoderIdentity = try sha256Directory(decoderURL)
+      guard encoderIdentity.bytes == compiledModels.encoder.compiledBytes,
+            decoderIdentity.bytes == compiledModels.decoderStep.compiledBytes,
+            encoderIdentity.bytes + decoderIdentity.bytes == manifest.modelBytes else {
+        throw LekhNeuralGateFailure.modelSizeMismatch
+      }
+      guard encoderIdentity.digest == compiledModels.encoder.compiledSha256,
+            decoderIdentity.digest == compiledModels.decoderStep.compiledSha256 else {
+        throw LekhNeuralGateFailure.modelHashMismatch
+      }
+      let encoderModel = try loadCoreMLModel(encoderURL)
+      let decoderModel = try loadCoreMLModel(decoderURL)
+      let runtimeContract = try splitRuntimeContract(
+        tensorContract,
+        vocab: vocab,
+        manifest: manifest
+      )
+      try validateSplitModelContract(
+        encoder: encoderModel,
+        decoderStep: decoderModel,
+        contract: runtimeContract
+      )
+      modelRuntime = .splitAttention(
+        models: LekhNeuralSplitAttentionModels(
+          encoder: LekhCoreMLModelPredictor(encoderModel),
+          decoderStep: LekhCoreMLModelPredictor(decoderModel)
+        ),
+        contract: runtimeContract
+      )
+    } else {
+      guard let modelURL = bundle.url(
+        forResource: "LekhNeuralTransliterator",
+        withExtension: "mlmodelc"
+      ), let expectedModelHash = manifest.sha256.compiledModel else {
+        throw LekhNeuralGateFailure.resourceMissing
+      }
+      let modelIdentity = try sha256Directory(modelURL)
+      guard modelIdentity.bytes == manifest.modelBytes else {
+        throw LekhNeuralGateFailure.modelSizeMismatch
+      }
+      guard modelIdentity.digest == expectedModelHash else {
+        throw LekhNeuralGateFailure.modelHashMismatch
+      }
+      let model = try loadCoreMLModel(modelURL)
+      try validateModelContract(model: model, vocab: vocab)
+      modelRuntime = .legacy(model)
     }
-    guard modelIdentity.digest == manifest.sha256.compiledModel else {
-      throw LekhNeuralGateFailure.modelHashMismatch
-    }
-
-    let model: MLModel
-    do {
-      let configuration = MLModelConfiguration()
-      configuration.computeUnits = .all
-      model = try MLModel(contentsOf: modelURL, configuration: configuration)
-    } catch {
-      throw LekhNeuralGateFailure.modelLoadFailed
-    }
-    try validateModelContract(model: model, vocab: vocab)
-    return LekhVerifiedNeuralArtifact(manifest: manifest, vocab: vocab, model: model)
+    return LekhVerifiedNeuralArtifact(
+      manifest: manifest,
+      vocab: vocab,
+      modelRuntime: modelRuntime
+    )
   }
 
   private static func validateArtifactContract(
@@ -643,11 +1129,9 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     ) else {
       throw LekhNeuralGateFailure.manifestIdentityInvalid
     }
-    guard manifest.selectedArtifact == "lekh-open-vocab-seq2seq-v1",
-          manifest.runtime == "CoreML",
+    guard manifest.runtime == "CoreML",
           manifest.localOnly,
           manifest.neuralTailOnly,
-          manifest.architecture == "gru-encoder-decoder-seq2seq",
           manifest.openVocabulary,
           manifest.tokenization == "unicode-grapheme-character",
           manifest.decoder == "beam-search",
@@ -657,11 +1141,52 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
           (1_000_000...5_000_000).contains(manifest.parameterCount),
           (1...16_777_216).contains(manifest.modelBytes),
           manifest.requiredCases == expectedCases,
-          isSHA256(manifest.sha256.compiledModel),
           isSHA256(manifest.sha256.sourceCheckpoint),
           isSHA256(manifest.sha256.trainingDatasetManifest),
           isSHA256(manifest.sha256.vocabMetadata) else {
       throw LekhNeuralGateFailure.artifactContractInvalid
+    }
+
+    if manifest.runtimeModelContract == "split-attention-incremental-v1" {
+      guard manifest.selectedArtifact == "lekh-open-vocab-bigru-attention-v1",
+            manifest.architecture == "bidirectional-gru-additive-attention-seq2seq",
+            manifest.sha256.compiledModel == nil,
+            let compiledModels = manifest.compiledModels,
+            let tensorContract = manifest.tensorContract,
+            let compiledHashes = manifest.sha256.compiledModels,
+            let packageHashes = manifest.sha256.mlpackages,
+            Set(compiledHashes.keys) == Set(["encoder", "decoderStep"]),
+            Set(packageHashes.keys) == Set(["encoder", "decoderStep"]),
+            validSplitArtifact(
+              compiledModels.encoder,
+              role: "encoder",
+              compiledHash: compiledHashes["encoder"],
+              packageHash: packageHashes["encoder"]
+            ),
+            validSplitArtifact(
+              compiledModels.decoderStep,
+              role: "decoderStep",
+              compiledHash: compiledHashes["decoderStep"],
+              packageHash: packageHashes["decoderStep"]
+            ),
+            compiledModels.encoder.compiledModel != compiledModels.decoderStep.compiledModel,
+            compiledModels.encoder.compiledBytes <= Int.max - compiledModels.decoderStep.compiledBytes,
+            compiledModels.encoder.compiledBytes + compiledModels.decoderStep.compiledBytes == manifest.modelBytes,
+            (try? splitRuntimeContract(tensorContract, vocab: vocab, manifest: manifest)) != nil else {
+        throw LekhNeuralGateFailure.artifactContractInvalid
+      }
+    } else {
+      guard manifest.runtimeModelContract == nil,
+            manifest.tensorContract == nil,
+            manifest.compiledModels == nil,
+            manifest.sha256.compiledModels == nil,
+            manifest.sha256.mlpackages == nil,
+            manifest.selectedArtifact == "lekh-open-vocab-seq2seq-v1",
+            manifest.architecture == "gru-encoder-decoder-seq2seq",
+            let compiledModelHash = manifest.sha256.compiledModel,
+            isSHA256(compiledModelHash) else {
+        throw LekhNeuralGateFailure.artifactContractInvalid
+      }
     }
 
     guard vocab.schemaVersion == 1,
@@ -682,6 +1207,34 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     }
     try validateVocabulary(vocab.input, inputSide: true)
     try validateVocabulary(vocab.output, inputSide: false)
+  }
+
+  private static func validSplitArtifact(
+    _ artifact: LekhNeuralManifest.CompiledArtifact,
+    role: String,
+    compiledHash: String?,
+    packageHash: String?
+  ) -> Bool {
+    artifact.role == role &&
+      (1...16_777_216).contains(artifact.compiledBytes) &&
+      (1...16_777_216).contains(artifact.mlpackageBytes) &&
+      isSafeRecordedArtifactPath(artifact.compiledModel, suffix: ".mlmodelc") &&
+      isSafeRecordedArtifactPath(artifact.mlpackage, suffix: ".mlpackage") &&
+      isSHA256(artifact.compiledSha256) &&
+      isSHA256(artifact.mlpackageSha256) &&
+      artifact.compiledSha256 == compiledHash &&
+      artifact.mlpackageSha256 == packageHash
+  }
+
+  private static func isSafeRecordedArtifactPath(_ path: String, suffix: String) -> Bool {
+    guard !path.isEmpty,
+          !path.hasPrefix("/"),
+          path.hasSuffix(suffix),
+          !path.contains("\\") else { return false }
+    let components = path.split(separator: "/", omittingEmptySubsequences: false)
+    return !components.isEmpty && components.allSatisfy { component in
+      !component.isEmpty && component != "." && component != ".."
+    }
   }
 
   private static func validateVocabulary(
@@ -797,7 +1350,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   }
 
   private static func verifyKnownAnswers(
-    model: MLModel,
+    modelRuntime: LekhNeuralModelRuntime,
     vocab: LekhNeuralVocabMetadata,
     cases: [String: String]
   ) -> Bool {
@@ -809,7 +1362,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       let caseBudget: UInt64 = 250_000_000
       let candidates: [String]
       do {
-        candidates = try predictCandidates(model: model, vocab: vocab, input: input) {
+        candidates = try predictCandidates(modelRuntime: modelRuntime, vocab: vocab, input: input) {
           let now = DispatchTime.now().uptimeNanoseconds
           return now - caseStarted >= caseBudget || now - suiteStarted >= suiteBudget
         }
@@ -819,6 +1372,184 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       guard candidates.first == expected else { return false }
     }
     return true
+  }
+
+  private static func loadCoreMLModel(_ url: URL) throws -> MLModel {
+    do {
+      let configuration = MLModelConfiguration()
+      configuration.computeUnits = .all
+      return try MLModel(contentsOf: url, configuration: configuration)
+    } catch {
+      throw LekhNeuralGateFailure.modelLoadFailed
+    }
+  }
+
+  private static func compiledModelResourceURL(
+    bundle: Bundle,
+    recordedPath: String
+  ) throws -> URL {
+    guard isSafeRecordedArtifactPath(recordedPath, suffix: ".mlmodelc") else {
+      throw LekhNeuralGateFailure.artifactContractInvalid
+    }
+    let filename = String(recordedPath.split(separator: "/").last ?? "")
+    let resourceName = String(filename.dropLast(".mlmodelc".count))
+    guard !resourceName.isEmpty,
+          let url = bundle.url(forResource: resourceName, withExtension: "mlmodelc") else {
+      throw LekhNeuralGateFailure.resourceMissing
+    }
+    return url
+  }
+
+  private static func splitRuntimeContract(
+    _ tensorContract: LekhNeuralManifest.TensorContract,
+    vocab: LekhNeuralVocabMetadata,
+    manifest: LekhNeuralManifest
+  ) throws -> LekhNeuralSplitAttentionContract {
+    let encoderInputs = tensorContract.encoder.inputs
+    let encoderOutputs = tensorContract.encoder.outputs
+    let decoderInputs = tensorContract.decoderStep.inputs
+    let decoderOutputs = tensorContract.decoderStep.outputs
+    guard Set(encoderInputs.keys) == Set(["inputIds"]),
+          Set(encoderOutputs.keys) == Set([
+            "encoderOutputs", "encoderEnergy", "validMask", "initialDecoderHidden"
+          ]),
+          Set(decoderInputs.keys) == Set([
+            "decoderTokenIds", "decoderHidden", "encoderOutputs", "encoderEnergy", "validMask"
+          ]),
+          Set(decoderOutputs.keys) == Set(["stepLogits", "nextDecoderHidden"]),
+          let inputIds = encoderInputs["inputIds"],
+          let encoded = encoderOutputs["encoderOutputs"],
+          let energy = encoderOutputs["encoderEnergy"],
+          let mask = encoderOutputs["validMask"],
+          let initialHidden = encoderOutputs["initialDecoderHidden"],
+          inputIds.dataType == "INT32", inputIds.shape == [1, vocab.input.maxLength],
+          encoded.dataType == "FLOAT16", encoded.shape.count == 3,
+          encoded.shape[0] == 1, encoded.shape[1] == vocab.input.maxLength,
+          encoded.shape[2] > 0,
+          energy.dataType == "FLOAT16", energy.shape.count == 3,
+          energy.shape[0] == 1, energy.shape[1] == vocab.input.maxLength,
+          energy.shape[2] > 0,
+          mask.dataType == "FLOAT16", mask.shape == [1, vocab.input.maxLength],
+          initialHidden.dataType == "FLOAT16", initialHidden.shape.count == 3,
+          initialHidden.shape[0] > 0, initialHidden.shape[1] == 1,
+          initialHidden.shape[2] > 0 else {
+      throw LekhNeuralGateFailure.modelIOContractInvalid
+    }
+    let contract = LekhNeuralSplitAttentionContract(
+      maxInputLength: vocab.input.maxLength,
+      encoderWidth: encoded.shape[2],
+      attentionWidth: energy.shape[2],
+      decoderLayers: initialHidden.shape[0],
+      beamWidth: manifest.beamSearch.beamWidth,
+      hiddenWidth: initialHidden.shape[2],
+      vocabularySize: vocab.output.tokensById.count
+    )
+    guard contract.isValid,
+          contract.encoderWidth == contract.hiddenWidth * 2,
+          decoderInputs["decoderTokenIds"] == .init(
+            shape: [contract.beamWidth, 1],
+            dataType: "INT32"
+          ),
+          decoderInputs["decoderHidden"] == .init(
+            shape: [contract.decoderLayers, contract.beamWidth, contract.hiddenWidth],
+            dataType: "FLOAT16"
+          ),
+          decoderInputs["encoderOutputs"] == encoded,
+          decoderInputs["encoderEnergy"] == energy,
+          decoderInputs["validMask"] == mask,
+          decoderOutputs["stepLogits"] == .init(
+            shape: [contract.beamWidth, contract.vocabularySize],
+            dataType: "FLOAT16"
+          ),
+          decoderOutputs["nextDecoderHidden"] == .init(
+            shape: [contract.decoderLayers, contract.beamWidth, contract.hiddenWidth],
+            dataType: "FLOAT16"
+          ),
+          vocab.decoder.beamWidth == contract.beamWidth else {
+      throw LekhNeuralGateFailure.modelIOContractInvalid
+    }
+    return contract
+  }
+
+  private static func validateSplitModelContract(
+    encoder: MLModel,
+    decoderStep: MLModel,
+    contract: LekhNeuralSplitAttentionContract
+  ) throws {
+    let encoderDescription = encoder.modelDescription
+    let decoderDescription = decoderStep.modelDescription
+    guard Set(encoderDescription.inputDescriptionsByName.keys) == Set(["inputIds"]),
+          Set(encoderDescription.outputDescriptionsByName.keys) == Set([
+            "encoderOutputs", "encoderEnergy", "validMask", "initialDecoderHidden"
+          ]),
+          validMultiArrayFeature(
+            encoderDescription.inputDescriptionsByName["inputIds"],
+            shape: [1, contract.maxInputLength],
+            dataType: .int32
+          ),
+          validMultiArrayFeature(
+            encoderDescription.outputDescriptionsByName["encoderOutputs"],
+            shape: [1, contract.maxInputLength, contract.encoderWidth],
+            dataType: .float16
+          ),
+          validMultiArrayFeature(
+            encoderDescription.outputDescriptionsByName["encoderEnergy"],
+            shape: [1, contract.maxInputLength, contract.attentionWidth],
+            dataType: .float16
+          ),
+          validMultiArrayFeature(
+            encoderDescription.outputDescriptionsByName["validMask"],
+            shape: [1, contract.maxInputLength],
+            dataType: .float16
+          ),
+          validMultiArrayFeature(
+            encoderDescription.outputDescriptionsByName["initialDecoderHidden"],
+            shape: [contract.decoderLayers, 1, contract.hiddenWidth],
+            dataType: .float16
+          ),
+          Set(decoderDescription.inputDescriptionsByName.keys) == Set([
+            "decoderTokenIds", "decoderHidden", "encoderOutputs", "encoderEnergy", "validMask"
+          ]),
+          Set(decoderDescription.outputDescriptionsByName.keys) == Set([
+            "stepLogits", "nextDecoderHidden"
+          ]),
+          validMultiArrayFeature(
+            decoderDescription.inputDescriptionsByName["decoderTokenIds"],
+            shape: [contract.beamWidth, 1],
+            dataType: .int32
+          ),
+          validMultiArrayFeature(
+            decoderDescription.inputDescriptionsByName["decoderHidden"],
+            shape: [contract.decoderLayers, contract.beamWidth, contract.hiddenWidth],
+            dataType: .float16
+          ),
+          validMultiArrayFeature(
+            decoderDescription.inputDescriptionsByName["encoderOutputs"],
+            shape: [1, contract.maxInputLength, contract.encoderWidth],
+            dataType: .float16
+          ),
+          validMultiArrayFeature(
+            decoderDescription.inputDescriptionsByName["encoderEnergy"],
+            shape: [1, contract.maxInputLength, contract.attentionWidth],
+            dataType: .float16
+          ),
+          validMultiArrayFeature(
+            decoderDescription.inputDescriptionsByName["validMask"],
+            shape: [1, contract.maxInputLength],
+            dataType: .float16
+          ),
+          validMultiArrayFeature(
+            decoderDescription.outputDescriptionsByName["stepLogits"],
+            shape: [contract.beamWidth, contract.vocabularySize],
+            dataType: .float16
+          ),
+          validMultiArrayFeature(
+            decoderDescription.outputDescriptionsByName["nextDecoderHidden"],
+            shape: [contract.decoderLayers, contract.beamWidth, contract.hiddenWidth],
+            dataType: .float16
+          ) else {
+      throw LekhNeuralGateFailure.modelIOContractInvalid
+    }
   }
 
   private static func validateModelContract(model: MLModel, vocab: LekhNeuralVocabMetadata) throws {
@@ -965,7 +1696,17 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     case 1:
       try requireExactKeys(manifest, legacyManifestKeys)
     case LekhNeuralManifestIdentityPolicy.currentSchemaVersion:
-      try requireExactKeys(manifest, legacyManifestKeys.union(["trainingRunId", "exportRunId"]))
+      if manifest["runtimeModelContract"] as? String == "split-attention-incremental-v1" {
+        try requireExactKeys(
+          manifest,
+          legacyManifestKeys.union([
+            "trainingRunId", "exportRunId", "runtimeModelContract", "tensorContract",
+            "compiledModels"
+          ])
+        )
+      } else {
+        try requireExactKeys(manifest, legacyManifestKeys.union(["trainingRunId", "exportRunId"]))
+      }
     default:
       throw LekhNeuralGateFailure.manifestSchemaInvalid
     }
@@ -997,9 +1738,49 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       }
       try requireExactKeys(device, deviceKeys)
     }
-    try requireExactKeys(try childObject(manifest, "sha256"), [
-      "compiledModel", "sourceCheckpoint", "trainingDatasetManifest", "vocabMetadata"
-    ])
+    if manifest["runtimeModelContract"] as? String == "split-attention-incremental-v1" {
+      let compiledModels = try childObject(manifest, "compiledModels")
+      try requireExactKeys(compiledModels, ["encoder", "decoderStep"])
+      let artifactKeys: Set<String> = [
+        "role", "mlpackage", "mlpackageBytes", "mlpackageSha256",
+        "compiledModel", "compiledBytes", "compiledSha256"
+      ]
+      try requireExactKeys(try childObject(compiledModels, "encoder"), artifactKeys)
+      try requireExactKeys(try childObject(compiledModels, "decoderStep"), artifactKeys)
+      let tensorContract = try childObject(manifest, "tensorContract")
+      try requireExactKeys(tensorContract, ["encoder", "decoderStep"])
+      let encoder = try childObject(tensorContract, "encoder")
+      let decoderStep = try childObject(tensorContract, "decoderStep")
+      try requireExactKeys(encoder, ["inputs", "outputs"])
+      try requireExactKeys(decoderStep, ["inputs", "outputs"])
+      try validateTensorGroup(
+        try childObject(encoder, "inputs"),
+        names: ["inputIds"]
+      )
+      try validateTensorGroup(
+        try childObject(encoder, "outputs"),
+        names: ["encoderOutputs", "encoderEnergy", "validMask", "initialDecoderHidden"]
+      )
+      try validateTensorGroup(
+        try childObject(decoderStep, "inputs"),
+        names: ["decoderTokenIds", "decoderHidden", "encoderOutputs", "encoderEnergy", "validMask"]
+      )
+      try validateTensorGroup(
+        try childObject(decoderStep, "outputs"),
+        names: ["stepLogits", "nextDecoderHidden"]
+      )
+      let hashes = try childObject(manifest, "sha256")
+      try requireExactKeys(hashes, [
+        "compiledModels", "mlpackages", "sourceCheckpoint", "trainingDatasetManifest",
+        "vocabMetadata"
+      ])
+      try requireExactKeys(try childObject(hashes, "compiledModels"), ["encoder", "decoderStep"])
+      try requireExactKeys(try childObject(hashes, "mlpackages"), ["encoder", "decoderStep"])
+    } else {
+      try requireExactKeys(try childObject(manifest, "sha256"), [
+        "compiledModel", "sourceCheckpoint", "trainingDatasetManifest", "vocabMetadata"
+      ])
+    }
 
     let vocab = try jsonObject(vocabData)
     try requireExactKeys(vocab, [
@@ -1020,6 +1801,16 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     try requireExactKeys(try childObject(vocab, "nativeRuntimePolicy"), [
       "asyncOnly", "neverInvokeInSecureFields", "failOpenRawTypingOnError", "neuralTailOnly"
     ])
+  }
+
+  private static func validateTensorGroup(
+    _ group: [String: Any],
+    names: Set<String>
+  ) throws {
+    try requireExactKeys(group, names)
+    for name in names {
+      try requireExactKeys(try childObject(group, name), ["shape", "dataType"])
+    }
   }
 
   private static func jsonObject(_ data: Data) throws -> [String: Any] {
@@ -1182,7 +1973,15 @@ private enum LekhNeuralInferenceFailure: Error {
 private struct LekhVerifiedNeuralArtifact {
   let manifest: LekhNeuralManifest
   let vocab: LekhNeuralVocabMetadata
-  let model: MLModel
+  let modelRuntime: LekhNeuralModelRuntime
+}
+
+private enum LekhNeuralModelRuntime {
+  case legacy(MLModel)
+  case splitAttention(
+    models: LekhNeuralSplitAttentionModels,
+    contract: LekhNeuralSplitAttentionContract
+  )
 }
 
 public enum LekhNeuralManifestIdentityPolicy {
@@ -1220,6 +2019,9 @@ private struct LekhNeuralManifest: Decodable {
   let exportRunId: String?
   let selectedArtifact: String
   let runtime: String
+  let runtimeModelContract: String?
+  let tensorContract: TensorContract?
+  let compiledModels: CompiledModels?
   let localOnly: Bool
   let neuralTailOnly: Bool
   let productionEligible: Bool
@@ -1287,10 +2089,42 @@ private struct LekhNeuralManifest: Decodable {
   }
 
   struct Hashes: Decodable {
-    let compiledModel: String
+    let compiledModel: String?
+    let compiledModels: [String: String]?
+    let mlpackages: [String: String]?
     let sourceCheckpoint: String
     let trainingDatasetManifest: String
     let vocabMetadata: String
+  }
+
+  struct CompiledModels: Decodable {
+    let encoder: CompiledArtifact
+    let decoderStep: CompiledArtifact
+  }
+
+  struct CompiledArtifact: Decodable {
+    let role: String
+    let mlpackage: String
+    let mlpackageBytes: Int
+    let mlpackageSha256: String
+    let compiledModel: String
+    let compiledBytes: Int
+    let compiledSha256: String
+  }
+
+  struct TensorContract: Decodable {
+    let encoder: TensorStage
+    let decoderStep: TensorStage
+  }
+
+  struct TensorStage: Decodable {
+    let inputs: [String: Tensor]
+    let outputs: [String: Tensor]
+  }
+
+  struct Tensor: Decodable, Equatable {
+    let shape: [Int]
+    let dataType: String
   }
 }
 
