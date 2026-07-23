@@ -4,7 +4,7 @@
   "releaseId": "aksharantar-nepali-official-test-v1",
   "status": "official-public-benchmark-locked",
   "note": "Official Aksharantar Nepali test rows, kept outside Lekh training. Duplicate normalized Roman inputs are one metric unit with all official native outputs treated as acceptable.",
-  "corpusSha256": "7cad3a39cc68abaa2b74413aea1528e46eb8a1465e69213f9f8e5886c6484091",
+  "corpusSha256": "149d44c4e8832b91908c4bccfb67e60abcdf8ed99a1d873dc60ef7d0a130744a",
   "reviewTierPolicy": {
     "official-public-benchmark": "Released Aksharantar benchmark evidence; not represented as project human review."
   },
@@ -14,8 +14,8 @@
     "paper": "https://arxiv.org/abs/2205.03018",
     "license": "CC-BY as declared for manually collected Aksharantar benchmark data",
     "importedManifest": "data/private/neural/ai4bharat-aksharantar-nepali/manifest.json",
-    "importedManifestSha256": "603b93fecf9ba7e5ae7e8fe54473367916224fc4817eae5a16a75415403b448e",
-    "importedTsvSha256": "bb08741fb817859b8b1440ade7b632042b58b02f04f24c2fd21002d3b7844d66",
+    "importedManifestSha256": "c419aa105356f35eb20135ad201da197da5c04d6a55a236419f143ff73537af2",
+    "importedTsvSha256": "4ee7ee7df7e57088fc55447e42d82e6db37cb389956c37d7816837341250079a",
     "upstreamArchiveSha256": "8bdcc5957d701ea36b63c00c713b43bc30902774b70736737d480e77929de92c"
   },
   "uniqueInputPolicy": "trim-lowercase-NFC-collapse-whitespace",
@@ -25,16 +25,16 @@
     {
       "id": "aksharantar-native-frequent",
       "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/native-frequent.jsonl",
-      "sha256": "1f982f3eee5f42ebde2837d9994aca5d735b4d67d7aaa4f256314e71bf7a6786",
-      "rows": 2088,
+      "sha256": "90620f225711febc5b9255983e6a3f682df3fc0973b27accde5b96896d66a071",
+      "rows": 2092,
       "category": "romanized-token",
       "benchmarkBucket": "native-frequent"
     },
     {
       "id": "aksharantar-indian-names",
       "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/indian-names.jsonl",
-      "sha256": "d13fede9f065a93370cad1996cda96a38dde3d9c235089282910fd392501c56e",
-      "rows": 1173,
+      "sha256": "70004bac0af45cab25908fbcb6e7d15939099dd7c16e3c41c25ee6ef0ec242b3",
+      "rows": 1176,
       "category": "name",
       "benchmarkBucket": "indian-name"
     },

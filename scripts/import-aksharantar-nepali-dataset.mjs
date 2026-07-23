@@ -6,6 +6,11 @@ import { pipeline } from "node:stream/promises";
 import { performance } from "node:perf_hooks";
 import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
+import {
+  AksharantarCanonicalPairTracker,
+  createDeterministicAksharantarImportManifest,
+  orderAksharantarMembersByHeldOutPrecedence
+} from "./lib/aksharantar-import-policy.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -13,11 +18,11 @@ const args = parseArgs(process.argv.slice(2));
 const sourceId = "ai4bharat-aksharantar-nepali";
 const upstreamUrl = "https://huggingface.co/datasets/ai4bharat/Aksharantar/resolve/main/nep.zip";
 const expectedBytes = 70_147_764;
-const zipMembers = [
+const zipMembers = orderAksharantarMembersByHeldOutPrecedence([
   { split: "train", member: "nep_train.json" },
   { split: "validation", member: "nep_valid.json" },
   { split: "test", member: "nep_test.json" }
-];
+]);
 
 const force = args.has("force");
 const maxRows = args.has("max-rows") ? Number(args.get("max-rows")) : null;
@@ -45,13 +50,17 @@ const outTsvPath = join(outDir, "aksharantar-nepali.tsv");
 const writer = createWriteStream(outTsvPath, { encoding: "utf8" });
 writer.write("romanized\tdevanagari\tsource\tupstreamSplit\tupstreamId\tupstreamSource\tscore\n");
 
-const seenPairs = new Set();
+const pairTracker = new AksharantarCanonicalPairTracker();
+const retainedTestPairs = new Set();
+const retainedValidationPairs = new Set();
 const counts = {
   rawRows: 0,
   importedRows: 0,
   duplicatePairs: 0,
   rejectedRows: 0,
   byUpstreamSplit: {},
+  importedByUpstreamSplit: {},
+  duplicatePairsByPrecedence: {},
   byUpstreamSource: {}
 };
 const rejected = {};
@@ -70,10 +79,8 @@ if (counts.importedRows < 1_000_000 && maxRows === null) {
   failures.push(`Expected to import at least 1,000,000 cleaned rows from ${sourceId}; imported ${counts.importedRows}.`);
 }
 
-const importManifest = {
-  schemaVersion: 1,
+const importManifest = createDeterministicAksharantarImportManifest({
   sourceId,
-  importedAt: new Date().toISOString(),
   upstream: {
     repository: "https://huggingface.co/datasets/ai4bharat/Aksharantar",
     datasetCard: "Aksharantar Nepali split (nep.zip)",
@@ -101,20 +108,9 @@ const importManifest = {
   counts,
   rejected,
   maxRows,
-  policy: {
-    normalizeInput: "lowercase trim NFC collapse whitespace",
-    normalizeOutput: "trim NFC collapse whitespace",
-    activeTokenOnly: true,
-    rejectWhitespaceInputs: true,
-    rejectWhitespaceOutputs: true,
-    rejectLatinOutputs: true,
-    rejectNonLatinInputs: true,
-    preserveUpstreamSourceAndScore: true,
-    rawUpstreamDataCommitted: false
-  },
   failures,
   warnings
-};
+});
 
 writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(importManifest, null, 2)}\n`);
 finish(failures.length === 0 ? "passed-aksharantar-nepali-import" : "failed-aksharantar-nepali-import", failures.length === 0 ? 0 : 1, importManifest);
@@ -166,11 +162,18 @@ async function importZipMember(file) {
       continue;
     }
     const key = `${romanized}\u0000${devanagari}`;
-    if (seenPairs.has(key)) {
+    if (!pairTracker.observe(romanized, devanagari, file.split)) {
       counts.duplicatePairs += 1;
+      const winningSplit = retainedTestPairs.has(key)
+        ? "test"
+        : retainedValidationPairs.has(key)
+          ? "validation"
+          : "train";
+      bump(counts.duplicatePairsByPrecedence, `${winningSplit}>${file.split}`);
       continue;
     }
-    seenPairs.add(key);
+    if (file.split === "test") retainedTestPairs.add(key);
+    if (file.split === "validation") retainedValidationPairs.add(key);
     writer.write([
       escapeTsv(romanized),
       escapeTsv(devanagari),
@@ -181,6 +184,7 @@ async function importZipMember(file) {
       escapeTsv(score)
     ].join("\t") + "\n");
     counts.importedRows += 1;
+    bump(counts.importedByUpstreamSplit, file.split);
   }
 
   const exitCode = await new Promise((resolve) => child.on("close", resolve));
