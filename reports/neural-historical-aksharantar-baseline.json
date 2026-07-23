@@ -1,0 +1,65 @@
+{
+  "generatedAt": "2026-07-23T01:39:52Z",
+  "command": "python scripts/benchmark-historical-neural-artifact.py --allow-quarantined-historical-artifact",
+  "status": "measured-quarantined-historical-baseline",
+  "promotionEligible": false,
+  "modelId": "lekh-open-vocab-seq2seq-v1",
+  "architecture": "gru-encoder-decoder-seq2seq",
+  "parameterCount": 1707484,
+  "artifactManifest": "models/macos/LekhNeuralTransliterator.manifest.json",
+  "artifactManifestSha256": "539c92d733f9fe9b6d2df1222b3ba8f9cdb1e6b72b2594fcc6d416b5d0d3646e",
+  "artifactHashes": {
+    "compiledModel": "b67c7924e2ce2eba2482b02030014874c2caaeb029197bcb73f3898223aa9d92",
+    "sourceCheckpoint": "c29e1aad999be0b58273d2ec0db03624dc3576007836f83fb6433d202e8985c9",
+    "vocabMetadata": "ef9afae8de2bf190a4c93d4c9395520a2d3df0bf03b2108fa1eb73eba3c17249"
+  },
+  "benchmarkManifest": "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+  "benchmarkManifestSha256": "214215d84728d373c1bc4e154126af541ef22b91ea320fb29326cb08d258f92d",
+  "benchmarkCorpusSha256": "7cad3a39cc68abaa2b74413aea1528e46eb8a1465e69213f9f8e5886c6484091",
+  "predictions": ".tmp/neural-historical-aksharantar-predictions.jsonl",
+  "predictionsSha256": "0004d410019d0e681662bb5a508c57112c880ee87e0880ab3c4e7e78d5c711ae",
+  "beamWidth": 4,
+  "maximumCandidates": 4,
+  "metrics": {
+    "rows": 4078,
+    "top1Accuracy": 0.463953,
+    "top3Accuracy": 0.66822,
+    "meanReciprocalRank": 0.565392,
+    "characterErrorRate": 0.240211
+  },
+  "metricsBySuite": {
+    "aksharantar-foreign-names": {
+      "rows": 817,
+      "top1Accuracy": 0.253366,
+      "top3Accuracy": 0.462668,
+      "meanReciprocalRank": 0.355977,
+      "characterErrorRate": 0.385514
+    },
+    "aksharantar-indian-names": {
+      "rows": 1173,
+      "top1Accuracy": 0.303495,
+      "top3Accuracy": 0.514066,
+      "meanReciprocalRank": 0.410983,
+      "characterErrorRate": 0.332751
+    },
+    "aksharantar-native-frequent": {
+      "rows": 2088,
+      "top1Accuracy": 0.636494,
+      "top3Accuracy": 0.835249,
+      "meanReciprocalRank": 0.734076,
+      "characterErrorRate": 0.131369
+    }
+  },
+  "latencyMs": {
+    "samples": 4078,
+    "p50": 28.056062,
+    "p95": 64.353083,
+    "p99": 86.102583,
+    "maximum": 116.198667
+  },
+  "limitations": [
+    "The checkpoint predates current leakage and provenance corrections and is permanently quarantined.",
+    "This measurement is a historical comparison baseline, never production promotion evidence.",
+    "Latency is measured from a Python/Core ML harness rather than the packaged input-method service."
+  ]
+}
