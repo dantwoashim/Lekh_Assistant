@@ -3,13 +3,13 @@
   "contentIdentity": "lekh-neural-output-tokenization-analysis-v1",
   "dataset": {
     "manifest": "data/generated/neural-open-vocab/manifest.json",
-    "manifestSha256": "d496c164914dfb5cd9d5f3dcd23ab3c328ff570c60b2ad6f1cccccdc6ee5ebd5",
-    "datasetContentSha256": "3f8d442ee285a0ffb1cf0d4b32e57f5f4f044de915d286bbe549ebb1521b1690",
-    "rows": 1048771,
+    "manifestSha256": "c3c7d7d3eeb08026bc69dffd2960975e9b418d1cee066eb0c848a6f0fcc19d36",
+    "datasetContentSha256": "36c8d0d55d2e3ae16a44ed28e59b027e81dea0e27281ead4c5c9aea12a02f2de",
+    "rows": 1048651,
     "splitCounts": {
-      "train": 871695,
-      "dev": 87395,
-      "test": 89681
+      "train": 871600,
+      "dev": 87381,
+      "test": 89670
     }
   },
   "benchmark": {
@@ -34,30 +34,21 @@
     "current-base-plus-combining-marks": {
       "definition": "Current trainer behavior: each base scalar plus following Devanagari marks is one token.",
       "vocabulary": {
-        "trainLexicalTokens": 1196,
-        "trainWithSpecialTokens": 1200,
-        "trainOccurrences": 5120185,
-        "trainSingletons": 153,
-        "standaloneCombiningMarkTokens": 2,
-        "standaloneCombiningMarkExamples": [
-          {
-            "token": "ं",
-            "codePoints": "U+0902"
-          },
-          {
-            "token": "े",
-            "codePoints": "U+0947"
-          }
-        ],
+        "trainLexicalTokens": 1166,
+        "trainWithSpecialTokens": 1170,
+        "trainOccurrences": 5119665,
+        "trainSingletons": 132,
+        "standaloneCombiningMarkTokens": 0,
+        "standaloneCombiningMarkExamples": [],
         "tokensContainingJoiners": 0,
-        "tokensEndingInVirama": 39
+        "tokensEndingInVirama": 36
       },
       "splits": {
         "train": {
-          "rows": 871695,
+          "rows": 871600,
           "length": {
             "min": 1,
-            "mean": 5.87382628,
+            "mean": 5.87386989,
             "p50": 6,
             "p90": 8,
             "p95": 9,
@@ -217,10 +208,10 @@
           ]
         },
         "dev": {
-          "rows": 87395,
+          "rows": 87381,
           "length": {
             "min": 1,
-            "mean": 5.82846845,
+            "mean": 5.8285783,
             "p50": 6,
             "p90": 8,
             "p95": 9,
@@ -310,9 +301,9 @@
             ]
           },
           "unseen": {
-            "rows": 15,
-            "occurrences": 15,
-            "distinctTokens": 15,
+            "rows": 12,
+            "occurrences": 12,
+            "distinctTokens": 12,
             "tokens": [
               {
                 "token": "खृ",
@@ -345,28 +336,13 @@
                 "count": 1
               },
               {
-                "token": "दिे",
-                "codePoints": "U+0926 U+093F U+0947",
-                "count": 1
-              },
-              {
                 "token": "दॉ",
                 "codePoints": "U+0926 U+0949",
                 "count": 1
               },
               {
-                "token": "धोौ",
-                "codePoints": "U+0927 U+094B U+094C",
-                "count": 1
-              },
-              {
                 "token": "रौः",
                 "codePoints": "U+0930 U+094C U+0903",
-                "count": 1
-              },
-              {
-                "token": "लिी",
-                "codePoints": "U+0932 U+093F U+0940",
                 "count": 1
               },
               {
@@ -416,30 +392,6 @@
                 ]
               },
               {
-                "id": "neural_open_vocab_58ca57690047ca65",
-                "input": "dieko",
-                "target": "दिेएको",
-                "tokens": [
-                  "दिे"
-                ]
-              },
-              {
-                "id": "neural_open_vocab_6b5c1dfc6e487773",
-                "input": "clement",
-                "target": "क्लिीमेन्ट",
-                "tokens": [
-                  "लिी"
-                ]
-              },
-              {
-                "id": "neural_open_vocab_76e8e99d5d58544a",
-                "input": "dhoi",
-                "target": "धोौइ",
-                "tokens": [
-                  "धोौ"
-                ]
-              },
-              {
                 "id": "neural_open_vocab_87db27e6a6556d7b",
                 "input": "prithwih",
                 "target": "पृथ्वीः",
@@ -469,6 +421,30 @@
                 "target": "लोगोः",
                 "tokens": [
                   "गोः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_99f8e7e92c0065ed",
+                "input": "shrakhrilabaddha",
+                "target": "श्रखृलाबद्ध",
+                "tokens": [
+                  "खृ"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_b689585d9ff2e20b",
+                "input": "trishanli",
+                "target": "त्रिशँली",
+                "tokens": [
+                  "शँ"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_ca242e2861f31668",
+                "input": "langautiya",
+                "target": "लङौटिया",
+                "tokens": [
+                  "ङौ"
                 ]
               }
             ]
@@ -537,10 +513,10 @@
           ]
         },
         "test": {
-          "rows": 89681,
+          "rows": 89670,
           "length": {
             "min": 1,
-            "mean": 5.78719015,
+            "mean": 5.78720865,
             "p50": 6,
             "p90": 8,
             "p95": 9,
@@ -630,9 +606,9 @@
             ]
           },
           "unseen": {
-            "rows": 19,
-            "occurrences": 19,
-            "distinctTokens": 17,
+            "rows": 18,
+            "occurrences": 18,
+            "distinctTokens": 16,
             "tokens": [
               {
                 "token": "जेँ",
@@ -647,11 +623,6 @@
               {
                 "token": "केँः",
                 "codePoints": "U+0915 U+0947 U+0901 U+0903",
-                "count": 1
-              },
-              {
-                "token": "केै",
-                "codePoints": "U+0915 U+0947 U+0948",
                 "count": 1
               },
               {
@@ -738,14 +709,6 @@
                 ]
               },
               {
-                "id": "neural_open_vocab_39df41370baef333",
-                "input": "morchabandikei",
-                "target": "मोर्चाबन्दीकेै",
-                "tokens": [
-                  "केै"
-                ]
-              },
-              {
                 "id": "neural_open_vocab_47316adaa70d3a23",
                 "input": "vrindavanma",
                 "target": "वृंदावनमा",
@@ -799,6 +762,14 @@
                 "target": "बदमासिः",
                 "tokens": [
                   "सिः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_aca65713dd7bf0b0",
+                "input": "broadcasting",
+                "target": "ब्रॉडकास्टिंग",
+                "tokens": [
+                  "रॉ"
                 ]
               }
             ]
@@ -1065,13 +1036,13 @@
         "examples": []
       },
       "coreMLAndRuntime": {
-        "vocabularyDependentParameters": 423600,
-        "estimatedBaselineTotalParameters": 1759728,
-        "estimatedVocabularyDependentFloat32ParameterBytes": 1694400,
-        "estimatedVocabularyDependentFloat16ParameterBytes": 847200,
-        "legacyFullDecoderLogitElements": 37200,
-        "legacyFullDecoderFloat32LogitBytes": 148800,
-        "splitAttentionStepLogitElements": 4800,
+        "vocabularyDependentParameters": 413010,
+        "estimatedBaselineTotalParameters": 1749138,
+        "estimatedVocabularyDependentFloat32ParameterBytes": 1652040,
+        "estimatedVocabularyDependentFloat16ParameterBytes": 826020,
+        "legacyFullDecoderLogitElements": 36270,
+        "legacyFullDecoderFloat32LogitBytes": 145080,
+        "splitAttentionStepLogitElements": 4680,
         "implication": "Changing vocabulary size changes model projection weights and Core ML tensor shapes; vocab JSON alone cannot be swapped.",
         "relativeToCurrent": {
           "vocabularyRatio": 1,
@@ -1084,10 +1055,10 @@
     "unicode-scalars": {
       "definition": "One Unicode scalar per token after NFC normalization.",
       "vocabulary": {
-        "trainLexicalTokens": 67,
-        "trainWithSpecialTokens": 71,
-        "trainOccurrences": 8423776,
-        "trainSingletons": 3,
+        "trainLexicalTokens": 65,
+        "trainWithSpecialTokens": 69,
+        "trainOccurrences": 8422827,
+        "trainSingletons": 2,
         "standaloneCombiningMarkTokens": 16,
         "standaloneCombiningMarkExamples": [
           {
@@ -1160,10 +1131,10 @@
       },
       "splits": {
         "train": {
-          "rows": 871695,
+          "rows": 871600,
           "length": {
             "min": 2,
-            "mean": 9.66367365,
+            "mean": 9.66363814,
             "p50": 9,
             "p90": 14,
             "p95": 15,
@@ -1396,10 +1367,10 @@
           ]
         },
         "dev": {
-          "rows": 87395,
+          "rows": 87381,
           "length": {
             "min": 2,
-            "mean": 9.59334058,
+            "mean": 9.59327543,
             "p50": 9,
             "p90": 14,
             "p95": 15,
@@ -1632,10 +1603,10 @@
           ]
         },
         "test": {
-          "rows": 89681,
+          "rows": 89670,
           "length": {
             "min": 1,
-            "mean": 9.51193675,
+            "mean": 9.51174306,
             "p50": 9,
             "p90": 14,
             "p95": 15,
@@ -2053,29 +2024,29 @@
         "examples": []
       },
       "coreMLAndRuntime": {
-        "vocabularyDependentParameters": 25063,
-        "estimatedBaselineTotalParameters": 1361191,
-        "estimatedVocabularyDependentFloat32ParameterBytes": 100252,
-        "estimatedVocabularyDependentFloat16ParameterBytes": 50126,
-        "legacyFullDecoderLogitElements": 2201,
-        "legacyFullDecoderFloat32LogitBytes": 8804,
-        "splitAttentionStepLogitElements": 284,
+        "vocabularyDependentParameters": 24357,
+        "estimatedBaselineTotalParameters": 1360485,
+        "estimatedVocabularyDependentFloat32ParameterBytes": 97428,
+        "estimatedVocabularyDependentFloat16ParameterBytes": 48714,
+        "legacyFullDecoderLogitElements": 2139,
+        "legacyFullDecoderFloat32LogitBytes": 8556,
+        "splitAttentionStepLogitElements": 276,
         "implication": "Changing vocabulary size changes model projection weights and Core ML tensor shapes; vocab JSON alone cannot be swapped.",
         "relativeToCurrent": {
-          "vocabularyRatio": 0.05916667,
-          "vocabularyDependentParameterRatio": 0.05916667,
-          "fullDecoderLogitTensorRatio": 0.05916667,
-          "trainMeanStepRatio": 1.6452093
+          "vocabularyRatio": 0.05897436,
+          "vocabularyDependentParameterRatio": 0.05897436,
+          "fullDecoderLogitTensorRatio": 0.05897436,
+          "trainMeanStepRatio": 1.64519104
         }
       }
     },
     "joiner-aware-unicode-scalars": {
       "definition": "Unicode scalars, except VIRAMA+ZWJ/ZWNJ is kept as one atomic token.",
       "vocabulary": {
-        "trainLexicalTokens": 67,
-        "trainWithSpecialTokens": 71,
-        "trainOccurrences": 8423776,
-        "trainSingletons": 3,
+        "trainLexicalTokens": 65,
+        "trainWithSpecialTokens": 69,
+        "trainOccurrences": 8422827,
+        "trainSingletons": 2,
         "standaloneCombiningMarkTokens": 16,
         "standaloneCombiningMarkExamples": [
           {
@@ -2148,10 +2119,10 @@
       },
       "splits": {
         "train": {
-          "rows": 871695,
+          "rows": 871600,
           "length": {
             "min": 2,
-            "mean": 9.66367365,
+            "mean": 9.66363814,
             "p50": 9,
             "p90": 14,
             "p95": 15,
@@ -2384,10 +2355,10 @@
           ]
         },
         "dev": {
-          "rows": 87395,
+          "rows": 87381,
           "length": {
             "min": 2,
-            "mean": 9.59334058,
+            "mean": 9.59327543,
             "p50": 9,
             "p90": 14,
             "p95": 15,
@@ -2620,10 +2591,10 @@
           ]
         },
         "test": {
-          "rows": 89681,
+          "rows": 89670,
           "length": {
             "min": 1,
-            "mean": 9.51193675,
+            "mean": 9.51174306,
             "p50": 9,
             "p90": 14,
             "p95": 15,
@@ -3041,49 +3012,40 @@
         "examples": []
       },
       "coreMLAndRuntime": {
-        "vocabularyDependentParameters": 25063,
-        "estimatedBaselineTotalParameters": 1361191,
-        "estimatedVocabularyDependentFloat32ParameterBytes": 100252,
-        "estimatedVocabularyDependentFloat16ParameterBytes": 50126,
-        "legacyFullDecoderLogitElements": 2201,
-        "legacyFullDecoderFloat32LogitBytes": 8804,
-        "splitAttentionStepLogitElements": 284,
+        "vocabularyDependentParameters": 24357,
+        "estimatedBaselineTotalParameters": 1360485,
+        "estimatedVocabularyDependentFloat32ParameterBytes": 97428,
+        "estimatedVocabularyDependentFloat16ParameterBytes": 48714,
+        "legacyFullDecoderLogitElements": 2139,
+        "legacyFullDecoderFloat32LogitBytes": 8556,
+        "splitAttentionStepLogitElements": 276,
         "implication": "Changing vocabulary size changes model projection weights and Core ML tensor shapes; vocab JSON alone cannot be swapped.",
         "relativeToCurrent": {
-          "vocabularyRatio": 0.05916667,
-          "vocabularyDependentParameterRatio": 0.05916667,
-          "fullDecoderLogitTensorRatio": 0.05916667,
-          "trainMeanStepRatio": 1.6452093
+          "vocabularyRatio": 0.05897436,
+          "vocabularyDependentParameterRatio": 0.05897436,
+          "fullDecoderLogitTensorRatio": 0.05897436,
+          "trainMeanStepRatio": 1.64519104
         }
       }
     },
     "unicode-extended-grapheme-clusters": {
       "definition": "Unicode extended grapheme clusters from Intl.Segmenter after NFC normalization.",
       "vocabulary": {
-        "trainLexicalTokens": 8874,
-        "trainWithSpecialTokens": 8878,
-        "trainOccurrences": 4397581,
-        "trainSingletons": 2851,
-        "standaloneCombiningMarkTokens": 2,
-        "standaloneCombiningMarkExamples": [
-          {
-            "token": "ं",
-            "codePoints": "U+0902"
-          },
-          {
-            "token": "े",
-            "codePoints": "U+0947"
-          }
-        ],
+        "trainLexicalTokens": 8842,
+        "trainWithSpecialTokens": 8846,
+        "trainOccurrences": 4397156,
+        "trainSingletons": 2829,
+        "standaloneCombiningMarkTokens": 0,
+        "standaloneCombiningMarkExamples": [],
         "tokensContainingJoiners": 0,
         "tokensEndingInVirama": 51
       },
       "splits": {
         "train": {
-          "rows": 871695,
+          "rows": 871600,
           "length": {
             "min": 1,
-            "mean": 5.04486202,
+            "mean": 5.04492428,
             "p50": 5,
             "p90": 7,
             "p95": 8,
@@ -3243,10 +3205,10 @@
           ]
         },
         "dev": {
-          "rows": 87395,
+          "rows": 87381,
           "length": {
             "min": 1,
-            "mean": 5.00679673,
+            "mean": 5.0069237,
             "p50": 5,
             "p90": 7,
             "p95": 8,
@@ -3336,9 +3298,9 @@
             ]
           },
           "unseen": {
-            "rows": 284,
-            "occurrences": 284,
-            "distinctTokens": 272,
+            "rows": 281,
+            "occurrences": 281,
+            "distinctTokens": 269,
             "tokens": [
               {
                 "token": "म्हें",
@@ -3426,11 +3388,6 @@
                 "count": 1
               },
               {
-                "token": "क्लिी",
-                "codePoints": "U+0915 U+094D U+0932 U+093F U+0940",
-                "count": 1
-              },
-              {
                 "token": "क्ष्गा",
                 "codePoints": "U+0915 U+094D U+0937 U+094D U+0917 U+093E",
                 "count": 1
@@ -3488,6 +3445,11 @@
               {
                 "token": "ग्ङा",
                 "codePoints": "U+0917 U+094D U+0919 U+093E",
+                "count": 1
+              },
+              {
+                "token": "ग्चौ",
+                "codePoints": "U+0917 U+094D U+091A U+094C",
                 "count": 1
               }
             ],
@@ -3638,10 +3600,10 @@
           ]
         },
         "test": {
-          "rows": 89681,
+          "rows": 89670,
           "length": {
             "min": 1,
-            "mean": 4.96741785,
+            "mean": 4.96748076,
             "p50": 5,
             "p90": 7,
             "p95": 8,
@@ -3731,9 +3693,9 @@
             ]
           },
           "unseen": {
-            "rows": 290,
-            "occurrences": 290,
-            "distinctTokens": 276,
+            "rows": 289,
+            "occurrences": 289,
+            "distinctTokens": 275,
             "tokens": [
               {
                 "token": "न्ज्यु",
@@ -3803,11 +3765,6 @@
               {
                 "token": "केँः",
                 "codePoints": "U+0915 U+0947 U+0901 U+0903",
-                "count": 1
-              },
-              {
-                "token": "केै",
-                "codePoints": "U+0915 U+0947 U+0948",
                 "count": 1
               },
               {
@@ -3883,6 +3840,11 @@
               {
                 "token": "क्ल्नु",
                 "codePoints": "U+0915 U+094D U+0932 U+094D U+0928 U+0941",
+                "count": 1
+              },
+              {
+                "token": "क्ल्यु",
+                "codePoints": "U+0915 U+094D U+0932 U+094D U+092F U+0941",
                 "count": 1
               }
             ],
@@ -4352,217 +4314,33 @@
         "examples": []
       },
       "coreMLAndRuntime": {
-        "vocabularyDependentParameters": 3133934,
-        "estimatedBaselineTotalParameters": 4470062,
-        "estimatedVocabularyDependentFloat32ParameterBytes": 12535736,
-        "estimatedVocabularyDependentFloat16ParameterBytes": 6267868,
-        "legacyFullDecoderLogitElements": 275218,
-        "legacyFullDecoderFloat32LogitBytes": 1100872,
-        "splitAttentionStepLogitElements": 35512,
+        "vocabularyDependentParameters": 3122638,
+        "estimatedBaselineTotalParameters": 4458766,
+        "estimatedVocabularyDependentFloat32ParameterBytes": 12490552,
+        "estimatedVocabularyDependentFloat16ParameterBytes": 6245276,
+        "legacyFullDecoderLogitElements": 274226,
+        "legacyFullDecoderFloat32LogitBytes": 1096904,
+        "splitAttentionStepLogitElements": 35384,
         "implication": "Changing vocabulary size changes model projection weights and Core ML tensor shapes; vocab JSON alone cannot be swapped.",
         "relativeToCurrent": {
-          "vocabularyRatio": 7.39833333,
-          "vocabularyDependentParameterRatio": 7.39833333,
-          "fullDecoderLogitTensorRatio": 7.39833333,
-          "trainMeanStepRatio": 0.85887151
+          "vocabularyRatio": 7.56068376,
+          "vocabularyDependentParameterRatio": 7.56068376,
+          "fullDecoderLogitTensorRatio": 7.56068376,
+          "trainMeanStepRatio": 0.85887573
         }
       }
     }
   },
   "invalidSequenceRisks": {
     "train": {
-      "rows": 871695,
-      "rowsWithIssues": 86,
-      "shareWithIssues": 0.00009866,
-      "counts": {
-        "combining-mark-without-base": 50,
-        "dependent-vowel-sign-without-consonant": 12,
-        "duplicate-adjacent-mark": 4,
-        "multiple-vowel-signs-on-base": 23
-      },
-      "examples": {
-        "combining-mark-without-base": [
-          {
-            "id": "neural_open_vocab_0bcf4aafc32a589d",
-            "input": "chalaekochhainh",
-            "target": "चलाएकोछैन्ः"
-          },
-          {
-            "id": "neural_open_vocab_0df6ca23ef70db4f",
-            "input": "lekhdachhanh",
-            "target": "लेख्दछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_0e07f4c24351b110",
-            "input": "bhairahanchhanh",
-            "target": "भइरहन्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_11e92e62f91bf54f",
-            "input": "maarindaichhanh",
-            "target": "मारिँदैछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_1784c7893a7cb055",
-            "input": "sunaunchhinh",
-            "target": "सुनाउँछिन्ः"
-          },
-          {
-            "id": "neural_open_vocab_19b9f80bcb1b9e35",
-            "input": "nchunawako",
-            "target": "ंचुनावको"
-          },
-          {
-            "id": "neural_open_vocab_26073a26c1a5c2d5",
-            "input": "hepchhanh",
-            "target": "हेप्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_26709e40e0c69ca4",
-            "input": "pokhchhinh",
-            "target": "पोख्छिन्ः"
-          },
-          {
-            "id": "neural_open_vocab_36f4b034d7678ae8",
-            "input": "lagaaunthinh",
-            "target": "लगाउँथिन्ः"
-          },
-          {
-            "id": "neural_open_vocab_3a7a7a121fe3886a",
-            "input": "jodinchhanh",
-            "target": "जोडिन्छन्ः"
-          }
-        ],
-        "dependent-vowel-sign-without-consonant": [
-          {
-            "id": "neural_open_vocab_27fa2d8bb7c79064",
-            "input": "orton",
-            "target": "अोर्टन"
-          },
-          {
-            "id": "neural_open_vocab_2baf2349b20002b4",
-            "input": "afnai",
-            "target": "अाफ्नै"
-          },
-          {
-            "id": "neural_open_vocab_44e22dff523e1f49",
-            "input": "osmane",
-            "target": "अोस्माने"
-          },
-          {
-            "id": "neural_open_vocab_58f3acfad6c88be7",
-            "input": "eniyantranma",
-            "target": "ेनियन्त्रणमा"
-          },
-          {
-            "id": "neural_open_vocab_594ab68e37e5fee7",
-            "input": "abashyaktama",
-            "target": "अाबश्यकतामा"
-          },
-          {
-            "id": "neural_open_vocab_749c85d8d180e412",
-            "input": "auchityabare",
-            "target": "अौचित्यबारे"
-          },
-          {
-            "id": "neural_open_vocab_765a83c024ca159b",
-            "input": "adh",
-            "target": "अोढ्"
-          },
-          {
-            "id": "neural_open_vocab_788e652f5d8885ee",
-            "input": "osman",
-            "target": "अोसमेन"
-          },
-          {
-            "id": "neural_open_vocab_989c9df8717dc2f2",
-            "input": "rahanubhaeako",
-            "target": "रहनुभएाको"
-          },
-          {
-            "id": "neural_open_vocab_b205c96fa12e8769",
-            "input": "maoadika",
-            "target": "माओादीका"
-          }
-        ],
-        "duplicate-adjacent-mark": [
-          {
-            "id": "neural_open_vocab_17727c73bf338b61",
-            "input": "khojdaihunuhunthyo",
-            "target": "खोज्दैहुुनुहुन्थ्यो"
-          },
-          {
-            "id": "neural_open_vocab_20cceab6aeaef396",
-            "input": "bataunahunuhunchha",
-            "target": "बताउनहुुनुहुन्छ"
-          },
-          {
-            "id": "neural_open_vocab_620b05a4ece76e92",
-            "input": "nyadhiwaktako",
-            "target": "न्यााधिवक्ताको"
-          },
-          {
-            "id": "neural_open_vocab_93d7febd982faf31",
-            "input": "kunwar",
-            "target": "कुँँवर"
-          }
-        ],
-        "multiple-vowel-signs-on-base": [
-          {
-            "id": "neural_open_vocab_05537656c95d3efa",
-            "input": "punarnirmianma",
-            "target": "पुनर्निर्मिाणमा"
-          },
-          {
-            "id": "neural_open_vocab_17727c73bf338b61",
-            "input": "khojdaihunuhunthyo",
-            "target": "खोज्दैहुुनुहुन्थ्यो"
-          },
-          {
-            "id": "neural_open_vocab_20cceab6aeaef396",
-            "input": "bataunahunuhunchha",
-            "target": "बताउनहुुनुहुन्छ"
-          },
-          {
-            "id": "neural_open_vocab_27b55c1d1adf24a8",
-            "input": "rumallirahanthyo",
-            "target": "रुमल्लिरहन्थ्याे"
-          },
-          {
-            "id": "neural_open_vocab_46ab27d1039078ba",
-            "input": "lekhidinuparyo",
-            "target": "लेखिदिनुपर्याे"
-          },
-          {
-            "id": "neural_open_vocab_49ee84d3d1f8cda7",
-            "input": "falnuparyo",
-            "target": "फाल्नुपर्याे"
-          },
-          {
-            "id": "neural_open_vocab_4d83e71d1eaf992b",
-            "input": "partico",
-            "target": "पार्टिकाे"
-          },
-          {
-            "id": "neural_open_vocab_4e0850fe2930f002",
-            "input": "jenoalai",
-            "target": "जेनाेआलाई"
-          },
-          {
-            "id": "neural_open_vocab_5717f5a906cbabe2",
-            "input": "samhalnuparyo",
-            "target": "सम्हाल्नुपर्याे"
-          },
-          {
-            "id": "neural_open_vocab_61d636e33edbacf1",
-            "input": "warshikoetsawko",
-            "target": "वार्षिकोेत्सवको"
-          }
-        ]
-      },
+      "rows": 871600,
+      "rowsWithIssues": 0,
+      "shareWithIssues": 0,
+      "counts": {},
+      "examples": {},
       "validButDecoderSensitiveContextCounts": {
-        "terminal-virama": 10172,
-        "virama-before-nonconsonant": 58
+        "terminal-virama": 10171,
+        "virama-before-nonconsonant": 10
       },
       "validButDecoderSensitiveContextExamples": {
         "terminal-virama": [
@@ -4619,41 +4397,6 @@
         ],
         "virama-before-nonconsonant": [
           {
-            "id": "neural_open_vocab_0bcf4aafc32a589d",
-            "input": "chalaekochhainh",
-            "target": "चलाएकोछैन्ः"
-          },
-          {
-            "id": "neural_open_vocab_0df6ca23ef70db4f",
-            "input": "lekhdachhanh",
-            "target": "लेख्दछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_0e07f4c24351b110",
-            "input": "bhairahanchhanh",
-            "target": "भइरहन्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_11e92e62f91bf54f",
-            "input": "maarindaichhanh",
-            "target": "मारिँदैछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_1784c7893a7cb055",
-            "input": "sunaunchhinh",
-            "target": "सुनाउँछिन्ः"
-          },
-          {
-            "id": "neural_open_vocab_26073a26c1a5c2d5",
-            "input": "hepchhanh",
-            "target": "हेप्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_26709e40e0c69ca4",
-            "input": "pokhchhinh",
-            "target": "पोख्छिन्ः"
-          },
-          {
             "id": "neural_open_vocab_27c86ddd0bde3838",
             "input": "punarabhimukhikaran",
             "target": "पुनर्अभिमुखीकरण"
@@ -4664,100 +4407,57 @@
             "target": "एन्एक्टिभेटेडपोलियो"
           },
           {
-            "id": "neural_open_vocab_36f4b034d7678ae8",
-            "input": "lagaaunthinh",
-            "target": "लगाउँथिन्ः"
+            "id": "neural_open_vocab_4ccfa2ec867e9a91",
+            "input": "jhanasti",
+            "target": "झन्अस्ति"
+          },
+          {
+            "id": "neural_open_vocab_61f43ec700b50c06",
+            "input": "punarabhimukhikaranko",
+            "target": "पुनर्अभिमुखीकरणको"
+          },
+          {
+            "id": "neural_open_vocab_6ca2034353008d42",
+            "input": "alessandre",
+            "target": "एलेस्एन्ड्रे"
+          },
+          {
+            "id": "neural_open_vocab_7840a2426fbf7c02",
+            "input": "nairrita",
+            "target": "नैर्ऋत"
+          },
+          {
+            "id": "neural_open_vocab_baf36dbb40653d23",
+            "input": "disappointment",
+            "target": "डिस्एपोइन्टमेन्ट"
+          },
+          {
+            "id": "neural_open_vocab_c985b826e56c62f1",
+            "input": "inactivated",
+            "target": "इन्एक्टिभेटेड"
+          },
+          {
+            "id": "neural_open_vocab_d008030d32912e5b",
+            "input": "durilenko",
+            "target": "दुर्इलेनको"
+          },
+          {
+            "id": "neural_open_vocab_ea8deb3f710fc852",
+            "input": "duribhanda",
+            "target": "दुर्इभन्दा"
           }
         ]
       }
     },
     "dev": {
-      "rows": 87395,
-      "rowsWithIssues": 14,
-      "shareWithIssues": 0.00016019,
-      "counts": {
-        "combining-mark-without-base": 10,
-        "multiple-vowel-signs-on-base": 4
-      },
-      "examples": {
-        "combining-mark-without-base": [
-          {
-            "id": "neural_open_vocab_104b47dcbcfc3c54",
-            "input": "dekhinechhinh",
-            "target": "देखिनेछिन्ः"
-          },
-          {
-            "id": "neural_open_vocab_192cb8df999993ad",
-            "input": "paunechhanh",
-            "target": "पाउनेछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_4147def8a86883e5",
-            "input": "sodhchhanh",
-            "target": "सोध्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_5b1d9f5c34ba0b6d",
-            "input": "safirngako",
-            "target": "सफिर्ंगको"
-          },
-          {
-            "id": "neural_open_vocab_5c0015cd4fa4d1e8",
-            "input": "bujhaunchhanh",
-            "target": "बुझाउँछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_786ad573435da772",
-            "input": "ochhyaunchhanh",
-            "target": "ओछ्याउँछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_912826cef11f3e82",
-            "input": "khelnechhanh",
-            "target": "खेल्नेछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_bd9118118f89415c",
-            "input": "banaidinchhanh",
-            "target": "बनाइदिन्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_cffb1408d0388578",
-            "input": "banchnechhanh",
-            "target": "बाँच्नेछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_efd3ee96f506aec6",
-            "input": "ultinchhanh",
-            "target": "उल्टिन्छन्ः"
-          }
-        ],
-        "multiple-vowel-signs-on-base": [
-          {
-            "id": "neural_open_vocab_06ab084f581bd1bc",
-            "input": "pyakuryeldwara",
-            "target": "प्याकुर्याेलद्वारा"
-          },
-          {
-            "id": "neural_open_vocab_58ca57690047ca65",
-            "input": "dieko",
-            "target": "दिेएको"
-          },
-          {
-            "id": "neural_open_vocab_6b5c1dfc6e487773",
-            "input": "clement",
-            "target": "क्लिीमेन्ट"
-          },
-          {
-            "id": "neural_open_vocab_76e8e99d5d58544a",
-            "input": "dhoi",
-            "target": "धोौइ"
-          }
-        ]
-      },
+      "rows": 87381,
+      "rowsWithIssues": 0,
+      "shareWithIssues": 0,
+      "counts": {},
+      "examples": {},
       "validButDecoderSensitiveContextCounts": {
         "terminal-virama": 1074,
-        "virama-before-nonconsonant": 11
+        "virama-before-nonconsonant": 1
       },
       "validButDecoderSensitiveContextExamples": {
         "terminal-virama": [
@@ -4814,125 +4514,21 @@
         ],
         "virama-before-nonconsonant": [
           {
-            "id": "neural_open_vocab_104b47dcbcfc3c54",
-            "input": "dekhinechhinh",
-            "target": "देखिनेछिन्ः"
-          },
-          {
-            "id": "neural_open_vocab_192cb8df999993ad",
-            "input": "paunechhanh",
-            "target": "पाउनेछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_4147def8a86883e5",
-            "input": "sodhchhanh",
-            "target": "सोध्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_5b1d9f5c34ba0b6d",
-            "input": "safirngako",
-            "target": "सफिर्ंगको"
-          },
-          {
-            "id": "neural_open_vocab_5c0015cd4fa4d1e8",
-            "input": "bujhaunchhanh",
-            "target": "बुझाउँछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_786ad573435da772",
-            "input": "ochhyaunchhanh",
-            "target": "ओछ्याउँछन्ः"
-          },
-          {
-            "id": "neural_open_vocab_912826cef11f3e82",
-            "input": "khelnechhanh",
-            "target": "खेल्नेछन्ः"
-          },
-          {
             "id": "neural_open_vocab_947a53921e591be5",
             "input": "duritarfi",
             "target": "दुर्इतर्फी"
-          },
-          {
-            "id": "neural_open_vocab_bd9118118f89415c",
-            "input": "banaidinchhanh",
-            "target": "बनाइदिन्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_cffb1408d0388578",
-            "input": "banchnechhanh",
-            "target": "बाँच्नेछन्ः"
           }
         ]
       }
     },
     "test": {
-      "rows": 89681,
-      "rowsWithIssues": 10,
-      "shareWithIssues": 0.00011151,
-      "counts": {
-        "combining-mark-without-base": 4,
-        "multiple-vowel-signs-on-base": 6
-      },
-      "examples": {
-        "combining-mark-without-base": [
-          {
-            "id": "neural_open_vocab_3a71c814e5857039",
-            "input": "maninchhanh",
-            "target": "मानिन्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_5a7d6d43f1c4b6dc",
-            "input": "fyaankchhanh",
-            "target": "फ्याँक्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_f83391602a106e9e",
-            "input": "fukaunchhinh",
-            "target": "फुकाउँछिन्ः"
-          },
-          {
-            "id": "neural_open_vocab_fb04b9eb162ee738",
-            "input": "kuraunchhanh",
-            "target": "कुराउँछन्ः"
-          }
-        ],
-        "multiple-vowel-signs-on-base": [
-          {
-            "id": "neural_open_vocab_17c74d336f74f0c4",
-            "input": "farkaunuparyo",
-            "target": "फर्काउनुपर्याे"
-          },
-          {
-            "id": "neural_open_vocab_39df41370baef333",
-            "input": "morchabandikei",
-            "target": "मोर्चाबन्दीकेै"
-          },
-          {
-            "id": "neural_open_vocab_8959b2f967d44d89",
-            "input": "corneille",
-            "target": "कोेर्नेइले"
-          },
-          {
-            "id": "neural_open_vocab_9aad2dfa2d65bf67",
-            "input": "rakhnuparyo",
-            "target": "राख्नुपर्याे"
-          },
-          {
-            "id": "neural_open_vocab_9db6f15fb4ce4926",
-            "input": "siknuparyo",
-            "target": "सिक्नुपर्याे"
-          },
-          {
-            "id": "neural_open_vocab_fa292b1fbe6f2d3d",
-            "input": "jitaidinuparyo",
-            "target": "जिताइदिनुपर्याे"
-          }
-        ]
-      },
+      "rows": 89670,
+      "rowsWithIssues": 0,
+      "shareWithIssues": 0,
+      "counts": {},
+      "examples": {},
       "validButDecoderSensitiveContextCounts": {
-        "terminal-virama": 1063,
-        "virama-before-nonconsonant": 4
+        "terminal-virama": 1063
       },
       "validButDecoderSensitiveContextExamples": {
         "terminal-virama": [
@@ -4985,28 +4581,6 @@
             "id": "neural_open_vocab_02cfcb573bf557ab",
             "input": "san",
             "target": "सन्"
-          }
-        ],
-        "virama-before-nonconsonant": [
-          {
-            "id": "neural_open_vocab_3a71c814e5857039",
-            "input": "maninchhanh",
-            "target": "मानिन्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_5a7d6d43f1c4b6dc",
-            "input": "fyaankchhanh",
-            "target": "फ्याँक्छन्ः"
-          },
-          {
-            "id": "neural_open_vocab_f83391602a106e9e",
-            "input": "fukaunchhinh",
-            "target": "फुकाउँछिन्ः"
-          },
-          {
-            "id": "neural_open_vocab_fb04b9eb162ee738",
-            "input": "kuraunchhanh",
-            "target": "कुराउँछन्ः"
           }
         ]
       }
