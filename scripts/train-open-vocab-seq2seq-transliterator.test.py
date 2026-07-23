@@ -263,6 +263,51 @@ class TrainerContractTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "dev SHA-256"):
                 TRAINER.verify_dataset_split_artifacts(manifest)
 
+    def test_target_identity_cannot_leak_across_dataset_splits(self) -> None:
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-target-leakage-test-", dir=temporary_root) as directory:
+            root = Path(directory)
+            paths = {split: root / f"{split}.jsonl" for split in ("train", "dev", "test")}
+            write_rows(paths["train"], [row("train-1", "baato", "बाटो")])
+            write_rows(paths["dev"], [row("dev-1", "bato", "बाटो")])
+            write_rows(paths["test"], [row("test-1", "ghar", "घर")])
+            evidence = {split: TRAINER.inspect_jsonl_artifact(path) for split, path in paths.items()}
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps({
+                "schemaVersion": 2,
+                "datasetContentSha256": "b" * 64,
+                "splitFiles": {split: str(path) for split, path in paths.items()},
+                "sha256": {split: item["sha256"] for split, item in evidence.items()},
+                "counts": {split: item["rows"] for split, item in evidence.items()},
+                "bytes": {split: item["bytes"] for split, item in evidence.items()},
+                "totalRows": 3,
+            }), encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "target leakage between train and dev: बाटो"):
+                TRAINER.load_rows(manifest_path, 10, 10, 42, 32, 32)
+
+    def test_internal_accuracy_is_unreportable_when_decoder_cannot_emit_top_three(self) -> None:
+        args = TRAINER.parse_args([
+            "--maximum-candidates", "2",
+            "--beam-width", "2",
+            "--max-input-len", "8",
+            "--max-output-len", "8",
+        ], {})
+        rows = [
+            {"id": "dev-1", "input": "ka", "target": "क", "acceptable": ["क"], "sourceIds": ["source"], "weight": 1},
+        ]
+        input_vocab = {TRAINER.PAD: 0, TRAINER.SOS: 1, TRAINER.EOS: 2, TRAINER.UNK: 3, "k": 4, "a": 5}
+        output_vocab = {TRAINER.PAD: 0, TRAINER.SOS: 1, TRAINER.EOS: 2, TRAINER.UNK: 3, "क": 4}
+        model = TRAINER.Seq2Seq(6, 5, embedding_dim=4, hidden_dim=6, layers=1, dropout=0).eval()
+
+        result = TRAINER.evaluate_model(model, rows, input_vocab, output_vocab, args, torch.device("cpu"))
+
+        self.assertIsNone(result["sampleTop3Accuracy"])
+        self.assertFalse(result["sampleTop3Reportable"])
+        self.assertEqual(result["maximumCandidates"], 2)
+        self.assertEqual(result["sampleSelectionPolicy"], "deterministic-source-stratified-v1")
+
     def test_tiny_training_run_emits_bound_best_checkpoint(self) -> None:
         temporary_root = TRAINER.ROOT / ".tmp"
         temporary_root.mkdir(parents=True, exist_ok=True)

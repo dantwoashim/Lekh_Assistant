@@ -782,16 +782,20 @@ def load_rows(
     train_path = split_paths["train"]
     dev_path = split_paths["dev"]
     test_path = split_paths["test"]
-    split_inputs = {
-        "train": load_split_inputs(train_path),
-        "dev": load_split_inputs(dev_path),
-        "test": load_split_inputs(test_path),
+    split_identities = {
+        "train": load_split_identities(train_path),
+        "dev": load_split_identities(dev_path),
+        "test": load_split_identities(test_path),
     }
     for left, right in (("train", "dev"), ("train", "test"), ("dev", "test")):
-        overlap = split_inputs[left] & split_inputs[right]
-        if overlap:
-            example = sorted(overlap)[0]
+        input_overlap = split_identities[left]["inputs"] & split_identities[right]["inputs"]
+        if input_overlap:
+            example = sorted(input_overlap)[0]
             raise SystemExit(f"Dataset input leakage between {left} and {right}: {example}")
+        target_overlap = split_identities[left]["targets"] & split_identities[right]["targets"]
+        if target_overlap:
+            example = sorted(target_overlap)[0]
+            raise SystemExit(f"Dataset target leakage between {left} and {right}: {example}")
     train_all = load_split(train_path, "train", max_input_len, max_output_len)
     dev_all = load_split(dev_path, "dev", max_input_len, max_output_len)
     train = deterministic_source_sample(train_all, max_train_rows, seed, "train")
@@ -847,8 +851,9 @@ def inspect_jsonl_artifact(path: Path) -> dict[str, Any]:
     return {"sha256": digest.hexdigest(), "bytes": byte_count, "rows": row_count}
 
 
-def load_split_inputs(path: Path) -> set[str]:
+def load_split_identities(path: Path) -> dict[str, set[str]]:
     inputs: set[str] = set()
+    targets: set[str] = set()
     with open_regular_binary(path, "dataset split") as binary_handle, io.TextIOWrapper(binary_handle, encoding="utf-8") as handle:
         for line in handle:
             if not line.strip():
@@ -857,7 +862,16 @@ def load_split_inputs(path: Path) -> set[str]:
             value = normalize_input(row.get("input", ""))
             if value:
                 inputs.add(value)
-    return inputs
+            if row.get("action") == "produce-candidate":
+                target = nfc(row.get("target", ""))
+                if target:
+                    targets.add(target)
+    return {"inputs": inputs, "targets": targets}
+
+
+def load_split_inputs(path: Path) -> set[str]:
+    """Compatibility helper retained for callers that only need Roman identities."""
+    return load_split_identities(path)["inputs"]
 
 
 def load_split(path: Path, split: str, max_input_len: int, max_output_len: int) -> list[dict[str, Any]]:
@@ -1683,7 +1697,8 @@ def decode_token_sequences(
 
 def evaluate_model(model: Seq2Seq, rows: list[dict[str, Any]], input_vocab: dict[str, int], output_vocab: dict[str, int], args: argparse.Namespace, device: torch.device) -> dict[str, Any]:
     model.eval().to("cpu")
-    sample = rows[: min(len(rows), 800)]
+    sample_limit = min(len(rows), 800)
+    sample = deterministic_source_sample(rows, sample_limit, args.seed + 2, "internal-evaluation")
     top1 = 0
     top3 = 0
     for row in sample:
@@ -1700,13 +1715,17 @@ def evaluate_model(model: Seq2Seq, rows: list[dict[str, Any]], input_vocab: dict
         acceptable = set(row.get("acceptable") or [row["target"]])
         if predictions[:1] and predictions[0] in acceptable:
             top1 += 1
-        if any(candidate in acceptable for candidate in predictions[:3]):
+        if args.maximum_candidates >= 3 and any(candidate in acceptable for candidate in predictions[:3]):
             top3 += 1
     model.to(device)
     return {
         "sampleRows": len(sample),
+        "sampleSelectionPolicy": "deterministic-source-stratified-v1",
+        "sampleIdSha256": sha256_text("\n".join(sorted(row["id"] for row in sample))),
         "sampleTop1Accuracy": round(top1 / max(len(sample), 1), 6),
-        "sampleTop3Accuracy": round(top3 / max(len(sample), 1), 6),
+        "sampleTop3Accuracy": round(top3 / max(len(sample), 1), 6) if args.maximum_candidates >= 3 else None,
+        "sampleTop3Reportable": args.maximum_candidates >= 3,
+        "maximumCandidates": args.maximum_candidates,
     }
 
 
