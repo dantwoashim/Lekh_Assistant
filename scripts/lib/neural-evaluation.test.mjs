@@ -105,6 +105,22 @@ describe("neural evaluation", () => {
       "neural-evaluation.adversarial-forbidden-candidate"
     ]);
   });
+
+  it("uses row categories for buckets instead of coupling metrics to suite IDs", () => {
+    const categorized = [
+      {
+        ...gold("public-name", "niraj", "test", "public-indian-name-benchmark", ["निरज"], []),
+        category: "name"
+      }
+    ];
+    const predictions = validateNeuralPredictionRows(
+      [{ id: "public-name", input: "niraj", candidates: ["निरज"] }],
+      categorized
+    );
+
+    expect(predictions.metricsReportable).toBe(true);
+    expect(evaluateNeuralPredictions(categorized, predictions, "test").namesTop3Accuracy).toBe(1);
+  });
 });
 
 function gold(id, input, split, suiteId, acceptable, forbiddenOutputs) {
@@ -113,6 +129,7 @@ function gold(id, input, split, suiteId, acceptable, forbiddenOutputs) {
     input,
     split,
     suiteId,
+    category: suiteId === "names" ? "name" : suiteId,
     expectedAction: "produce-candidate",
     acceptable,
     expected: acceptable.slice(0, 1),

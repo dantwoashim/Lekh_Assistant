@@ -132,10 +132,10 @@ export function evaluateNeuralPredictions(goldRows, predictionValidation, split 
   const rows = split === "all" ? goldRows : goldRows.filter((row) => row.split === split);
   const buckets = {
     tail: rows.filter((row) => row.expectedAction === "produce-candidate"),
-    chat: rows.filter((row) => row.suiteId === "chat-convention"),
-    names: rows.filter((row) => row.suiteId === "names"),
+    chat: rows.filter((row) => row.category === "chat-convention"),
+    names: rows.filter((row) => row.category === "name"),
     protected: rows.filter((row) => row.expectedAction === "no-neural-candidate"),
-    adversarial: rows.filter((row) => row.suiteId === "adversarial-safety")
+    adversarial: rows.filter((row) => row.category === "adversarial-safety")
   };
 
   const top = (bucketRows, count) => {
