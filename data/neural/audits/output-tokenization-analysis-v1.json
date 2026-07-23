@@ -1,0 +1,5106 @@
+{
+  "schemaVersion": 1,
+  "contentIdentity": "lekh-neural-output-tokenization-analysis-v1",
+  "dataset": {
+    "manifest": "data/generated/neural-open-vocab/manifest.json",
+    "manifestSha256": "d496c164914dfb5cd9d5f3dcd23ab3c328ff570c60b2ad6f1cccccdc6ee5ebd5",
+    "datasetContentSha256": "3f8d442ee285a0ffb1cf0d4b32e57f5f4f044de915d286bbe549ebb1521b1690",
+    "rows": 1048771,
+    "splitCounts": {
+      "train": 871695,
+      "dev": 87395,
+      "test": 89681
+    }
+  },
+  "benchmark": {
+    "manifest": "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+    "manifestSha256": "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f",
+    "releaseId": "aksharantar-nepali-official-test-v1",
+    "metricUnits": 4085,
+    "targetVariants": 4101
+  },
+  "constraints": {
+    "outputTensorLength": 32,
+    "outputContentCapacity": 30,
+    "runtimeMaximumSteps": "min(31, input Unicode-character count + 8)",
+    "beamWidth": 4,
+    "outputEmbeddingDimension": 96,
+    "decoderHiddenDimension": 256,
+    "inputVocabularyWithSpecialTokens": 30,
+    "recurrentLayers": 2,
+    "baselineFixedParameterCount": 1336128
+  },
+  "schemes": {
+    "current-base-plus-combining-marks": {
+      "definition": "Current trainer behavior: each base scalar plus following Devanagari marks is one token.",
+      "vocabulary": {
+        "trainLexicalTokens": 1196,
+        "trainWithSpecialTokens": 1200,
+        "trainOccurrences": 5120185,
+        "trainSingletons": 153,
+        "standaloneCombiningMarkTokens": 2,
+        "standaloneCombiningMarkExamples": [
+          {
+            "token": "ं",
+            "codePoints": "U+0902"
+          },
+          {
+            "token": "े",
+            "codePoints": "U+0947"
+          }
+        ],
+        "tokensContainingJoiners": 0,
+        "tokensEndingInVirama": 39
+      },
+      "splits": {
+        "train": {
+          "rows": 871695,
+          "length": {
+            "min": 1,
+            "mean": 5.87382628,
+            "p50": 6,
+            "p90": 8,
+            "p95": 9,
+            "p99": 11,
+            "p999": 12,
+            "max": 14,
+            "tail": {}
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 0,
+            "runtimeStepBudgetExamples": [],
+            "maximumRequiredInputLengthSlack": 8,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_206954d0e34d4b72",
+                "input": "ixnmx",
+                "target": "आईएक्सएनएमएक्स",
+                "tokens": 12,
+                "requiredSlack": 8
+              },
+              {
+                "id": "neural_open_vocab_2a25aae8c63e87eb",
+                "input": "wwef",
+                "target": "डब्ल्यूडब्ल्यूईएफ",
+                "tokens": 11,
+                "requiredSlack": 8
+              },
+              {
+                "id": "neural_open_vocab_86e302429d2b857b",
+                "input": "wwl",
+                "target": "डब्ल्यूडब्ल्यूएल",
+                "tokens": 10,
+                "requiredSlack": 8
+              },
+              {
+                "id": "neural_open_vocab_b0bea822d2cfd9f4",
+                "input": "nxnmx",
+                "target": "एनएक्सएनएमएक्स",
+                "tokens": 12,
+                "requiredSlack": 8
+              },
+              {
+                "id": "neural_open_vocab_12600d68312e09a6",
+                "input": "sxsw",
+                "target": "एसएक्सएसडब्लू",
+                "tokens": 10,
+                "requiredSlack": 7
+              },
+              {
+                "id": "neural_open_vocab_3acf32b15433a0dc",
+                "input": "wwfka",
+                "target": "डब्ल्यूडब्ल्यूएफका",
+                "tokens": 11,
+                "requiredSlack": 7
+              },
+              {
+                "id": "neural_open_vocab_4756449b9a607056",
+                "input": "swns",
+                "target": "एसडब्ल्युएनएस",
+                "tokens": 10,
+                "requiredSlack": 7
+              },
+              {
+                "id": "neural_open_vocab_51929f6ce6d254c0",
+                "input": "bmwx",
+                "target": "बीएमडब्ल्यूएक्स",
+                "tokens": 10,
+                "requiredSlack": 7
+              },
+              {
+                "id": "neural_open_vocab_97b63cbaee52b07f",
+                "input": "pwpw",
+                "target": "पीडब्ल्युपीडब्ल्यू",
+                "tokens": 10,
+                "requiredSlack": 7
+              },
+              {
+                "id": "neural_open_vocab_9ab3368bbf823f4d",
+                "input": "xlsx",
+                "target": "एक्सएलएसएक्स",
+                "tokens": 10,
+                "requiredSlack": 7
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_1c0771f4629ebdd3",
+              "input": "upamahanagarantargatko",
+              "target": "उपमहानगरअन्तर्गतको",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_321083b52f29c0c2",
+              "input": "tatabandhankaryakramlai",
+              "target": "तटबन्धनकार्यक्रमलाई",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_38a09f338f95d30b",
+              "input": "janaparichalanantargatko",
+              "target": "जनपरिचालनअन्तर्गतको",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_4ab218f7ad54d24a",
+              "input": "punarawalokankartasamaksha",
+              "target": "पुनरवलोकनकर्तासमक्ष",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_537ce0dd51809773",
+              "input": "upamahanagarpalikasamaksha",
+              "target": "उपमहानगरपालिकासमक्ष",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_5b336ba74ff0ea53",
+              "input": "butwalupmahanagarpalika",
+              "target": "बुटवलउपमहानगरपालिका",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_5bf43ab901bf7397",
+              "input": "nagarkshetraantaragatka",
+              "target": "नगरक्षेत्रअन्तरगतका",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_6324aadeddcda1aa",
+              "input": "yasawarshabatapradanagarna",
+              "target": "यसवर्षबाटप्रदानगर्न",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_6c8da8ff47b4a43b",
+              "input": "chhayankanarasampadanarkalar",
+              "target": "छायांकनरसम्पादनरकलर",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_77c1328c6ae8d3a2",
+              "input": "upamahanagarantargataka",
+              "target": "उपमहानगरअन्तर्गतका",
+              "tokens": 14
+            }
+          ]
+        },
+        "dev": {
+          "rows": 87395,
+          "length": {
+            "min": 1,
+            "mean": 5.82846845,
+            "p50": 6,
+            "p90": 8,
+            "p95": 9,
+            "p99": 11,
+            "p999": 12,
+            "max": 15,
+            "tail": {}
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 0,
+            "runtimeStepBudgetExamples": [],
+            "maximumRequiredInputLengthSlack": 7,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_53c5418e940ccfe9",
+                "input": "wjw",
+                "target": "डब्ल्यूजेडब्ल्यू",
+                "tokens": 9,
+                "requiredSlack": 7
+              },
+              {
+                "id": "neural_open_vocab_2440db77cae38d1c",
+                "input": "ssw",
+                "target": "एसएसडब्ल्यु",
+                "tokens": 8,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_9cb006ae46353321",
+                "input": "bmwi",
+                "target": "बीएमडब्ल्यूआई",
+                "tokens": 9,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_05bd2e971df1c5db",
+                "input": "ilfcm",
+                "target": "आइएलएफसीएम",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_1929288d202967ae",
+                "input": "kws",
+                "target": "केडब्ल्यूएस",
+                "tokens": 7,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_5342a901f2ccc048",
+                "input": "bwf",
+                "target": "बीडब्ल्युएफ",
+                "tokens": 7,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_86f71c3c0311f9ae",
+                "input": "dwrf",
+                "target": "डीडब्लूआरएफ",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_8c266bec98b96877",
+                "input": "nlicl",
+                "target": "एनएलआईसीएल",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_b526685accbd118d",
+                "input": "gmw",
+                "target": "जीएमडब्ल्यू",
+                "tokens": 7,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_cd44088d971e6e77",
+                "input": "mpxnmox",
+                "target": "एमपीएक्सएनमक्स",
+                "tokens": 11,
+                "requiredSlack": 5
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 15,
+            "occurrences": 15,
+            "distinctTokens": 15,
+            "tokens": [
+              {
+                "token": "खृ",
+                "codePoints": "U+0916 U+0943",
+                "count": 1
+              },
+              {
+                "token": "खौः",
+                "codePoints": "U+0916 U+094C U+0903",
+                "count": 1
+              },
+              {
+                "token": "गोः",
+                "codePoints": "U+0917 U+094B U+0903",
+                "count": 1
+              },
+              {
+                "token": "ङौ",
+                "codePoints": "U+0919 U+094C",
+                "count": 1
+              },
+              {
+                "token": "जेः",
+                "codePoints": "U+091C U+0947 U+0903",
+                "count": 1
+              },
+              {
+                "token": "जौंः",
+                "codePoints": "U+091C U+094C U+0902 U+0903",
+                "count": 1
+              },
+              {
+                "token": "दिे",
+                "codePoints": "U+0926 U+093F U+0947",
+                "count": 1
+              },
+              {
+                "token": "दॉ",
+                "codePoints": "U+0926 U+0949",
+                "count": 1
+              },
+              {
+                "token": "धोौ",
+                "codePoints": "U+0927 U+094B U+094C",
+                "count": 1
+              },
+              {
+                "token": "रौः",
+                "codePoints": "U+0930 U+094C U+0903",
+                "count": 1
+              },
+              {
+                "token": "लिी",
+                "codePoints": "U+0932 U+093F U+0940",
+                "count": 1
+              },
+              {
+                "token": "लैः",
+                "codePoints": "U+0932 U+0948 U+0903",
+                "count": 1
+              },
+              {
+                "token": "वीः",
+                "codePoints": "U+0935 U+0940 U+0903",
+                "count": 1
+              },
+              {
+                "token": "शँ",
+                "codePoints": "U+0936 U+0901",
+                "count": 1
+              },
+              {
+                "token": "हेः",
+                "codePoints": "U+0939 U+0947 U+0903",
+                "count": 1
+              }
+            ],
+            "examples": [
+              {
+                "id": "neural_open_vocab_00b1f82b3af7bd15",
+                "input": "beglaih",
+                "target": "बेग्लैः",
+                "tokens": [
+                  "लैः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_2ba5f87729694ffe",
+                "input": "nakhojaunh",
+                "target": "नखोजौंः",
+                "tokens": [
+                  "जौंः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_30e8931f1214d50e",
+                "input": "rakhauh",
+                "target": "राखौः",
+                "tokens": [
+                  "खौः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_58ca57690047ca65",
+                "input": "dieko",
+                "target": "दिेएको",
+                "tokens": [
+                  "दिे"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_6b5c1dfc6e487773",
+                "input": "clement",
+                "target": "क्लिीमेन्ट",
+                "tokens": [
+                  "लिी"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_76e8e99d5d58544a",
+                "input": "dhoi",
+                "target": "धोौइ",
+                "tokens": [
+                  "धोौ"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_87db27e6a6556d7b",
+                "input": "prithwih",
+                "target": "पृथ्वीः",
+                "tokens": [
+                  "वीः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_8a4eb562082e07a6",
+                "input": "herauh",
+                "target": "हेरौः",
+                "tokens": [
+                  "रौः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_91578fe5a9a2d3dd",
+                "input": "khonjeh",
+                "target": "खोंजेः",
+                "tokens": [
+                  "जेः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_952a2fa8eecfa589",
+                "input": "logoh",
+                "target": "लोगोः",
+                "tokens": [
+                  "गोः"
+                ]
+              }
+            ]
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_de4991ee6e029268",
+              "input": "arthatantrachalayamanabhaer",
+              "target": "अर्थतन्त्रचलयमानभएर",
+              "tokens": 15
+            },
+            {
+              "id": "neural_open_vocab_237d756a660ee08a",
+              "input": "sdblmarftdeshbhar",
+              "target": "एसडीबीएलमार्फतदेशभर",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_7cf6e69f7e568231",
+              "input": "gurungleanlainkhabarsang",
+              "target": "गुरुङलेअनलाइनखबरसँग",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_02cae3f256e96b2f",
+              "input": "nirnayakmandalmarfat",
+              "target": "निर्णायकमण्डलमार्फत",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_072dc40226c8eb4a",
+              "input": "swachchhandarpappurhim",
+              "target": "स्वच्छन्दरपप्पुरहिम",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_0c3b5c4c2cf8100e",
+              "input": "prawardhakharusamaksha",
+              "target": "प्रवर्द्धकहरूसमक्ष",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_1179331862d85e04",
+              "input": "upamahanagarpalikasmet",
+              "target": "उपमहानगरपालिकासमेत",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_139e1240e7cd150e",
+              "input": "badhaunatarfalagnuparchha",
+              "target": "बढाउनतर्फलाग्नुपर्छ",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_1705f7ae6a7dd739",
+              "input": "mantriparishadantargat",
+              "target": "मन्त्रिपरिषदन्तर्गत",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_1e8f8ae35c1b3eb1",
+              "input": "manawadhikarkarmisahit",
+              "target": "मानवअधिकारकर्मीसहित",
+              "tokens": 13
+            }
+          ]
+        },
+        "test": {
+          "rows": 89681,
+          "length": {
+            "min": 1,
+            "mean": 5.78719015,
+            "p50": 6,
+            "p90": 8,
+            "p95": 9,
+            "p99": 11,
+            "p999": 12,
+            "max": 14,
+            "tail": {}
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 0,
+            "runtimeStepBudgetExamples": [],
+            "maximumRequiredInputLengthSlack": 7,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_495281ddee640e7c",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 10,
+                "requiredSlack": 7
+              },
+              {
+                "id": "neural_open_vocab_730933ae1f9de008",
+                "input": "fwici",
+                "target": "एफडब्ल्यूआईसीआई",
+                "tokens": 11,
+                "requiredSlack": 7
+              },
+              {
+                "id": "neural_open_vocab_32e116edecd173d6",
+                "input": "wfdsa",
+                "target": "डब्ल्यूएफडीएसए",
+                "tokens": 10,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_4120cfc84014e4db",
+                "input": "smw",
+                "target": "एसएमडब्ल्यू",
+                "tokens": 8,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_516a7920240f76b4",
+                "input": "swf",
+                "target": "एसडब्ल्यूएफ",
+                "tokens": 8,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_9c7ac8a8d486f776",
+                "input": "nicsbsl",
+                "target": "एनआइसीएसबीएसएल",
+                "tokens": 12,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_9dc3107ba3140be7",
+                "input": "xnmxko",
+                "target": "एक्सएनएमएक्सको",
+                "tokens": 11,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_d70630dd998fdcb3",
+                "input": "wbncci",
+                "target": "डब्ल्यूबीएनसीसीआई",
+                "tokens": 11,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_00fc40ed23e03f61",
+                "input": "enbw",
+                "target": "इएनबीडब्ल्यू",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_0d5032e3ac0f1083",
+                "input": "inmr",
+                "target": "आइएनएमआर",
+                "tokens": 8,
+                "requiredSlack": 5
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 19,
+            "occurrences": 19,
+            "distinctTokens": 17,
+            "tokens": [
+              {
+                "token": "जेँ",
+                "codePoints": "U+091C U+0947 U+0901",
+                "count": 2
+              },
+              {
+                "token": "रॉ",
+                "codePoints": "U+0930 U+0949",
+                "count": 2
+              },
+              {
+                "token": "केँः",
+                "codePoints": "U+0915 U+0947 U+0901 U+0903",
+                "count": 1
+              },
+              {
+                "token": "केै",
+                "codePoints": "U+0915 U+0947 U+0948",
+                "count": 1
+              },
+              {
+                "token": "गेंः",
+                "codePoints": "U+0917 U+0947 U+0902 U+0903",
+                "count": 1
+              },
+              {
+                "token": "छीः",
+                "codePoints": "U+091B U+0940 U+0903",
+                "count": 1
+              },
+              {
+                "token": "झीं",
+                "codePoints": "U+091D U+0940 U+0902",
+                "count": 1
+              },
+              {
+                "token": "ञै",
+                "codePoints": "U+091E U+0948",
+                "count": 1
+              },
+              {
+                "token": "टैँ",
+                "codePoints": "U+091F U+0948 U+0901",
+                "count": 1
+              },
+              {
+                "token": "ढ़ो",
+                "codePoints": "U+0922 U+093C U+094B",
+                "count": 1
+              },
+              {
+                "token": "नूः",
+                "codePoints": "U+0928 U+0942 U+0903",
+                "count": 1
+              },
+              {
+                "token": "नैः",
+                "codePoints": "U+0928 U+0948 U+0903",
+                "count": 1
+              },
+              {
+                "token": "भूः",
+                "codePoints": "U+092D U+0942 U+0903",
+                "count": 1
+              },
+              {
+                "token": "यूं",
+                "codePoints": "U+092F U+0942 U+0902",
+                "count": 1
+              },
+              {
+                "token": "वृं",
+                "codePoints": "U+0935 U+0943 U+0902",
+                "count": 1
+              },
+              {
+                "token": "शँ",
+                "codePoints": "U+0936 U+0901",
+                "count": 1
+              },
+              {
+                "token": "सिः",
+                "codePoints": "U+0938 U+093F U+0903",
+                "count": 1
+              }
+            ],
+            "examples": [
+              {
+                "id": "neural_open_vocab_1e15687b5a89a167",
+                "input": "dropboxsanga",
+                "target": "ड्रॉपबक्ससँग",
+                "tokens": [
+                  "रॉ"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_2eb6d876fa063b28",
+                "input": "ujenligaun",
+                "target": "उजेँलीगाउँ",
+                "tokens": [
+                  "जेँ"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_39df41370baef333",
+                "input": "morchabandikei",
+                "target": "मोर्चाबन्दीकेै",
+                "tokens": [
+                  "केै"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_47316adaa70d3a23",
+                "input": "vrindavanma",
+                "target": "वृंदावनमा",
+                "tokens": [
+                  "वृं"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_6c4c61909dc0a0a8",
+                "input": "bhetisakenh",
+                "target": "भेटिसकेँः",
+                "tokens": [
+                  "केँः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_76f547d6563dae01",
+                "input": "bhetain",
+                "target": "भेटैँ",
+                "tokens": [
+                  "टैँ"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_7b50c0c8a39cc11f",
+                "input": "shaw",
+                "target": "शँ",
+                "tokens": [
+                  "शँ"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_7ea3066d92407228",
+                "input": "pujen",
+                "target": "पूजेँ",
+                "tokens": [
+                  "जेँ"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_816bde2fde160ead",
+                "input": "balchhih",
+                "target": "बल्छीः",
+                "tokens": [
+                  "छीः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_9d76fbb0b2068d8e",
+                "input": "badmasihi",
+                "target": "बदमासिः",
+                "tokens": [
+                  "सिः"
+                ]
+              }
+            ]
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_17f361ebe30c3565",
+              "input": "aircondisonalgayatlai",
+              "target": "एयरकन्डिसनलगायतलाई",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_9bbffd3e3bbcef34",
+              "input": "mahanagarpalikaantaragat",
+              "target": "महानगरपालिकाअन्तरगत",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_d5692eeb8c180590",
+              "input": "paryaparyatananrtagat",
+              "target": "पर्यापर्यटनअन्र्तगत",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_035bdb5260b42032",
+              "input": "indradhwajapatansamma",
+              "target": "इन्द्रध्वजपतनसम्म",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_06e6b4e2951f89b4",
+              "input": "arthamantralayasahitaka",
+              "target": "अर्थमन्त्रालयसहितका",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_0a9e299debbe0360",
+              "input": "uyapamahanagarpalikalai",
+              "target": "उयपमहानगरपालिकालाई",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_1677bba2e27702aa",
+              "input": "upamahanagarpramukhalai",
+              "target": "उपमहानगरप्रमुखलाई",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_1bf9f5a4bfb08d69",
+              "input": "jabarajastikaranikoarop",
+              "target": "जबरजस्तीकरणीकोआरोप",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_21571bdd90fe5b46",
+              "input": "achalsampattilgayatko",
+              "target": "अचलसम्पत्तिलगायतको",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_246c8ef09f6534bc",
+              "input": "upamahanarnagarpalikako",
+              "target": "उपमहानरनगरपालिकाको",
+              "tokens": 13
+            }
+          ]
+        },
+        "benchmark": {
+          "rows": 4101,
+          "length": {
+            "min": 1,
+            "mean": 4.66837357,
+            "p50": 4,
+            "p90": 7,
+            "p95": 8,
+            "p99": 10,
+            "p999": 12,
+            "max": 12,
+            "tail": {}
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 0,
+            "runtimeStepBudgetExamples": [],
+            "maximumRequiredInputLengthSlack": 7,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "gold_aksharantar_indian_names_000278",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 10,
+                "requiredSlack": 7
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000169",
+                "input": "ifci",
+                "target": "आईएफसीआई",
+                "tokens": 7,
+                "requiredSlack": 4
+              },
+              {
+                "id": "gold_aksharantar_indian_names_001072",
+                "input": "icici",
+                "target": "आईसीआईसीआई",
+                "tokens": 8,
+                "requiredSlack": 4
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000086",
+                "input": "nmdc",
+                "target": "एनएमडीसी",
+                "tokens": 6,
+                "requiredSlack": 3
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000182",
+                "input": "hdfc",
+                "target": "एचडीएफसी",
+                "tokens": 6,
+                "requiredSlack": 3
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000616",
+                "input": "tcns",
+                "target": "टीसीएनएस",
+                "tokens": 6,
+                "requiredSlack": 3
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000674",
+                "input": "nacl",
+                "target": "एनएसिएल",
+                "tokens": 6,
+                "requiredSlack": 3
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000539",
+                "input": "nbcc",
+                "target": "एनबीसीसी",
+                "tokens": 5,
+                "requiredSlack": 2
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000949",
+                "input": "gtpl",
+                "target": "जीटीपीएल",
+                "tokens": 5,
+                "requiredSlack": 2
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000018",
+                "input": "mckay",
+                "target": "म्याक्काइ",
+                "tokens": 5,
+                "requiredSlack": 1
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 1,
+            "occurrences": 1,
+            "distinctTokens": 1,
+            "tokens": [
+              {
+                "token": "शँ",
+                "codePoints": "U+0936 U+0901",
+                "count": 1
+              }
+            ],
+            "examples": [
+              {
+                "id": "gold_aksharantar_foreign_names_000703",
+                "input": "shaw",
+                "target": "शँ",
+                "tokens": [
+                  "शँ"
+                ]
+              }
+            ]
+          },
+          "longest": [
+            {
+              "id": "gold_aksharantar_indian_names_000813",
+              "input": "infraconstruction",
+              "target": "इन्फ्राकन्स्ट्रक्सन",
+              "tokens": 12
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001136",
+              "input": "prashikshankariharulai",
+              "target": "प्रशिक्षणकारीहरूलाई",
+              "tokens": 12
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001302",
+              "input": "mukhyaprabandhakdwara",
+              "target": "मुख्यप्रबन्धकद्वारा",
+              "tokens": 12
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001530",
+              "input": "sahayogkartaharuprati",
+              "target": "सहयोगकर्ताहरूप्रति",
+              "tokens": 12
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001750",
+              "input": "rachanaprakriyasangasangai",
+              "target": "रचनाप्रक्रियासँगसँगै",
+              "tokens": 12
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000248",
+              "input": "prashikshaarthiharulai",
+              "target": "प्रशिक्षार्थीहरूलाई",
+              "tokens": 11
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000261",
+              "input": "banaidinasaknuhunchha",
+              "target": "बनाइदिनसक्नुहुन्छ",
+              "tokens": 11
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000335",
+              "input": "antarwirodhharuma",
+              "target": "अन्तरविरोधहरूलाई",
+              "tokens": 11
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000419",
+              "input": "pradarshankariharule",
+              "target": "प्रदर्शनकारीहरूले",
+              "tokens": 11
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000562",
+              "input": "pratidwandwiharule",
+              "target": "प्रतिद्वन्द्वीहरूले",
+              "tokens": 11
+            }
+          ]
+        }
+      },
+      "benchmarkEvaluationUnits": {
+        "rows": 4085,
+        "rowsWithRepresentableTarget": 4084,
+        "rowsWithNoRepresentableTarget": 1,
+        "rowsWithAnyUnseenTarget": 1,
+        "noRepresentableTargetExamples": [
+          {
+            "id": "gold_aksharantar_foreign_names_000703",
+            "input": "shaw",
+            "targets": [
+              "शँ"
+            ]
+          }
+        ]
+      },
+      "reconstruction": {
+        "mismatches": 0,
+        "examples": []
+      },
+      "coreMLAndRuntime": {
+        "vocabularyDependentParameters": 423600,
+        "estimatedBaselineTotalParameters": 1759728,
+        "estimatedVocabularyDependentFloat32ParameterBytes": 1694400,
+        "estimatedVocabularyDependentFloat16ParameterBytes": 847200,
+        "legacyFullDecoderLogitElements": 37200,
+        "legacyFullDecoderFloat32LogitBytes": 148800,
+        "splitAttentionStepLogitElements": 4800,
+        "implication": "Changing vocabulary size changes model projection weights and Core ML tensor shapes; vocab JSON alone cannot be swapped.",
+        "relativeToCurrent": {
+          "vocabularyRatio": 1,
+          "vocabularyDependentParameterRatio": 1,
+          "fullDecoderLogitTensorRatio": 1,
+          "trainMeanStepRatio": 1
+        }
+      }
+    },
+    "unicode-scalars": {
+      "definition": "One Unicode scalar per token after NFC normalization.",
+      "vocabulary": {
+        "trainLexicalTokens": 67,
+        "trainWithSpecialTokens": 71,
+        "trainOccurrences": 8423776,
+        "trainSingletons": 3,
+        "standaloneCombiningMarkTokens": 16,
+        "standaloneCombiningMarkExamples": [
+          {
+            "token": "ी",
+            "codePoints": "U+0940"
+          },
+          {
+            "token": "ा",
+            "codePoints": "U+093E"
+          },
+          {
+            "token": "्",
+            "codePoints": "U+094D"
+          },
+          {
+            "token": "ो",
+            "codePoints": "U+094B"
+          },
+          {
+            "token": "ि",
+            "codePoints": "U+093F"
+          },
+          {
+            "token": "े",
+            "codePoints": "U+0947"
+          },
+          {
+            "token": "ु",
+            "codePoints": "U+0941"
+          },
+          {
+            "token": "ै",
+            "codePoints": "U+0948"
+          },
+          {
+            "token": "ौ",
+            "codePoints": "U+094C"
+          },
+          {
+            "token": "ू",
+            "codePoints": "U+0942"
+          },
+          {
+            "token": "ँ",
+            "codePoints": "U+0901"
+          },
+          {
+            "token": "ं",
+            "codePoints": "U+0902"
+          },
+          {
+            "token": "ृ",
+            "codePoints": "U+0943"
+          },
+          {
+            "token": "ः",
+            "codePoints": "U+0903"
+          },
+          {
+            "token": "़",
+            "codePoints": "U+093C"
+          },
+          {
+            "token": "ॉ",
+            "codePoints": "U+0949"
+          }
+        ],
+        "tokensContainingJoiners": 0,
+        "tokensEndingInVirama": 1
+      },
+      "splits": {
+        "train": {
+          "rows": 871695,
+          "length": {
+            "min": 2,
+            "mean": 9.66367365,
+            "p50": 9,
+            "p90": 14,
+            "p95": 15,
+            "p99": 18,
+            "p999": 19,
+            "max": 20,
+            "tail": {
+              "20": 1
+            }
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 142,
+            "runtimeStepBudgetExamples": [
+              {
+                "id": "neural_open_vocab_010115cc0f622b5a",
+                "input": "btcwg",
+                "target": "बीटीसीडब्ल्यूजी",
+                "tokens": 15,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_015d2abe6fcf025f",
+                "input": "wtlcp",
+                "target": "डब्ल्यूटीएलसीपी",
+                "tokens": 15,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_059151eba42e8ba5",
+                "input": "bgwska",
+                "target": "बीजीडब्ल्युएसका",
+                "tokens": 15,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_067f8457f6445359",
+                "input": "wftuka",
+                "target": "डब्ल्यूएफटीयूका",
+                "tokens": 15,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_078f72716438eda4",
+                "input": "fcwca",
+                "target": "एफसीडब्ल्युका",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_0d13994da884c7c8",
+                "input": "twh",
+                "target": "टीडब्ल्यूएच",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_0d8f2216092d1b74",
+                "input": "nswka",
+                "target": "एनएसडब्ल्युका",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_113b80aef705f579",
+                "input": "wrr",
+                "target": "डब्ल्यूआरआर",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_12600d68312e09a6",
+                "input": "sxsw",
+                "target": "एसएक्सएसडब्लू",
+                "tokens": 13,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_12a774658c13c4b3",
+                "input": "fcwk",
+                "target": "एफसीडब्ल्यूक",
+                "tokens": 12,
+                "runtimeBudget": 12
+              }
+            ],
+            "maximumRequiredInputLengthSlack": 15,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_97b63cbaee52b07f",
+                "input": "pwpw",
+                "target": "पीडब्ल्युपीडब्ल्यू",
+                "tokens": 18,
+                "requiredSlack": 15
+              },
+              {
+                "id": "neural_open_vocab_c1abf14bb71f8563",
+                "input": "twcw",
+                "target": "टीडब्ल्यूसीडब्ल्यू",
+                "tokens": 18,
+                "requiredSlack": 15
+              },
+              {
+                "id": "neural_open_vocab_2a25aae8c63e87eb",
+                "input": "wwef",
+                "target": "डब्ल्यूडब्ल्यूईएफ",
+                "tokens": 17,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_3acf32b15433a0dc",
+                "input": "wwfka",
+                "target": "डब्ल्यूडब्ल्यूएफका",
+                "tokens": 18,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_86e302429d2b857b",
+                "input": "wwl",
+                "target": "डब्ल्यूडब्ल्यूएल",
+                "tokens": 16,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_88a5308006e3dcab",
+                "input": "wcwko",
+                "target": "डब्ल्यूसीडब्ल्यूको",
+                "tokens": 18,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_dcad60710c35a917",
+                "input": "ww",
+                "target": "डब्ल्यूडब्ल्यू",
+                "tokens": 14,
+                "requiredSlack": 13
+              },
+              {
+                "id": "neural_open_vocab_51929f6ce6d254c0",
+                "input": "bmwx",
+                "target": "बीएमडब्ल्यूएक्स",
+                "tokens": 15,
+                "requiredSlack": 12
+              },
+              {
+                "id": "neural_open_vocab_010115cc0f622b5a",
+                "input": "btcwg",
+                "target": "बीटीसीडब्ल्यूजी",
+                "tokens": 15,
+                "requiredSlack": 11
+              },
+              {
+                "id": "neural_open_vocab_015d2abe6fcf025f",
+                "input": "wtlcp",
+                "target": "डब्ल्यूटीएलसीपी",
+                "tokens": 15,
+                "requiredSlack": 11
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_6520165c46ec39ce",
+              "input": "laksmipurabelbichaba",
+              "target": "लक्ष्मीपुरबेल्बिचावा",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_000661f4ab49b08a",
+              "input": "kendradhyakshaharule",
+              "target": "केन्द्राध्यक्षहरूले",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_000e93f1b8c1a394",
+              "input": "purwajanpratinidhiharu",
+              "target": "पूर्वजनप्रतिनिधिहरू",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0021ca055aaf21cf",
+              "input": "pararashtramantriwich",
+              "target": "परराष्ट्रमन्त्रीवीच",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0021f1d8afd90f25",
+              "input": "bhutpurwasainikmathiko",
+              "target": "भूतपूर्वसैनिकमाथिको",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0049e9692110db1a",
+              "input": "antibayotikwiruddha",
+              "target": "एन्टीबायोटिकविरुद्ध",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_004c68ddb3970657",
+              "input": "sangharshamarahekowarishtha",
+              "target": "संघर्षमारहेकोवरिष्ठ",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0050ea4e5b2a213b",
+              "input": "sankhyaullekhyarupma",
+              "target": "संख्याउल्लेख्यरुपमा",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_006bdaaf5969c37e",
+              "input": "olangchungolabasile",
+              "target": "ओलाङ्चुङ्गोलाबासीले",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0078a43b24adc2db",
+              "input": "videsharajyamantrile",
+              "target": "विदेशराज्यमन्त्रीले",
+              "tokens": 19
+            }
+          ]
+        },
+        "dev": {
+          "rows": 87395,
+          "length": {
+            "min": 2,
+            "mean": 9.59334058,
+            "p50": 9,
+            "p90": 14,
+            "p95": 15,
+            "p99": 18,
+            "p999": 19,
+            "max": 20,
+            "tail": {
+              "20": 2
+            }
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 13,
+            "runtimeStepBudgetExamples": [
+              {
+                "id": "neural_open_vocab_1929288d202967ae",
+                "input": "kws",
+                "target": "केडब्ल्यूएस",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_2440db77cae38d1c",
+                "input": "ssw",
+                "target": "एसएसडब्ल्यु",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_3aed4bd636f16815",
+                "input": "fcwema",
+                "target": "एफसीडब्ल्यूईमा",
+                "tokens": 14,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_48ab86e588661ada",
+                "input": "wmacma",
+                "target": "डब्ल्यूएमएसीमा",
+                "tokens": 14,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_5342a901f2ccc048",
+                "input": "bwf",
+                "target": "बीडब्ल्युएफ",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_53c5418e940ccfe9",
+                "input": "wjw",
+                "target": "डब्ल्यूजेडब्ल्यू",
+                "tokens": 16,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_68816b5f64d56ff2",
+                "input": "wtc",
+                "target": "डब्ल्युटीसी",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_8747525d1a52ce85",
+                "input": "twhma",
+                "target": "टीडब्ल्यूएचमा",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_9cb006ae46353321",
+                "input": "bmwi",
+                "target": "बीएमडब्ल्यूआई",
+                "tokens": 13,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_a95f650318e198fa",
+                "input": "opcwle",
+                "target": "ओपीसीडब्ल्यूले",
+                "tokens": 14,
+                "runtimeBudget": 14
+              }
+            ],
+            "maximumRequiredInputLengthSlack": 14,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_53c5418e940ccfe9",
+                "input": "wjw",
+                "target": "डब्ल्यूजेडब्ल्यू",
+                "tokens": 16,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_9cb006ae46353321",
+                "input": "bmwi",
+                "target": "बीएमडब्ल्यूआई",
+                "tokens": 13,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_1929288d202967ae",
+                "input": "kws",
+                "target": "केडब्ल्यूएस",
+                "tokens": 11,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_2440db77cae38d1c",
+                "input": "ssw",
+                "target": "एसएसडब्ल्यु",
+                "tokens": 11,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_3aed4bd636f16815",
+                "input": "fcwema",
+                "target": "एफसीडब्ल्यूईमा",
+                "tokens": 14,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_48ab86e588661ada",
+                "input": "wmacma",
+                "target": "डब्ल्यूएमएसीमा",
+                "tokens": 14,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_5342a901f2ccc048",
+                "input": "bwf",
+                "target": "बीडब्ल्युएफ",
+                "tokens": 11,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_68816b5f64d56ff2",
+                "input": "wtc",
+                "target": "डब्ल्युटीसी",
+                "tokens": 11,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_8747525d1a52ce85",
+                "input": "twhma",
+                "target": "टीडब्ल्यूएचमा",
+                "tokens": 13,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_a95f650318e198fa",
+                "input": "opcwle",
+                "target": "ओपीसीडब्ल्यूले",
+                "tokens": 14,
+                "requiredSlack": 9
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_d3b71a421ec2ceb5",
+              "input": "andolankariharu",
+              "target": "आन्दोलनकारीहरूद्वारा",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_fa69fb16e5666de7",
+              "input": "shikshamantrikalebung",
+              "target": "शिक्षामन्त्रीकालेबुङ",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_00580f50061cbb79",
+              "input": "sharestakeholdersle",
+              "target": "शेयरस्टेकहोल्डर्सले",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_006e9ec50e43c8fa",
+              "input": "jillamapradhikaranka",
+              "target": "जिल्लामाप्राधिकरणका",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_01721567fcb7af07",
+              "input": "ethnomusicologyma",
+              "target": "इथ्नोम्युजिकोलोजीमा",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_027a52fe7d88a1d7",
+              "input": "jacksonvillesthit",
+              "target": "ज्याक्सनभिल्लेस्थित",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_02a0a78527ac60bf",
+              "input": "alzheimerswiruddhaka",
+              "target": "अल्जाइमर्सविरुद्धका",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_02cae3f256e96b2f",
+              "input": "nirnayakmandalmarfat",
+              "target": "निर्णायकमण्डलमार्फत",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0304c71fa7214d29",
+              "input": "purwasurakshagardako",
+              "target": "पूर्वसुरक्षागार्डको",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_04187f13e9c743dd",
+              "input": "chiniyanharuwiruddhako",
+              "target": "चिनियाँहरूविरुद्धको",
+              "tokens": 19
+            }
+          ]
+        },
+        "test": {
+          "rows": 89681,
+          "length": {
+            "min": 1,
+            "mean": 9.51193675,
+            "p50": 9,
+            "p90": 14,
+            "p95": 15,
+            "p99": 18,
+            "p999": 19,
+            "max": 20,
+            "tail": {
+              "20": 5
+            }
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 16,
+            "runtimeStepBudgetExamples": [
+              {
+                "id": "neural_open_vocab_00fc40ed23e03f61",
+                "input": "enbw",
+                "target": "इएनबीडब्ल्यू",
+                "tokens": 12,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_1010a5fe4b10836e",
+                "input": "opcwko",
+                "target": "ओपीसीडब्ल्यूको",
+                "tokens": 14,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_32e116edecd173d6",
+                "input": "wfdsa",
+                "target": "डब्ल्यूएफडीएसए",
+                "tokens": 14,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_3856f9cabaf5ff65",
+                "input": "kfwle",
+                "target": "केएफडब्ल्यूले",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_4120cfc84014e4db",
+                "input": "smw",
+                "target": "एसएमडब्ल्यू",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_43c8a2812237c335",
+                "input": "fcwe",
+                "target": "एफसीडब्ल्यूई",
+                "tokens": 12,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_47c83f6c28bdc723",
+                "input": "kfwle",
+                "target": "केएफडब्ल्युले",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_495281ddee640e7c",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 13,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_516a7920240f76b4",
+                "input": "swf",
+                "target": "एसडब्ल्यूएफ",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_5dffd8c4cf649d75",
+                "input": "wtkrlai",
+                "target": "डब्ल्यूटीकेआरलाई",
+                "tokens": 16,
+                "runtimeBudget": 15
+              }
+            ],
+            "maximumRequiredInputLengthSlack": 12,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_d70630dd998fdcb3",
+                "input": "wbncci",
+                "target": "डब्ल्यूबीएनसीसीआई",
+                "tokens": 17,
+                "requiredSlack": 12
+              },
+              {
+                "id": "neural_open_vocab_730933ae1f9de008",
+                "input": "fwici",
+                "target": "एफडब्ल्यूआईसीआई",
+                "tokens": 15,
+                "requiredSlack": 11
+              },
+              {
+                "id": "neural_open_vocab_32e116edecd173d6",
+                "input": "wfdsa",
+                "target": "डब्ल्यूएफडीएसए",
+                "tokens": 14,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_495281ddee640e7c",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 13,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_5dffd8c4cf649d75",
+                "input": "wtkrlai",
+                "target": "डब्ल्यूटीकेआरलाई",
+                "tokens": 16,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_7a62909711cff361",
+                "input": "wgbh",
+                "target": "डब्ल्यूजीबीएच",
+                "tokens": 13,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_9509ab715e0b7cb5",
+                "input": "egpws",
+                "target": "ईजीपीडब्ल्यूएस",
+                "tokens": 14,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_00fc40ed23e03f61",
+                "input": "enbw",
+                "target": "इएनबीडब्ल्यू",
+                "tokens": 12,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_1010a5fe4b10836e",
+                "input": "opcwko",
+                "target": "ओपीसीडब्ल्यूको",
+                "tokens": 14,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_3856f9cabaf5ff65",
+                "input": "kfwle",
+                "target": "केएफडब्ल्यूले",
+                "tokens": 13,
+                "requiredSlack": 9
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_297e84c7f2048757",
+              "input": "gorkhalandpratiko",
+              "target": "गोर्खाल्याण्डप्रतिको",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_559049f6e7494934",
+              "input": "rachanaprakriyasangasangai",
+              "target": "रचनाप्रक्रियासँगसँगै",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_7060125ea3f81df5",
+              "input": "purwawidyarthiharuma",
+              "target": "पूर्वविद्यार्थीहरूमा",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_ac98727d75e9f920",
+              "input": "sumasumyaunuhunthyo",
+              "target": "सुमसुम्याउनुहुन्थ्यो",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_c8b78673eba740e1",
+              "input": "purwawidyarthiharumaa",
+              "target": "पूर्वविद्यार्थीहरूमा",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_00460fd12478d98a",
+              "input": "pramanapatradhariharule",
+              "target": "प्रमाणपत्रधारीहरूले",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_004623dbe100d1a5",
+              "input": "batsmenwiruddha",
+              "target": "ब्याट्सम्यानविरुद्ध",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_008cdafab3ec3370",
+              "input": "antarrashtriyabhasha",
+              "target": "अन्तर्राष्ट्रियभाषा",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_00f03026fc3884f2",
+              "input": "goyanesiyabiruddhako",
+              "target": "गोयानेसियाबिरुद्धको",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_01764b211c26e5bb",
+              "input": "karyakartaharusammale",
+              "target": "कार्यकर्ताहरुसम्मले",
+              "tokens": 19
+            }
+          ]
+        },
+        "benchmark": {
+          "rows": 4101,
+          "length": {
+            "min": 2,
+            "mean": 7.60302365,
+            "p50": 7,
+            "p90": 12,
+            "p95": 14,
+            "p99": 17,
+            "p999": 20,
+            "max": 20,
+            "tail": {
+              "20": 5
+            }
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 1,
+            "runtimeStepBudgetExamples": [
+              {
+                "id": "gold_aksharantar_indian_names_000278",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 13,
+                "runtimeBudget": 12
+              }
+            ],
+            "maximumRequiredInputLengthSlack": 10,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "gold_aksharantar_indian_names_000278",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 13,
+                "requiredSlack": 10
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000293",
+                "input": "alexandria",
+                "target": "अलेक्जेन्ड्रिया",
+                "tokens": 15,
+                "requiredSlack": 6
+              },
+              {
+                "id": "gold_aksharantar_indian_names_001072",
+                "input": "icici",
+                "target": "आईसीआईसीआई",
+                "tokens": 10,
+                "requiredSlack": 6
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000018",
+                "input": "mckay",
+                "target": "म्याक्काइ",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000062",
+                "input": "hendrix",
+                "target": "हेन्ड्रिक्स",
+                "tokens": 11,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000483",
+                "input": "mcguire",
+                "target": "म्याकग्वायर",
+                "tokens": 11,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000686",
+                "input": "castro",
+                "target": "क्यास्ट्रो",
+                "tokens": 10,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000047",
+                "input": "infraprojects",
+                "target": "इन्फ्राप्रोजेक्टस",
+                "tokens": 17,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000086",
+                "input": "nmdc",
+                "target": "एनएमडीसी",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000169",
+                "input": "ifci",
+                "target": "आईएफसीआई",
+                "tokens": 8,
+                "requiredSlack": 5
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "gold_aksharantar_native_frequent_000912",
+              "input": "sumasumyaunuhunthyo",
+              "target": "सुमसुम्याउनुहुन्थ्यो",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001391",
+              "input": "gorkhalandpratiko",
+              "target": "गोर्खाल्याण्डप्रतिको",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001395",
+              "input": "purwawidyarthiharuma",
+              "target": "पूर्वविद्यार्थीहरूमा",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001750",
+              "input": "rachanaprakriyasangasangai",
+              "target": "रचनाप्रक्रियासँगसँगै",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001792",
+              "input": "purwawidyarthiharumaa",
+              "target": "पूर्वविद्यार्थीहरूमा",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_indian_names_000813",
+              "input": "infraconstruction",
+              "target": "इन्फ्राकन्स्ट्रक्सन",
+              "tokens": 19
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000248",
+              "input": "prashikshaarthiharulai",
+              "target": "प्रशिक्षार्थीहरूलाई",
+              "tokens": 19
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000452",
+              "input": "vidyarthiharudwara",
+              "target": "विद्यार्थीहरूद्वारा",
+              "tokens": 19
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000562",
+              "input": "pratidwandwiharule",
+              "target": "प्रतिद्वन्द्वीहरूले",
+              "tokens": 19
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001136",
+              "input": "prashikshankariharulai",
+              "target": "प्रशिक्षणकारीहरूलाई",
+              "tokens": 19
+            }
+          ]
+        }
+      },
+      "benchmarkEvaluationUnits": {
+        "rows": 4085,
+        "rowsWithRepresentableTarget": 4085,
+        "rowsWithNoRepresentableTarget": 0,
+        "rowsWithAnyUnseenTarget": 0,
+        "noRepresentableTargetExamples": []
+      },
+      "reconstruction": {
+        "mismatches": 0,
+        "examples": []
+      },
+      "coreMLAndRuntime": {
+        "vocabularyDependentParameters": 25063,
+        "estimatedBaselineTotalParameters": 1361191,
+        "estimatedVocabularyDependentFloat32ParameterBytes": 100252,
+        "estimatedVocabularyDependentFloat16ParameterBytes": 50126,
+        "legacyFullDecoderLogitElements": 2201,
+        "legacyFullDecoderFloat32LogitBytes": 8804,
+        "splitAttentionStepLogitElements": 284,
+        "implication": "Changing vocabulary size changes model projection weights and Core ML tensor shapes; vocab JSON alone cannot be swapped.",
+        "relativeToCurrent": {
+          "vocabularyRatio": 0.05916667,
+          "vocabularyDependentParameterRatio": 0.05916667,
+          "fullDecoderLogitTensorRatio": 0.05916667,
+          "trainMeanStepRatio": 1.6452093
+        }
+      }
+    },
+    "joiner-aware-unicode-scalars": {
+      "definition": "Unicode scalars, except VIRAMA+ZWJ/ZWNJ is kept as one atomic token.",
+      "vocabulary": {
+        "trainLexicalTokens": 67,
+        "trainWithSpecialTokens": 71,
+        "trainOccurrences": 8423776,
+        "trainSingletons": 3,
+        "standaloneCombiningMarkTokens": 16,
+        "standaloneCombiningMarkExamples": [
+          {
+            "token": "ी",
+            "codePoints": "U+0940"
+          },
+          {
+            "token": "ा",
+            "codePoints": "U+093E"
+          },
+          {
+            "token": "्",
+            "codePoints": "U+094D"
+          },
+          {
+            "token": "ो",
+            "codePoints": "U+094B"
+          },
+          {
+            "token": "ि",
+            "codePoints": "U+093F"
+          },
+          {
+            "token": "े",
+            "codePoints": "U+0947"
+          },
+          {
+            "token": "ु",
+            "codePoints": "U+0941"
+          },
+          {
+            "token": "ै",
+            "codePoints": "U+0948"
+          },
+          {
+            "token": "ौ",
+            "codePoints": "U+094C"
+          },
+          {
+            "token": "ू",
+            "codePoints": "U+0942"
+          },
+          {
+            "token": "ँ",
+            "codePoints": "U+0901"
+          },
+          {
+            "token": "ं",
+            "codePoints": "U+0902"
+          },
+          {
+            "token": "ृ",
+            "codePoints": "U+0943"
+          },
+          {
+            "token": "ः",
+            "codePoints": "U+0903"
+          },
+          {
+            "token": "़",
+            "codePoints": "U+093C"
+          },
+          {
+            "token": "ॉ",
+            "codePoints": "U+0949"
+          }
+        ],
+        "tokensContainingJoiners": 0,
+        "tokensEndingInVirama": 1
+      },
+      "splits": {
+        "train": {
+          "rows": 871695,
+          "length": {
+            "min": 2,
+            "mean": 9.66367365,
+            "p50": 9,
+            "p90": 14,
+            "p95": 15,
+            "p99": 18,
+            "p999": 19,
+            "max": 20,
+            "tail": {
+              "20": 1
+            }
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 142,
+            "runtimeStepBudgetExamples": [
+              {
+                "id": "neural_open_vocab_010115cc0f622b5a",
+                "input": "btcwg",
+                "target": "बीटीसीडब्ल्यूजी",
+                "tokens": 15,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_015d2abe6fcf025f",
+                "input": "wtlcp",
+                "target": "डब्ल्यूटीएलसीपी",
+                "tokens": 15,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_059151eba42e8ba5",
+                "input": "bgwska",
+                "target": "बीजीडब्ल्युएसका",
+                "tokens": 15,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_067f8457f6445359",
+                "input": "wftuka",
+                "target": "डब्ल्यूएफटीयूका",
+                "tokens": 15,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_078f72716438eda4",
+                "input": "fcwca",
+                "target": "एफसीडब्ल्युका",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_0d13994da884c7c8",
+                "input": "twh",
+                "target": "टीडब्ल्यूएच",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_0d8f2216092d1b74",
+                "input": "nswka",
+                "target": "एनएसडब्ल्युका",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_113b80aef705f579",
+                "input": "wrr",
+                "target": "डब्ल्यूआरआर",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_12600d68312e09a6",
+                "input": "sxsw",
+                "target": "एसएक्सएसडब्लू",
+                "tokens": 13,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_12a774658c13c4b3",
+                "input": "fcwk",
+                "target": "एफसीडब्ल्यूक",
+                "tokens": 12,
+                "runtimeBudget": 12
+              }
+            ],
+            "maximumRequiredInputLengthSlack": 15,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_97b63cbaee52b07f",
+                "input": "pwpw",
+                "target": "पीडब्ल्युपीडब्ल्यू",
+                "tokens": 18,
+                "requiredSlack": 15
+              },
+              {
+                "id": "neural_open_vocab_c1abf14bb71f8563",
+                "input": "twcw",
+                "target": "टीडब्ल्यूसीडब्ल्यू",
+                "tokens": 18,
+                "requiredSlack": 15
+              },
+              {
+                "id": "neural_open_vocab_2a25aae8c63e87eb",
+                "input": "wwef",
+                "target": "डब्ल्यूडब्ल्यूईएफ",
+                "tokens": 17,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_3acf32b15433a0dc",
+                "input": "wwfka",
+                "target": "डब्ल्यूडब्ल्यूएफका",
+                "tokens": 18,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_86e302429d2b857b",
+                "input": "wwl",
+                "target": "डब्ल्यूडब्ल्यूएल",
+                "tokens": 16,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_88a5308006e3dcab",
+                "input": "wcwko",
+                "target": "डब्ल्यूसीडब्ल्यूको",
+                "tokens": 18,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_dcad60710c35a917",
+                "input": "ww",
+                "target": "डब्ल्यूडब्ल्यू",
+                "tokens": 14,
+                "requiredSlack": 13
+              },
+              {
+                "id": "neural_open_vocab_51929f6ce6d254c0",
+                "input": "bmwx",
+                "target": "बीएमडब्ल्यूएक्स",
+                "tokens": 15,
+                "requiredSlack": 12
+              },
+              {
+                "id": "neural_open_vocab_010115cc0f622b5a",
+                "input": "btcwg",
+                "target": "बीटीसीडब्ल्यूजी",
+                "tokens": 15,
+                "requiredSlack": 11
+              },
+              {
+                "id": "neural_open_vocab_015d2abe6fcf025f",
+                "input": "wtlcp",
+                "target": "डब्ल्यूटीएलसीपी",
+                "tokens": 15,
+                "requiredSlack": 11
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_6520165c46ec39ce",
+              "input": "laksmipurabelbichaba",
+              "target": "लक्ष्मीपुरबेल्बिचावा",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_000661f4ab49b08a",
+              "input": "kendradhyakshaharule",
+              "target": "केन्द्राध्यक्षहरूले",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_000e93f1b8c1a394",
+              "input": "purwajanpratinidhiharu",
+              "target": "पूर्वजनप्रतिनिधिहरू",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0021ca055aaf21cf",
+              "input": "pararashtramantriwich",
+              "target": "परराष्ट्रमन्त्रीवीच",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0021f1d8afd90f25",
+              "input": "bhutpurwasainikmathiko",
+              "target": "भूतपूर्वसैनिकमाथिको",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0049e9692110db1a",
+              "input": "antibayotikwiruddha",
+              "target": "एन्टीबायोटिकविरुद्ध",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_004c68ddb3970657",
+              "input": "sangharshamarahekowarishtha",
+              "target": "संघर्षमारहेकोवरिष्ठ",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0050ea4e5b2a213b",
+              "input": "sankhyaullekhyarupma",
+              "target": "संख्याउल्लेख्यरुपमा",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_006bdaaf5969c37e",
+              "input": "olangchungolabasile",
+              "target": "ओलाङ्चुङ्गोलाबासीले",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0078a43b24adc2db",
+              "input": "videsharajyamantrile",
+              "target": "विदेशराज्यमन्त्रीले",
+              "tokens": 19
+            }
+          ]
+        },
+        "dev": {
+          "rows": 87395,
+          "length": {
+            "min": 2,
+            "mean": 9.59334058,
+            "p50": 9,
+            "p90": 14,
+            "p95": 15,
+            "p99": 18,
+            "p999": 19,
+            "max": 20,
+            "tail": {
+              "20": 2
+            }
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 13,
+            "runtimeStepBudgetExamples": [
+              {
+                "id": "neural_open_vocab_1929288d202967ae",
+                "input": "kws",
+                "target": "केडब्ल्यूएस",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_2440db77cae38d1c",
+                "input": "ssw",
+                "target": "एसएसडब्ल्यु",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_3aed4bd636f16815",
+                "input": "fcwema",
+                "target": "एफसीडब्ल्यूईमा",
+                "tokens": 14,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_48ab86e588661ada",
+                "input": "wmacma",
+                "target": "डब्ल्यूएमएसीमा",
+                "tokens": 14,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_5342a901f2ccc048",
+                "input": "bwf",
+                "target": "बीडब्ल्युएफ",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_53c5418e940ccfe9",
+                "input": "wjw",
+                "target": "डब्ल्यूजेडब्ल्यू",
+                "tokens": 16,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_68816b5f64d56ff2",
+                "input": "wtc",
+                "target": "डब्ल्युटीसी",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_8747525d1a52ce85",
+                "input": "twhma",
+                "target": "टीडब्ल्यूएचमा",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_9cb006ae46353321",
+                "input": "bmwi",
+                "target": "बीएमडब्ल्यूआई",
+                "tokens": 13,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_a95f650318e198fa",
+                "input": "opcwle",
+                "target": "ओपीसीडब्ल्यूले",
+                "tokens": 14,
+                "runtimeBudget": 14
+              }
+            ],
+            "maximumRequiredInputLengthSlack": 14,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_53c5418e940ccfe9",
+                "input": "wjw",
+                "target": "डब्ल्यूजेडब्ल्यू",
+                "tokens": 16,
+                "requiredSlack": 14
+              },
+              {
+                "id": "neural_open_vocab_9cb006ae46353321",
+                "input": "bmwi",
+                "target": "बीएमडब्ल्यूआई",
+                "tokens": 13,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_1929288d202967ae",
+                "input": "kws",
+                "target": "केडब्ल्यूएस",
+                "tokens": 11,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_2440db77cae38d1c",
+                "input": "ssw",
+                "target": "एसएसडब्ल्यु",
+                "tokens": 11,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_3aed4bd636f16815",
+                "input": "fcwema",
+                "target": "एफसीडब्ल्यूईमा",
+                "tokens": 14,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_48ab86e588661ada",
+                "input": "wmacma",
+                "target": "डब्ल्यूएमएसीमा",
+                "tokens": 14,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_5342a901f2ccc048",
+                "input": "bwf",
+                "target": "बीडब्ल्युएफ",
+                "tokens": 11,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_68816b5f64d56ff2",
+                "input": "wtc",
+                "target": "डब्ल्युटीसी",
+                "tokens": 11,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_8747525d1a52ce85",
+                "input": "twhma",
+                "target": "टीडब्ल्यूएचमा",
+                "tokens": 13,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_a95f650318e198fa",
+                "input": "opcwle",
+                "target": "ओपीसीडब्ल्यूले",
+                "tokens": 14,
+                "requiredSlack": 9
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_d3b71a421ec2ceb5",
+              "input": "andolankariharu",
+              "target": "आन्दोलनकारीहरूद्वारा",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_fa69fb16e5666de7",
+              "input": "shikshamantrikalebung",
+              "target": "शिक्षामन्त्रीकालेबुङ",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_00580f50061cbb79",
+              "input": "sharestakeholdersle",
+              "target": "शेयरस्टेकहोल्डर्सले",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_006e9ec50e43c8fa",
+              "input": "jillamapradhikaranka",
+              "target": "जिल्लामाप्राधिकरणका",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_01721567fcb7af07",
+              "input": "ethnomusicologyma",
+              "target": "इथ्नोम्युजिकोलोजीमा",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_027a52fe7d88a1d7",
+              "input": "jacksonvillesthit",
+              "target": "ज्याक्सनभिल्लेस्थित",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_02a0a78527ac60bf",
+              "input": "alzheimerswiruddhaka",
+              "target": "अल्जाइमर्सविरुद्धका",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_02cae3f256e96b2f",
+              "input": "nirnayakmandalmarfat",
+              "target": "निर्णायकमण्डलमार्फत",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_0304c71fa7214d29",
+              "input": "purwasurakshagardako",
+              "target": "पूर्वसुरक्षागार्डको",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_04187f13e9c743dd",
+              "input": "chiniyanharuwiruddhako",
+              "target": "चिनियाँहरूविरुद्धको",
+              "tokens": 19
+            }
+          ]
+        },
+        "test": {
+          "rows": 89681,
+          "length": {
+            "min": 1,
+            "mean": 9.51193675,
+            "p50": 9,
+            "p90": 14,
+            "p95": 15,
+            "p99": 18,
+            "p999": 19,
+            "max": 20,
+            "tail": {
+              "20": 5
+            }
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 16,
+            "runtimeStepBudgetExamples": [
+              {
+                "id": "neural_open_vocab_00fc40ed23e03f61",
+                "input": "enbw",
+                "target": "इएनबीडब्ल्यू",
+                "tokens": 12,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_1010a5fe4b10836e",
+                "input": "opcwko",
+                "target": "ओपीसीडब्ल्यूको",
+                "tokens": 14,
+                "runtimeBudget": 14
+              },
+              {
+                "id": "neural_open_vocab_32e116edecd173d6",
+                "input": "wfdsa",
+                "target": "डब्ल्यूएफडीएसए",
+                "tokens": 14,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_3856f9cabaf5ff65",
+                "input": "kfwle",
+                "target": "केएफडब्ल्यूले",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_4120cfc84014e4db",
+                "input": "smw",
+                "target": "एसएमडब्ल्यू",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_43c8a2812237c335",
+                "input": "fcwe",
+                "target": "एफसीडब्ल्यूई",
+                "tokens": 12,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_47c83f6c28bdc723",
+                "input": "kfwle",
+                "target": "केएफडब्ल्युले",
+                "tokens": 13,
+                "runtimeBudget": 13
+              },
+              {
+                "id": "neural_open_vocab_495281ddee640e7c",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 13,
+                "runtimeBudget": 12
+              },
+              {
+                "id": "neural_open_vocab_516a7920240f76b4",
+                "input": "swf",
+                "target": "एसडब्ल्यूएफ",
+                "tokens": 11,
+                "runtimeBudget": 11
+              },
+              {
+                "id": "neural_open_vocab_5dffd8c4cf649d75",
+                "input": "wtkrlai",
+                "target": "डब्ल्यूटीकेआरलाई",
+                "tokens": 16,
+                "runtimeBudget": 15
+              }
+            ],
+            "maximumRequiredInputLengthSlack": 12,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_d70630dd998fdcb3",
+                "input": "wbncci",
+                "target": "डब्ल्यूबीएनसीसीआई",
+                "tokens": 17,
+                "requiredSlack": 12
+              },
+              {
+                "id": "neural_open_vocab_730933ae1f9de008",
+                "input": "fwici",
+                "target": "एफडब्ल्यूआईसीआई",
+                "tokens": 15,
+                "requiredSlack": 11
+              },
+              {
+                "id": "neural_open_vocab_32e116edecd173d6",
+                "input": "wfdsa",
+                "target": "डब्ल्यूएफडीएसए",
+                "tokens": 14,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_495281ddee640e7c",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 13,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_5dffd8c4cf649d75",
+                "input": "wtkrlai",
+                "target": "डब्ल्यूटीकेआरलाई",
+                "tokens": 16,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_7a62909711cff361",
+                "input": "wgbh",
+                "target": "डब्ल्यूजीबीएच",
+                "tokens": 13,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_9509ab715e0b7cb5",
+                "input": "egpws",
+                "target": "ईजीपीडब्ल्यूएस",
+                "tokens": 14,
+                "requiredSlack": 10
+              },
+              {
+                "id": "neural_open_vocab_00fc40ed23e03f61",
+                "input": "enbw",
+                "target": "इएनबीडब्ल्यू",
+                "tokens": 12,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_1010a5fe4b10836e",
+                "input": "opcwko",
+                "target": "ओपीसीडब्ल्यूको",
+                "tokens": 14,
+                "requiredSlack": 9
+              },
+              {
+                "id": "neural_open_vocab_3856f9cabaf5ff65",
+                "input": "kfwle",
+                "target": "केएफडब्ल्यूले",
+                "tokens": 13,
+                "requiredSlack": 9
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_297e84c7f2048757",
+              "input": "gorkhalandpratiko",
+              "target": "गोर्खाल्याण्डप्रतिको",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_559049f6e7494934",
+              "input": "rachanaprakriyasangasangai",
+              "target": "रचनाप्रक्रियासँगसँगै",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_7060125ea3f81df5",
+              "input": "purwawidyarthiharuma",
+              "target": "पूर्वविद्यार्थीहरूमा",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_ac98727d75e9f920",
+              "input": "sumasumyaunuhunthyo",
+              "target": "सुमसुम्याउनुहुन्थ्यो",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_c8b78673eba740e1",
+              "input": "purwawidyarthiharumaa",
+              "target": "पूर्वविद्यार्थीहरूमा",
+              "tokens": 20
+            },
+            {
+              "id": "neural_open_vocab_00460fd12478d98a",
+              "input": "pramanapatradhariharule",
+              "target": "प्रमाणपत्रधारीहरूले",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_004623dbe100d1a5",
+              "input": "batsmenwiruddha",
+              "target": "ब्याट्सम्यानविरुद्ध",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_008cdafab3ec3370",
+              "input": "antarrashtriyabhasha",
+              "target": "अन्तर्राष्ट्रियभाषा",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_00f03026fc3884f2",
+              "input": "goyanesiyabiruddhako",
+              "target": "गोयानेसियाबिरुद्धको",
+              "tokens": 19
+            },
+            {
+              "id": "neural_open_vocab_01764b211c26e5bb",
+              "input": "karyakartaharusammale",
+              "target": "कार्यकर्ताहरुसम्मले",
+              "tokens": 19
+            }
+          ]
+        },
+        "benchmark": {
+          "rows": 4101,
+          "length": {
+            "min": 2,
+            "mean": 7.60302365,
+            "p50": 7,
+            "p90": 12,
+            "p95": 14,
+            "p99": 17,
+            "p999": 20,
+            "max": 20,
+            "tail": {
+              "20": 5
+            }
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 1,
+            "runtimeStepBudgetExamples": [
+              {
+                "id": "gold_aksharantar_indian_names_000278",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 13,
+                "runtimeBudget": 12
+              }
+            ],
+            "maximumRequiredInputLengthSlack": 10,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "gold_aksharantar_indian_names_000278",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 13,
+                "requiredSlack": 10
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000293",
+                "input": "alexandria",
+                "target": "अलेक्जेन्ड्रिया",
+                "tokens": 15,
+                "requiredSlack": 6
+              },
+              {
+                "id": "gold_aksharantar_indian_names_001072",
+                "input": "icici",
+                "target": "आईसीआईसीआई",
+                "tokens": 10,
+                "requiredSlack": 6
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000018",
+                "input": "mckay",
+                "target": "म्याक्काइ",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000062",
+                "input": "hendrix",
+                "target": "हेन्ड्रिक्स",
+                "tokens": 11,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000483",
+                "input": "mcguire",
+                "target": "म्याकग्वायर",
+                "tokens": 11,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000686",
+                "input": "castro",
+                "target": "क्यास्ट्रो",
+                "tokens": 10,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000047",
+                "input": "infraprojects",
+                "target": "इन्फ्राप्रोजेक्टस",
+                "tokens": 17,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000086",
+                "input": "nmdc",
+                "target": "एनएमडीसी",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000169",
+                "input": "ifci",
+                "target": "आईएफसीआई",
+                "tokens": 8,
+                "requiredSlack": 5
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "gold_aksharantar_native_frequent_000912",
+              "input": "sumasumyaunuhunthyo",
+              "target": "सुमसुम्याउनुहुन्थ्यो",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001391",
+              "input": "gorkhalandpratiko",
+              "target": "गोर्खाल्याण्डप्रतिको",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001395",
+              "input": "purwawidyarthiharuma",
+              "target": "पूर्वविद्यार्थीहरूमा",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001750",
+              "input": "rachanaprakriyasangasangai",
+              "target": "रचनाप्रक्रियासँगसँगै",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001792",
+              "input": "purwawidyarthiharumaa",
+              "target": "पूर्वविद्यार्थीहरूमा",
+              "tokens": 20
+            },
+            {
+              "id": "gold_aksharantar_indian_names_000813",
+              "input": "infraconstruction",
+              "target": "इन्फ्राकन्स्ट्रक्सन",
+              "tokens": 19
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000248",
+              "input": "prashikshaarthiharulai",
+              "target": "प्रशिक्षार्थीहरूलाई",
+              "tokens": 19
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000452",
+              "input": "vidyarthiharudwara",
+              "target": "विद्यार्थीहरूद्वारा",
+              "tokens": 19
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000562",
+              "input": "pratidwandwiharule",
+              "target": "प्रतिद्वन्द्वीहरूले",
+              "tokens": 19
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001136",
+              "input": "prashikshankariharulai",
+              "target": "प्रशिक्षणकारीहरूलाई",
+              "tokens": 19
+            }
+          ]
+        }
+      },
+      "benchmarkEvaluationUnits": {
+        "rows": 4085,
+        "rowsWithRepresentableTarget": 4085,
+        "rowsWithNoRepresentableTarget": 0,
+        "rowsWithAnyUnseenTarget": 0,
+        "noRepresentableTargetExamples": []
+      },
+      "reconstruction": {
+        "mismatches": 0,
+        "examples": []
+      },
+      "coreMLAndRuntime": {
+        "vocabularyDependentParameters": 25063,
+        "estimatedBaselineTotalParameters": 1361191,
+        "estimatedVocabularyDependentFloat32ParameterBytes": 100252,
+        "estimatedVocabularyDependentFloat16ParameterBytes": 50126,
+        "legacyFullDecoderLogitElements": 2201,
+        "legacyFullDecoderFloat32LogitBytes": 8804,
+        "splitAttentionStepLogitElements": 284,
+        "implication": "Changing vocabulary size changes model projection weights and Core ML tensor shapes; vocab JSON alone cannot be swapped.",
+        "relativeToCurrent": {
+          "vocabularyRatio": 0.05916667,
+          "vocabularyDependentParameterRatio": 0.05916667,
+          "fullDecoderLogitTensorRatio": 0.05916667,
+          "trainMeanStepRatio": 1.6452093
+        }
+      }
+    },
+    "unicode-extended-grapheme-clusters": {
+      "definition": "Unicode extended grapheme clusters from Intl.Segmenter after NFC normalization.",
+      "vocabulary": {
+        "trainLexicalTokens": 8874,
+        "trainWithSpecialTokens": 8878,
+        "trainOccurrences": 4397581,
+        "trainSingletons": 2851,
+        "standaloneCombiningMarkTokens": 2,
+        "standaloneCombiningMarkExamples": [
+          {
+            "token": "ं",
+            "codePoints": "U+0902"
+          },
+          {
+            "token": "े",
+            "codePoints": "U+0947"
+          }
+        ],
+        "tokensContainingJoiners": 0,
+        "tokensEndingInVirama": 51
+      },
+      "splits": {
+        "train": {
+          "rows": 871695,
+          "length": {
+            "min": 1,
+            "mean": 5.04486202,
+            "p50": 5,
+            "p90": 7,
+            "p95": 8,
+            "p99": 9,
+            "p999": 11,
+            "max": 14,
+            "tail": {}
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 0,
+            "runtimeStepBudgetExamples": [],
+            "maximumRequiredInputLengthSlack": 6,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_004cdf8426f598a2",
+                "input": "afrims",
+                "target": "एएफआरआइएमएस",
+                "tokens": 11,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_206954d0e34d4b72",
+                "input": "ixnmx",
+                "target": "आईएक्सएनएमएक्स",
+                "tokens": 10,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_4e35931f80402944",
+                "input": "niclbsl",
+                "target": "एनआईसीएलबीएसएल",
+                "tokens": 12,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_71fe5e08db844535",
+                "input": "ndfmmf",
+                "target": "एनडीएफएमएमएफ",
+                "tokens": 11,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_765c1e0c960757d2",
+                "input": "unsmil",
+                "target": "युएनएसएमआइएल",
+                "tokens": 11,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_8a304dfe252beca6",
+                "input": "niblsf",
+                "target": "एनआईबीएलएसएफ",
+                "tokens": 11,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_904dd4e6a5657bbe",
+                "input": "msisdn",
+                "target": "एमएसआईएसडीएन",
+                "tokens": 11,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_b0bea822d2cfd9f4",
+                "input": "nxnmx",
+                "target": "एनएक्सएनएमएक्स",
+                "tokens": 10,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_03a23431a5197429",
+                "input": "msns",
+                "target": "एमएसएनएस",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_0bfac6e992729d97",
+                "input": "mpsls",
+                "target": "एमपीएसएलएस",
+                "tokens": 9,
+                "requiredSlack": 5
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 0,
+            "occurrences": 0,
+            "distinctTokens": 0,
+            "tokens": [],
+            "examples": []
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_5b336ba74ff0ea53",
+              "input": "butwalupmahanagarpalika",
+              "target": "बुटवलउपमहानगरपालिका",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_7eab5ef66fcdfa43",
+              "input": "upamahanagarpalikalagayat",
+              "target": "उपमहानगरपालिकालगायत",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_9e35f9e40c31e7e5",
+              "input": "upamahanagarnagarpalikale",
+              "target": "उपमहानगरनगरपालिकाले",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_b37aabb50addd845",
+              "input": "dhangadhiupmahanagarpalika",
+              "target": "धनगढीउपमहानगरपालिका",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_bbdf1a3301e70fcc",
+              "input": "butabalupamahanagarpalika",
+              "target": "बुटबलउपमहानगरपालिका",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_fb81eb2efcd2a161",
+              "input": "upamahanagarnagarpalikaka",
+              "target": "उपमहानगरनगरपालिकाका",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_093047211e326343",
+              "input": "upamahanagarpalikasangko",
+              "target": "उपमहानगरपालिकासंगको",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_0c03c16ceb91ecfa",
+              "input": "upamahanagarpalikanagar",
+              "target": "उपमहानगरपालिकानगर",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_1a0d124a0f28e1b9",
+              "input": "hariharpurgadhilgayatka",
+              "target": "हरिहरपुरगढीलगायतका",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_2f45a34680ab2ecc",
+              "input": "mahanagarpalikalgayatma",
+              "target": "महानगरपालिकालगायतमा",
+              "tokens": 13
+            }
+          ]
+        },
+        "dev": {
+          "rows": 87395,
+          "length": {
+            "min": 1,
+            "mean": 5.00679673,
+            "p50": 5,
+            "p90": 7,
+            "p95": 8,
+            "p99": 9,
+            "p999": 11,
+            "max": 14,
+            "tail": {}
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 0,
+            "runtimeStepBudgetExamples": [],
+            "maximumRequiredInputLengthSlack": 5,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_05bd2e971df1c5db",
+                "input": "ilfcm",
+                "target": "आइएलएफसीएम",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_8c266bec98b96877",
+                "input": "nlicl",
+                "target": "एनएलआईसीएल",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_e1d9a00e779fbc97",
+                "input": "imnci",
+                "target": "आईएमएनसीआई",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_e32416e63a39db33",
+                "input": "nfhs",
+                "target": "एनएफएचएस",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_00a1d27a825ff080",
+                "input": "bcimn",
+                "target": "बीसीआईएमएन",
+                "tokens": 8,
+                "requiredSlack": 4
+              },
+              {
+                "id": "neural_open_vocab_071edc19c2c1acec",
+                "input": "girs",
+                "target": "जीआईआरएस",
+                "tokens": 7,
+                "requiredSlack": 4
+              },
+              {
+                "id": "neural_open_vocab_0764d9b93775b6e6",
+                "input": "tiff",
+                "target": "टीआइएफएफ",
+                "tokens": 7,
+                "requiredSlack": 4
+              },
+              {
+                "id": "neural_open_vocab_2440db77cae38d1c",
+                "input": "ssw",
+                "target": "एसएसडब्ल्यु",
+                "tokens": 6,
+                "requiredSlack": 4
+              },
+              {
+                "id": "neural_open_vocab_42fb523b8799201a",
+                "input": "rrm",
+                "target": "आरआरएम",
+                "tokens": 6,
+                "requiredSlack": 4
+              },
+              {
+                "id": "neural_open_vocab_60ac88b064b39f46",
+                "input": "ibns",
+                "target": "आइबिएनएस",
+                "tokens": 7,
+                "requiredSlack": 4
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 284,
+            "occurrences": 284,
+            "distinctTokens": 272,
+            "tokens": [
+              {
+                "token": "म्हें",
+                "codePoints": "U+092E U+094D U+0939 U+0947 U+0902",
+                "count": 3
+              },
+              {
+                "token": "क्स्न",
+                "codePoints": "U+0915 U+094D U+0938 U+094D U+0928",
+                "count": 2
+              },
+              {
+                "token": "त्शृं",
+                "codePoints": "U+0924 U+094D U+0936 U+0943 U+0902",
+                "count": 2
+              },
+              {
+                "token": "ध्नि",
+                "codePoints": "U+0927 U+094D U+0928 U+093F",
+                "count": 2
+              },
+              {
+                "token": "न्क्ट",
+                "codePoints": "U+0928 U+094D U+0915 U+094D U+091F",
+                "count": 2
+              },
+              {
+                "token": "न्च्याँ",
+                "codePoints": "U+0928 U+094D U+091A U+094D U+092F U+093E U+0901",
+                "count": 2
+              },
+              {
+                "token": "न्दिँ",
+                "codePoints": "U+0928 U+094D U+0926 U+093F U+0901",
+                "count": 2
+              },
+              {
+                "token": "मीः",
+                "codePoints": "U+092E U+0940 U+0903",
+                "count": 2
+              },
+              {
+                "token": "म्रिं",
+                "codePoints": "U+092E U+094D U+0930 U+093F U+0902",
+                "count": 2
+              },
+              {
+                "token": "ल्र्यो",
+                "codePoints": "U+0932 U+094D U+0930 U+094D U+092F U+094B",
+                "count": 2
+              },
+              {
+                "token": "स्त्रु",
+                "codePoints": "U+0938 U+094D U+0924 U+094D U+0930 U+0941",
+                "count": 2
+              },
+              {
+                "token": "क्क्नु",
+                "codePoints": "U+0915 U+094D U+0915 U+094D U+0928 U+0941",
+                "count": 1
+              },
+              {
+                "token": "क्त्त्वि",
+                "codePoints": "U+0915 U+094D U+0924 U+094D U+0924 U+094D U+0935 U+093F",
+                "count": 1
+              },
+              {
+                "token": "क्न्दा",
+                "codePoints": "U+0915 U+094D U+0928 U+094D U+0926 U+093E",
+                "count": 1
+              },
+              {
+                "token": "क्फि",
+                "codePoints": "U+0915 U+094D U+092B U+093F",
+                "count": 1
+              },
+              {
+                "token": "क्म्छ",
+                "codePoints": "U+0915 U+094D U+092E U+094D U+091B",
+                "count": 1
+              },
+              {
+                "token": "क्र्वे",
+                "codePoints": "U+0915 U+094D U+0930 U+094D U+0935 U+0947",
+                "count": 1
+              },
+              {
+                "token": "क्लिी",
+                "codePoints": "U+0915 U+094D U+0932 U+093F U+0940",
+                "count": 1
+              },
+              {
+                "token": "क्ष्गा",
+                "codePoints": "U+0915 U+094D U+0937 U+094D U+0917 U+093E",
+                "count": 1
+              },
+              {
+                "token": "क्ष्यः",
+                "codePoints": "U+0915 U+094D U+0937 U+094D U+092F U+0903",
+                "count": 1
+              },
+              {
+                "token": "क्ष्व",
+                "codePoints": "U+0915 U+094D U+0937 U+094D U+0935",
+                "count": 1
+              },
+              {
+                "token": "क्स्क्या",
+                "codePoints": "U+0915 U+094D U+0938 U+094D U+0915 U+094D U+092F U+093E",
+                "count": 1
+              },
+              {
+                "token": "क्स्क्लू",
+                "codePoints": "U+0915 U+094D U+0938 U+094D U+0915 U+094D U+0932 U+0942",
+                "count": 1
+              },
+              {
+                "token": "खृ",
+                "codePoints": "U+0916 U+0943",
+                "count": 1
+              },
+              {
+                "token": "खौः",
+                "codePoints": "U+0916 U+094C U+0903",
+                "count": 1
+              },
+              {
+                "token": "ख्का",
+                "codePoints": "U+0916 U+094D U+0915 U+093E",
+                "count": 1
+              },
+              {
+                "token": "ख्थेँ",
+                "codePoints": "U+0916 U+094D U+0925 U+0947 U+0901",
+                "count": 1
+              },
+              {
+                "token": "ख्सं",
+                "codePoints": "U+0916 U+094D U+0938 U+0902",
+                "count": 1
+              },
+              {
+                "token": "गोः",
+                "codePoints": "U+0917 U+094B U+0903",
+                "count": 1
+              },
+              {
+                "token": "ग्ङा",
+                "codePoints": "U+0917 U+094D U+0919 U+093E",
+                "count": 1
+              }
+            ],
+            "examples": [
+              {
+                "id": "neural_open_vocab_00b1f82b3af7bd15",
+                "input": "beglaih",
+                "target": "बेग्लैः",
+                "tokens": [
+                  "ग्लैः"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_00b520f3f876a56f",
+                "input": "dobrindai",
+                "target": "दोब्रिँदै",
+                "tokens": [
+                  "ब्रिँ"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_01d1b36b1ecfef24",
+                "input": "hwangah",
+                "target": "ह्वंगः",
+                "tokens": [
+                  "ह्वं"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_02d270189164a9e2",
+                "input": "mertag",
+                "target": "मर्ट्याग",
+                "tokens": [
+                  "र्ट्या"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_0314eb3145f800f0",
+                "input": "samikshga",
+                "target": "समीक्ष्गा",
+                "tokens": [
+                  "क्ष्गा"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_04e070816424e7be",
+                "input": "gokarnekshwarsthit",
+                "target": "गोकर्णेक्ष्वरस्थित",
+                "tokens": [
+                  "क्ष्व"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_05667fae35b84409",
+                "input": "bhorsklako",
+                "target": "भोर्स्क्लाको",
+                "tokens": [
+                  "र्स्क्ला"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_08f4d206687193c4",
+                "input": "ulfrsworgbata",
+                "target": "उल्फ्र्सवर्गबाट",
+                "tokens": [
+                  "ल्फ्र्स"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_09326065a403464a",
+                "input": "jimhungwema",
+                "target": "जिम्हुंग्वेमा",
+                "tokens": [
+                  "म्हुं"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_09fd82f9c5d73b97",
+                "input": "obturator",
+                "target": "अब्टुरेटर",
+                "tokens": [
+                  "ब्टु"
+                ]
+              }
+            ]
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_7cf6e69f7e568231",
+              "input": "gurungleanlainkhabarsang",
+              "target": "गुरुङलेअनलाइनखबरसँग",
+              "tokens": 14
+            },
+            {
+              "id": "neural_open_vocab_1179331862d85e04",
+              "input": "upamahanagarpalikasmet",
+              "target": "उपमहानगरपालिकासमेत",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_237d756a660ee08a",
+              "input": "sdblmarftdeshbhar",
+              "target": "एसडीबीएलमार्फतदेशभर",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_2ea720e13ed0d862",
+              "input": "upamahanagarpalikasahit",
+              "target": "उपमहानगरपालिकासहित",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_0da05bb23d3f33c5",
+              "input": "acharsanhitalgayatabare",
+              "target": "आचारसंहितालगायतबारे",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_1e58059f8fdd932f",
+              "input": "udaharanharuawalokan",
+              "target": "उदाहरणहरूअवलोकन",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_1e8f8ae35c1b3eb1",
+              "input": "manawadhikarkarmisahit",
+              "target": "मानवअधिकारकर्मीसहित",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_2c4555cd55041e03",
+              "input": "kamalwinayakalgayatka",
+              "target": "कमलविनायकलगायतका",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_31a58d5cc4e980df",
+              "input": "punarawalokanasmetlai",
+              "target": "पुनरावलोकनसमेतलाई",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_394a23dee9b959d4",
+              "input": "prasharanlainalgayatka",
+              "target": "प्रशारणलाइनलगायतका",
+              "tokens": 12
+            }
+          ]
+        },
+        "test": {
+          "rows": 89681,
+          "length": {
+            "min": 1,
+            "mean": 4.96741785,
+            "p50": 5,
+            "p90": 7,
+            "p95": 8,
+            "p99": 9,
+            "p999": 11,
+            "max": 13,
+            "tail": {}
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 0,
+            "runtimeStepBudgetExamples": [],
+            "maximumRequiredInputLengthSlack": 6,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "neural_open_vocab_9c7ac8a8d486f776",
+                "input": "nicsbsl",
+                "target": "एनआइसीएसबीएसएल",
+                "tokens": 12,
+                "requiredSlack": 6
+              },
+              {
+                "id": "neural_open_vocab_0d5032e3ac0f1083",
+                "input": "inmr",
+                "target": "आइएनएमआर",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_2bc5dc0c981be5c5",
+                "input": "iffi",
+                "target": "आइएफएफआई",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_495281ddee640e7c",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_730933ae1f9de008",
+                "input": "fwici",
+                "target": "एफडब्ल्यूआईसीआई",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_772b02be17cb8aa9",
+                "input": "smcrf",
+                "target": "एसएमसीआरएफ",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_7cf39e1cd2b86f05",
+                "input": "fncsi",
+                "target": "एफएनसीएसआई",
+                "tokens": 9,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_7fc6015d6e453439",
+                "input": "hsmi",
+                "target": "एचएसएमआई",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_98d329a8a4625d85",
+                "input": "nsrf",
+                "target": "एनएसआरएफ",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "neural_open_vocab_c82663f0e211745f",
+                "input": "uscirf",
+                "target": "युएससीआइआरएफ",
+                "tokens": 10,
+                "requiredSlack": 5
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 290,
+            "occurrences": 290,
+            "distinctTokens": 276,
+            "tokens": [
+              {
+                "token": "न्ज्यु",
+                "codePoints": "U+0928 U+094D U+091C U+094D U+092F U+0941",
+                "count": 3
+              },
+              {
+                "token": "क्ष्रे",
+                "codePoints": "U+0915 U+094D U+0937 U+094D U+0930 U+0947",
+                "count": 2
+              },
+              {
+                "token": "ग्घो",
+                "codePoints": "U+0917 U+094D U+0918 U+094B",
+                "count": 2
+              },
+              {
+                "token": "ङ्झो",
+                "codePoints": "U+0919 U+094D U+091D U+094B",
+                "count": 2
+              },
+              {
+                "token": "जेँ",
+                "codePoints": "U+091C U+0947 U+0901",
+                "count": 2
+              },
+              {
+                "token": "झ्रु",
+                "codePoints": "U+091D U+094D U+0930 U+0941",
+                "count": 2
+              },
+              {
+                "token": "ट्ल्स",
+                "codePoints": "U+091F U+094D U+0932 U+094D U+0938",
+                "count": 2
+              },
+              {
+                "token": "त्घा",
+                "codePoints": "U+0924 U+094D U+0918 U+093E",
+                "count": 2
+              },
+              {
+                "token": "न्ह्यो",
+                "codePoints": "U+0928 U+094D U+0939 U+094D U+092F U+094B",
+                "count": 2
+              },
+              {
+                "token": "फ्जा",
+                "codePoints": "U+092B U+094D U+091C U+093E",
+                "count": 2
+              },
+              {
+                "token": "र्स्टि",
+                "codePoints": "U+0930 U+094D U+0938 U+094D U+091F U+093F",
+                "count": 2
+              },
+              {
+                "token": "ष्मु",
+                "codePoints": "U+0937 U+094D U+092E U+0941",
+                "count": 2
+              },
+              {
+                "token": "स्टें",
+                "codePoints": "U+0938 U+094D U+091F U+0947 U+0902",
+                "count": 2
+              },
+              {
+                "token": "केँः",
+                "codePoints": "U+0915 U+0947 U+0901 U+0903",
+                "count": 1
+              },
+              {
+                "token": "केै",
+                "codePoints": "U+0915 U+0947 U+0948",
+                "count": 1
+              },
+              {
+                "token": "क्क्लो",
+                "codePoints": "U+0915 U+094D U+0915 U+094D U+0932 U+094B",
+                "count": 1
+              },
+              {
+                "token": "क्खाँ",
+                "codePoints": "U+0915 U+094D U+0916 U+093E U+0901",
+                "count": 1
+              },
+              {
+                "token": "क्गै",
+                "codePoints": "U+0915 U+094D U+0917 U+0948",
+                "count": 1
+              },
+              {
+                "token": "क्ग्री",
+                "codePoints": "U+0915 U+094D U+0917 U+094D U+0930 U+0940",
+                "count": 1
+              },
+              {
+                "token": "क्छ्यौ",
+                "codePoints": "U+0915 U+094D U+091B U+094D U+092F U+094C",
+                "count": 1
+              },
+              {
+                "token": "क्ट्कि",
+                "codePoints": "U+0915 U+094D U+091F U+094D U+0915 U+093F",
+                "count": 1
+              },
+              {
+                "token": "क्ढु",
+                "codePoints": "U+0915 U+094D U+0922 U+0941",
+                "count": 1
+              },
+              {
+                "token": "क्त्दै",
+                "codePoints": "U+0915 U+094D U+0924 U+094D U+0926 U+0948",
+                "count": 1
+              },
+              {
+                "token": "क्थ्यैं",
+                "codePoints": "U+0915 U+094D U+0925 U+094D U+092F U+0948 U+0902",
+                "count": 1
+              },
+              {
+                "token": "क्दैं",
+                "codePoints": "U+0915 U+094D U+0926 U+0948 U+0902",
+                "count": 1
+              },
+              {
+                "token": "क्नः",
+                "codePoints": "U+0915 U+094D U+0928 U+0903",
+                "count": 1
+              },
+              {
+                "token": "क्नें",
+                "codePoints": "U+0915 U+094D U+0928 U+0947 U+0902",
+                "count": 1
+              },
+              {
+                "token": "क्न्ह",
+                "codePoints": "U+0915 U+094D U+0928 U+094D U+0939",
+                "count": 1
+              },
+              {
+                "token": "क्र्से",
+                "codePoints": "U+0915 U+094D U+0930 U+094D U+0938 U+0947",
+                "count": 1
+              },
+              {
+                "token": "क्ल्नु",
+                "codePoints": "U+0915 U+094D U+0932 U+094D U+0928 U+0941",
+                "count": 1
+              }
+            ],
+            "examples": [
+              {
+                "id": "neural_open_vocab_01b7ee4f70857f96",
+                "input": "juristsley",
+                "target": "जुरिस्ट्स्ले",
+                "tokens": [
+                  "स्ट्स्ले"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_0227aa6a58b4436a",
+                "input": "nakabndika",
+                "target": "नाकाब्न्दीका",
+                "tokens": [
+                  "ब्न्दी"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_02356900fbed22e0",
+                "input": "almherst",
+                "target": "एल्म्हर्स्ट",
+                "tokens": [
+                  "ल्म्ह"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_038762096e3e107d",
+                "input": "mothka",
+                "target": "मोठ्का",
+                "tokens": [
+                  "ठ्का"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_053ec7f337695910",
+                "input": "baklyule",
+                "target": "बक्ल्युले",
+                "tokens": [
+                  "क्ल्यु"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_063337400e4dc9ba",
+                "input": "distbrd",
+                "target": "डिस्टब्र्ड",
+                "tokens": [
+                  "ब्र्ड"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_068ba55a9106f47c",
+                "input": "maslyawadi",
+                "target": "मस्ल्यवादी",
+                "tokens": [
+                  "स्ल्य"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_06d3afd281238950",
+                "input": "gelgnimalai",
+                "target": "गेल्ग्नीमालाई",
+                "tokens": [
+                  "ल्ग्नी"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_0750d79c656f3d60",
+                "input": "ughrdaichha",
+                "target": "उघ्र्दैछ",
+                "tokens": [
+                  "घ्र्दै"
+                ]
+              },
+              {
+                "id": "neural_open_vocab_087ae703843206a0",
+                "input": "jadfe",
+                "target": "जड्फे",
+                "tokens": [
+                  "ड्फे"
+                ]
+              }
+            ]
+          },
+          "longest": [
+            {
+              "id": "neural_open_vocab_0a9e299debbe0360",
+              "input": "uyapamahanagarpalikalai",
+              "target": "उयपमहानगरपालिकालाई",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_17f361ebe30c3565",
+              "input": "aircondisonalgayatlai",
+              "target": "एयरकन्डिसनलगायतलाई",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_246c8ef09f6534bc",
+              "input": "upamahanarnagarpalikako",
+              "target": "उपमहानरनगरपालिकाको",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_9bbffd3e3bbcef34",
+              "input": "mahanagarpalikaantaragat",
+              "target": "महानगरपालिकाअन्तरगत",
+              "tokens": 13
+            },
+            {
+              "id": "neural_open_vocab_067b26d67598cb75",
+              "input": "padadhikariharulagayatko",
+              "target": "पदाधिकारीहरूलगायतको",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_0a1f8c03f20a1bba",
+              "input": "upamahanagarpalikawata",
+              "target": "उपमहानगरपालिकावाट",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_1677bba2e27702aa",
+              "input": "upamahanagarpramukhalai",
+              "target": "उपमहानगरप्रमुखलाई",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_1bf9f5a4bfb08d69",
+              "input": "jabarajastikaranikoarop",
+              "target": "जबरजस्तीकरणीकोआरोप",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_35e2030d4f98e548",
+              "input": "medicalwibhagmasinier",
+              "target": "मेडिकलविभागमासिनियर",
+              "tokens": 12
+            },
+            {
+              "id": "neural_open_vocab_408f00a15d74f9e8",
+              "input": "upamahanagarpalikaprati",
+              "target": "उपमहानगरपालिकाप्रति",
+              "tokens": 12
+            }
+          ]
+        },
+        "benchmark": {
+          "rows": 4101,
+          "length": {
+            "min": 1,
+            "mean": 3.96269203,
+            "p50": 4,
+            "p90": 6,
+            "p95": 7,
+            "p99": 8,
+            "p999": 10,
+            "max": 10,
+            "tail": {}
+          },
+          "capacity": {
+            "contentCapacity": 30,
+            "rowsAtContentCapacity": 0,
+            "rowsOverContentCapacity": 0,
+            "rowsExceedingCurrentRuntimeStepBudget": 0,
+            "runtimeStepBudgetExamples": [],
+            "maximumRequiredInputLengthSlack": 5,
+            "maximumRequiredSlackExamples": [
+              {
+                "id": "gold_aksharantar_indian_names_000278",
+                "input": "rswm",
+                "target": "आरएसडब्ल्यूएम",
+                "tokens": 8,
+                "requiredSlack": 5
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000169",
+                "input": "ifci",
+                "target": "आईएफसीआई",
+                "tokens": 7,
+                "requiredSlack": 4
+              },
+              {
+                "id": "gold_aksharantar_indian_names_001072",
+                "input": "icici",
+                "target": "आईसीआईसीआई",
+                "tokens": 8,
+                "requiredSlack": 4
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000086",
+                "input": "nmdc",
+                "target": "एनएमडीसी",
+                "tokens": 6,
+                "requiredSlack": 3
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000182",
+                "input": "hdfc",
+                "target": "एचडीएफसी",
+                "tokens": 6,
+                "requiredSlack": 3
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000616",
+                "input": "tcns",
+                "target": "टीसीएनएस",
+                "tokens": 6,
+                "requiredSlack": 3
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000674",
+                "input": "nacl",
+                "target": "एनएसिएल",
+                "tokens": 6,
+                "requiredSlack": 3
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000539",
+                "input": "nbcc",
+                "target": "एनबीसीसी",
+                "tokens": 5,
+                "requiredSlack": 2
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000949",
+                "input": "gtpl",
+                "target": "जीटीपीएल",
+                "tokens": 5,
+                "requiredSlack": 2
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000347",
+                "input": "idea",
+                "target": "आइडिया",
+                "tokens": 4,
+                "requiredSlack": 1
+              }
+            ]
+          },
+          "unseen": {
+            "rows": 8,
+            "occurrences": 8,
+            "distinctTokens": 7,
+            "tokens": [
+              {
+                "token": "ष्मु",
+                "codePoints": "U+0937 U+094D U+092E U+0941",
+                "count": 2
+              },
+              {
+                "token": "क्ह",
+                "codePoints": "U+0915 U+094D U+0939",
+                "count": 1
+              },
+              {
+                "token": "ढ़्न",
+                "codePoints": "U+0922 U+093C U+094D U+0928",
+                "count": 1
+              },
+              {
+                "token": "तैँ",
+                "codePoints": "U+0924 U+0948 U+0901",
+                "count": 1
+              },
+              {
+                "token": "र्फ्रि",
+                "codePoints": "U+0930 U+094D U+092B U+094D U+0930 U+093F",
+                "count": 1
+              },
+              {
+                "token": "र्ष्णी",
+                "codePoints": "U+0930 U+094D U+0937 U+094D U+0923 U+0940",
+                "count": 1
+              },
+              {
+                "token": "शँ",
+                "codePoints": "U+0936 U+0901",
+                "count": 1
+              }
+            ],
+            "examples": [
+              {
+                "id": "gold_aksharantar_native_frequent_000193",
+                "input": "padhna",
+                "target": "पढ़्न",
+                "tokens": [
+                  "ढ़्न"
+                ]
+              },
+              {
+                "id": "gold_aksharantar_native_frequent_000219",
+                "input": "vishnumaya",
+                "target": "विष्मुमाया",
+                "tokens": [
+                  "ष्मु"
+                ]
+              },
+              {
+                "id": "gold_aksharantar_native_frequent_000441",
+                "input": "tainle",
+                "target": "तैँले",
+                "tokens": [
+                  "तैँ"
+                ]
+              },
+              {
+                "id": "gold_aksharantar_native_frequent_001072",
+                "input": "vishnumaayaa",
+                "target": "विष्मुमाया",
+                "tokens": [
+                  "ष्मु"
+                ]
+              },
+              {
+                "id": "gold_aksharantar_indian_names_000877",
+                "input": "varshney",
+                "target": "वार्ष्णी",
+                "tokens": [
+                  "र्ष्णी"
+                ]
+              },
+              {
+                "id": "gold_aksharantar_indian_names_001132",
+                "input": "sachan",
+                "target": "साक्हन",
+                "tokens": [
+                  "क्ह"
+                ]
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000435",
+                "input": "murfreesboro",
+                "target": "मर्फ्रिस्बरो",
+                "tokens": [
+                  "र्फ्रि"
+                ]
+              },
+              {
+                "id": "gold_aksharantar_foreign_names_000703",
+                "input": "shaw",
+                "target": "शँ",
+                "tokens": [
+                  "शँ"
+                ]
+              }
+            ]
+          },
+          "longest": [
+            {
+              "id": "gold_aksharantar_native_frequent_000135",
+              "input": "samalochakharusita",
+              "target": "समालोचकहरूसितको",
+              "tokens": 10
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000335",
+              "input": "antarwirodhharuma",
+              "target": "अन्तरविरोधहरूलाई",
+              "tokens": 10
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001136",
+              "input": "prashikshankariharulai",
+              "target": "प्रशिक्षणकारीहरूलाई",
+              "tokens": 10
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001530",
+              "input": "sahayogkartaharuprati",
+              "target": "सहयोगकर्ताहरूप्रति",
+              "tokens": 10
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001668",
+              "input": "awasarwadiharulai",
+              "target": "अवसरवादीहरूलाई",
+              "tokens": 10
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_001750",
+              "input": "rachanaprakriyasangasangai",
+              "target": "रचनाप्रक्रियासँगसँगै",
+              "tokens": 10
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000010",
+              "input": "atankawadiharudwara",
+              "target": "आतंकवादीहरूद्वारा",
+              "tokens": 9
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000061",
+              "input": "gairehekaharulai",
+              "target": "गइरहेकाहरूलाई",
+              "tokens": 9
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000134",
+              "input": "batairahanupardaina",
+              "target": "बताइरहनुपर्दैन",
+              "tokens": 9
+            },
+            {
+              "id": "gold_aksharantar_native_frequent_000164",
+              "input": "mahavidyalayaharuko",
+              "target": "महाविद्यालयहरूको",
+              "tokens": 9
+            }
+          ]
+        }
+      },
+      "benchmarkEvaluationUnits": {
+        "rows": 4085,
+        "rowsWithRepresentableTarget": 4079,
+        "rowsWithNoRepresentableTarget": 6,
+        "rowsWithAnyUnseenTarget": 8,
+        "noRepresentableTargetExamples": [
+          {
+            "id": "gold_aksharantar_native_frequent_000193",
+            "input": "padhna",
+            "targets": [
+              "पढ़्न"
+            ]
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_001072",
+            "input": "vishnumaayaa",
+            "targets": [
+              "विष्मुमाया"
+            ]
+          },
+          {
+            "id": "gold_aksharantar_indian_names_000877",
+            "input": "varshney",
+            "targets": [
+              "वार्ष्णी"
+            ]
+          },
+          {
+            "id": "gold_aksharantar_indian_names_001132",
+            "input": "sachan",
+            "targets": [
+              "साक्हन"
+            ]
+          },
+          {
+            "id": "gold_aksharantar_foreign_names_000435",
+            "input": "murfreesboro",
+            "targets": [
+              "मर्फ्रिस्बरो"
+            ]
+          },
+          {
+            "id": "gold_aksharantar_foreign_names_000703",
+            "input": "shaw",
+            "targets": [
+              "शँ"
+            ]
+          }
+        ]
+      },
+      "reconstruction": {
+        "mismatches": 0,
+        "examples": []
+      },
+      "coreMLAndRuntime": {
+        "vocabularyDependentParameters": 3133934,
+        "estimatedBaselineTotalParameters": 4470062,
+        "estimatedVocabularyDependentFloat32ParameterBytes": 12535736,
+        "estimatedVocabularyDependentFloat16ParameterBytes": 6267868,
+        "legacyFullDecoderLogitElements": 275218,
+        "legacyFullDecoderFloat32LogitBytes": 1100872,
+        "splitAttentionStepLogitElements": 35512,
+        "implication": "Changing vocabulary size changes model projection weights and Core ML tensor shapes; vocab JSON alone cannot be swapped.",
+        "relativeToCurrent": {
+          "vocabularyRatio": 7.39833333,
+          "vocabularyDependentParameterRatio": 7.39833333,
+          "fullDecoderLogitTensorRatio": 7.39833333,
+          "trainMeanStepRatio": 0.85887151
+        }
+      }
+    }
+  },
+  "invalidSequenceRisks": {
+    "train": {
+      "rows": 871695,
+      "rowsWithIssues": 86,
+      "shareWithIssues": 0.00009866,
+      "counts": {
+        "combining-mark-without-base": 50,
+        "dependent-vowel-sign-without-consonant": 12,
+        "duplicate-adjacent-mark": 4,
+        "multiple-vowel-signs-on-base": 23
+      },
+      "examples": {
+        "combining-mark-without-base": [
+          {
+            "id": "neural_open_vocab_0bcf4aafc32a589d",
+            "input": "chalaekochhainh",
+            "target": "चलाएकोछैन्ः"
+          },
+          {
+            "id": "neural_open_vocab_0df6ca23ef70db4f",
+            "input": "lekhdachhanh",
+            "target": "लेख्दछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_0e07f4c24351b110",
+            "input": "bhairahanchhanh",
+            "target": "भइरहन्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_11e92e62f91bf54f",
+            "input": "maarindaichhanh",
+            "target": "मारिँदैछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_1784c7893a7cb055",
+            "input": "sunaunchhinh",
+            "target": "सुनाउँछिन्ः"
+          },
+          {
+            "id": "neural_open_vocab_19b9f80bcb1b9e35",
+            "input": "nchunawako",
+            "target": "ंचुनावको"
+          },
+          {
+            "id": "neural_open_vocab_26073a26c1a5c2d5",
+            "input": "hepchhanh",
+            "target": "हेप्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_26709e40e0c69ca4",
+            "input": "pokhchhinh",
+            "target": "पोख्छिन्ः"
+          },
+          {
+            "id": "neural_open_vocab_36f4b034d7678ae8",
+            "input": "lagaaunthinh",
+            "target": "लगाउँथिन्ः"
+          },
+          {
+            "id": "neural_open_vocab_3a7a7a121fe3886a",
+            "input": "jodinchhanh",
+            "target": "जोडिन्छन्ः"
+          }
+        ],
+        "dependent-vowel-sign-without-consonant": [
+          {
+            "id": "neural_open_vocab_27fa2d8bb7c79064",
+            "input": "orton",
+            "target": "अोर्टन"
+          },
+          {
+            "id": "neural_open_vocab_2baf2349b20002b4",
+            "input": "afnai",
+            "target": "अाफ्नै"
+          },
+          {
+            "id": "neural_open_vocab_44e22dff523e1f49",
+            "input": "osmane",
+            "target": "अोस्माने"
+          },
+          {
+            "id": "neural_open_vocab_58f3acfad6c88be7",
+            "input": "eniyantranma",
+            "target": "ेनियन्त्रणमा"
+          },
+          {
+            "id": "neural_open_vocab_594ab68e37e5fee7",
+            "input": "abashyaktama",
+            "target": "अाबश्यकतामा"
+          },
+          {
+            "id": "neural_open_vocab_749c85d8d180e412",
+            "input": "auchityabare",
+            "target": "अौचित्यबारे"
+          },
+          {
+            "id": "neural_open_vocab_765a83c024ca159b",
+            "input": "adh",
+            "target": "अोढ्"
+          },
+          {
+            "id": "neural_open_vocab_788e652f5d8885ee",
+            "input": "osman",
+            "target": "अोसमेन"
+          },
+          {
+            "id": "neural_open_vocab_989c9df8717dc2f2",
+            "input": "rahanubhaeako",
+            "target": "रहनुभएाको"
+          },
+          {
+            "id": "neural_open_vocab_b205c96fa12e8769",
+            "input": "maoadika",
+            "target": "माओादीका"
+          }
+        ],
+        "duplicate-adjacent-mark": [
+          {
+            "id": "neural_open_vocab_17727c73bf338b61",
+            "input": "khojdaihunuhunthyo",
+            "target": "खोज्दैहुुनुहुन्थ्यो"
+          },
+          {
+            "id": "neural_open_vocab_20cceab6aeaef396",
+            "input": "bataunahunuhunchha",
+            "target": "बताउनहुुनुहुन्छ"
+          },
+          {
+            "id": "neural_open_vocab_620b05a4ece76e92",
+            "input": "nyadhiwaktako",
+            "target": "न्यााधिवक्ताको"
+          },
+          {
+            "id": "neural_open_vocab_93d7febd982faf31",
+            "input": "kunwar",
+            "target": "कुँँवर"
+          }
+        ],
+        "multiple-vowel-signs-on-base": [
+          {
+            "id": "neural_open_vocab_05537656c95d3efa",
+            "input": "punarnirmianma",
+            "target": "पुनर्निर्मिाणमा"
+          },
+          {
+            "id": "neural_open_vocab_17727c73bf338b61",
+            "input": "khojdaihunuhunthyo",
+            "target": "खोज्दैहुुनुहुन्थ्यो"
+          },
+          {
+            "id": "neural_open_vocab_20cceab6aeaef396",
+            "input": "bataunahunuhunchha",
+            "target": "बताउनहुुनुहुन्छ"
+          },
+          {
+            "id": "neural_open_vocab_27b55c1d1adf24a8",
+            "input": "rumallirahanthyo",
+            "target": "रुमल्लिरहन्थ्याे"
+          },
+          {
+            "id": "neural_open_vocab_46ab27d1039078ba",
+            "input": "lekhidinuparyo",
+            "target": "लेखिदिनुपर्याे"
+          },
+          {
+            "id": "neural_open_vocab_49ee84d3d1f8cda7",
+            "input": "falnuparyo",
+            "target": "फाल्नुपर्याे"
+          },
+          {
+            "id": "neural_open_vocab_4d83e71d1eaf992b",
+            "input": "partico",
+            "target": "पार्टिकाे"
+          },
+          {
+            "id": "neural_open_vocab_4e0850fe2930f002",
+            "input": "jenoalai",
+            "target": "जेनाेआलाई"
+          },
+          {
+            "id": "neural_open_vocab_5717f5a906cbabe2",
+            "input": "samhalnuparyo",
+            "target": "सम्हाल्नुपर्याे"
+          },
+          {
+            "id": "neural_open_vocab_61d636e33edbacf1",
+            "input": "warshikoetsawko",
+            "target": "वार्षिकोेत्सवको"
+          }
+        ]
+      },
+      "validButDecoderSensitiveContextCounts": {
+        "terminal-virama": 10172,
+        "virama-before-nonconsonant": 58
+      },
+      "validButDecoderSensitiveContextExamples": {
+        "terminal-virama": [
+          {
+            "id": "neural_open_vocab_000131fff5ae4ab2",
+            "input": "retingpashchat",
+            "target": "रेटिङपश्चात्"
+          },
+          {
+            "id": "neural_open_vocab_0002ca205805b10c",
+            "input": "bhannos",
+            "target": "भन्नोस्"
+          },
+          {
+            "id": "neural_open_vocab_0005aeea7274a104",
+            "input": "orsathin",
+            "target": "ओर्साथिन्"
+          },
+          {
+            "id": "neural_open_vocab_000afbfc788e59fb",
+            "input": "dekhaindaichan",
+            "target": "देखाइँदैछन्"
+          },
+          {
+            "id": "neural_open_vocab_00140d9fb6316559",
+            "input": "niklin",
+            "target": "निक्लिन्"
+          },
+          {
+            "id": "neural_open_vocab_00153d60e9236a58",
+            "input": "jalainechhan",
+            "target": "जलाइनेछन्"
+          },
+          {
+            "id": "neural_open_vocab_001ea3776fcc9fa4",
+            "input": "baljhiidinchhan",
+            "target": "बल्झिइदिन्छन्"
+          },
+          {
+            "id": "neural_open_vocab_0035c58b388356ad",
+            "input": "khanchhan",
+            "target": "खान्छन्"
+          },
+          {
+            "id": "neural_open_vocab_0045a7adcece0e32",
+            "input": "marirahechhan",
+            "target": "मारिरहेछन्"
+          },
+          {
+            "id": "neural_open_vocab_004d36bed7305dde",
+            "input": "jurachhan",
+            "target": "जुराछन्"
+          }
+        ],
+        "virama-before-nonconsonant": [
+          {
+            "id": "neural_open_vocab_0bcf4aafc32a589d",
+            "input": "chalaekochhainh",
+            "target": "चलाएकोछैन्ः"
+          },
+          {
+            "id": "neural_open_vocab_0df6ca23ef70db4f",
+            "input": "lekhdachhanh",
+            "target": "लेख्दछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_0e07f4c24351b110",
+            "input": "bhairahanchhanh",
+            "target": "भइरहन्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_11e92e62f91bf54f",
+            "input": "maarindaichhanh",
+            "target": "मारिँदैछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_1784c7893a7cb055",
+            "input": "sunaunchhinh",
+            "target": "सुनाउँछिन्ः"
+          },
+          {
+            "id": "neural_open_vocab_26073a26c1a5c2d5",
+            "input": "hepchhanh",
+            "target": "हेप्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_26709e40e0c69ca4",
+            "input": "pokhchhinh",
+            "target": "पोख्छिन्ः"
+          },
+          {
+            "id": "neural_open_vocab_27c86ddd0bde3838",
+            "input": "punarabhimukhikaran",
+            "target": "पुनर्अभिमुखीकरण"
+          },
+          {
+            "id": "neural_open_vocab_2c06826b17e3367e",
+            "input": "enactivatedpoliyo",
+            "target": "एन्एक्टिभेटेडपोलियो"
+          },
+          {
+            "id": "neural_open_vocab_36f4b034d7678ae8",
+            "input": "lagaaunthinh",
+            "target": "लगाउँथिन्ः"
+          }
+        ]
+      }
+    },
+    "dev": {
+      "rows": 87395,
+      "rowsWithIssues": 14,
+      "shareWithIssues": 0.00016019,
+      "counts": {
+        "combining-mark-without-base": 10,
+        "multiple-vowel-signs-on-base": 4
+      },
+      "examples": {
+        "combining-mark-without-base": [
+          {
+            "id": "neural_open_vocab_104b47dcbcfc3c54",
+            "input": "dekhinechhinh",
+            "target": "देखिनेछिन्ः"
+          },
+          {
+            "id": "neural_open_vocab_192cb8df999993ad",
+            "input": "paunechhanh",
+            "target": "पाउनेछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_4147def8a86883e5",
+            "input": "sodhchhanh",
+            "target": "सोध्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_5b1d9f5c34ba0b6d",
+            "input": "safirngako",
+            "target": "सफिर्ंगको"
+          },
+          {
+            "id": "neural_open_vocab_5c0015cd4fa4d1e8",
+            "input": "bujhaunchhanh",
+            "target": "बुझाउँछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_786ad573435da772",
+            "input": "ochhyaunchhanh",
+            "target": "ओछ्याउँछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_912826cef11f3e82",
+            "input": "khelnechhanh",
+            "target": "खेल्नेछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_bd9118118f89415c",
+            "input": "banaidinchhanh",
+            "target": "बनाइदिन्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_cffb1408d0388578",
+            "input": "banchnechhanh",
+            "target": "बाँच्नेछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_efd3ee96f506aec6",
+            "input": "ultinchhanh",
+            "target": "उल्टिन्छन्ः"
+          }
+        ],
+        "multiple-vowel-signs-on-base": [
+          {
+            "id": "neural_open_vocab_06ab084f581bd1bc",
+            "input": "pyakuryeldwara",
+            "target": "प्याकुर्याेलद्वारा"
+          },
+          {
+            "id": "neural_open_vocab_58ca57690047ca65",
+            "input": "dieko",
+            "target": "दिेएको"
+          },
+          {
+            "id": "neural_open_vocab_6b5c1dfc6e487773",
+            "input": "clement",
+            "target": "क्लिीमेन्ट"
+          },
+          {
+            "id": "neural_open_vocab_76e8e99d5d58544a",
+            "input": "dhoi",
+            "target": "धोौइ"
+          }
+        ]
+      },
+      "validButDecoderSensitiveContextCounts": {
+        "terminal-virama": 1074,
+        "virama-before-nonconsonant": 11
+      },
+      "validButDecoderSensitiveContextExamples": {
+        "terminal-virama": [
+          {
+            "id": "neural_open_vocab_007ad7c2e5d9cf91",
+            "input": "agliekachhan",
+            "target": "अग्लिएकाछन्"
+          },
+          {
+            "id": "neural_open_vocab_00f9acc4d9f9873a",
+            "input": "manak",
+            "target": "मनाक्"
+          },
+          {
+            "id": "neural_open_vocab_0116b95305e3f2fa",
+            "input": "gardarthin",
+            "target": "गर्दर्थिन्"
+          },
+          {
+            "id": "neural_open_vocab_015c033eb6d31ad7",
+            "input": "tar",
+            "target": "तर्"
+          },
+          {
+            "id": "neural_open_vocab_016ed1a0ab456ccf",
+            "input": "gobiechhan",
+            "target": "गोबिएछन्"
+          },
+          {
+            "id": "neural_open_vocab_0197cd4e23d7ecec",
+            "input": "pirdainan",
+            "target": "पिर्दैनन्"
+          },
+          {
+            "id": "neural_open_vocab_01d8560ec384e5fb",
+            "input": "pokhthin",
+            "target": "पोख्थिन्"
+          },
+          {
+            "id": "neural_open_vocab_021cf59a250b4789",
+            "input": "baulaechhan",
+            "target": "बौलाएछन्"
+          },
+          {
+            "id": "neural_open_vocab_0267ea80156ef025",
+            "input": "bhaisakekachhan",
+            "target": "भैसकेकाछन्"
+          },
+          {
+            "id": "neural_open_vocab_02707befe669021b",
+            "input": "bahos",
+            "target": "बहोस्"
+          }
+        ],
+        "virama-before-nonconsonant": [
+          {
+            "id": "neural_open_vocab_104b47dcbcfc3c54",
+            "input": "dekhinechhinh",
+            "target": "देखिनेछिन्ः"
+          },
+          {
+            "id": "neural_open_vocab_192cb8df999993ad",
+            "input": "paunechhanh",
+            "target": "पाउनेछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_4147def8a86883e5",
+            "input": "sodhchhanh",
+            "target": "सोध्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_5b1d9f5c34ba0b6d",
+            "input": "safirngako",
+            "target": "सफिर्ंगको"
+          },
+          {
+            "id": "neural_open_vocab_5c0015cd4fa4d1e8",
+            "input": "bujhaunchhanh",
+            "target": "बुझाउँछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_786ad573435da772",
+            "input": "ochhyaunchhanh",
+            "target": "ओछ्याउँछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_912826cef11f3e82",
+            "input": "khelnechhanh",
+            "target": "खेल्नेछन्ः"
+          },
+          {
+            "id": "neural_open_vocab_947a53921e591be5",
+            "input": "duritarfi",
+            "target": "दुर्इतर्फी"
+          },
+          {
+            "id": "neural_open_vocab_bd9118118f89415c",
+            "input": "banaidinchhanh",
+            "target": "बनाइदिन्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_cffb1408d0388578",
+            "input": "banchnechhanh",
+            "target": "बाँच्नेछन्ः"
+          }
+        ]
+      }
+    },
+    "test": {
+      "rows": 89681,
+      "rowsWithIssues": 10,
+      "shareWithIssues": 0.00011151,
+      "counts": {
+        "combining-mark-without-base": 4,
+        "multiple-vowel-signs-on-base": 6
+      },
+      "examples": {
+        "combining-mark-without-base": [
+          {
+            "id": "neural_open_vocab_3a71c814e5857039",
+            "input": "maninchhanh",
+            "target": "मानिन्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_5a7d6d43f1c4b6dc",
+            "input": "fyaankchhanh",
+            "target": "फ्याँक्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_f83391602a106e9e",
+            "input": "fukaunchhinh",
+            "target": "फुकाउँछिन्ः"
+          },
+          {
+            "id": "neural_open_vocab_fb04b9eb162ee738",
+            "input": "kuraunchhanh",
+            "target": "कुराउँछन्ः"
+          }
+        ],
+        "multiple-vowel-signs-on-base": [
+          {
+            "id": "neural_open_vocab_17c74d336f74f0c4",
+            "input": "farkaunuparyo",
+            "target": "फर्काउनुपर्याे"
+          },
+          {
+            "id": "neural_open_vocab_39df41370baef333",
+            "input": "morchabandikei",
+            "target": "मोर्चाबन्दीकेै"
+          },
+          {
+            "id": "neural_open_vocab_8959b2f967d44d89",
+            "input": "corneille",
+            "target": "कोेर्नेइले"
+          },
+          {
+            "id": "neural_open_vocab_9aad2dfa2d65bf67",
+            "input": "rakhnuparyo",
+            "target": "राख्नुपर्याे"
+          },
+          {
+            "id": "neural_open_vocab_9db6f15fb4ce4926",
+            "input": "siknuparyo",
+            "target": "सिक्नुपर्याे"
+          },
+          {
+            "id": "neural_open_vocab_fa292b1fbe6f2d3d",
+            "input": "jitaidinuparyo",
+            "target": "जिताइदिनुपर्याे"
+          }
+        ]
+      },
+      "validButDecoderSensitiveContextCounts": {
+        "terminal-virama": 1063,
+        "virama-before-nonconsonant": 4
+      },
+      "validButDecoderSensitiveContextExamples": {
+        "terminal-virama": [
+          {
+            "id": "neural_open_vocab_00562350b88d1abb",
+            "input": "motaichas",
+            "target": "मोटाइछस्"
+          },
+          {
+            "id": "neural_open_vocab_00bcf3931516bc80",
+            "input": "gungunaunuhos",
+            "target": "गुनगुनाउनुहोस्"
+          },
+          {
+            "id": "neural_open_vocab_00e4ee5bb4dd6524",
+            "input": "bhetwartapashchat",
+            "target": "भेटवार्तापश्चात्"
+          },
+          {
+            "id": "neural_open_vocab_00edac24b25d0be2",
+            "input": "napadkiyos",
+            "target": "नपड्कियोस्"
+          },
+          {
+            "id": "neural_open_vocab_00ef98b56abb2acc",
+            "input": "nabhaijaos",
+            "target": "नभैजाओस्"
+          },
+          {
+            "id": "neural_open_vocab_01aa244f200a7c0b",
+            "input": "karyalayamarfat",
+            "target": "कार्यालयमार्फत्"
+          },
+          {
+            "id": "neural_open_vocab_01f3f1bfbc01ea95",
+            "input": "sungh",
+            "target": "सुँघ्"
+          },
+          {
+            "id": "neural_open_vocab_0224676b2d33563e",
+            "input": "hepinechhan",
+            "target": "हेपिनेछन्"
+          },
+          {
+            "id": "neural_open_vocab_02a5a3997ef2510c",
+            "input": "sapteshwaris",
+            "target": "सप्तेश्वरीस्"
+          },
+          {
+            "id": "neural_open_vocab_02cfcb573bf557ab",
+            "input": "san",
+            "target": "सन्"
+          }
+        ],
+        "virama-before-nonconsonant": [
+          {
+            "id": "neural_open_vocab_3a71c814e5857039",
+            "input": "maninchhanh",
+            "target": "मानिन्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_5a7d6d43f1c4b6dc",
+            "input": "fyaankchhanh",
+            "target": "फ्याँक्छन्ः"
+          },
+          {
+            "id": "neural_open_vocab_f83391602a106e9e",
+            "input": "fukaunchhinh",
+            "target": "फुकाउँछिन्ः"
+          },
+          {
+            "id": "neural_open_vocab_fb04b9eb162ee738",
+            "input": "kuraunchhanh",
+            "target": "कुराउँछन्ः"
+          }
+        ]
+      }
+    },
+    "benchmark": {
+      "rows": 4101,
+      "rowsWithIssues": 0,
+      "shareWithIssues": 0,
+      "counts": {},
+      "examples": {},
+      "validButDecoderSensitiveContextCounts": {
+        "terminal-virama": 72
+      },
+      "validButDecoderSensitiveContextExamples": {
+        "terminal-virama": [
+          {
+            "id": "gold_aksharantar_native_frequent_000076",
+            "input": "janos",
+            "target": "जानोस्"
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_000107",
+            "input": "khojchhan",
+            "target": "खोज्छन्"
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_000180",
+            "input": "samatihalin",
+            "target": "समातिहालिन्"
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_000190",
+            "input": "ufrin",
+            "target": "उफ्रिन्"
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_000201",
+            "input": "bataidinchhan",
+            "target": "बताइदिन्छन्"
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_000205",
+            "input": "tanchhan",
+            "target": "तान्छन्"
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_000314",
+            "input": "samjhanchhan",
+            "target": "सम्झन्छन्"
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_000326",
+            "input": "aain",
+            "target": "आइन्"
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_000352",
+            "input": "lekhchhan",
+            "target": "लेख्छन्"
+          },
+          {
+            "id": "gold_aksharantar_native_frequent_000388",
+            "input": "aipugchhan",
+            "target": "आइपुग्छन्"
+          }
+        ]
+      }
+    }
+  },
+  "invalidSequenceRiskMethod": "Conservative structural heuristics, not linguistic adjudication. Legitimate terminal VIRAMA and VIRAMA before a non-consonant are reported as decoder-sensitive contexts, not invalid rows.",
+  "sourceInspection": {
+    "trainer": "scripts/train-open-vocab-seq2seq-transliterator.py:641-650,1041-1072,1173-1200,2180-2182",
+    "nativeRuntime": "native/macos-imk/skeleton/LekhNeuralCandidateService.swift:781-930,945-965,1215-1260",
+    "observedRuntimeBehavior": [
+      "The output vocabulary is built from train only; unseen dev/test tokens encode as <unk>.",
+      "The native decoder concatenates token strings verbatim.",
+      "The native decoder blocks <unk> but does not apply a Unicode-sequence state mask.",
+      "The native candidate filter checks NFC and allowed scalars, but not mark/joiner ordering."
+    ]
+  },
+  "recommendation": {
+    "choice": "unicode-scalars-with-decoder-sequence-validation",
+    "reason": "Scalar tokenization eliminates observed vocabulary OOVs and sharply reduces the Core ML output dimension. A small stateful Unicode validity mask (or equivalent final candidate validator) is required before this is production-safe because combining marks become independently generatable.",
+    "smallestSafeChange": [
+      "Replace output grapheme tokenization with NFC Unicode scalars in training/evaluation metadata.",
+      "Keep the 32-token tensor, but replace the inputLength+8 inference cap with the full 31-step decoder cap; scalar targets fit the tensor but some acronym expansions exceed the current dynamic budget.",
+      "Reject or mask leading dependent marks, duplicate/multiple vowel signs, and orphan joiners during both Python and Swift decoding; preserve legitimate terminal VIRAMA and explicit halant contexts.",
+      "Filter or repair the small set of source targets with unambiguous mark-order defects before retraining.",
+      "Retrain and regenerate the checkpoint, Core ML model, vocabulary metadata, manifest hashes, parity evidence, and benchmark results as one atomic artifact set."
+    ],
+    "rejectedAlternatives": {
+      "current": "Keeps a four-digit output vocabulary and creates train-only atomic mark combinations that make valid dev/test targets unrepresentable.",
+      "joinerAwareScalars": "Has no measured benefit because the full dataset and official benchmark contain no ZWJ/ZWNJ; it should remain a decoder validity rule, not a distinct vocabulary scheme.",
+      "unicodeExtendedGraphemes": "Preserves orthographic atoms but expands the sparse vocabulary and OOV surface; it is unsuitable for an open-vocabulary transliterator."
+    }
+  }
+}
