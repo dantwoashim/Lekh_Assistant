@@ -7,7 +7,7 @@
     "reportPath": "reports/neural-open-vocab-dataset-report.json"
   },
   "productionRequiredSources": [
-    "syubraj-roman2nepali-transliteration",
+    "ai4bharat-aksharantar-nepali",
     "human-reviewed-lekh-gold-v1",
     "lekh-chat-conventions-v1",
     "lekh-name-lexicon-v1"
@@ -59,14 +59,16 @@
     },
     {
       "id": "syubraj-roman2nepali-transliteration",
-      "tier": "licensed-public",
-      "license": "MIT-labeled Hugging Face dataset; verify exact local snapshot before production.",
-      "status": "not-imported",
+      "tier": "local-research-only",
+      "license": "MIT-labeled Hugging Face mirror; local snapshot only and not independent production evidence.",
+      "status": "blocked",
       "rawDataCommitted": false,
-      "allowedForOpenVocabTokenTraining": true,
-      "productionRequired": true,
+      "allowedForOpenVocabTokenTraining": false,
+      "productionRequired": false,
+      "lineageId": "aksharantar-nepali-public-lineage",
+      "canonicalTrainingSource": "ai4bharat-aksharantar-nepali",
       "defaultPath": "data/private/neural/syubraj-roman2nepali-transliteration/*.tsv",
-      "notes": "Primary large Romanized-to-Nepali training source. Import locally with npm run neural:source:syubraj. Raw data must stay ignored; only cleaned reports/manifests may be committed."
+      "notes": "Blocked from production training. The locally imported mirror overlaps the official Aksharantar Nepali snapshot row-for-row in the consumed range, so it is not an independent source and must not add rows, corroboration, source counts, or training weight. Keep only for local provenance research."
     },
     {
       "id": "ai4bharat-aksharantar-nepali",
@@ -75,20 +77,24 @@
       "status": "not-imported",
       "rawDataCommitted": false,
       "allowedForOpenVocabTokenTraining": true,
-      "productionRequired": false,
+      "productionRequired": true,
+      "lineageId": "aksharantar-nepali-public-lineage",
+      "canonicalTrainingSource": "ai4bharat-aksharantar-nepali",
       "defaultPath": "data/private/neural/ai4bharat-aksharantar-nepali/*.tsv",
-      "notes": "Large curated Nepali transliteration source from AI4Bharat Aksharantar. Import locally with npm run neural:source:aksharantar:nepali. Useful for higher-coverage open-vocab training and benchmark split comparison; not a replacement for private human-reviewed Lekh gold."
+      "notes": "Canonical public production source for this lineage. The pinned snapshot yields 6,898 unique cleaned held-out pairs: all 4,101 test observations are retained, while seven identical validation copies are suppressed by deterministic test > validation > train precedence. The default deterministic one-million-row train selection matches the current executable training ceiling without file-order bias; LEKH_NEURAL_AKSHARANTAR_TRAIN_ROW_CAP=full explicitly requests the complete train split on a measured high-memory host. It does not replace private human-reviewed Lekh gold."
     },
     {
       "id": "saugatkafley-nepali-roman-transliteration",
-      "tier": "licensed-public",
-      "license": "MIT-labeled Hugging Face source dataset; verify exact local snapshot before use.",
-      "status": "not-imported",
+      "tier": "local-research-only",
+      "license": "MIT-labeled Hugging Face mirror lineage; local provenance research only.",
+      "status": "blocked",
       "rawDataCommitted": false,
-      "allowedForOpenVocabTokenTraining": true,
+      "allowedForOpenVocabTokenTraining": false,
       "productionRequired": false,
+      "lineageId": "aksharantar-nepali-public-lineage",
+      "canonicalTrainingSource": "ai4bharat-aksharantar-nepali",
       "defaultPath": "data/private/neural/saugatkafley-nepali-roman-transliteration/*.tsv",
-      "notes": "Cross-check and dedup source for the syubraj mirror."
+      "notes": "Blocked from production training because it is part of the same mirror lineage as the Syubraj snapshot and official Aksharantar data. It may be used only to investigate provenance; it must never count as independent corroboration."
     },
     {
       "id": "runtime-words",

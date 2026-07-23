@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
+import { StringDecoder } from "node:string_decoder";
 import {
   computeNeuralDatasetContentSha256,
   validateNeuralDatasetManifest
@@ -13,6 +14,11 @@ import {
   mergeNeuralOpenVocabAccumulator,
   validateNeuralOpenVocabRecord
 } from "./lib/neural-open-vocab-record.mjs";
+import {
+  DeterministicTrainCapSelector,
+  LeakageSafeSplitPlanner,
+  novelSourceIdsForLineages
+} from "./lib/neural-source-lineage.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -22,10 +28,12 @@ const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v2.json"
 const legacyDatasetDir = join(root, "data", "generated", "neural-transliteration");
 const privateSyubrajPath = join(root, "data", "private", "neural", "syubraj-roman2nepali-transliteration", "syubraj-roman2nepali-transliteration.tsv");
 const privateSyubrajManifestPath = join(dirname(privateSyubrajPath), "manifest.json");
-const privateSyubrajRowLimit = Number(process.env.LEKH_NEURAL_SYUBRAJ_ROW_LIMIT ?? "1200000");
 const privateAksharantarPath = join(root, "data", "private", "neural", "ai4bharat-aksharantar-nepali", "aksharantar-nepali.tsv");
 const privateAksharantarManifestPath = join(dirname(privateAksharantarPath), "manifest.json");
-const privateAksharantarRowLimit = Number(process.env.LEKH_NEURAL_AKSHARANTAR_ROW_LIMIT ?? "1200000");
+const privateAksharantarTrainRowCapValue = process.env.LEKH_NEURAL_AKSHARANTAR_TRAIN_ROW_CAP ?? "1000000";
+const privateAksharantarTrainRowCap = privateAksharantarTrainRowCapValue === "full"
+  ? null
+  : Number(privateAksharantarTrainRowCapValue);
 const outDir = join(root, "data", "generated", "neural-open-vocab");
 const reportPath = join(root, "reports", production ? "neural-open-vocab-dataset-production-report.json" : "neural-open-vocab-dataset-report.json");
 
@@ -33,21 +41,22 @@ const failures = [];
 const warnings = [];
 const rejected = {};
 const rowsByKey = new Map();
-const splitByInput = new Map();
-const sourceCounts = {};
 const sourceConsumption = new Map();
+const sourceSelection = new Map();
+const goldReservation = { rows: 0, inputIdentities: new Set(), targetIdentities: new Set() };
 let generatedManifest = null;
 
 const registry = readJson(registryPath, "source registry");
 const goldManifest = readJson(goldManifestPath, "gold manifest");
 const sources = new Map((registry?.sources ?? []).map((source) => [source.id, source]));
+const splitPlanner = new LeakageSafeSplitPlanner(stableSplitForInput);
 
 validateRegistry(registry);
 validateGoldRelease(goldManifest);
 loadGoldRows(goldManifest);
 loadLegacyTsvRows();
-loadPrivateSyubrajRows();
 loadPrivateAksharantarRows();
+resolveAccumulatorSplits();
 
 const rows = [...rowsByKey.values()]
   .map(finalizeNeuralOpenVocabAccumulator)
@@ -83,39 +92,31 @@ function loadGoldRows(manifest) {
         failures.push(`${suite.path}:${lineIndex + 1} invalid JSON: ${error.message}`);
         continue;
       }
-      const source = sourceForGoldRow(row);
-      if (row.expectedAction === "no-neural-candidate") {
-        addCleanRow({
-          action: "no-neural-candidate",
-          input: row.input,
-          target: null,
-          acceptable: [],
-          split: row.split,
-          category: row.category,
-          sourceIds: [source.id],
-          sourceTier: "safety-negative",
-          reviewTier: row.reviewTier,
-          license: row.license,
-          weight: 1
-        }, `${suite.path}:${lineIndex + 1}`);
-        continue;
-      }
-      for (const target of row.acceptable ?? row.expected ?? []) {
-        addCleanRow({
-          action: "produce-candidate",
-          input: row.input,
-          target,
-          acceptable: row.acceptable ?? [target],
-          split: row.split,
-          category: row.category,
-          sourceIds: [source.id],
-          sourceTier: source.tier === "gold" ? "gold" : "contract-seed",
-          reviewTier: row.reviewTier,
-          license: row.license,
-          weight: source.tier === "gold" ? 12 : 4
-        }, `${suite.path}:${lineIndex + 1}`);
-      }
+      reserveGoldIdentity(row, `${suite.path}:${lineIndex + 1}`);
     }
+  }
+}
+
+function reserveGoldIdentity(row, location) {
+  const input = normalizeInput(row.input);
+  if (!input) {
+    failures.push(`Gold reservation has an empty input at ${location}.`);
+    return;
+  }
+  goldReservation.rows += 1;
+  goldReservation.inputIdentities.add(input);
+  const targets = row.expectedAction === "no-neural-candidate"
+    ? [null]
+    : Array.from(new Set((row.acceptable ?? row.expected ?? []).map(normalizeOutput).filter(Boolean)));
+  if (targets.length === 0) {
+    failures.push(`Gold reservation has no target at ${location}.`);
+    return;
+  }
+  for (const target of targets) {
+    if (target !== null) goldReservation.targetIdentities.add(target);
+    // Every committed evaluation identity is held out from train, including
+    // foundation rows whose historical metadata used a train/dev split.
+    splitPlanner.add(input, target, "test");
   }
 }
 
@@ -172,70 +173,6 @@ function loadLegacyTsvRows() {
   }
 }
 
-function loadPrivateSyubrajRows() {
-  if (!existsSync(privateSyubrajPath)) {
-    if (production) {
-      failures.push("Production open-vocabulary dataset requires data/private/neural/syubraj-roman2nepali-transliteration/syubraj-roman2nepali-transliteration.tsv. Run npm run neural:source:syubraj.");
-    } else {
-      warnings.push("Private syubraj import is missing; run npm run neural:source:syubraj to add the 2.4M-row public source locally.");
-    }
-    return;
-  }
-  const sourceId = "syubraj-roman2nepali-transliteration";
-  const source = sources.get(sourceId);
-  if (!source) {
-    failures.push(`Source registry missing ${sourceId}.`);
-    return;
-  }
-  if (!source.allowedForOpenVocabTokenTraining) {
-    failures.push(`${sourceId} must be allowed for open-vocabulary token training.`);
-    return;
-  }
-  const lines = readLines(privateSyubrajPath);
-  const header = lines.shift()?.split("\t") ?? [];
-  const romanizedIndex = header.indexOf("romanized");
-  const devanagariIndex = header.indexOf("devanagari");
-  const sourceIndex = header.indexOf("source");
-  if (romanizedIndex < 0 || devanagariIndex < 0 || sourceIndex < 0) {
-    failures.push(`${relative(root, privateSyubrajPath)} must have romanized/devanagari/source columns.`);
-    return;
-  }
-  if (!Number.isInteger(privateSyubrajRowLimit) || privateSyubrajRowLimit < 1_000_000) {
-    failures.push("LEKH_NEURAL_SYUBRAJ_ROW_LIMIT must be an integer >= 1,000,000 when the private syubraj source is present.");
-    return;
-  }
-  let imported = 0;
-  for (const [lineIndex, line] of lines.entries()) {
-    if (imported >= privateSyubrajRowLimit) break;
-    const columns = line.split("\t");
-    const rowSourceId = columns[sourceIndex];
-    if (rowSourceId !== sourceId) {
-      reject(`unexpected-private-source:${rowSourceId || "<empty>"}`, 1);
-      continue;
-    }
-    const input = columns[romanizedIndex];
-    const target = columns[devanagariIndex];
-    addCleanRow({
-      action: "produce-candidate",
-      input,
-      target,
-      acceptable: [target],
-      split: stableSplitForInput(input),
-      category: "romanized-token",
-      sourceIds: [sourceId],
-      sourceTier: "licensed-public",
-      reviewTier: "silver-public-transliteration",
-      license: source.license,
-      weight: 1.2
-    }, `${relative(root, privateSyubrajPath)}:${lineIndex + 2}`);
-    imported += 1;
-  }
-  sourceConsumption.set(sourceId, imported);
-  if (lines.length > imported) {
-    warnings.push(`Private syubraj source has ${lines.length} rows; open-vocab builder used the first ${imported} rows for bounded-memory production gating. Set LEKH_NEURAL_SYUBRAJ_ROW_LIMIT to raise this.`);
-  }
-}
-
 function loadPrivateAksharantarRows() {
   if (!existsSync(privateAksharantarPath)) {
     warnings.push("Private Aksharantar Nepali import is missing; run npm run neural:source:aksharantar:nepali for a large curated public Nepali split.");
@@ -251,53 +188,102 @@ function loadPrivateAksharantarRows() {
     failures.push(`${sourceId} must be allowed for open-vocabulary token training.`);
     return;
   }
-  const lines = readLines(privateAksharantarPath);
-  const header = lines.shift()?.split("\t") ?? [];
+  const lineEntries = readLineEntries(privateAksharantarPath);
+  const firstEntry = lineEntries.next();
+  const header = firstEntry.done ? [] : firstEntry.value.line.split("\t");
   const romanizedIndex = header.indexOf("romanized");
   const devanagariIndex = header.indexOf("devanagari");
   const sourceIndex = header.indexOf("source");
   const upstreamSplitIndex = header.indexOf("upstreamSplit");
+  const upstreamIdIndex = header.indexOf("upstreamId");
   const upstreamSourceIndex = header.indexOf("upstreamSource");
   if (romanizedIndex < 0 || devanagariIndex < 0 || sourceIndex < 0 || upstreamSplitIndex < 0 || upstreamSourceIndex < 0) {
     failures.push(`${relative(root, privateAksharantarPath)} must have romanized/devanagari/source/upstreamSplit/upstreamSource columns.`);
     return;
   }
-  if (!Number.isInteger(privateAksharantarRowLimit) || privateAksharantarRowLimit < 100_000) {
-    failures.push("LEKH_NEURAL_AKSHARANTAR_ROW_LIMIT must be an integer >= 100,000 when the private Aksharantar source is present.");
+  if (privateAksharantarTrainRowCap !== null &&
+      (!Number.isInteger(privateAksharantarTrainRowCap) || privateAksharantarTrainRowCap < 1)) {
+    failures.push("LEKH_NEURAL_AKSHARANTAR_TRAIN_ROW_CAP must be a positive integer or the literal full.");
     return;
   }
-  let imported = 0;
-  for (const [lineIndex, line] of lines.entries()) {
-    if (imported >= privateAksharantarRowLimit) break;
+
+  const cappedTrain = privateAksharantarTrainRowCap === null
+    ? null
+    : new DeterministicTrainCapSelector(privateAksharantarTrainRowCap);
+  let availableTrainRows = 0;
+  let selectedTrainRows = 0;
+  let heldOutRows = 0;
+  for (const { line, lineNumber } of lineEntries) {
     const columns = line.split("\t");
     const rowSourceId = columns[sourceIndex];
     if (rowSourceId !== sourceId) {
       reject(`unexpected-private-source:${rowSourceId || "<empty>"}`, 1);
       continue;
     }
-    const input = columns[romanizedIndex];
-    const target = columns[devanagariIndex];
     const upstreamSplit = columns[upstreamSplitIndex];
-    const upstreamSource = columns[upstreamSourceIndex];
-    addCleanRow({
-      action: "produce-candidate",
-      input,
-      target,
-      acceptable: [target],
-      split: splitFromAksharantar(upstreamSplit, input),
-      category: "romanized-token",
-      sourceIds: [sourceId],
-      sourceTier: "licensed-public",
-      reviewTier: reviewTierForAksharantar(upstreamSource),
-      license: source.license,
-      weight: weightForAksharantar(upstreamSource)
-    }, `${relative(root, privateAksharantarPath)}:${lineIndex + 2}`);
-    imported += 1;
+    if (!["train", "validation", "test"].includes(upstreamSplit)) {
+      failures.push(`${relative(root, privateAksharantarPath)}:${lineNumber} has unsupported upstream split: ${upstreamSplit || "<empty>"}.`);
+      continue;
+    }
+    const candidate = {
+      input: columns[romanizedIndex],
+      target: columns[devanagariIndex],
+      upstreamSplit,
+      upstreamId: upstreamIdIndex >= 0 ? columns[upstreamIdIndex] : "",
+      upstreamSource: columns[upstreamSourceIndex],
+      location: `${relative(root, privateAksharantarPath)}:${lineNumber}`
+    };
+    if (upstreamSplit === "train") {
+      availableTrainRows += 1;
+      if (cappedTrain !== null) {
+        cappedTrain.add(candidate);
+        continue;
+      }
+      selectedTrainRows += 1;
+    } else {
+      heldOutRows += 1;
+    }
+    addAksharantarCandidate(candidate, sourceId, source);
   }
-  sourceConsumption.set(sourceId, imported);
-  if (lines.length > imported) {
-    warnings.push(`Private Aksharantar Nepali source has ${lines.length} rows; open-vocab builder used the first ${imported} rows. Set LEKH_NEURAL_AKSHARANTAR_ROW_LIMIT to raise this.`);
+
+  if (cappedTrain !== null) {
+    const selectedTrain = cappedTrain.selected();
+    selectedTrainRows = selectedTrain.length;
+    for (const candidate of selectedTrain) addAksharantarCandidate(candidate, sourceId, source);
   }
+
+  const omittedTrainRows = availableTrainRows - selectedTrainRows;
+  sourceConsumption.set(sourceId, selectedTrainRows + heldOutRows);
+  sourceSelection.set(sourceId, {
+    policy: privateAksharantarTrainRowCap === null
+      ? "full-official-snapshot-with-upstream-held-out-preserved"
+      : "deterministic-hash-ranked-train-cap-with-upstream-held-out-preserved",
+    trainCap: privateAksharantarTrainRowCap,
+    availableTrainRows,
+    selectedTrainRows,
+    heldOutRows,
+    omittedTrainRows
+  });
+  if (omittedTrainRows > 0) {
+    warnings.push(`Aksharantar train cap omitted ${omittedTrainRows} upstream train rows; all ${heldOutRows} unique cleaned official held-out pairs were preserved with test > validation precedence.`);
+  }
+}
+
+function addAksharantarCandidate(candidate, sourceId, source) {
+  const { input, target, upstreamSplit, upstreamSource } = candidate;
+  addCleanRow({
+    action: "produce-candidate",
+    input,
+    target,
+    acceptable: [target],
+    split: splitFromAksharantar(upstreamSplit, input),
+    category: "romanized-token",
+    sourceIds: [sourceId],
+    sourceTier: "licensed-public",
+    reviewTier: reviewTierForAksharantar(upstreamSource),
+    license: source.license,
+    weight: weightForAksharantar(upstreamSource)
+  }, candidate.location);
 }
 
 function addCleanRow(candidate, location) {
@@ -314,20 +300,26 @@ function addCleanRow(candidate, location) {
   }
 
   const sourceIds = Array.from(new Set(candidate.sourceIds.map(String))).sort();
-  const split = splitForRow(input, candidate.split);
+  splitPlanner.add(input, target, candidate.split);
+  const provisionalSplit = "train";
   const acceptable = candidate.action === "produce-candidate"
     ? Array.from(new Set((candidate.acceptable ?? [target]).map(normalizeOutput).filter(Boolean))).filter((value) => !/\s/.test(value) && !/[A-Za-z]/.test(value))
     : [];
   const rowKey = `${candidate.action}\u0000${input}\u0000${target ?? "<NO_NEURAL_CANDIDATE>"}`;
   if (rowsByKey.has(rowKey)) {
     const existing = rowsByKey.get(rowKey);
+    const novelSourceIds = novelSourceIdsForLineages([...existing.sourceIds], sourceIds, sources);
+    if (novelSourceIds.length === 0) {
+      reject("duplicate-same-lineage-row-ignored", 1);
+      return;
+    }
     mergeNeuralOpenVocabAccumulator(existing, {
       ...candidate,
       input,
       target,
-      split,
+      split: provisionalSplit,
       acceptable,
-      sourceIds
+      sourceIds: novelSourceIds
     });
     reject("duplicate-clean-row-merged", 1);
     return;
@@ -335,7 +327,7 @@ function addCleanRow(candidate, location) {
 
   rowsByKey.set(rowKey, createNeuralOpenVocabAccumulator({
     ...candidate,
-    split,
+    split: provisionalSplit,
     input,
     target,
     acceptable,
@@ -343,13 +335,10 @@ function addCleanRow(candidate, location) {
   }));
 }
 
-function splitForRow(input, requestedSplit) {
-  const normalizedInput = normalizeInput(input);
-  const existing = splitByInput.get(normalizedInput);
-  if (existing) return existing;
-  const split = ["train", "dev", "test"].includes(requestedSplit) ? requestedSplit : stableSplitForInput(normalizedInput);
-  splitByInput.set(normalizedInput, split);
-  return split;
+function resolveAccumulatorSplits() {
+  for (const accumulator of rowsByKey.values()) {
+    accumulator.split = splitPlanner.splitFor(accumulator.input);
+  }
 }
 
 function stableSplitForInput(input) {
@@ -368,6 +357,7 @@ function validateCleanRows(rows, splitRows) {
   const seenIds = new Set();
   const splitByPair = new Map();
   const splitsByInput = new Map();
+  const splitsByTarget = new Map();
   for (const row of rows) {
     if (seenIds.has(row.id)) failures.push(`Duplicate cleaned row id: ${row.id}`);
     seenIds.add(row.id);
@@ -387,6 +377,9 @@ function validateCleanRows(rows, splitRows) {
       const splits = splitByPair.get(key) ?? new Set();
       splits.add(row.split);
       splitByPair.set(key, splits);
+      const targetSplits = splitsByTarget.get(row.target) ?? new Set();
+      targetSplits.add(row.split);
+      splitsByTarget.set(row.target, targetSplits);
     }
   }
   for (const [key, splits] of splitByPair) {
@@ -394,6 +387,9 @@ function validateCleanRows(rows, splitRows) {
   }
   for (const [input, splits] of splitsByInput) {
     if (splits.size > 1) failures.push(`Cleaned normalized input leaks across splits: ${input}`);
+  }
+  for (const [target, splits] of splitsByTarget) {
+    if (splits.size > 1) failures.push(`Cleaned target identity leaks across splits: ${target}`);
   }
 }
 
@@ -479,6 +475,8 @@ function validateRegistry(registry) {
   if (registry.schemaVersion !== 1) failures.push("Neural source registry schemaVersion must be 1.");
   if (registry.phase !== "phase2-source-cleaning") failures.push("Neural source registry phase must be phase2-source-cleaning.");
   const ids = new Set();
+  const trainingSourcesByLineage = new Map();
+  const requiredSources = new Set(registry.productionRequiredSources ?? []);
   for (const source of registry.sources ?? []) {
     if (ids.has(source.id)) failures.push(`Duplicate source id in registry: ${source.id}`);
     ids.add(source.id);
@@ -491,9 +489,40 @@ function validateRegistry(registry) {
     if (source.id === "runtime-phrases" && source.allowedForOpenVocabTokenTraining) {
       failures.push("runtime-phrases must remain excluded from open-vocabulary token training.");
     }
+    if (source.productionRequired !== requiredSources.has(source.id)) {
+      failures.push(`Source ${source.id} productionRequired must match productionRequiredSources.`);
+    }
+    if (source.productionRequired && !source.allowedForOpenVocabTokenTraining) {
+      failures.push(`Production required source must be allowed for token training: ${source.id}`);
+    }
+    if ((source.status === "blocked" || source.tier === "local-research-only") &&
+        source.allowedForOpenVocabTokenTraining) {
+      failures.push(`Blocked/local-research source must not be allowed for token training: ${source.id}`);
+    }
+    if (source.allowedForOpenVocabTokenTraining) {
+      const lineageId = String(source.lineageId ?? source.id);
+      const lineageSources = trainingSourcesByLineage.get(lineageId) ?? [];
+      lineageSources.push(source.id);
+      trainingSourcesByLineage.set(lineageId, lineageSources);
+      if (source.canonicalTrainingSource && source.canonicalTrainingSource !== source.id) {
+        failures.push(`Allowed training source ${source.id} must be canonical for its lineage.`);
+      }
+    }
   }
   for (const required of registry.productionRequiredSources ?? []) {
     if (!ids.has(required)) failures.push(`Production required source missing from registry: ${required}`);
+  }
+  for (const [lineageId, sourceIds] of trainingSourcesByLineage) {
+    if (sourceIds.length > 1) {
+      failures.push(`Training lineage ${lineageId} has multiple admitted sources: ${sourceIds.sort().join(", ")}`);
+    }
+  }
+  for (const blockedMirror of ["syubraj-roman2nepali-transliteration", "saugatkafley-nepali-roman-transliteration"]) {
+    const source = sources.get(blockedMirror);
+    if (!source || source.status !== "blocked" || source.allowedForOpenVocabTokenTraining !== false ||
+        source.canonicalTrainingSource !== "ai4bharat-aksharantar-nepali") {
+      failures.push(`${blockedMirror} must remain blocked behind the canonical Aksharantar source.`);
+    }
   }
 }
 
@@ -525,14 +554,6 @@ function validateGoldRelease(manifest) {
   if (manifest.corpusSha256 !== corpusHash.digest("hex")) {
     failures.push("Locked neural gold aggregate corpus digest is stale.");
   }
-}
-
-function sourceForGoldRow(row) {
-  if (sources.has(row.source)) return sources.get(row.source);
-  if (row.reviewTier === "contract-seed") return sources.get("lekh-phase1-contract-seed-v1");
-  if (row.category === "chat-convention") return sources.get("lekh-chat-conventions-v1");
-  if (row.category === "name") return sources.get("lekh-name-lexicon-v1");
-  return sources.get("human-reviewed-lekh-gold-v1");
 }
 
 function categoryForSource(sourceId) {
@@ -575,6 +596,40 @@ function readJson(path, label) {
 
 function readLines(path) {
   return readFileSync(path, "utf8").split(/\r?\n/).filter(Boolean);
+}
+
+function* readLineEntries(path) {
+  const fd = openSync(path, "r");
+  const decoder = new StringDecoder("utf8");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  let pending = "";
+  let lineNumber = 0;
+  try {
+    for (;;) {
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      pending += decoder.write(buffer.subarray(0, bytesRead));
+      let start = 0;
+      let newline = pending.indexOf("\n", start);
+      while (newline >= 0) {
+        lineNumber += 1;
+        let line = pending.slice(start, newline);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (line) yield { line, lineNumber };
+        start = newline + 1;
+        newline = pending.indexOf("\n", start);
+      }
+      pending = pending.slice(start);
+    }
+    pending += decoder.end();
+    if (pending) {
+      lineNumber += 1;
+      if (pending.endsWith("\r")) pending = pending.slice(0, -1);
+      if (pending) yield { line: pending, lineNumber };
+    }
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function normalizeInput(value) {
@@ -628,19 +683,17 @@ function datasetProvenance() {
       }))
     },
     inputs: [
-      sourceFileProvenance(
+      blockedSourceProvenance(
         "syubraj-roman2nepali-transliteration",
         privateSyubrajPath,
-        privateSyubrajManifestPath,
-        sourceConsumption.get("syubraj-roman2nepali-transliteration") ?? 0,
-        privateSyubrajRowLimit
+        privateSyubrajManifestPath
       ),
       sourceFileProvenance(
         "ai4bharat-aksharantar-nepali",
         privateAksharantarPath,
         privateAksharantarManifestPath,
         sourceConsumption.get("ai4bharat-aksharantar-nepali") ?? 0,
-        privateAksharantarRowLimit
+        sourceSelection.get("ai4bharat-aksharantar-nepali") ?? null
       ),
       ...["train", "dev", "test"].map((split) => {
         const path = join(legacyDatasetDir, `${split}.tsv`);
@@ -664,7 +717,7 @@ function lockedFile(path) {
   };
 }
 
-function sourceFileProvenance(id, dataPath, importManifestPath, consumedRows, rowLimit) {
+function sourceFileProvenance(id, dataPath, importManifestPath, consumedRows, selection) {
   if (!existsSync(dataPath)) {
     return {
       id,
@@ -673,7 +726,7 @@ function sourceFileProvenance(id, dataPath, importManifestPath, consumedRows, ro
       sha256: null,
       bytes: null,
       consumedRows: 0,
-      rowLimit,
+      selection,
       importManifest: null
     };
   }
@@ -704,8 +757,26 @@ function sourceFileProvenance(id, dataPath, importManifestPath, consumedRows, ro
     sha256: actualSha256,
     bytes: statSync(dataPath).size,
     consumedRows,
-    rowLimit,
+    selection,
     importManifest
+  };
+}
+
+function blockedSourceProvenance(id, dataPath, importManifestPath) {
+  return {
+    id,
+    status: existsSync(dataPath) ? "blocked-local-research-present-not-consumed" : "blocked-local-research-absent",
+    path: relative(root, dataPath),
+    sha256: existsSync(dataPath) ? fileSha256(dataPath) : null,
+    bytes: existsSync(dataPath) ? statSync(dataPath).size : null,
+    consumedRows: 0,
+    selection: {
+      policy: "blocked-local-research-source-not-consumed",
+      canonicalTrainingSource: "ai4bharat-aksharantar-nepali"
+    },
+    importManifest: existsSync(importManifestPath)
+      ? { path: relative(root, importManifestPath), sha256: fileSha256(importManifestPath) }
+      : null
   };
 }
 
@@ -727,9 +798,10 @@ function cleaningPolicy() {
     rejectWhitespaceOutputs: true,
     rejectLatinOutputs: true,
     rejectPhraseSources: true,
-    splitPolicy: "stable hash by normalized input, with gold split pinned first",
-    privateSyubrajRowLimit,
-    privateAksharantarRowLimit,
+    splitPolicy: "connected normalized-input-and-target components; test overrides dev and train; dev overrides train",
+    committedGoldPolicy: "reserved-held-out-identities-never-inserted-as-training-rows",
+    publicSourcePolicy: "official Aksharantar only; same-lineage mirrors blocked",
+    privateAksharantarTrainRowCap,
     noNetworkFetch: true,
     rawUpstreamDataCommitted: false
   };
@@ -753,9 +825,16 @@ function finish(status, exitCode) {
     sourceRegistry: "data/neural/sources.v1.json",
     privateSources: {
       syubraj: existsSync(privateSyubrajPath) ? relative(root, privateSyubrajPath) : null,
-      syubrajRowLimit: privateSyubrajRowLimit,
+      syubrajPolicy: "blocked-local-research-source-not-consumed",
       aksharantarNepali: existsSync(privateAksharantarPath) ? relative(root, privateAksharantarPath) : null,
-      aksharantarNepaliRowLimit: privateAksharantarRowLimit
+      aksharantarTrainRowCap: privateAksharantarTrainRowCap,
+      aksharantarSelection: sourceSelection.get("ai4bharat-aksharantar-nepali") ?? null
+    },
+    goldReservation: {
+      policy: "held-out-identities-only-never-added-as-dataset-rows",
+      rows: goldReservation.rows,
+      uniqueInputs: goldReservation.inputIdentities.size,
+      uniqueTargets: goldReservation.targetIdentities.size
     },
     rowSchema: "data/neural/schema/lekh-neural-open-vocab-row.schema.json",
     counts: Object.fromEntries(Object.entries(splitRows).map(([split, value]) => [split, value.length])),

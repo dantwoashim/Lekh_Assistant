@@ -97,6 +97,7 @@
     "check:neural-compute-plan": "node scripts/check-neural-compute-plan-evidence.mjs",
     "neural:dataset": "node scripts/build-neural-transliteration-dataset.mjs",
     "neural:open-vocab:dataset": "node scripts/build-neural-open-vocab-dataset.mjs",
+    "neural:open-vocab:dataset:full": "LEKH_NEURAL_AKSHARANTAR_TRAIN_ROW_CAP=full node --max-old-space-size=12288 scripts/build-neural-open-vocab-dataset.mjs",
     "neural:phase3:distillation": "node scripts/check-neural-distillation-plan.mjs",
     "neural:phase4:training-contract": "node scripts/check-neural-training-contract.mjs",
     "neural:phase5:evaluate": "node scripts/evaluate-neural-open-vocab-model.mjs --predictions-if-present data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/gold-predictions.jsonl",

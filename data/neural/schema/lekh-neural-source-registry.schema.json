@@ -38,7 +38,7 @@
       "allOf": [
         {
           "contains": {
-            "const": "syubraj-roman2nepali-transliteration"
+            "const": "ai4bharat-aksharantar-nepali"
           }
         },
         {
@@ -56,7 +56,15 @@
             "const": "lekh-name-lexicon-v1"
           }
         }
-      ]
+      ],
+      "not": {
+        "contains": {
+          "enum": [
+            "syubraj-roman2nepali-transliteration",
+            "saugatkafley-nepali-roman-transliteration"
+          ]
+        }
+      }
     },
     "sources": {
       "type": "array",
@@ -74,6 +82,71 @@
           "productionRequired",
           "defaultPath",
           "notes"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "id": {
+                  "enum": [
+                    "syubraj-roman2nepali-transliteration",
+                    "saugatkafley-nepali-roman-transliteration"
+                  ]
+                }
+              },
+              "required": ["id"]
+            },
+            "then": {
+              "required": ["lineageId", "canonicalTrainingSource"],
+              "properties": {
+                "tier": {
+                  "const": "local-research-only"
+                },
+                "status": {
+                  "const": "blocked"
+                },
+                "allowedForOpenVocabTokenTraining": {
+                  "const": false
+                },
+                "productionRequired": {
+                  "const": false
+                },
+                "lineageId": {
+                  "const": "aksharantar-nepali-public-lineage"
+                },
+                "canonicalTrainingSource": {
+                  "const": "ai4bharat-aksharantar-nepali"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "id": {
+                  "const": "ai4bharat-aksharantar-nepali"
+                }
+              },
+              "required": ["id"]
+            },
+            "then": {
+              "required": ["lineageId", "canonicalTrainingSource"],
+              "properties": {
+                "allowedForOpenVocabTokenTraining": {
+                  "const": true
+                },
+                "productionRequired": {
+                  "const": true
+                },
+                "lineageId": {
+                  "const": "aksharantar-nepali-public-lineage"
+                },
+                "canonicalTrainingSource": {
+                  "const": "ai4bharat-aksharantar-nepali"
+                }
+              }
+            }
+          }
         ],
         "properties": {
           "id": {
@@ -98,6 +171,14 @@
           },
           "productionRequired": {
             "type": "boolean"
+          },
+          "lineageId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "canonicalTrainingSource": {
+            "type": "string",
+            "minLength": 1
           },
           "defaultPath": {
             "type": "string"
