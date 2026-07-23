@@ -246,6 +246,219 @@ class TrainerContractTests(unittest.TestCase):
         self.assertTrue(torch.allclose(compact_logits, attention_logits, rtol=1e-6, atol=1e-6))
         self.assertTrue(torch.equal(attention_logits, poisoned_logits))
 
+    def test_attention_incremental_rollout_matches_full_prefix(self) -> None:
+        torch.manual_seed(23)
+        model = TRAINER.BidirectionalAttentionSeq2Seq(
+            8,
+            11,
+            embedding_dim=4,
+            hidden_dim=8,
+            layers=2,
+            dropout=0.0,
+            attention_dim=6,
+        ).eval()
+        input_ids = torch.tensor([[4, 5, 6, 2, 0, 0, 0, 0]], dtype=torch.int32)
+        decoder_ids = torch.tensor([
+            [1, 4, 5, 6, 7, 2, 0],
+            [1, 5, 6, 7, 8, 2, 0],
+            [1, 6, 7, 8, 9, 2, 0],
+            [1, 7, 8, 9, 10, 2, 0],
+        ], dtype=torch.int32)
+
+        with torch.no_grad():
+            full_prefix_logits = model(
+                input_ids.expand(decoder_ids.shape[0], -1).long(),
+                decoder_ids.long(),
+            )
+            recurrent_logits, recurrent_hidden = TRAINER.run_attention_incrementally(
+                model,
+                input_ids,
+                decoder_ids,
+            )
+
+        self.assertEqual(tuple(recurrent_logits.shape), (4, 7, 11))
+        self.assertEqual(tuple(recurrent_hidden.shape), (2, 4, 8))
+        self.assertTrue(torch.allclose(full_prefix_logits, recurrent_logits, rtol=1e-6, atol=1e-6))
+        self.assertEqual(
+            TRAINER.attention_incremental_tensor_contract(model, 8, 4),
+            {
+                "encoder": {
+                    "inputs": {
+                        "inputIds": {"shape": [1, 8], "dataType": "INT32"},
+                    },
+                    "outputs": {
+                        "encoderOutputs": {"shape": [1, 8, 16], "dataType": "FLOAT16"},
+                        "encoderEnergy": {"shape": [1, 8, 6], "dataType": "FLOAT16"},
+                        "validMask": {"shape": [1, 8], "dataType": "FLOAT16"},
+                        "initialDecoderHidden": {"shape": [2, 1, 8], "dataType": "FLOAT16"},
+                    },
+                },
+                "decoderStep": {
+                    "inputs": {
+                        "decoderTokenIds": {"shape": [4, 1], "dataType": "INT32"},
+                        "decoderHidden": {"shape": [2, 4, 8], "dataType": "FLOAT16"},
+                        "encoderOutputs": {"shape": [1, 8, 16], "dataType": "FLOAT16"},
+                        "encoderEnergy": {"shape": [1, 8, 6], "dataType": "FLOAT16"},
+                        "validMask": {"shape": [1, 8], "dataType": "FLOAT16"},
+                    },
+                    "outputs": {
+                        "stepLogits": {"shape": [4, 11], "dataType": "FLOAT16"},
+                        "nextDecoderHidden": {"shape": [2, 4, 8], "dataType": "FLOAT16"},
+                    },
+                },
+            },
+        )
+
+    def test_attention_four_lane_step_matches_independent_steps(self) -> None:
+        torch.manual_seed(29)
+        model = TRAINER.BidirectionalAttentionSeq2Seq(
+            9,
+            12,
+            embedding_dim=5,
+            hidden_dim=7,
+            layers=2,
+            dropout=0.0,
+            attention_dim=6,
+        ).eval()
+        encoder = TRAINER.CoreMLAttentionEncoderWrapper(model)
+        batched_step = TRAINER.CoreMLAttentionDecoderStepWrapper(model, 4)
+        independent_step = TRAINER.CoreMLAttentionDecoderStepWrapper(model, 1)
+        input_ids = torch.tensor([[4, 5, 6, 2, 0, 0, 0, 0]], dtype=torch.int32)
+        token_ids = torch.tensor([[1], [4], [5], [6]], dtype=torch.int32)
+        lane_hidden = torch.randn((2, 4, 7), dtype=torch.float32)
+
+        with torch.no_grad():
+            encoder_outputs, encoder_energy, valid_mask, _ = encoder(input_ids)
+            batched_logits, batched_hidden = batched_step(
+                token_ids,
+                lane_hidden,
+                encoder_outputs,
+                encoder_energy,
+                valid_mask,
+            )
+            lane_results = [
+                independent_step(
+                    token_ids[lane : lane + 1],
+                    lane_hidden[:, lane : lane + 1, :],
+                    encoder_outputs,
+                    encoder_energy,
+                    valid_mask,
+                )
+                for lane in range(4)
+            ]
+            independent_logits = torch.cat([item[0] for item in lane_results], dim=0)
+            independent_hidden = torch.cat([item[1] for item in lane_results], dim=1)
+
+        self.assertTrue(torch.allclose(batched_logits, independent_logits, rtol=1e-6, atol=1e-6))
+        self.assertTrue(torch.allclose(batched_hidden, independent_hidden, rtol=1e-6, atol=1e-6))
+
+    @unittest.skipIf(
+        TRAINER.ct is None or platform.system() != "Darwin",
+        "Core ML model prediction requires coremltools on macOS",
+    )
+    def test_attention_incremental_coreml_conversion_and_recurrent_parity(self) -> None:
+        torch.manual_seed(31)
+        model = TRAINER.BidirectionalAttentionSeq2Seq(
+            8,
+            9,
+            embedding_dim=4,
+            hidden_dim=8,
+            layers=2,
+            dropout=0.0,
+            attention_dim=6,
+        ).eval()
+        converted = TRAINER.convert_attention_incremental_coreml_for_testing(
+            model,
+            max_input_len=8,
+            beam_width=4,
+        )
+        encoder_model = converted["encoderModel"]
+        decoder_model = converted["decoderStepModel"]
+
+        data_types = {
+            TRAINER.ct.proto.FeatureTypes_pb2.ArrayFeatureType.INT32: "INT32",
+            TRAINER.ct.proto.FeatureTypes_pb2.ArrayFeatureType.FLOAT16: "FLOAT16",
+        }
+
+        def feature_contract(features: object) -> dict[str, dict[str, object]]:
+            observed: dict[str, dict[str, object]] = {}
+            for feature in features:
+                multi_array = feature.type.multiArrayType
+                observed[feature.name] = {
+                    "shape": list(multi_array.shape),
+                    "dataType": data_types.get(multi_array.dataType, str(multi_array.dataType)),
+                }
+            return observed
+
+        encoder_spec = encoder_model.get_spec()
+        decoder_spec = decoder_model.get_spec()
+        self.assertEqual(
+            feature_contract(encoder_spec.description.input),
+            converted["contract"]["encoder"]["inputs"],
+        )
+        self.assertEqual(
+            feature_contract(encoder_spec.description.output),
+            converted["contract"]["encoder"]["outputs"],
+        )
+        self.assertEqual(
+            feature_contract(decoder_spec.description.input),
+            converted["contract"]["decoderStep"]["inputs"],
+        )
+        self.assertEqual(
+            feature_contract(decoder_spec.description.output),
+            converted["contract"]["decoderStep"]["outputs"],
+        )
+
+        input_ids = TRAINER.np.asarray([[4, 5, 6, 2, 0, 0, 0, 0]], dtype=TRAINER.np.int32)
+        decoder_ids = TRAINER.np.asarray([
+            [1, 4, 5, 6],
+            [1, 5, 6, 7],
+            [1, 6, 7, 4],
+            [1, 7, 4, 5],
+        ], dtype=TRAINER.np.int32)
+        encoder_result = encoder_model.predict({"inputIds": input_ids})
+        constant_step_inputs = {
+            "encoderOutputs": TRAINER.np.asarray(encoder_result["encoderOutputs"], dtype=TRAINER.np.float16),
+            "encoderEnergy": TRAINER.np.asarray(encoder_result["encoderEnergy"], dtype=TRAINER.np.float16),
+            "validMask": TRAINER.np.asarray(encoder_result["validMask"], dtype=TRAINER.np.float16),
+        }
+        hidden = TRAINER.np.repeat(
+            TRAINER.np.asarray(encoder_result["initialDecoderHidden"], dtype=TRAINER.np.float16),
+            4,
+            axis=1,
+        )
+        coreml_steps = []
+        for index in range(decoder_ids.shape[1]):
+            result = decoder_model.predict({
+                "decoderTokenIds": decoder_ids[:, index : index + 1],
+                "decoderHidden": hidden,
+                **constant_step_inputs,
+            })
+            coreml_steps.append(
+                TRAINER.np.asarray(result["stepLogits"], dtype=TRAINER.np.float32)[:, None, :]
+            )
+            hidden = TRAINER.np.asarray(result["nextDecoderHidden"], dtype=TRAINER.np.float16)
+        coreml_logits = TRAINER.np.concatenate(coreml_steps, axis=1)
+
+        with torch.no_grad():
+            pytorch_logits, pytorch_hidden = TRAINER.run_attention_incrementally(
+                model,
+                torch.from_numpy(input_ids),
+                torch.from_numpy(decoder_ids),
+            )
+        self.assertTrue(TRAINER.np.allclose(
+            coreml_logits,
+            pytorch_logits.detach().numpy(),
+            rtol=TRAINER.COREML_PARITY_RTOL,
+            atol=TRAINER.COREML_PARITY_ATOL,
+        ))
+        self.assertTrue(TRAINER.np.allclose(
+            hidden.astype(TRAINER.np.float32),
+            pytorch_hidden.detach().numpy(),
+            rtol=TRAINER.COREML_PARITY_RTOL,
+            atol=TRAINER.COREML_PARITY_ATOL,
+        ))
+
     def test_attention_checkpoint_reload_uses_recorded_family(self) -> None:
         runtime_config = {
             "model_id": TRAINER.ATTENTION_MODEL_ID,

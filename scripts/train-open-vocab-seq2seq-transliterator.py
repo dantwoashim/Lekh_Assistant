@@ -1350,6 +1350,261 @@ class CoreMLWrapper(nn.Module):
         return self.model(input_ids.long(), decoder_input_ids.long())
 
 
+class CoreMLAttentionEncoderWrapper(nn.Module):
+    """Source-only half of the macOS 13 incremental attention contract."""
+
+    def __init__(self, model: BidirectionalAttentionSeq2Seq):
+        super().__init__()
+        if not isinstance(model, BidirectionalAttentionSeq2Seq):
+            raise TypeError("The incremental encoder requires BidirectionalAttentionSeq2Seq.")
+        self.model = model
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        encoder_outputs, initial_decoder_hidden, valid_mask = self.model.encode_context(input_ids.long())
+        # The encoder-side attention projection depends only on the source.
+        # Export it once so the step model does not repeat this matrix multiply
+        # for every beam and every output grapheme.
+        encoder_energy = self.model.attention.encoder_projection(encoder_outputs)
+        return (
+            encoder_outputs,
+            encoder_energy,
+            valid_mask.to(encoder_outputs.dtype),
+            initial_decoder_hidden,
+        )
+
+
+class CoreMLAttentionDecoderStepWrapper(nn.Module):
+    """One fixed-width decoder step with explicit recurrent state I/O."""
+
+    def __init__(self, model: BidirectionalAttentionSeq2Seq, beam_width: int):
+        super().__init__()
+        if not isinstance(model, BidirectionalAttentionSeq2Seq):
+            raise TypeError("The incremental decoder requires BidirectionalAttentionSeq2Seq.")
+        if beam_width < 1:
+            raise ValueError("Incremental decoder beam_width must be positive.")
+        self.model = model
+        self.beam_width = beam_width
+
+    def forward(
+        self,
+        decoder_token_ids: torch.Tensor,
+        decoder_hidden: torch.Tensor,
+        encoder_outputs: torch.Tensor,
+        encoder_energy: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Source tensors remain batch-one across the Core ML boundary. Expand
+        # them inside the graph so four beam lanes do not copy approximately
+        # 50 KiB of invariant attention context on every decoder invocation.
+        expanded_outputs = encoder_outputs.expand(self.beam_width, -1, -1)
+        expanded_energy = encoder_energy.expand(self.beam_width, -1, -1)
+        expanded_mask = valid_mask.expand(self.beam_width, -1)
+
+        decoder_output, next_decoder_hidden = self.model.decoder(
+            self.model.output_embedding(decoder_token_ids.long()),
+            decoder_hidden,
+        )
+        decoder_energy = self.model.attention.decoder_projection(decoder_output)
+        scores = self.model.attention.energy_projection(
+            torch.tanh(expanded_energy + decoder_energy)
+        ).squeeze(-1)
+        masked_scores = scores + (expanded_mask.to(scores.dtype) - 1.0) * 10_000.0
+        weights = torch.softmax(masked_scores, dim=-1)
+        context = torch.bmm(weights.unsqueeze(1), expanded_outputs)
+        fused = torch.tanh(
+            self.model.context_fusion(torch.cat((decoder_output, context), dim=-1))
+        )
+        step_logits = self.model.projection(fused).squeeze(1)
+        return step_logits, next_decoder_hidden
+
+
+def attention_incremental_tensor_contract(
+    model: BidirectionalAttentionSeq2Seq,
+    max_input_len: int,
+    beam_width: int,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Derive the closed tensor contract from the bound attention model."""
+    if not isinstance(model, BidirectionalAttentionSeq2Seq):
+        raise TypeError("The incremental tensor contract requires BidirectionalAttentionSeq2Seq.")
+    if max_input_len < 2:
+        raise ValueError("Incremental encoder max_input_len must reserve a lexical token and EOS.")
+    if beam_width < 1:
+        raise ValueError("Incremental decoder beam_width must be positive.")
+
+    layers = int(model.decoder.num_layers)
+    hidden_dim = int(model.decoder.hidden_size)
+    encoder_dim = int(model.attention.encoder_projection.in_features)
+    attention_dim = int(model.attention.encoder_projection.out_features)
+    output_vocab_size = int(model.projection.out_features)
+    return {
+        "encoder": {
+            "inputs": {
+                "inputIds": {"shape": [1, max_input_len], "dataType": "INT32"},
+            },
+            "outputs": {
+                "encoderOutputs": {"shape": [1, max_input_len, encoder_dim], "dataType": "FLOAT16"},
+                "encoderEnergy": {"shape": [1, max_input_len, attention_dim], "dataType": "FLOAT16"},
+                "validMask": {"shape": [1, max_input_len], "dataType": "FLOAT16"},
+                "initialDecoderHidden": {"shape": [layers, 1, hidden_dim], "dataType": "FLOAT16"},
+            },
+        },
+        "decoderStep": {
+            "inputs": {
+                "decoderTokenIds": {"shape": [beam_width, 1], "dataType": "INT32"},
+                "decoderHidden": {"shape": [layers, beam_width, hidden_dim], "dataType": "FLOAT16"},
+                "encoderOutputs": {"shape": [1, max_input_len, encoder_dim], "dataType": "FLOAT16"},
+                "encoderEnergy": {"shape": [1, max_input_len, attention_dim], "dataType": "FLOAT16"},
+                "validMask": {"shape": [1, max_input_len], "dataType": "FLOAT16"},
+            },
+            "outputs": {
+                "stepLogits": {"shape": [beam_width, output_vocab_size], "dataType": "FLOAT16"},
+                "nextDecoderHidden": {"shape": [layers, beam_width, hidden_dim], "dataType": "FLOAT16"},
+            },
+        },
+    }
+
+
+def run_attention_incrementally(
+    model: BidirectionalAttentionSeq2Seq,
+    input_ids: torch.Tensor,
+    decoder_input_ids: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pure-PyTorch reference rollout for export and runtime parity tests."""
+    if not isinstance(model, BidirectionalAttentionSeq2Seq):
+        raise TypeError("Incremental rollout requires BidirectionalAttentionSeq2Seq.")
+    if input_ids.ndim != 2 or input_ids.shape[0] != 1:
+        raise ValueError("Incremental rollout requires one shared source row.")
+    if decoder_input_ids.ndim != 2 or decoder_input_ids.shape[0] < 1:
+        raise ValueError("Incremental rollout requires at least one decoder lane.")
+
+    beam_width = int(decoder_input_ids.shape[0])
+    encoder = CoreMLAttentionEncoderWrapper(model)
+    decoder = CoreMLAttentionDecoderStepWrapper(model, beam_width)
+    encoder_outputs, encoder_energy, valid_mask, initial_hidden = encoder(input_ids)
+    hidden = initial_hidden.expand(-1, beam_width, -1).contiguous()
+    steps: list[torch.Tensor] = []
+    for index in range(int(decoder_input_ids.shape[1])):
+        logits, hidden = decoder(
+            decoder_input_ids[:, index : index + 1],
+            hidden,
+            encoder_outputs,
+            encoder_energy,
+            valid_mask,
+        )
+        steps.append(logits.unsqueeze(1))
+
+    if steps:
+        return torch.cat(steps, dim=1), hidden
+    empty = encoder_outputs.new_empty((beam_width, 0, model.projection.out_features))
+    return empty, hidden
+
+
+def convert_attention_incremental_coreml_for_testing(
+    model: BidirectionalAttentionSeq2Seq,
+    *,
+    max_input_len: int,
+    beam_width: int,
+    minimum_deployment_target: Any | None = None,
+) -> dict[str, Any]:
+    """Convert split models in memory without saving or publishing artifacts.
+
+    Shipping export remains deliberately unchanged until recurrent Core ML and
+    native candidate parity are proven against a trained challenger checkpoint.
+    """
+    if ct is None:
+        raise RuntimeError(f"Core ML conversion is unavailable: {COREML_IMPORT_ERROR}")
+    contract = attention_incremental_tensor_contract(model, max_input_len, beam_width)
+    target = minimum_deployment_target or ct.target.macOS13
+    encoder_wrapper = CoreMLAttentionEncoderWrapper(model)
+    decoder_wrapper = CoreMLAttentionDecoderStepWrapper(model, beam_width)
+    input_vocab_size = int(model.input_embedding.num_embeddings)
+    if input_vocab_size <= len(SPECIAL):
+        raise ValueError("Incremental encoder requires at least one lexical input token.")
+    lexical_token_id = len(SPECIAL)
+
+    example_input = torch.zeros((1, max_input_len), dtype=torch.int32)
+    example_input[0, 0] = lexical_token_id
+    example_input[0, 1] = SPECIAL.index(EOS)
+    example_tokens = torch.full(
+        (beam_width, 1),
+        SPECIAL.index(SOS),
+        dtype=torch.int32,
+    )
+    was_training = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            encoder_example = encoder_wrapper(example_input)
+            example_hidden = encoder_example[3].expand(-1, beam_width, -1).contiguous()
+        traced_encoder = torch.jit.trace(encoder_wrapper.eval(), example_input)
+        traced_decoder = torch.jit.trace(
+            decoder_wrapper.eval(),
+            (
+                example_tokens,
+                example_hidden,
+                encoder_example[0],
+                encoder_example[1],
+                encoder_example[2],
+            ),
+        )
+        encoder_model = ct.convert(
+            traced_encoder,
+            convert_to="mlprogram",
+            minimum_deployment_target=target,
+            inputs=[
+                ct.TensorType(name="inputIds", shape=(1, max_input_len), dtype=np.int32),
+            ],
+            outputs=[
+                ct.TensorType(name="encoderOutputs", dtype=np.float16),
+                ct.TensorType(name="encoderEnergy", dtype=np.float16),
+                ct.TensorType(name="validMask", dtype=np.float16),
+                ct.TensorType(name="initialDecoderHidden", dtype=np.float16),
+            ],
+        )
+        decoder_model = ct.convert(
+            traced_decoder,
+            convert_to="mlprogram",
+            minimum_deployment_target=target,
+            inputs=[
+                ct.TensorType(name="decoderTokenIds", shape=(beam_width, 1), dtype=np.int32),
+                ct.TensorType(
+                    name="decoderHidden",
+                    shape=tuple(contract["decoderStep"]["inputs"]["decoderHidden"]["shape"]),
+                    dtype=np.float16,
+                ),
+                ct.TensorType(
+                    name="encoderOutputs",
+                    shape=tuple(contract["decoderStep"]["inputs"]["encoderOutputs"]["shape"]),
+                    dtype=np.float16,
+                ),
+                ct.TensorType(
+                    name="encoderEnergy",
+                    shape=tuple(contract["decoderStep"]["inputs"]["encoderEnergy"]["shape"]),
+                    dtype=np.float16,
+                ),
+                ct.TensorType(
+                    name="validMask",
+                    shape=tuple(contract["decoderStep"]["inputs"]["validMask"]["shape"]),
+                    dtype=np.float16,
+                ),
+            ],
+            outputs=[
+                ct.TensorType(name="stepLogits", dtype=np.float16),
+                ct.TensorType(name="nextDecoderHidden", dtype=np.float16),
+            ],
+        )
+    finally:
+        model.train(was_training)
+    return {
+        "encoderModel": encoder_model,
+        "decoderStepModel": decoder_model,
+        "contract": contract,
+    }
+
+
 def device_for_training() -> torch.device:
     # PyTorch's MPS GRU backend has crashed process-wide for this two-layer
     # sequence model on supported Apple Silicon hosts. Training is an offline
