@@ -58,6 +58,9 @@ LEGACY_OUTPUT_TOKENIZATION = "unicode-grapheme-character"
 OUTPUT_SEQUENCE_VALIDATION = "devanagari-word-sequence-v1"
 VOCAB_METADATA_PATH = ROOT / "models/macos/LekhNeuralTransliterator.vocab.json"
 GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v3.json"
+OFFICIAL_BENCHMARK_MANIFEST_PATH = (
+    ROOT / "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
+)
 CONFIG_PATH = ROOT / "data/neural/training/open-vocab-seq2seq-v1.config.json"
 
 PAD = "<pad>"
@@ -97,6 +100,10 @@ def export_report_path(args: argparse.Namespace) -> Path:
 
 def predictions_path(args: argparse.Namespace) -> Path:
     return args.out_dir / "gold-predictions.jsonl"
+
+
+def official_benchmark_predictions_path(args: argparse.Namespace) -> Path:
+    return args.out_dir / "official-benchmark-predictions.jsonl"
 
 
 def measurements_path(args: argparse.Namespace) -> Path:
@@ -153,6 +160,7 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
 
     architecture = config["architecture"]
     decoder = config["decoder"]
+    evaluation = config["evaluation"]
     training = config["training"]
     training_run = config["trainingRun"]
     early_stopping = training_run["earlyStopping"]
@@ -163,7 +171,16 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
 
     parser = argparse.ArgumentParser(description=__doc__, parents=[config_parser])
     parser.add_argument("--dataset-manifest", type=Path, default=ROOT / training["datasetManifest"])
-    parser.add_argument("--gold-manifest", type=Path, default=GOLD_MANIFEST_PATH)
+    parser.add_argument(
+        "--gold-manifest",
+        type=Path,
+        default=ROOT / evaluation["goldManifest"],
+    )
+    parser.add_argument(
+        "--official-benchmark-manifest",
+        type=Path,
+        default=ROOT / evaluation["officialBenchmarkManifest"],
+    )
     parser.add_argument("--out-dir", type=Path, default=(ROOT / config["export"]["sourceCheckpoint"]).parent)
     parser.add_argument("--compiled-model", type=Path)
     parser.add_argument("--manifest", type=Path)
@@ -297,6 +314,18 @@ def validate_executable_config(config: dict[str, Any]) -> None:
         raise SystemExit("Context rescoring is not implemented; the executable config must keep it disabled.")
     if config.get("training", {}).get("loss") != "weighted-label-smoothed-sequence-cross-entropy":
         raise SystemExit("Training config must declare the implemented weighted label-smoothed loss.")
+    evaluation = config.get("evaluation") or {}
+    if evaluation != {
+        "goldManifest": "data/neural/gold/manifest.v3.json",
+        "officialBenchmarkManifest": (
+            "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
+        ),
+        "officialBenchmarkTrainingUse": "forbidden-evaluation-only",
+    }:
+        raise SystemExit(
+            "Training config evaluation inputs must bind the locked gold and "
+            "official benchmark manifests with evaluation-only use."
+        )
     if architecture.get("tokenization") != OUTPUT_TOKENIZATION:
         raise SystemExit(f"Training config must use {OUTPUT_TOKENIZATION} output tokenization.")
     expected_sampling_policy = {
@@ -533,10 +562,14 @@ def effective_training_config(args: argparse.Namespace, config: dict[str, Any]) 
 def configured_artifact_inputs(config_path: Path, config: dict[str, Any]) -> dict[str, Any]:
     checkpoint = ROOT / config["export"]["sourceCheckpoint"]
     vocab_metadata = ROOT / config["export"].get("vocabMetadata", rel(VOCAB_METADATA_PATH))
+    evaluation = config["evaluation"]
     return {
         "trainingConfig": artifact_path_value(config_path),
         "datasetManifest": artifact_path_value(ROOT / config["training"]["datasetManifest"]),
-        "goldManifest": artifact_path_value(GOLD_MANIFEST_PATH),
+        "goldManifest": artifact_path_value(ROOT / evaluation["goldManifest"]),
+        "officialBenchmarkManifest": artifact_path_value(
+            ROOT / evaluation["officialBenchmarkManifest"]
+        ),
         "outDir": artifact_path_value(checkpoint.parent),
         "compiledModel": artifact_path_value(ROOT / config["export"]["compiledModel"]),
         "manifest": artifact_path_value(ROOT / config["export"]["manifest"]),
@@ -549,6 +582,9 @@ def effective_artifact_inputs(args: argparse.Namespace) -> dict[str, Any]:
         "trainingConfig": artifact_path_value(args.config),
         "datasetManifest": artifact_path_value(args.dataset_manifest),
         "goldManifest": artifact_path_value(args.gold_manifest),
+        "officialBenchmarkManifest": artifact_path_value(
+            args.official_benchmark_manifest
+        ),
         "outDir": artifact_path_value(args.out_dir),
         "compiledModel": artifact_path_value(args.compiled_model),
         "manifest": artifact_path_value(args.manifest),
@@ -564,6 +600,7 @@ def collect_artifact_overrides(
     options = {
         "datasetManifest": "--dataset-manifest",
         "goldManifest": "--gold-manifest",
+        "officialBenchmarkManifest": "--official-benchmark-manifest",
         "outDir": "--out-dir",
         "compiledModel": "--compiled-model",
         "manifest": "--manifest",
@@ -1318,6 +1355,33 @@ def capture_run_input_snapshot(
         for split, path in evidence_paths.items()
     }
     _, gold_evidence = load_verified_gold_rows(args)
+    official_rows, official_evidence = load_verified_official_benchmark_rows(args)
+    official_input_sha256 = official_benchmark_input_sha256(official_rows)
+    isolation = getattr(args, "official_benchmark_training_isolation", None)
+    expected_isolation_identity = {
+        "policy": "official-benchmark-inputs-absent-from-train-and-dev-v1",
+        "benchmarkInputSha256": official_input_sha256,
+        "comparedSplitSha256": {
+            split: split_evidence[split]["sha256"]
+            for split in ("train", "dev")
+        },
+        "overlappingInputCount": 0,
+    }
+    if isolation is None:
+        isolation = verify_official_benchmark_training_isolation(
+            official_rows,
+            evidence_paths,
+            split_evidence,
+        )
+        args.official_benchmark_training_isolation = isolation
+    elif isolation != expected_isolation_identity:
+        raise SystemExit(
+            "Official benchmark training-isolation evidence changed during this run."
+        )
+    official_evidence = {
+        **official_evidence,
+        "trainingIsolation": isolation,
+    }
     snapshot = {
         "schemaVersion": 1,
         "trainer": {
@@ -1339,6 +1403,7 @@ def capture_run_input_snapshot(
             "splits": split_evidence,
         },
         "gold": gold_evidence,
+        "officialBenchmark": official_evidence,
         "runtime": {
             "python": platform.python_version(),
             "unicodeDatabase": unicodedata.unidata_version,
@@ -3506,6 +3571,204 @@ def load_verified_gold_rows(args: argparse.Namespace) -> tuple[list[dict[str, An
     }
 
 
+def load_verified_official_benchmark_rows(
+    args: argparse.Namespace,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    manifest_path = args.official_benchmark_manifest
+    require_repo_regular_file(manifest_path, "official benchmark manifest")
+    manifest_bytes = read_regular_bytes(
+        manifest_path,
+        "official benchmark manifest",
+        maximum_bytes=8 * 1024 * 1024,
+    )
+    manifest = parse_json_object_bytes(
+        manifest_bytes,
+        "official benchmark manifest",
+    )
+    suites = manifest.get("suites")
+    if (
+        manifest.get("schemaVersion") != 2
+        or manifest.get("status") != "official-public-benchmark-locked"
+        or manifest.get("trainingUse") != "forbidden-evaluation-only"
+        or manifest.get("uniqueInputPolicy")
+        != "trim-lowercase-NFC-collapse-whitespace"
+        or not isinstance(suites, list)
+        or len(suites) != 3
+    ):
+        raise SystemExit("Official benchmark manifest contract is invalid.")
+    if manifest.get("corpusSha256") != gold_corpus_sha256(suites):
+        raise SystemExit(
+            "Official benchmark corpusSha256 does not match its ordered suite inventory."
+        )
+
+    expected_buckets = {"native-frequent", "indian-name", "foreign-name"}
+    seen_suite_ids: set[str] = set()
+    seen_buckets: set[str] = set()
+    seen_row_ids: set[str] = set()
+    seen_inputs: set[str] = set()
+    rows: list[dict[str, Any]] = []
+    suite_evidence: list[dict[str, Any]] = []
+    for suite in suites:
+        if not isinstance(suite, dict):
+            raise SystemExit("Official benchmark suite inventory is invalid.")
+        suite_id = suite.get("id")
+        recorded_path = suite.get("path")
+        expected_sha256 = suite.get("sha256")
+        expected_rows = suite.get("rows")
+        bucket = suite.get("benchmarkBucket")
+        if (
+            not isinstance(suite_id, str)
+            or not suite_id
+            or suite_id in seen_suite_ids
+            or bucket not in expected_buckets
+            or bucket in seen_buckets
+            or not isinstance(expected_rows, int)
+            or isinstance(expected_rows, bool)
+            or expected_rows < 1
+            or not isinstance(expected_sha256, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", expected_sha256)
+        ):
+            raise SystemExit(
+                "Official benchmark suite IDs, buckets, hashes, and row counts "
+                "must be valid and unique."
+            )
+        seen_suite_ids.add(suite_id)
+        seen_buckets.add(bucket)
+        if (
+            not isinstance(recorded_path, str)
+            or not recorded_path
+            or Path(recorded_path).is_absolute()
+            or Path(recorded_path).as_posix() != recorded_path
+            or ".." in Path(recorded_path).parts
+        ):
+            raise SystemExit(
+                f"Official benchmark suite {suite_id} path is not canonical."
+            )
+        suite_path = ROOT / recorded_path
+        require_repo_regular_file(
+            suite_path,
+            f"official benchmark suite {suite_id}",
+        )
+        suite_bytes = read_regular_bytes(
+            suite_path,
+            f"official benchmark suite {suite_id}",
+            maximum_bytes=64 * 1024 * 1024,
+        )
+        observed_sha256 = hashlib.sha256(suite_bytes).hexdigest()
+        if observed_sha256 != expected_sha256:
+            raise SystemExit(
+                f"Official benchmark suite {suite_id} SHA-256 does not match "
+                "the manifest."
+            )
+        try:
+            lines = suite_bytes.decode("utf-8").splitlines()
+        except UnicodeDecodeError as error:
+            raise SystemExit(
+                f"Official benchmark suite {suite_id} is not valid UTF-8."
+            ) from error
+        parsed_rows = 0
+        for line_number, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            parsed_rows += 1
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise SystemExit(
+                    f"Official benchmark suite {suite_id}:{line_number} is invalid JSON."
+                ) from error
+            if (
+                not isinstance(row, dict)
+                or not isinstance(row.get("id"), str)
+                or not row["id"]
+                or row["id"] in seen_row_ids
+                or not isinstance(row.get("input"), str)
+                or not normalize_input(row["input"])
+                or not isinstance(row.get("acceptable"), list)
+                or not row["acceptable"]
+                or not all(
+                    isinstance(value, str) and value == nfc(value) and value
+                    for value in row["acceptable"]
+                )
+            ):
+                raise SystemExit(
+                    f"Official benchmark suite {suite_id}:{line_number} has an "
+                    "invalid or duplicate evidence row."
+                )
+            input_identity = normalize_input(row["input"])
+            if input_identity in seen_inputs:
+                raise SystemExit(
+                    f"Official benchmark repeats normalized input: {input_identity}"
+                )
+            seen_row_ids.add(row["id"])
+            seen_inputs.add(input_identity)
+            rows.append({
+                **row,
+                "benchmarkBucket": bucket,
+            })
+        if parsed_rows != expected_rows:
+            raise SystemExit(
+                f"Official benchmark suite {suite_id} row count does not match "
+                "the manifest."
+            )
+        suite_evidence.append({
+            "id": suite_id,
+            "path": recorded_path,
+            "sha256": observed_sha256,
+            "rows": parsed_rows,
+            "benchmarkBucket": bucket,
+        })
+    if seen_buckets != expected_buckets:
+        raise SystemExit("Official benchmark does not cover all locked buckets.")
+    return rows, {
+        "manifest": rel(manifest_path),
+        "manifestSha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "corpusSha256": manifest["corpusSha256"],
+        "suites": suite_evidence,
+        "rows": len(rows),
+    }
+
+
+def official_benchmark_input_sha256(rows: list[dict[str, Any]]) -> str:
+    digest = hashlib.sha256()
+    for row in rows:
+        digest.update(str(row["id"]).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(normalize_input(row["input"]).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def verify_official_benchmark_training_isolation(
+    official_rows: list[dict[str, Any]],
+    split_paths: dict[str, Path],
+    split_evidence: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    benchmark_inputs = {
+        normalize_input(row["input"])
+        for row in official_rows
+    }
+    overlaps: set[str] = set()
+    for split in ("train", "dev"):
+        identities = load_split_inputs(split_paths[split])
+        overlaps.update(benchmark_inputs.intersection(identities))
+    if overlaps:
+        examples = ", ".join(sorted(overlaps)[:5])
+        raise SystemExit(
+            "Official benchmark input leakage into train/dev: "
+            f"{len(overlaps)} normalized inputs ({examples})."
+        )
+    return {
+        "policy": "official-benchmark-inputs-absent-from-train-and-dev-v1",
+        "benchmarkInputSha256": official_benchmark_input_sha256(official_rows),
+        "comparedSplitSha256": {
+            split: split_evidence[split]["sha256"]
+            for split in ("train", "dev")
+        },
+        "overlappingInputCount": 0,
+    }
+
+
 def decode_coreml_candidates(
     backend: CompiledCoreMLBackend,
     text: str,
@@ -3657,10 +3920,12 @@ def write_gold_predictions(
     try:
         with staging.open("x", encoding="utf-8") as handle:
             for row in rows:
-                if isinstance(backend, CompiledAttentionIncrementalCoreMLBackend):
-                    candidates = decode_attention_coreml_candidates(backend, row["input"], checkpoint, args)
-                else:
-                    candidates = decode_coreml_candidates(backend, row["input"], checkpoint, args)
+                candidates = decode_exact_compiled_candidates(
+                    backend,
+                    row["input"],
+                    checkpoint,
+                    args,
+                )
                 handle.write(json.dumps({"id": row["id"], "input": row["input"], "candidates": candidates[:args.maximum_candidates]}, ensure_ascii=False) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
@@ -3670,21 +3935,11 @@ def write_gold_predictions(
     _, verified_again = load_verified_gold_rows(args)
     if verified_again != gold_evidence:
         raise SystemExit("Gold corpus changed during exact-artifact prediction generation.")
-    if isinstance(backend, CompiledAttentionIncrementalCoreMLBackend):
-        backend.verify_artifacts()
-        backend_evidence = {
-            "backend": "coreml-compiled-split-attention-models",
-            "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
-            "compiledModels": backend.artifacts,
-        }
-    else:
-        if directory_sha256(args.compiled_model) != backend.compiled_sha256:
-            raise SystemExit("Compiled Core ML bytes changed during gold prediction generation.")
-        backend_evidence = {
-            "backend": "coreml-compiled-model",
-            "compiledModel": rel(args.compiled_model),
-            "compiledModelSha256": backend.compiled_sha256,
-        }
+    backend_evidence = verified_prediction_backend_evidence(
+        backend,
+        args,
+        "gold prediction generation",
+    )
     return {
         **backend_evidence,
         "trainingRunId": args.training_run_id,
@@ -3692,6 +3947,99 @@ def write_gold_predictions(
         **gold_evidence,
         "predictions": rel(output_path),
         "predictionsSha256": sha256_file(output_path),
+    }
+
+
+def write_official_benchmark_predictions(
+    backend: CompiledCoreMLBackend | CompiledAttentionIncrementalCoreMLBackend,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    rows, current_evidence = load_verified_official_benchmark_rows(args)
+    locked_evidence = ensure_run_input_snapshot(args)["officialBenchmark"]
+    locked_base = {
+        key: value
+        for key, value in locked_evidence.items()
+        if key != "trainingIsolation"
+    }
+    if current_evidence != locked_base:
+        raise SystemExit(
+            "Official benchmark differs from the immutable run-input snapshot."
+        )
+    output_path = official_benchmark_predictions_path(args)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    staging = staging_sibling(output_path, "staging")
+    try:
+        with staging.open("x", encoding="utf-8") as handle:
+            for row in rows:
+                candidates = decode_exact_compiled_candidates(
+                    backend,
+                    row["input"],
+                    checkpoint,
+                    args,
+                )
+                handle.write(json.dumps({
+                    "id": row["id"],
+                    "input": row["input"],
+                    "candidates": candidates[:args.maximum_candidates],
+                }, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(staging, output_path)
+    finally:
+        staging.unlink(missing_ok=True)
+    _, verified_again = load_verified_official_benchmark_rows(args)
+    if verified_again != current_evidence:
+        raise SystemExit(
+            "Official benchmark changed during exact-artifact prediction generation."
+        )
+    backend_evidence = verified_prediction_backend_evidence(
+        backend,
+        args,
+        "official benchmark prediction generation",
+    )
+    return {
+        **backend_evidence,
+        "trainingRunId": args.training_run_id,
+        "exportRunId": args.export_run_id,
+        **current_evidence,
+        "trainingIsolation": locked_evidence["trainingIsolation"],
+        "predictions": rel(output_path),
+        "predictionsSha256": sha256_file(output_path),
+    }
+
+
+def decode_exact_compiled_candidates(
+    backend: CompiledCoreMLBackend | CompiledAttentionIncrementalCoreMLBackend,
+    text: str,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> list[str]:
+    if isinstance(backend, CompiledAttentionIncrementalCoreMLBackend):
+        return decode_attention_coreml_candidates(backend, text, checkpoint, args)
+    return decode_coreml_candidates(backend, text, checkpoint, args)
+
+
+def verified_prediction_backend_evidence(
+    backend: CompiledCoreMLBackend | CompiledAttentionIncrementalCoreMLBackend,
+    args: argparse.Namespace,
+    operation: str,
+) -> dict[str, Any]:
+    if isinstance(backend, CompiledAttentionIncrementalCoreMLBackend):
+        backend.verify_artifacts()
+        return {
+            "backend": "coreml-compiled-split-attention-models",
+            "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+            "compiledModels": backend.artifacts,
+        }
+    if directory_sha256(args.compiled_model) != backend.compiled_sha256:
+        raise SystemExit(
+            f"Compiled Core ML bytes changed during {operation}."
+        )
+    return {
+        "backend": "coreml-compiled-model",
+        "compiledModel": rel(args.compiled_model),
+        "compiledModelSha256": backend.compiled_sha256,
     }
 
 
@@ -4474,6 +4822,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         and coreml.get("runtimeModelContract") == ATTENTION_INCREMENTAL_RUNTIME_CONTRACT
     )
     prediction_evidence: dict[str, Any] | None = None
+    comparison_evidence: dict[str, Any] | None = None
     if export_succeeded:
         if split_attention_export:
             backend, artifact_validation = load_verified_compiled_attention_coreml(
@@ -4492,6 +4841,11 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             )
         coreml = {**coreml, "artifactValidation": artifact_validation}
         prediction_evidence = write_gold_predictions(backend, checkpoint, args)
+        comparison_evidence = write_official_benchmark_predictions(
+            backend,
+            checkpoint,
+            args,
+        )
         benchmark = benchmark_coreml(args, backend, checkpoint)
     else:
         benchmark = {
@@ -4508,7 +4862,12 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             else directory_bytes(args.compiled_model) if export_succeeded else 0
         ),
     )
-    publishable = benchmark_succeeded and prediction_evidence is not None and not runtime_contract_issues
+    publishable = (
+        benchmark_succeeded
+        and prediction_evidence is not None
+        and comparison_evidence is not None
+        and not runtime_contract_issues
+    )
     assert_run_input_snapshot_unchanged(args)
     manifest = write_manifest(args, checkpoint, training_report, coreml, benchmark) if publishable else None
     if publishable:
@@ -4552,6 +4911,44 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         }
         if current_gold_evidence != expected_gold_evidence:
             raise SystemExit("Gold evaluation evidence changed before export-report publication.")
+    if comparison_evidence:
+        comparison_path = official_benchmark_predictions_path(args)
+        if (
+            comparison_evidence.get("predictionsSha256")
+            != sha256_file(comparison_path)
+        ):
+            raise SystemExit(
+                "Official benchmark prediction bytes changed before "
+                "export-report publication."
+            )
+        _, current_comparison_evidence = (
+            load_verified_official_benchmark_rows(args)
+        )
+        expected_comparison_evidence = {
+            key: comparison_evidence[key]
+            for key in (
+                "manifest",
+                "manifestSha256",
+                "corpusSha256",
+                "suites",
+                "rows",
+            )
+        }
+        if current_comparison_evidence != expected_comparison_evidence:
+            raise SystemExit(
+                "Official benchmark evidence changed before export-report "
+                "publication."
+            )
+        if (
+            comparison_evidence.get("trainingIsolation")
+            != ensure_run_input_snapshot(args)["officialBenchmark"][
+                "trainingIsolation"
+            ]
+        ):
+            raise SystemExit(
+                "Official benchmark training-isolation evidence changed before "
+                "export-report publication."
+            )
 
     export_report: dict[str, Any] = {
         "generatedAt": iso_now(),
@@ -4579,6 +4976,17 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         "goldCorpusSha256": prediction_evidence.get("goldCorpusSha256") if prediction_evidence else None,
         "goldSuites": prediction_evidence.get("goldSuites") if prediction_evidence else None,
         "goldRows": prediction_evidence.get("goldRows") if prediction_evidence else None,
+        "comparisonBenchmark": ({
+            "manifest": comparison_evidence["manifest"],
+            "manifestSha256": comparison_evidence["manifestSha256"],
+            "corpusSha256": comparison_evidence["corpusSha256"],
+            "suites": comparison_evidence["suites"],
+            "rows": comparison_evidence["rows"],
+            "trainingIsolation": comparison_evidence["trainingIsolation"],
+            "predictions": comparison_evidence["predictions"],
+            "predictionsSha256": comparison_evidence["predictionsSha256"],
+            "predictionsBackend": comparison_evidence["backend"],
+        } if comparison_evidence else None),
         "measurements": rel(measurements_path(args)) if export_succeeded else None,
         "measurementsSha256": sha256_file(measurements_path(args)) if export_succeeded else None,
         "compiledModel": rel(args.compiled_model) if export_succeeded and not split_attention_export else None,
@@ -4609,6 +5017,11 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         "compiledModel": export_report["compiledModel"],
         "manifest": export_report["manifest"],
         "predictions": export_report["predictions"],
+        "comparisonPredictions": (
+            export_report["comparisonBenchmark"]["predictions"]
+            if export_report["comparisonBenchmark"]
+            else None
+        ),
         "measurements": export_report["measurements"],
         "coremlExport": coreml.get("status"),
         "productionEligible": export_report["productionEligible"],

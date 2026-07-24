@@ -45,6 +45,11 @@
       "weight": 0
     }
   },
+  "evaluation": {
+    "goldManifest": "data/neural/gold/manifest.v3.json",
+    "officialBenchmarkManifest": "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+    "officialBenchmarkTrainingUse": "forbidden-evaluation-only"
+  },
   "training": {
     "datasetManifest": "data/generated/neural-open-vocab/manifest.json",
     "requiredSources": [

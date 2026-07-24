@@ -102,12 +102,18 @@ Training input snapshots bind:
 - effective training config;
 - dataset manifest/content/split digests;
 - gold manifest/corpus/suite digests;
+- official benchmark manifest/corpus/suite digests and the ordered normalized
+  input identity;
+- proof that no official benchmark input occurs in train or dev;
 - runtime versions;
 - training and export run identities.
 
 Vocabulary construction uses train rows only. Normalized inputs may not cross
-train/dev/test. Prediction generation runs through the exact exported compiled
-Core ML artifact and cannot read expected labels.
+train/dev/test. Candidate artifacts are written only under their immutable
+`data/generated/neural-open-vocab-model/<modelId>` root; promotion alone may
+write the production directory. Gold and official-benchmark prediction
+generation run through the exact exported compiled Core ML artifact and cannot
+read expected labels.
 
 ## Evaluation
 

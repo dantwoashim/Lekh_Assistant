@@ -377,6 +377,41 @@ class TrainerContractTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "SHA-256"):
                 TRAINER.load_verified_gold_rows(args)
 
+    def test_official_benchmark_is_locked_and_absent_from_train_and_dev(self) -> None:
+        args = TRAINER.parse_args([], {})
+        rows, evidence = TRAINER.load_verified_official_benchmark_rows(args)
+        dataset_manifest = TRAINER.read_json(args.dataset_manifest)
+        split_paths = {
+            split: TRAINER.ROOT / dataset_manifest["splitFiles"][split]
+            for split in ("train", "dev", "test")
+        }
+        split_evidence = {
+            split: TRAINER.inspect_jsonl_artifact(path)
+            for split, path in split_paths.items()
+        }
+
+        isolation = TRAINER.verify_official_benchmark_training_isolation(
+            rows,
+            split_paths,
+            split_evidence,
+        )
+
+        self.assertEqual(len(rows), 4_085)
+        self.assertEqual(evidence["rows"], 4_085)
+        self.assertEqual(len(evidence["suites"]), 3)
+        self.assertEqual(evidence["manifest"], (
+            "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
+        ))
+        self.assertEqual(
+            evidence["manifestSha256"],
+            TRAINER.sha256_file(args.official_benchmark_manifest),
+        )
+        self.assertEqual(isolation["overlappingInputCount"], 0)
+        self.assertEqual(
+            isolation["benchmarkInputSha256"],
+            TRAINER.official_benchmark_input_sha256(rows),
+        )
+
     def test_encode_reserves_end_of_sequence_and_rejects_overlength_input(self) -> None:
         vocab = {TRAINER.PAD: 0, TRAINER.SOS: 1, TRAINER.EOS: 2, TRAINER.UNK: 3, "a": 4}
         encoded_input = TRAINER.encode(list("aaa"), vocab, 4, add_sos=False)
@@ -810,6 +845,17 @@ class TrainerContractTests(unittest.TestCase):
             )
             self.assertEqual(coreml_export["artifactValidation"]["status"], "passed")
             self.assertEqual(export_report["predictionsBackend"], "coreml-compiled-split-attention-models")
+            self.assertEqual(
+                export_report["comparisonBenchmark"]["predictionsBackend"],
+                "coreml-compiled-split-attention-models",
+            )
+            self.assertEqual(export_report["comparisonBenchmark"]["rows"], 4_085)
+            self.assertEqual(
+                export_report["comparisonBenchmark"]["trainingIsolation"][
+                    "overlappingInputCount"
+                ],
+                0,
+            )
             for role in ("encoder", "decoderStep"):
                 artifact = export_report["compiledModels"][role]
                 self.assertGreater(artifact["compiledBytes"], 0)
@@ -1355,6 +1401,23 @@ class TrainerContractTests(unittest.TestCase):
             self.assertEqual(export_report["predictionsBackend"], "coreml-compiled-model")
             self.assertEqual(export_report["goldManifestSha256"], TRAINER.sha256_file(gold_manifest))
             self.assertEqual(export_report["goldSuites"], [gold_suite])
+            self.assertEqual(export_report["comparisonBenchmark"]["rows"], 4_085)
+            self.assertEqual(
+                export_report["comparisonBenchmark"]["manifestSha256"],
+                TRAINER.sha256_file(args.official_benchmark_manifest),
+            )
+            self.assertEqual(
+                export_report["comparisonBenchmark"]["predictionsSha256"],
+                TRAINER.sha256_file(
+                    TRAINER.official_benchmark_predictions_path(args)
+                ),
+            )
+            self.assertEqual(
+                export_report["comparisonBenchmark"]["trainingIsolation"][
+                    "overlappingInputCount"
+                ],
+                0,
+            )
             self.assertEqual(export_report["trainingRunId"], runtime_manifest["trainingRunId"])
             self.assertEqual(export_report["exportRunId"], runtime_manifest["exportRunId"])
             self.assertEqual(export_report["compiledModelSha256"], runtime_manifest["sha256"]["compiledModel"])

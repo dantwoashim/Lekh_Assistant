@@ -145,6 +145,19 @@ export function validateNeuralTrainingConfig(config) {
     warnings.push("Context language-model rescoring is disabled and not implemented.");
   }
 
+  const evaluation = config.evaluation;
+  requireEqual(evaluation?.goldManifest, "data/neural/gold/manifest.v3.json", "Config must bind the locked gold manifest.");
+  requireEqual(
+    evaluation?.officialBenchmarkManifest,
+    "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+    "Config must bind the locked official benchmark manifest."
+  );
+  requireEqual(
+    evaluation?.officialBenchmarkTrainingUse,
+    "forbidden-evaluation-only",
+    "Config must forbid official benchmark training use."
+  );
+
   const training = config.training;
   requireEqual(training?.datasetManifest, "data/generated/neural-open-vocab/manifest.json", "Config must use the canonical immutable dataset manifest path.");
   requireEqual(training?.normalization, "NFC", "Config normalization must be NFC.");
