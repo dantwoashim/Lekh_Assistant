@@ -20,13 +20,15 @@ export const BUILD_PROVENANCE_KEYS = Object.freeze([
   "sourceFilesClean"
 ]);
 
-// These directories contain generated distribution bytes, not compiler or
-// product source. Packaging the test installer refreshes them after the IMK
-// has already sealed its clean-source provenance, so treating those expected
-// outputs as source mutations creates a self-referential build that can never
-// be verified. They remain covered by their own SHA-256, signature, package,
-// and update-feed checks.
+// These directories contain generated or atomically promoted distribution
+// bytes, not compiler or product source. Packaging refreshes release outputs
+// after the IMK has already sealed its clean-source provenance, while the
+// promoted neural directory is intentionally untracked and authenticated by
+// its closed-world promotion receipt. Treating either class as source dirt
+// creates a self-referential build that can never verify. They remain covered
+// by their own SHA-256, signature, package, promotion, and update-feed checks.
 export const MACOS_GENERATED_RELEASE_PATHS = Object.freeze([
+  "models/macos/LekhNeuralTransliterator.production/**",
   "release/native/macos/**",
   "public/updates/macos/**"
 ]);

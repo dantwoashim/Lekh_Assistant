@@ -223,6 +223,19 @@ function resolveSplitArtifacts(
   for (const role of SPLIT_ROLES) {
     const declared = manifest.compiledModels[role];
     requireRecord(declared, `manifest.compiledModels.${role}`);
+    requireExactKeys(
+      declared,
+      [
+        "role",
+        "compiledModel",
+        "compiledBytes",
+        "compiledSha256",
+        "mlpackage",
+        "mlpackageBytes",
+        "mlpackageSha256"
+      ],
+      `manifest.compiledModels.${role}`
+    );
     if (declared.role !== role) {
       fail(`manifest.compiledModels.${role}.role must equal ${role}.`);
     }
@@ -253,11 +266,6 @@ function resolveSplitArtifacts(
     paths.add(sourcePath);
     bundleNames.add(bundleName);
 
-    const compiledEvidence = inspectContainedDirectoryTree(repoRoot, sourcePath, {
-      label: `Split ${role} compiled neural model`,
-      maxBytes: 64 * 1024 * 1024,
-      maxEntries: 10_000
-    });
     assertNoSymlinkComponents(
       repoRoot,
       sourcePath,
@@ -270,6 +278,11 @@ function resolveSplitArtifacts(
         `Split ${role} Core ML package`
       );
     }
+    const compiledEvidence = inspectContainedDirectoryTree(repoRoot, sourcePath, {
+      label: `Split ${role} compiled neural model`,
+      maxBytes: 64 * 1024 * 1024,
+      maxEntries: 10_000
+    });
     const packageEvidence = verifyExportArtifacts
       ? inspectContainedDirectoryTree(repoRoot, packagePath, {
           label: `Split ${role} Core ML package`,

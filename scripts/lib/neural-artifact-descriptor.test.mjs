@@ -97,6 +97,19 @@ describe("neural runtime artifact descriptor", () => {
     });
   });
 
+  it("rejects undeclared fields in a split artifact record", () => {
+    withFixture("split", ({ root, manifest, manifestPath, vocabPath }) => {
+      manifest.compiledModels.encoder.untrusted = true;
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+      expect(() => resolveNeuralArtifactDescriptor({
+        repoRoot: root,
+        manifestPath,
+        vocabPath
+      })).toThrow(/must contain exactly/u);
+    });
+  });
+
   it("rebinds a split manifest to the exact compiled artifacts inside a bundle", () => {
     withFixture("split", ({ root, manifest, manifestPath, vocabPath }) => {
       const source = resolveNeuralArtifactDescriptor({

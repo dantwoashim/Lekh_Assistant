@@ -66,6 +66,7 @@ function validEvidence(overrides = {}) {
 describe("macOS IMK dev release integrity", () => {
   it("excludes only generated macOS distribution outputs from source cleanliness", () => {
     expect(MACOS_GENERATED_RELEASE_PATHS).toEqual([
+      "models/macos/LekhNeuralTransliterator.production/**",
       "release/native/macos/**",
       "public/updates/macos/**"
     ]);
@@ -75,6 +76,7 @@ describe("macOS IMK dev release integrity", () => {
       "--untracked-files=all",
       "--",
       ".",
+      ":(exclude)models/macos/LekhNeuralTransliterator.production/**",
       ":(exclude)release/native/macos/**",
       ":(exclude)public/updates/macos/**"
     ]);
