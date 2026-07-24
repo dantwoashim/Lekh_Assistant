@@ -42,17 +42,26 @@ export function resolveNeuralArtifactDescriptor(options) {
     options?.vocabPath,
     "vocabPath"
   );
-  const manifest = structuredClone(
-    options?.manifest ?? readJson(manifestPath, "Neural manifest")
-  );
-  requireRecord(manifest, "Neural manifest");
   assertNoSymlinkComponents(repoRoot, manifestPath, "Neural manifest");
   assertNoSymlinkComponents(repoRoot, vocabPath, "Neural vocabulary");
 
   const manifestEvidence = inspectContainedRegularFile(repoRoot, manifestPath, {
     label: "Neural manifest",
+    includeContents: true,
     maxBytes: 4 * 1024 * 1024
   });
+  const onDiskManifest = parseJsonEvidence(
+    manifestEvidence,
+    "Neural manifest"
+  );
+  const manifest = structuredClone(options?.manifest ?? onDiskManifest);
+  requireRecord(manifest, "Neural manifest");
+  if (options?.manifest !== undefined &&
+      !deepEqual(manifest, onDiskManifest)) {
+    fail(
+      "Provided neural manifest object does not match the manifestPath bytes."
+    );
+  }
   const vocabEvidence = inspectContainedRegularFile(repoRoot, vocabPath, {
     label: "Neural vocabulary",
     maxBytes: 16 * 1024 * 1024
@@ -353,17 +362,34 @@ function assertNoSymlinkComponents(repoRoot, path, label) {
   }
 }
 
-function readJson(path, label) {
-  const evidence = inspectContainedRegularFile(dirname(path), path, {
-    label,
-    includeContents: true,
-    maxBytes: 4 * 1024 * 1024
-  });
+function parseJsonEvidence(evidence, label) {
   try {
     return JSON.parse(evidence.contents.toString("utf8"));
   } catch (error) {
     fail(`${label} is invalid JSON: ${errorMessage(error)}`);
   }
+}
+
+function deepEqual(left, right) {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => deepEqual(value, right[index]));
+  }
+  if (!left || !right ||
+      typeof left !== "object" ||
+      typeof right !== "object") {
+    return false;
+  }
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key, index) =>
+        key === rightKeys[index] && deepEqual(left[key], right[key])
+    );
 }
 
 function requireRecord(value, label) {

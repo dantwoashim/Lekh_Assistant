@@ -83,6 +83,20 @@ describe("neural runtime artifact descriptor", () => {
     });
   });
 
+  it("rejects an in-memory manifest that is not the manifestPath content", () => {
+    withFixture("baseline", ({ root, manifest, manifestPath, vocabPath }) => {
+      const substituted = structuredClone(manifest);
+      substituted.trainingRunId = "f".repeat(32);
+
+      expect(() => resolveNeuralArtifactDescriptor({
+        repoRoot: root,
+        manifest: substituted,
+        manifestPath,
+        vocabPath
+      })).toThrow(/does not match the manifestPath bytes/u);
+    });
+  });
+
   it("rebinds a split manifest to the exact compiled artifacts inside a bundle", () => {
     withFixture("split", ({ root, manifest, manifestPath, vocabPath }) => {
       const source = resolveNeuralArtifactDescriptor({
