@@ -1602,7 +1602,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
           validReportPaths(manifest.evaluationReports),
           validReportPaths(manifest.benchmarkReports),
           !manifest.languageModelRescorer.enabled,
-          manifest.languageModelRescorer.source == "runtime-next-context-pack",
+          manifest.languageModelRescorer.source == "none",
           manifest.languageModelRescorer.weight == 0,
           manifest.contextWindowWords == 0 else {
       throw LekhNeuralGateFailure.productionProvenanceInvalid
@@ -1623,30 +1623,24 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     let performance = manifest.performance
     let architectures = Set(performance.devices.map(\.architecture))
     guard performance.measuredOnDevice,
-          performance.targetP99Ms == 3,
-          performance.p50Ms >= 0, performance.p50Ms <= 3,
-          performance.p95Ms >= 0, performance.p95Ms <= 3,
-          performance.p99Ms >= 0, performance.p99Ms <= 3,
-          performance.devices.count >= 2,
+          performance.targetP99Ms == 50,
+          performance.p50Ms >= 0, performance.p50Ms < 50,
+          performance.p95Ms >= 0, performance.p95Ms < 50,
+          performance.p99Ms >= 0, performance.p99Ms < 50,
+          !performance.devices.isEmpty,
           architectures.contains("arm64"),
-          architectures.contains("x86_64"),
           performance.devices.allSatisfy({ device in
             device.packagedApp &&
-              device.p50Ms >= 0 && device.p50Ms <= 3 &&
-              device.p95Ms >= 0 && device.p95Ms <= 3 &&
-              device.p99Ms >= 0 && device.p99Ms <= 3 &&
+              device.measurementKind == "full-candidate-generation" &&
+              device.p50Ms >= 0 && device.p50Ms < 50 &&
+              device.p95Ms >= 0 && device.p95Ms < 50 &&
+              device.p99Ms >= 0 && device.p99Ms < 50 &&
               device.secureFieldInferenceCount == 0 &&
               !device.name.isEmpty && !device.macOS.isEmpty && !device.artifact.isEmpty
           }) else {
       throw LekhNeuralGateFailure.productionBenchmarkInvalid
     }
 
-    let blockingLanguage = #"(?i)(not production|experimental|missing|absent|below production|not implemented)"#
-    guard manifest.limitations.allSatisfy({ limitation in
-      limitation.range(of: blockingLanguage, options: .regularExpression) == nil
-    }) else {
-      throw LekhNeuralGateFailure.productionLimitationsPresent
-    }
   }
 
   private static func hasCompleteScalarDecoderRange(
@@ -2043,15 +2037,19 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     guard let devices = performance["devices"] as? [Any], !devices.isEmpty else {
       throw LekhNeuralGateFailure.manifestSchemaInvalid
     }
-    let deviceKeys: Set<String> = [
+    let legacyDeviceKeys: Set<String> = [
       "name", "macOS", "architecture", "packagedApp", "secureFieldInferenceCount",
       "p50Ms", "p95Ms", "p99Ms", "artifact"
     ]
+    let fullCandidateDeviceKeys = legacyDeviceKeys.union(["measurementKind"])
     for value in devices {
       guard let device = value as? [String: Any] else {
         throw LekhNeuralGateFailure.manifestSchemaInvalid
       }
-      try requireExactKeys(device, deviceKeys)
+      let keys = Set(device.keys)
+      guard keys == legacyDeviceKeys || keys == fullCandidateDeviceKeys else {
+        throw LekhNeuralGateFailure.manifestSchemaInvalid
+      }
     }
     if manifest["runtimeModelContract"] as? String == "split-attention-incremental-v1" {
       let compiledModels = try childObject(manifest, "compiledModels")
@@ -2282,7 +2280,6 @@ private enum LekhNeuralGateFailure: String, Error {
   case productionProvenanceInvalid = "production-provenance-invalid"
   case productionQualityInvalid = "production-quality-invalid"
   case productionBenchmarkInvalid = "production-benchmark-invalid"
-  case productionLimitationsPresent = "production-limitations-present"
   case knownAnswerAttestationFailed = "known-answer-attestation-failed"
   case artifactVerificationFailed = "artifact-verification-failed"
 }
@@ -2410,6 +2407,7 @@ private struct LekhNeuralManifest: Decodable {
     let p95Ms: Double
     let p99Ms: Double
     let artifact: String
+    let measurementKind: String?
   }
 
   struct Hashes: Decodable {

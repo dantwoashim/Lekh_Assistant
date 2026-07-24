@@ -119,16 +119,18 @@ const shippingPlan = {
   targetRuntime: "CoreML .mlmodelc",
   targetParameterCount: "1M-5M",
   targetCompiledBytes: "<=16MB",
-  targetP99Ms: "<=3ms",
+  targetP99Ms: "<50ms full-candidate generation",
   hotPathPolicy: "deterministic FST and dictionary first; neural tail reranker only when fast paths are insufficient",
   privacyPolicy: "local inference only; no network inference; no raw text telemetry",
   productionRequirements: {
     openVocabulary: true,
     acceptedArchitectures: ["tiny-transformer-encoder-decoder", "gru-encoder-decoder", "seq2seq"],
-    tokenization: "BPE, unigram subword, or character-sequence decoder",
+    tokenization: "unicode-scalar-character",
+    outputSequenceValidation: "devanagari-word-sequence-v1",
     decoding: "beam-search",
-    languageModelRescorer: true,
-    contextWindowWords: ">=2",
+    maximumDecoderSteps: 31,
+    languageModelRescorer: false,
+    contextWindowWords: 0,
     measuredOnDevice: true,
     forbiddenCompiledGraphShape: "single inner_product followed by softmax"
   },
@@ -232,20 +234,26 @@ function validateProductionModel(candidateManifest, graph) {
     failures.push(`Production model architecture must be tiny Transformer/GRU seq2seq; current architecture is ${architecture || "unspecified"}.`);
   }
 
-  const tokenizer = candidateManifest.subwordModel ?? candidateManifest.tokenizer ?? candidateManifest.tokenization;
-  if (!tokenizer || tokenizer === "none") {
-    failures.push("Production model must declare a BPE/unigram subword or character-sequence tokenizer.");
+  if (candidateManifest.tokenization !== "unicode-scalar-character") {
+    failures.push("Production model must use the Unicode-scalar token contract.");
+  }
+  if (candidateManifest.outputSequenceValidation !== "devanagari-word-sequence-v1") {
+    failures.push("Production model must use the shared Devanagari output-sequence validator.");
   }
 
   const hasBeamSearch = candidateManifest.decoder === "beam-search" || candidateManifest.beamSearch?.enabled === true;
   if (!hasBeamSearch) failures.push("Production model must use beam search decoding.");
-
-  if (candidateManifest.languageModelRescorer?.enabled !== true) {
-    failures.push("Production model must enable language-model rescoring for candidate ranking.");
+  if (candidateManifest.beamSearch?.maxSteps !== candidateManifest.beamSearch?.maxOutputGraphemes - 1) {
+    failures.push("Production model must expose every bounded Unicode-scalar decoder step.");
   }
 
-  if (Number(candidateManifest.contextWindowWords) < 2) {
-    failures.push("Production model must rank with at least the previous 2 words of context.");
+  if (candidateManifest.languageModelRescorer?.enabled !== false ||
+      Number(candidateManifest.languageModelRescorer?.weight) !== 0) {
+    failures.push("Production token model must not claim an unimplemented language-model rescorer.");
+  }
+
+  if (Number(candidateManifest.contextWindowWords) !== 0) {
+    failures.push("Production token model must use contextWindowWords=0.");
   }
 
   if (candidateManifest.performance?.measuredOnDevice !== true) {

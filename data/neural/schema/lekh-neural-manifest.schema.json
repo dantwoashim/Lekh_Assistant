@@ -44,10 +44,22 @@
       "$ref": "#/$defs/runIdentifier"
     },
     "selectedArtifact": {
-      "const": "lekh-open-vocab-seq2seq-v1"
+      "enum": [
+        "lekh-open-vocab-seq2seq-v1",
+        "lekh-open-vocab-bigru-attention-v1"
+      ]
     },
     "runtime": {
       "const": "CoreML"
+    },
+    "runtimeModelContract": {
+      "const": "split-attention-incremental-v1"
+    },
+    "tensorContract": {
+      "$ref": "#/$defs/tensorContract"
+    },
+    "compiledModels": {
+      "$ref": "#/$defs/compiledModels"
     },
     "localOnly": {
       "const": true
@@ -104,7 +116,7 @@
           "const": false
         },
         "source": {
-          "const": "runtime-next-context-pack"
+          "const": "none"
         },
         "weight": {
           "const": 0
@@ -207,27 +219,27 @@
         "p50Ms": {
           "type": "number",
           "minimum": 0,
-          "maximum": 3
+          "exclusiveMaximum": 50
         },
         "p95Ms": {
           "type": "number",
           "minimum": 0,
-          "maximum": 3
+          "exclusiveMaximum": 50
         },
         "p99Ms": {
           "type": "number",
           "minimum": 0,
-          "maximum": 3
+          "exclusiveMaximum": 50
         },
         "targetP99Ms": {
-          "const": 3
+          "const": 50
         },
         "measuredOnDevice": {
           "const": true
         },
         "devices": {
           "type": "array",
-          "minItems": 2,
+          "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -240,7 +252,8 @@
               "p50Ms",
               "p95Ms",
               "p99Ms",
-              "artifact"
+              "artifact",
+              "measurementKind"
             ],
             "properties": {
               "name": {
@@ -263,21 +276,24 @@
               "p50Ms": {
                 "type": "number",
                 "minimum": 0,
-                "maximum": 3
+                "exclusiveMaximum": 50
               },
               "p95Ms": {
                 "type": "number",
                 "minimum": 0,
-                "maximum": 3
+                "exclusiveMaximum": 50
               },
               "p99Ms": {
                 "type": "number",
                 "minimum": 0,
-                "maximum": 3
+                "exclusiveMaximum": 50
               },
               "artifact": {
                 "type": "string",
                 "minLength": 1
+              },
+              "measurementKind": {
+                "const": "full-candidate-generation"
               }
             }
           },
@@ -289,17 +305,6 @@
                 "properties": {
                   "architecture": {
                     "const": "arm64"
-                  }
-                }
-              }
-            },
-            {
-              "contains": {
-                "type": "object",
-                "required": ["architecture"],
-                "properties": {
-                  "architecture": {
-                    "const": "x86_64"
                   }
                 }
               }
@@ -337,33 +342,64 @@
       }
     },
     "sha256": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["compiledModel", "sourceCheckpoint", "trainingDatasetManifest", "vocabMetadata"],
-      "properties": {
-        "compiledModel": {
-          "$ref": "#/$defs/sha256"
+      "oneOf": [
+        {
+          "$ref": "#/$defs/baselineHashes"
         },
-        "sourceCheckpoint": {
-          "$ref": "#/$defs/sha256"
-        },
-        "trainingDatasetManifest": {
-          "$ref": "#/$defs/sha256"
-        },
-        "vocabMetadata": {
-          "$ref": "#/$defs/sha256"
+        {
+          "$ref": "#/$defs/splitHashes"
         }
-      }
+      ]
     },
     "limitations": {
       "type": "array",
-      "minItems": 3,
       "items": {
         "type": "string",
         "minLength": 1
       }
     }
   },
+  "oneOf": [
+    {
+      "title": "Single-model GRU encoder-decoder",
+      "properties": {
+        "selectedArtifact": {
+          "const": "lekh-open-vocab-seq2seq-v1"
+        },
+        "architecture": {
+          "const": "gru-encoder-decoder-seq2seq"
+        },
+        "runtimeModelContract": false,
+        "tensorContract": false,
+        "compiledModels": false,
+        "sha256": {
+          "$ref": "#/$defs/baselineHashes"
+        }
+      }
+    },
+    {
+      "title": "Split incremental attention encoder/decoder-step",
+      "required": [
+        "runtimeModelContract",
+        "tensorContract",
+        "compiledModels"
+      ],
+      "properties": {
+        "selectedArtifact": {
+          "const": "lekh-open-vocab-bigru-attention-v1"
+        },
+        "architecture": {
+          "const": "bidirectional-gru-additive-attention-seq2seq"
+        },
+        "runtimeModelContract": {
+          "const": "split-attention-incremental-v1"
+        },
+        "sha256": {
+          "$ref": "#/$defs/splitHashes"
+        }
+      }
+    }
+  ],
   "$defs": {
     "reportList": {
       "type": "array",
@@ -380,6 +416,275 @@
     "runIdentifier": {
       "type": "string",
       "pattern": "^[a-f0-9]{32}$"
+    },
+    "baselineHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compiledModel",
+        "sourceCheckpoint",
+        "trainingDatasetManifest",
+        "vocabMetadata"
+      ],
+      "properties": {
+        "compiledModel": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sourceCheckpoint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "trainingDatasetManifest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "vocabMetadata": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "splitHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compiledModels",
+        "mlpackages",
+        "sourceCheckpoint",
+        "trainingDatasetManifest",
+        "vocabMetadata"
+      ],
+      "properties": {
+        "compiledModels": {
+          "$ref": "#/$defs/roleHashes"
+        },
+        "mlpackages": {
+          "$ref": "#/$defs/roleHashes"
+        },
+        "sourceCheckpoint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "trainingDatasetManifest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "vocabMetadata": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "roleHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoder", "decoderStep"],
+      "properties": {
+        "encoder": {
+          "$ref": "#/$defs/sha256"
+        },
+        "decoderStep": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "compiledModels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoder", "decoderStep"],
+      "properties": {
+        "encoder": {
+          "$ref": "#/$defs/encoderArtifact"
+        },
+        "decoderStep": {
+          "$ref": "#/$defs/decoderStepArtifact"
+        }
+      }
+    },
+    "encoderArtifact": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/compiledArtifact"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "role": {
+              "const": "encoder"
+            }
+          }
+        }
+      ]
+    },
+    "decoderStepArtifact": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/compiledArtifact"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "role": {
+              "const": "decoderStep"
+            }
+          }
+        }
+      ]
+    },
+    "compiledArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "mlpackage",
+        "mlpackageBytes",
+        "mlpackageSha256",
+        "compiledModel",
+        "compiledBytes",
+        "compiledSha256"
+      ],
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "mlpackage": {
+          "$ref": "#/$defs/repositoryPath"
+        },
+        "mlpackageBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "mlpackageSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "compiledModel": {
+          "$ref": "#/$defs/repositoryPath"
+        },
+        "compiledBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "compiledSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "tensor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shape", "dataType"],
+      "properties": {
+        "shape": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1048576
+          }
+        },
+        "dataType": {
+          "enum": ["INT32", "FLOAT16"]
+        }
+      }
+    },
+    "tensorContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoder", "decoderStep"],
+      "properties": {
+        "encoder": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputs", "outputs"],
+          "properties": {
+            "inputs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["inputIds"],
+              "properties": {
+                "inputIds": {
+                  "$ref": "#/$defs/tensor"
+                }
+              }
+            },
+            "outputs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "encoderOutputs",
+                "encoderEnergy",
+                "validMask",
+                "initialDecoderHidden"
+              ],
+              "properties": {
+                "encoderOutputs": {
+                  "$ref": "#/$defs/tensor"
+                },
+                "encoderEnergy": {
+                  "$ref": "#/$defs/tensor"
+                },
+                "validMask": {
+                  "$ref": "#/$defs/tensor"
+                },
+                "initialDecoderHidden": {
+                  "$ref": "#/$defs/tensor"
+                }
+              }
+            }
+          }
+        },
+        "decoderStep": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputs", "outputs"],
+          "properties": {
+            "inputs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "decoderTokenIds",
+                "decoderHidden",
+                "encoderOutputs",
+                "encoderEnergy",
+                "validMask"
+              ],
+              "properties": {
+                "decoderTokenIds": {
+                  "$ref": "#/$defs/tensor"
+                },
+                "decoderHidden": {
+                  "$ref": "#/$defs/tensor"
+                },
+                "encoderOutputs": {
+                  "$ref": "#/$defs/tensor"
+                },
+                "encoderEnergy": {
+                  "$ref": "#/$defs/tensor"
+                },
+                "validMask": {
+                  "$ref": "#/$defs/tensor"
+                }
+              }
+            },
+            "outputs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["stepLogits", "nextDecoderHidden"],
+              "properties": {
+                "stepLogits": {
+                  "$ref": "#/$defs/tensor"
+                },
+                "nextDecoderHidden": {
+                  "$ref": "#/$defs/tensor"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

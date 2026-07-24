@@ -17,18 +17,20 @@ it("development reports an honest not-implemented distillation status", () => {
     assert.equal(report.status, "passed-phase3-distillation-contract-not-implemented");
     assert.equal(report.distillationConfigured, false);
     assert.equal(report.distillationImplemented, false);
-    assert.ok(report.warnings.some((warning) => warning.includes("explicitly not implemented")));
+    assert.ok(report.warnings.some((warning) => warning.includes("explicitly disabled")));
   });
 });
 
-it("production rejects a downloaded teacher without a distillation run", () => {
+it("production treats disabled distillation as an optional non-gate", () => {
   withFixture({ implemented: false, teacherDownloaded: true }, (root) => {
     const result = runChecker(root, "--production");
-    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
 
     const report = readJson(join(root, "reports", "neural-distillation-plan-production-report.json"));
+    assert.equal(report.status, "passed-production-phase3-distillation-not-required");
     assert.equal(report.distillationImplemented, false);
-    assert.ok(report.failures.some((failure) => failure.includes("teacher manifest alone is insufficient")));
+    assert.deepEqual(report.failures, []);
+    assert.ok(report.warnings.some((warning) => warning.includes("optional offline optimization")));
   });
 });
 

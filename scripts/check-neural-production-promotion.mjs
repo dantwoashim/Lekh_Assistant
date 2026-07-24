@@ -13,11 +13,13 @@ const warnings = [];
 
 const requiredReports = {
   dataset: production ? "reports/neural-open-vocab-dataset-production-report.json" : "reports/neural-open-vocab-dataset-report.json",
-  reviewIntake: production ? "reports/neural-review-intake-production-report.json" : "reports/neural-review-intake-report.json",
   trainingRun: production ? "reports/neural-training-run-readiness-production-report.json" : "reports/neural-training-run-readiness-report.json",
   evaluation: production ? "reports/neural-open-vocab-evaluation-production.json" : "reports/neural-open-vocab-evaluation.json",
   benchmark: production ? "reports/neural-coreml-device-benchmark-production.json" : "reports/neural-coreml-device-benchmark.json",
   nativeIntegration: production ? "reports/neural-native-integration-production-report.json" : "reports/neural-native-integration-report.json",
+  runtimeConformance: production
+    ? "reports/neural-runtime-manifest-conformance-production-report.json"
+    : "reports/neural-runtime-manifest-conformance-report.json",
   modelSelection: production ? "reports/neural-model-selection-production-report.json" : "reports/neural-model-selection-report.json",
   readiness: production ? "reports/neural-transliteration-readiness-production-report.json" : "reports/neural-transliteration-readiness-report.json"
 };
@@ -50,11 +52,11 @@ if (!manifest) {
 const datasetRows = Number(loadedReports.dataset?.totalRows);
 if (!Number.isFinite(datasetRows) || datasetRows < 1_000_000) failures.push(`Promotion requires >=1,000,000 cleaned rows; found ${datasetRows || 0}.`);
 if (production) {
-  requireReportStatus("reviewIntake", /^passed-production-/u);
   requireReportStatus("trainingRun", /^passed-production-|^passed-phase8-training-run-complete$/u);
   requireReportStatus("evaluation", /^passed-production-/u);
   requireReportStatus("benchmark", /^passed-production-/u);
   requireReportStatus("nativeIntegration", /^passed-production-/u);
+  requireReportStatus("runtimeConformance", /^passed-production-runtime-conformance$/u);
   requireReportStatus("modelSelection", /^passed$/u);
   requireReportStatus("readiness", /^passed$/u);
 }

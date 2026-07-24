@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 3,
+  "suiteVersion": "v3",
+  "releaseId": "lekh-neural-gold-token-only-v3",
+  "supersedes": "data/neural/gold/manifest.v2.json",
+  "rowSchema": "data/neural/schema/lekh-neural-gold-row-v2.schema.json",
+  "status": "locked-token-only-evaluation-corpus",
+  "note": "These are the complete locked repository evaluation assertions for the token-only neural tail. They prove schema, leakage controls, required-case coverage, and safety semantics without claiming unavailable human review.",
+  "migrationReason": "The runtime contract consumes one active token and no prior words. Context-bearing v2 chat assertions remain immutable; v3 replaces them with new token-only row identities.",
+  "corpusSha256": "d0cb6cef6df9f54b2adb25b4251ef24f4c93679a1c48005a50a0ac6c6519952b",
+  "reviewTierPolicy": {
+    "contract-seed": "Project-internal seed rows used to prove the evaluation contract and required safety cases. They are not public accuracy evidence.",
+    "native-speaker-reviewed": "Optional future tier: a Nepali native speaker reviewed expected and acceptable outputs.",
+    "linguist-reviewed": "Optional future tier: a Nepali computational-linguistics reviewer reviewed category, ambiguity, and normalization policy.",
+    "dual-reviewed": "Optional future tier: native-speaker and linguist reviews are both complete.",
+    "adjudicated-gold": "Optional future tier: conflicting reviews were adjudicated and frozen for release metrics."
+  },
+  "suites": [
+    {
+      "id": "romanized-token",
+      "path": "data/neural/gold/romanized-nepali-token-gold.v1.jsonl",
+      "sha256": "08d20114d3f6e893f696cbfd4ae424ee5c9c89d538594d27898056a7d34e8532",
+      "rows": 11,
+      "category": "romanized-token",
+      "foundationMinimumRows": 7
+    },
+    {
+      "id": "chat-convention",
+      "path": "data/neural/gold/chat-convention-token-only-gold.v2.jsonl",
+      "sha256": "24485f88cbe8a50a1147f99185a3b93ae352084a6bd105d188225baa6f67eacb",
+      "rows": 7,
+      "category": "chat-convention",
+      "foundationMinimumRows": 5
+    },
+    {
+      "id": "names",
+      "path": "data/neural/gold/names-gold.v1.jsonl",
+      "sha256": "ebd2da468871f0fb85dd33f29d7114e78cd5cba155117323736b0487f253db0c",
+      "rows": 6,
+      "category": "name",
+      "foundationMinimumRows": 5
+    },
+    {
+      "id": "ambiguity",
+      "path": "data/neural/gold/ambiguity-gold.v1.jsonl",
+      "sha256": "50e64b458693e1a90c8ff2c969ee8a7607cf321f36d41146c9dca0a165ab35e6",
+      "rows": 5,
+      "category": "ambiguity",
+      "foundationMinimumRows": 5
+    },
+    {
+      "id": "non-nepali-pass-through",
+      "path": "data/neural/gold/non-nepali-pass-through-gold.v1.jsonl",
+      "sha256": "09042082cf373ef294385859f31754ac82ce239a91f5316dd373130749cc5d0d",
+      "rows": 6,
+      "category": "non-nepali-pass-through",
+      "foundationMinimumRows": 5
+    },
+    {
+      "id": "protected-token",
+      "path": "data/neural/gold/protected-token-gold.v1.jsonl",
+      "sha256": "38b3358912b2e07d288f10687829849966f996f1113a7c12b474271dfce9719c",
+      "rows": 6,
+      "category": "protected-token",
+      "foundationMinimumRows": 5
+    },
+    {
+      "id": "adversarial-safety",
+      "path": "data/neural/gold/adversarial-neural-tail-gold.v1.jsonl",
+      "sha256": "2dd7aefd45886b77787a59d1bbdcafe131d095bd7445e3cd20179dad817260f3",
+      "rows": 6,
+      "category": "adversarial-safety",
+      "foundationMinimumRows": 5
+    }
+  ],
+  "requiredCases": {
+    "vato": "बाटो",
+    "bato": "बाटो",
+    "baato": "बाटो",
+    "chha": "छ",
+    "cha": "छ",
+    "xa": "छ",
+    "xaina": "छैन"
+  }
+}

@@ -28,6 +28,6 @@
       "license": "project-owned"
     }
   ],
-  "rowContract": "data/neural/schema/lekh-neural-gold-row.schema.json",
+  "rowContract": "data/neural/schema/lekh-neural-gold-row-v2.schema.json",
   "notes": "Copy this file to data/private/neural/review-sources/manifest.json and keep private raw review rows out of git."
 }

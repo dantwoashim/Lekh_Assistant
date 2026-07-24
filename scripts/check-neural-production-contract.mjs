@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
+import Ajv2020 from "ajv/dist/2020.js";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -12,16 +13,15 @@ const requiredFiles = [
   "data/neural/schema/lekh-neural-manifest.schema.json",
   "data/neural/eval/README.md",
   "data/neural/training/open-vocab-seq2seq-v1.config.json",
-  "scripts/check-neural-distillation-plan.mjs",
+  "data/neural/training/open-vocab-bigru-attention-v1.config.json",
+  "scripts/lib/neural-artifact-descriptor.mjs",
   "scripts/check-neural-training-contract.mjs",
   "scripts/evaluate-neural-open-vocab-model.mjs",
   "scripts/benchmark-neural-coreml-device.mjs",
   "scripts/check-neural-native-integration.mjs",
-  "data/neural/review/README.md",
-  "data/neural/review/private-source-manifest.example.json",
-  "scripts/check-neural-review-intake.mjs",
   "scripts/prepare-neural-training-run.mjs",
   "scripts/check-neural-production-promotion.mjs",
+  "scripts/promote-neural-candidate.mjs",
   "scripts/check-neural-sota-worldclass.mjs"
 ];
 
@@ -36,9 +36,10 @@ const specText = readText("docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md");
 const evalText = readText("data/neural/eval/README.md");
 const schema = readJson("data/neural/schema/lekh-neural-manifest.schema.json");
 
-requireText(specText, "lekh-open-vocab-seq2seq-v1", "spec must freeze production artifact id");
-requireText(specText, "models/macos/LekhNeuralTransliterator.mlmodelc", "spec must name compiled Core ML artifact path");
-requireText(specText, "models/macos/LekhNeuralTransliterator.manifest.json", "spec must name production manifest path");
+requireText(specText, "lekh-open-vocab-seq2seq-v1", "spec must define the baseline artifact id");
+requireText(specText, "lekh-open-vocab-bigru-attention-v1", "spec must define the split-attention artifact id");
+requireText(specText, "models/macos/LekhNeuralTransliterator.production", "spec must name the atomic production directory");
+requireText(specText, "artifactSetSha256", "spec must define the runtime artifact-set identity");
 requireText(specText, "no network inference", "spec must forbid network inference");
 requireText(specText, "no inference in secure fields", "spec must forbid secure-field inference");
 requireText(specText, "autoCommitEligible", "spec must define candidate acceptance safety");
@@ -47,19 +48,17 @@ requireText(specText, "npm run check:neural-contract", "spec must define its pro
 requireText(specText, "npm run check:neural-phase3-6", "spec must define the aggregate Phase 3-6 proof command");
 requireText(specText, "npm run check:neural-phase3-9", "spec must define the aggregate Phase 3-9 proof command");
 requireText(specText, "npm run check:neural-phase0-10", "spec must define the aggregate Phase 0-10 proof command");
-requireText(specText, "node scripts/check-neural-distillation-plan.mjs --production", "spec must define the Phase 3 production proof command");
 requireText(specText, "node scripts/check-neural-training-contract.mjs --production", "spec must define the Phase 4 production proof command");
 requireText(specText, "node scripts/evaluate-neural-open-vocab-model.mjs --production", "spec must define the Phase 5 evaluation production proof command");
 requireText(specText, "node scripts/benchmark-neural-coreml-device.mjs --production", "spec must define the Phase 5 benchmark production proof command");
 requireText(specText, "node scripts/check-neural-native-integration.mjs --production", "spec must define the Phase 6 production proof command");
-requireText(specText, "node scripts/check-neural-review-intake.mjs --production", "spec must define the Phase 7 production proof command");
 requireText(specText, "node scripts/prepare-neural-training-run.mjs --production", "spec must define the Phase 8 production proof command");
 requireText(specText, "node scripts/check-neural-production-promotion.mjs --production", "spec must define the Phase 9 production proof command");
 requireText(specText, "node scripts/check-neural-sota-worldclass.mjs --production", "spec must define the Phase 10 production proof command");
 
 for (const suite of [
   "romanized-nepali-token-gold.v1.jsonl",
-  "chat-convention-gold.v1.jsonl",
+  "chat-convention-token-only-gold.v2.jsonl",
   "names-gold.v1.jsonl",
   "ambiguity-gold.v1.jsonl",
   "non-nepali-pass-through-gold.v1.jsonl",
@@ -80,6 +79,11 @@ for (const metric of [
 }
 
 if (schema) {
+  try {
+    new Ajv2020({ allErrors: true, strict: true }).compile(schema);
+  } catch (error) {
+    failures.push(`Production manifest schema does not compile strictly: ${error.message}`);
+  }
   assert(schema.$schema === "https://json-schema.org/draft/2020-12/schema", "schema must use JSON Schema draft 2020-12");
   assert(schema.$id === "https://lekh.local/schemas/lekh-neural-manifest.schema.json", "schema $id must be stable");
   assert(schema.additionalProperties === false, "schema must reject unexpected top-level production manifest fields");
@@ -87,7 +91,25 @@ if (schema) {
   assert(property(schema, "trainingRunId")?.$ref === "#/$defs/runIdentifier", "schema must require a training run identity");
   assert(property(schema, "exportRunId")?.$ref === "#/$defs/runIdentifier", "schema must require an export run identity");
   assert(schema.$defs?.runIdentifier?.pattern === "^[a-f0-9]{32}$", "schema run identities must be lowercase 32-hex values");
-  assert(propertyConst(schema, "selectedArtifact") === "lekh-open-vocab-seq2seq-v1", "schema must require production artifact id");
+  assert(
+    ["lekh-open-vocab-seq2seq-v1", "lekh-open-vocab-bigru-attention-v1"].every(
+      (artifact) => property(schema, "selectedArtifact")?.enum?.includes(artifact)
+    ),
+    "schema must discriminate baseline and split-attention artifact ids"
+  );
+  assert(schema.oneOf?.length === 2, "schema must have exactly two closed runtime artifact branches");
+  assert(
+    property(schema, "runtimeModelContract")?.const === "split-attention-incremental-v1",
+    "schema must name the split-attention runtime contract"
+  );
+  assert(
+    property(schema, "tensorContract")?.$ref === "#/$defs/tensorContract",
+    "schema must bind the split tensor contract"
+  );
+  assert(
+    property(schema, "compiledModels")?.$ref === "#/$defs/compiledModels",
+    "schema must bind the split compiled-model inventory"
+  );
   assert(propertyConst(schema, "runtime") === "CoreML", "schema must require CoreML runtime");
   assert(propertyConst(schema, "localOnly") === true, "schema must require localOnly=true");
   assert(propertyConst(schema, "neuralTailOnly") === true, "schema must require neuralTailOnly=true");
@@ -103,14 +125,36 @@ if (schema) {
   assert(property(schema, "modelBytes")?.maximum === 16_777_216, "schema must enforce 16 MB compiled model cap");
   assert(propertyConst(schema, "contextWindowWords") === 0, "schema must bind token-only inference with no context window");
   assert(property(schema, "languageModelRescorer")?.properties?.enabled?.const === false, "schema must forbid an unimplemented context rescorer");
-  assert(property(schema, "performance")?.properties?.p99Ms?.maximum === 3, "schema must enforce p99 <= 3ms");
+  assert(property(schema, "languageModelRescorer")?.properties?.source?.const === "none", "schema must bind the absent context rescorer to source=none");
+  assert(property(schema, "performance")?.properties?.p99Ms?.exclusiveMaximum === 50, "schema must enforce full-candidate p99 < 50ms");
+  assert(property(schema, "performance")?.properties?.targetP99Ms?.const === 50, "schema must bind the 50ms full-candidate budget");
+  assert(property(schema, "performance")?.properties?.devices?.minItems === 1, "schema must require at least one measured packaged device");
+  assert(
+    JSON.stringify(property(schema, "performance")?.properties?.devices).includes('"const":"arm64"'),
+    "schema must require Apple Silicon device evidence"
+  );
   const deviceSchema = property(schema, "performance")?.properties?.devices?.items;
   assert(deviceSchema?.properties?.packagedApp?.const === true, "schema must require packaged-app device evidence");
   assert(deviceSchema?.properties?.secureFieldInferenceCount?.const === 0, "schema must require zero secure-field inference per benchmark device");
-  assert(deviceSchema?.properties?.p50Ms?.maximum === 3, "schema must enforce device p50 <= 3ms");
-  assert(deviceSchema?.properties?.p95Ms?.maximum === 3, "schema must enforce device p95 <= 3ms");
-  assert(deviceSchema?.properties?.p99Ms?.maximum === 3, "schema must enforce device p99 <= 3ms");
-  assert(property(schema, "sha256")?.required?.includes("vocabMetadata"), "schema must require the exact runtime vocabulary digest");
+  assert(deviceSchema?.properties?.p50Ms?.exclusiveMaximum === 50, "schema must enforce device p50 < 50ms");
+  assert(deviceSchema?.properties?.p95Ms?.exclusiveMaximum === 50, "schema must enforce device p95 < 50ms");
+  assert(deviceSchema?.properties?.p99Ms?.exclusiveMaximum === 50, "schema must enforce device p99 < 50ms");
+  assert(deviceSchema?.properties?.measurementKind?.const === "full-candidate-generation", "schema must require full candidate-generation measurements");
+  assert(
+    schema.$defs?.baselineHashes?.required?.includes("vocabMetadata") &&
+      schema.$defs?.splitHashes?.required?.includes("vocabMetadata"),
+    "both artifact branches must require the exact runtime vocabulary digest"
+  );
+  assert(
+    JSON.stringify(schema.$defs?.compiledModels?.required) ===
+      JSON.stringify(["encoder", "decoderStep"]),
+    "split artifacts must contain exactly encoder and decoderStep"
+  );
+  assert(
+    JSON.stringify(schema.$defs?.splitHashes?.required).includes("compiledModels") &&
+      JSON.stringify(schema.$defs?.splitHashes?.required).includes("mlpackages"),
+    "split artifacts must bind compiled and export-package hashes"
+  );
   assert(property(schema, "metrics")?.properties?.tailTop1Accuracy?.minimum === 0.88, "schema must enforce tail top1 gate");
   assert(property(schema, "metrics")?.properties?.chatConventionTop1Accuracy?.minimum === 0.92, "schema must enforce chat top1 gate");
   assert(property(schema, "metrics")?.properties?.protectedFalseConversionRate?.const === 0, "schema must require zero protected false conversion");

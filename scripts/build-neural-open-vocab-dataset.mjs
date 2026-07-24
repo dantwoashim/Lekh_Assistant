@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import { StringDecoder } from "node:string_decoder";
@@ -28,8 +28,9 @@ import {
 const root = process.cwd();
 const startedAt = performance.now();
 const production = process.argv.includes("--production");
+const checkOnly = process.argv.includes("--check");
 const registryPath = join(root, "data", "neural", "sources.v1.json");
-const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v2.json");
+const goldManifestPath = join(root, "data", "neural", "gold", "manifest.v3.json");
 const legacyDatasetDir = join(root, "data", "generated", "neural-transliteration");
 const privateSyubrajPath = join(root, "data", "private", "neural", "syubraj-roman2nepali-transliteration", "syubraj-roman2nepali-transliteration.tsv");
 const privateSyubrajManifestPath = join(dirname(privateSyubrajPath), "manifest.json");
@@ -75,7 +76,8 @@ const splitRows = {
 validateCleanRows(rows, splitRows);
 validateProductionReadiness(rows);
 
-writeOutputs(rows, splitRows);
+if (checkOnly) verifyOutputs(rows, splitRows);
+else writeOutputs(rows, splitRows);
 
 finish(failures.length === 0
   ? production ? "passed-production-open-vocab-data" : "passed-phase2-open-vocab-data"
@@ -436,18 +438,58 @@ function validateProductionReadiness(rows) {
 
 function writeOutputs(rows, splitRows) {
   if (failures.length > 0) return;
+  const manifestPath = join(outDir, "manifest.json");
+  const nextManifest = buildManifest(rows, splitRows, new Date().toISOString());
+  const existingManifest = readExistingJson(manifestPath);
+  if (
+    existingManifest &&
+    validateNeuralDatasetManifest(existingManifest).valid &&
+    existingManifest.datasetContentSha256 === nextManifest.datasetContentSha256 &&
+    splitFilesMatch(nextManifest)
+  ) {
+    generatedManifest = existingManifest;
+    return;
+  }
+
   mkdirSync(outDir, { recursive: true });
   for (const split of ["train", "dev", "test"]) {
     writeJsonl(join(outDir, `${split}.jsonl`), splitRows[split]);
   }
-  const splitPaths = {
-    train: join(outDir, "train.jsonl"),
-    dev: join(outDir, "dev.jsonl"),
-    test: join(outDir, "test.jsonl")
-  };
+  if (!splitFilesMatch(nextManifest)) {
+    failures.push("Written neural dataset split bytes do not match their deterministic in-memory identities.");
+    return;
+  }
+  writeFileSync(manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`);
+  generatedManifest = nextManifest;
+}
+
+function verifyOutputs(rows, splitRows) {
+  if (failures.length > 0) return;
+  const manifestPath = join(outDir, "manifest.json");
+  const existingManifest = readExistingJson(manifestPath);
+  if (!existingManifest) {
+    failures.push("Read-only neural dataset verification requires an existing manifest. Run npm run neural:open-vocab:dataset first.");
+    return;
+  }
+  const validation = validateNeuralDatasetManifest(existingManifest);
+  failures.push(...validation.issueCodes);
+  const expectedManifest = buildManifest(rows, splitRows, existingManifest.generatedAt);
+  if (existingManifest.datasetContentSha256 !== expectedManifest.datasetContentSha256) {
+    failures.push("Existing neural dataset content identity does not match a fresh deterministic reconstruction.");
+  }
+  if (!splitFilesMatch(existingManifest)) {
+    failures.push("Existing neural dataset split bytes do not match the locked manifest.");
+  }
+  generatedManifest = existingManifest;
+}
+
+function buildManifest(rows, splitRows, generatedAt) {
+  const splitArtifacts = Object.fromEntries(
+    Object.entries(splitRows).map(([split, value]) => [split, jsonlIdentity(value)])
+  );
   const manifest = {
     schemaVersion: 2,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     contentIdentity: "sha256-canonical-json-v1",
     datasetContentSha256: "",
     datasetId: "lekh-open-vocab-cleaned-v1",
@@ -460,12 +502,9 @@ function writeOutputs(rows, splitRows) {
     },
     counts: Object.fromEntries(Object.entries(splitRows).map(([split, value]) => [split, value.length])),
     totalRows: rows.length,
-    bytes: Object.fromEntries(Object.entries(splitPaths).map(([split, path]) => [split, statSync(path).size])),
-    sha256: {
-      train: fileSha256(splitPaths.train),
-      dev: fileSha256(splitPaths.dev),
-      test: fileSha256(splitPaths.test)
-    },
+    bytes: Object.fromEntries(Object.entries(splitArtifacts).map(([split, value]) => [split, value.bytes])),
+    sha256: Object.fromEntries(Object.entries(splitArtifacts).map(([split, value]) => [split, value.sha256])),
+    sourceCounts: actualSourceCounts(rows),
     recordIdentityPolicy: "stable-example-id-and-final-record-sha256-v1",
     cleaningPolicy: cleaningPolicy(),
     provenance: datasetProvenance()
@@ -473,9 +512,47 @@ function writeOutputs(rows, splitRows) {
   manifest.datasetContentSha256 = computeNeuralDatasetContentSha256(manifest);
   const manifestValidation = validateNeuralDatasetManifest(manifest);
   failures.push(...manifestValidation.issueCodes);
-  if (failures.length > 0) return;
-  writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  generatedManifest = manifest;
+  return manifest;
+}
+
+function jsonlIdentity(rows) {
+  const hash = createHash("sha256");
+  let bytes = 0;
+  for (const row of rows) {
+    const line = `${JSON.stringify(row)}\n`;
+    bytes += Buffer.byteLength(line);
+    hash.update(line);
+  }
+  return { bytes, sha256: hash.digest("hex") };
+}
+
+function splitFilesMatch(manifest) {
+  for (const split of ["train", "dev", "test"]) {
+    const path = join(outDir, `${split}.jsonl`);
+    if (!existsSync(path)) return false;
+    const metadata = lstatSync(path);
+    if (metadata.isSymbolicLink() || !metadata.isFile() ||
+        metadata.size !== manifest.bytes?.[split] ||
+        fileSha256(path) !== manifest.sha256?.[split]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function readExistingJson(path) {
+  if (!existsSync(path)) return null;
+  const metadata = lstatSync(path);
+  if (metadata.isSymbolicLink() || !metadata.isFile()) {
+    failures.push(`Existing neural dataset manifest must be a regular non-symbolic file: ${relative(root, path)}.`);
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    failures.push(`Existing neural dataset manifest is invalid JSON: ${error.message}`);
+    return null;
+  }
 }
 
 function writeJsonl(path, rows) {
@@ -547,9 +624,9 @@ function validateRegistry(registry) {
 
 function validateGoldRelease(manifest) {
   if (!manifest) return;
-  if (manifest.schemaVersion !== 2 || manifest.releaseId !== "lekh-neural-gold-foundation-v2" ||
+  if (manifest.schemaVersion !== 3 || manifest.releaseId !== "lekh-neural-gold-token-only-v3" ||
       !/^[a-f0-9]{64}$/u.test(String(manifest.corpusSha256 ?? ""))) {
-    failures.push("Open-vocabulary dataset requires the locked neural gold v2 release.");
+    failures.push("Open-vocabulary dataset requires the locked token-only neural gold v3 release.");
   }
   for (const suite of manifest.suites ?? []) {
     const path = join(root, suite.path ?? "");
@@ -844,13 +921,16 @@ function finish(status, exitCode) {
   mkdirSync(dirname(reportPath), { recursive: true });
   const report = {
     generatedAt: new Date().toISOString(),
-    command: production
-      ? "node scripts/build-neural-open-vocab-dataset.mjs --production"
-      : "node scripts/build-neural-open-vocab-dataset.mjs",
+    command: [
+      "node scripts/build-neural-open-vocab-dataset.mjs",
+      production ? "--production" : null,
+      checkOnly ? "--check" : null
+    ].filter(Boolean).join(" "),
     suite: "neural-open-vocab-dataset",
     durationMs: Math.round(performance.now() - startedAt),
     status,
     production,
+    mode: checkOnly ? "read-only-verification" : "build",
     datasetDir: "data/generated/neural-open-vocab",
     manifest: generatedManifest ? "data/generated/neural-open-vocab/manifest.json" : null,
     manifestSchemaVersion: generatedManifest?.schemaVersion ?? null,

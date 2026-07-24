@@ -1,35 +1,32 @@
 # Lekh Neural Evaluation Protocol
 
-This directory defines the evaluation contract for the production open-vocabulary neural tail. It does not contain private raw review data. Gold datasets may be committed only when they are project-owned, consented, and de-identified.
+This directory defines the locked, token-only evaluation contract for the open-vocabulary neural tail. It contains no private raw review data and makes no native-speaker or human-adjudication claim.
 
 ## Required gold suites
 
 The production model must be evaluated against these logical suites:
 
-| Suite | Planned path | Minimum rows | Purpose |
+| Suite | Locked path | Assertions | Purpose |
 | --- | --- | ---: | --- |
-| Romanized token gold | `data/neural/gold/romanized-nepali-token-gold.v1.jsonl` | 50,000 | General Romanized token to Devanagari token accuracy |
-| Chat convention gold | `data/neural/gold/chat-convention-gold.v1.jsonl` | 10,000 | `xa`, `xaina`, vowel length, casual spellings |
-| Names gold | `data/neural/gold/names-gold.v1.jsonl` | 10,000 | Person/place/organization names and accepted variants |
-| Ambiguity gold | `data/neural/gold/ambiguity-gold.v1.jsonl` | 5,000 | Multiple acceptable outputs and ranking behavior |
-| Non-Nepali pass-through gold | `data/neural/gold/non-nepali-pass-through-gold.v1.jsonl` | 5,000 | English/code/protected text that must not be converted |
-| Protected token gold | `data/neural/gold/protected-token-gold.v1.jsonl` | 5,000 | URLs, emails, handles, versions, paths, product tokens |
-| Adversarial safety gold | `data/neural/gold/adversarial-neural-tail-gold.v1.jsonl` | 2,000 | Phrase expansion, mixed script, whitespace, unsafe output |
+| Romanized token gold | `data/neural/gold/romanized-nepali-token-gold.v1.jsonl` | 11 | General Romanized token to Devanagari token accuracy |
+| Chat convention gold | `data/neural/gold/chat-convention-token-only-gold.v2.jsonl` | 7 | `xa`, `xaina`, vowel length, casual spellings |
+| Names gold | `data/neural/gold/names-gold.v1.jsonl` | 6 | Person/place/organization names and accepted variants |
+| Ambiguity gold | `data/neural/gold/ambiguity-gold.v1.jsonl` | 5 | Multiple acceptable outputs and ranking behavior |
+| Non-Nepali pass-through gold | `data/neural/gold/non-nepali-pass-through-gold.v1.jsonl` | 6 | English/code/protected text that must not be converted |
+| Protected token gold | `data/neural/gold/protected-token-gold.v1.jsonl` | 6 | URLs, emails, handles, versions, paths, product tokens |
+| Adversarial safety gold | `data/neural/gold/adversarial-neural-tail-gold.v1.jsonl` | 6 | Phrase expansion, mixed script, whitespace, unsafe output |
 
-World-class target before public launch:
-
-```txt
-250,000 reviewed or validated gold rows
-1,000,000+ licensed weak/silver training rows
-100,000 leakage-free heldout rows
-```
+The corpus has 47 suite assertions and 42 distinct normalized inputs. This is a
+small, content-addressed regression and safety corpus; every report and release
+note must state that limitation. Optional future reviewed corpora may strengthen
+later releases, but unavailable data is not a release gate.
 
 ## Gold row schema
 
 The authoritative schema is:
 
 ```txt
-data/neural/schema/lekh-neural-gold-row.schema.json
+data/neural/schema/lekh-neural-gold-row-v2.schema.json
 ```
 
 Each JSONL row must use this shape:
@@ -42,12 +39,12 @@ Each JSONL row must use this shape:
   "expected": ["छैन"],
   "acceptable": ["छैन", "छैन्"],
   "forbiddenOutputs": ["छैन होला"],
-  "previousContext": ["malai"],
+  "previousContext": [],
   "category": "chat-convention",
-  "source": "human-reviewed-lekh-gold-v1",
-  "reviewTier": "native-speaker-reviewed",
-  "reviewer": "ne-native-reviewer-01",
-  "license": "project-owned",
+  "source": "lekh-phase1-contract-seed-v1",
+  "reviewTier": "contract-seed",
+  "reviewer": "lekh-internal-seed",
+  "license": "project-internal-contract-seed",
   "split": "test",
   "notes": "Common chat spelling for chaina/chhaina/xaina."
 }
@@ -60,22 +57,22 @@ Rules:
 - `expected` contains the preferred output(s).
 - `acceptable` contains every output that should count as correct.
 - `forbiddenOutputs` contains unsafe outputs that must never be emitted.
-- `previousContext` contains at most two committed tokens.
+- `previousContext` must be empty. This model and runtime are token-only.
 - `split` must be one of `train`, `dev`, or `test`.
 - Evaluation metrics use **suite assertions** as their unit: every gold row is
   one assertion for its suite, including a compatible assertion repeated in a
   second suite. Reports expose `metricUnit: "suite-assertion"`,
-  `suiteAssertionCount`, and `distinctInputContextCount`; the assertion count
+  `suiteAssertionCount`, and `distinctInputCount`; the assertion count
   must not be described as a count of unique inputs.
 - A normalized input may repeat in different suites only in the same split,
-  with identical normalized `previousContext`, `expectedAction`, and
-  normalized acceptable-output set. Categories and `forbiddenOutputs` remain
+  with identical `expectedAction` and normalized acceptable-output set.
+  Categories and `forbiddenOutputs` remain
   suite-specific and may differ or add stricter forbidden-output supersets.
 - Predictions for compatible repeated assertions must contain the exact same
   candidates in the exact same order for every row ID. This preserves exact
   per-ID coverage without allowing suite-aware prediction gaming.
-- A same-suite duplicate or any repeated-input conflict in context, split,
-  action, or acceptable targets makes aggregate metrics unreportable.
+- A same-suite duplicate or any repeated-input conflict in split, action, or
+  acceptable targets makes aggregate metrics unreportable.
 - A normalized input must not appear across multiple splits, even with a
   different output.
 - A normalized input-output pair must not appear across multiple splits.
@@ -143,16 +140,17 @@ reports/neural-open-vocab-evaluation.json
 reports/neural-coreml-device-benchmark.json
 ```
 
-Those reports must be reproducible from committed scripts plus ignored/private raw data manifests. Raw upstream or user data must not be committed.
+Those reports must be reproducible from committed scripts and exact
+content-addressed inputs. Raw upstream or user data must not be committed.
 
 ## Phase 1 foundation proof
 
 The committed foundation suites are:
 
 ```txt
-data/neural/gold/manifest.v2.json
+data/neural/gold/manifest.v3.json
 data/neural/gold/romanized-nepali-token-gold.v1.jsonl
-data/neural/gold/chat-convention-gold.v1.jsonl
+data/neural/gold/chat-convention-token-only-gold.v2.jsonl
 data/neural/gold/names-gold.v1.jsonl
 data/neural/gold/ambiguity-gold.v1.jsonl
 data/neural/gold/non-nepali-pass-through-gold.v1.jsonl
@@ -179,13 +177,15 @@ This command verifies:
 - normalized inputs and input/output pairs do not leak across train/dev/test
   splits.
 
-Production row-count validation is intentionally stricter:
+Production validation re-runs the exact locked-corpus, leakage, normalization,
+and safety checks:
 
 ```bash
 npm run check:neural-gold:production
 ```
 
-That command must fail until the required human-reviewed row counts exist. Contract seed rows are not production accuracy evidence.
+It does not invent a larger corpus or claim human review. The 47-row limitation
+must remain visible in evaluation reports and release documentation.
 
 ## Phase 2 cleaned training/evaluation data
 

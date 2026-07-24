@@ -363,7 +363,7 @@ class TrainerContractTests(unittest.TestCase):
             }
             manifest_path = root / "manifest.json"
             manifest_path.write_text(json.dumps({
-                "schemaVersion": 2,
+                "schemaVersion": 3,
                 "corpusSha256": TRAINER.gold_corpus_sha256([suite]),
                 "suites": [suite],
             }), encoding="utf-8")
@@ -702,7 +702,7 @@ class TrainerContractTests(unittest.TestCase):
             }
             gold_manifest = root / "gold-manifest.json"
             gold_manifest.write_text(json.dumps({
-                "schemaVersion": 2,
+                "schemaVersion": 3,
                 "corpusSha256": TRAINER.gold_corpus_sha256([gold_suite]),
                 "suites": [gold_suite],
             }), encoding="utf-8")
@@ -1328,7 +1328,7 @@ class TrainerContractTests(unittest.TestCase):
             }
             gold_manifest = root / "gold-manifest.json"
             gold_manifest.write_text(json.dumps({
-                "schemaVersion": 2,
+                "schemaVersion": 3,
                 "corpusSha256": TRAINER.gold_corpus_sha256([gold_suite]),
                 "suites": [gold_suite],
             }), encoding="utf-8")

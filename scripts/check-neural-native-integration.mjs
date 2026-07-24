@@ -2,6 +2,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
+import {
+  resolveNeuralArtifactDescriptor
+} from "./lib/neural-artifact-descriptor.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -17,8 +20,14 @@ const neuralServicePath = join(root, "native", "macos-imk", "skeleton", "LekhNeu
 const packageScriptPath = join(root, "scripts", "package-macos-imk-dev.mjs");
 const packageSwiftPath = join(root, "native", "macos-imk", "skeleton", "Package.swift");
 const oldNeuralPath = join(root, "native", "macos-imk", "skeleton", "LekhNeuralTransliterator.swift");
-const manifestPath = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
-const modelDir = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
+const artifactRoot = args.get("artifact-root") ?? join(
+  root,
+  "models",
+  "macos",
+  "LekhNeuralTransliterator.production"
+);
+const manifestPath = join(artifactRoot, "LekhNeuralTransliterator.manifest.json");
+const vocabPath = join(artifactRoot, "LekhNeuralTransliterator.vocab.json");
 
 const engine = readText(enginePath);
 const controller = readText(controllerPath);
@@ -44,6 +53,7 @@ requireContains(neuralService, "failOpenRawTypingOnError", "Neural service must 
 requireContains(neuralService, "guard !secureInputActive else", "Neural service must return without inference in secure fields.");
 requireContains(packageScript, "LEKH_PACKAGE_NEURAL_MODEL", "Dev IMK packaging must require an explicit neural packaging flag.");
 requireContains(packageScript, "neuralPackagingRequested", "Dev IMK packaging must not silently package the old model.");
+requireContains(packageScript, "resolveNeuralArtifactDescriptor", "IMK packaging must use the closed manifest-driven runtime artifact inventory.");
 requireContains(packageScript, "package:macos:imk:dev", "Package report command identity must remain explicit.");
 requireContains(packageSwift, "LekhNeuralCandidateService.swift", "Swift package must compile the async neural candidate service.");
 requireContains(packageSwift, ".linkedFramework(\"CoreML\")", "Swift package must link CoreML for the async neural service.");
@@ -59,16 +69,32 @@ if (packageScript.includes("LekhNeuralTransliterator.mlmodelc") && !packageScrip
 }
 if (packageSwift.includes("LekhNeuralTransliterator.swift")) failures.push("Swift package must not compile the deleted old neural source.");
 
-const modelExists = existsSync(modelDir);
 const manifestExists = existsSync(manifestPath);
+let descriptor = null;
+if (manifestExists && existsSync(vocabPath)) {
+  try {
+    descriptor = resolveNeuralArtifactDescriptor({
+      repoRoot: root,
+      manifestPath,
+      vocabPath
+    });
+  } catch (error) {
+    if (production) {
+      failures.push(`Production runtime artifact inventory is invalid: ${error.message}`);
+    } else {
+      warnings.push(`Neural candidate inventory is not packageable: ${error.message}`);
+    }
+  }
+}
+const modelExists = descriptor !== null;
 if (production) {
-  if (!modelExists) failures.push("Production Phase 6 requires a compiled Core ML model.");
+  if (!modelExists) failures.push("Production Phase 6 requires a complete verified runtime artifact set.");
   if (!manifestExists) failures.push("Production Phase 6 requires a production neural manifest.");
   if (!existsSync(neuralServicePath)) {
     failures.push("Production Phase 6 requires the async Core ML tail service source.");
   }
-} else if (modelExists && !manifestExists) {
-  warnings.push("A Core ML directory exists without a production manifest; native integration correctly keeps neural disabled.");
+} else if (!manifestExists && existsSync(artifactRoot)) {
+  warnings.push("A neural artifact directory exists without a production manifest; native integration correctly keeps neural disabled.");
 }
 
 const status = failures.length === 0
@@ -82,7 +108,14 @@ finish(status, failures.length === 0 ? 0 : 1, {
   controller: relative(root, controllerPath),
   neuralService: relative(root, neuralServicePath),
   packageScript: relative(root, packageScriptPath),
-  model: relative(root, modelDir),
+  artifactRoot: relative(root, artifactRoot),
+  models: descriptor?.artifacts.map((artifact) => ({
+    role: artifact.role,
+    path: artifact.sourceRelativePath,
+    bytes: artifact.compiledBytes,
+    sha256: artifact.compiledSha256
+  })) ?? [],
+  artifactSetSha256: descriptor?.artifactSetSha256 ?? null,
   manifest: relative(root, manifestPath),
   modelExists,
   manifestExists,

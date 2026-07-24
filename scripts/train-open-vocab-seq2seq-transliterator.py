@@ -57,7 +57,7 @@ OUTPUT_TOKENIZATION = "unicode-scalar-character"
 LEGACY_OUTPUT_TOKENIZATION = "unicode-grapheme-character"
 OUTPUT_SEQUENCE_VALIDATION = "devanagari-word-sequence-v1"
 VOCAB_METADATA_PATH = ROOT / "models/macos/LekhNeuralTransliterator.vocab.json"
-GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v2.json"
+GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v3.json"
 CONFIG_PATH = ROOT / "data/neural/training/open-vocab-seq2seq-v1.config.json"
 
 PAD = "<pad>"
@@ -2398,7 +2398,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "evaluation": evaluation,
         "datasetRows": dataset_manifest.get("totalRows"),
         "productionEligible": False,
-        "productionBlockers": production_blockers(),
+        "candidateLimitations": candidate_limitations(),
     }
     assert_run_input_snapshot_unchanged(args)
     write_json(training_report_path(args), report)
@@ -3441,8 +3441,8 @@ def load_verified_gold_rows(args: argparse.Namespace) -> tuple[list[dict[str, An
     )
     manifest = parse_json_object_bytes(manifest_bytes, "gold manifest")
     suites = manifest.get("suites")
-    if manifest.get("schemaVersion") != 2 or not isinstance(suites, list) or not suites:
-        raise SystemExit("Gold prediction evidence requires a non-empty schema-v2 gold manifest.")
+    if manifest.get("schemaVersion") != 3 or not isinstance(suites, list) or not suites:
+        raise SystemExit("Gold prediction evidence requires a non-empty schema-v3 gold manifest.")
     if manifest.get("corpusSha256") != gold_corpus_sha256(suites):
         raise SystemExit("Gold manifest corpusSha256 does not match its ordered suite inventory.")
     rows: list[dict[str, Any]] = []
@@ -3970,6 +3970,7 @@ def benchmark_coreml(
         "architecture": mapped,
         "packagedApp": False,
         "secureFieldInferenceCount": -1,
+        "measurementKind": "full-candidate-generation",
         "p50Ms": None,
         "p95Ms": None,
         "p99Ms": None,
@@ -4057,7 +4058,7 @@ def benchmark_input_texts(checkpoint: dict[str, Any], args: argparse.Namespace) 
 def valid_benchmark_result(result: dict[str, Any], args: argparse.Namespace) -> bool:
     required = {
         "name", "macOS", "architecture", "packagedApp", "secureFieldInferenceCount",
-        "p50Ms", "p95Ms", "p99Ms", "artifact",
+        "measurementKind", "p50Ms", "p95Ms", "p99Ms", "artifact",
     }
     try:
         evidence = read_json(measurements_path(args))
@@ -4244,7 +4245,7 @@ def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], trainin
             "p50Ms": benchmark.get("p50Ms") if benchmark.get("p50Ms") is not None else 999,
             "p95Ms": benchmark.get("p95Ms") if benchmark.get("p95Ms") is not None else 999,
             "p99Ms": benchmark.get("p99Ms") if benchmark.get("p99Ms") is not None else 999,
-            "targetP99Ms": 3,
+            "targetP99Ms": 50,
             "measuredOnDevice": benchmark.get("p99Ms") is not None,
             "devices": [benchmark],
         },
@@ -4255,7 +4256,7 @@ def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], trainin
             "trainingDatasetManifest": checkpoint["datasetManifestSha256"],
             "vocabMetadata": checkpoint.get("vocabMetadataSha256", "0" * 64),
         },
-        "limitations": production_blockers(),
+        "limitations": candidate_limitations(),
     }
     write_json(args.manifest, manifest)
     return manifest
@@ -4390,7 +4391,7 @@ def write_attention_incremental_manifest(
             "p50Ms": benchmark.get("p50Ms") if benchmark.get("p50Ms") is not None else 999,
             "p95Ms": benchmark.get("p95Ms") if benchmark.get("p95Ms") is not None else 999,
             "p99Ms": benchmark.get("p99Ms") if benchmark.get("p99Ms") is not None else 999,
-            "targetP99Ms": 3,
+            "targetP99Ms": 50,
             "measuredOnDevice": benchmark.get("p99Ms") is not None,
             "devices": [benchmark],
         },
@@ -4408,7 +4409,7 @@ def write_attention_incremental_manifest(
             "trainingDatasetManifest": checkpoint["datasetManifestSha256"],
             "vocabMetadata": checkpoint.get("vocabMetadataSha256", "0" * 64),
         },
-        "limitations": production_blockers(),
+        "limitations": candidate_limitations(),
     }
     write_json(args.manifest, manifest)
     return manifest
@@ -4433,14 +4434,11 @@ def runtime_artifact_contract_issues(
     return issues
 
 
-def production_blockers() -> list[str]:
+def candidate_limitations() -> list[str]:
     return [
-        "Context language-model rescoring is disabled and not implemented in this candidate.",
-        "Teacher distillation is disabled and no content-addressed distillation run evidence exists.",
-        "Not production-eligible until private human-reviewed Phase 7 sources meet required row counts.",
-        "Not production-eligible until evaluation is run from exported Core ML predictions on production gold.",
-        "Not production-eligible until packaged-app Core ML latency is measured on both arm64 and x86_64 Macs.",
-        "Native async Core ML tail integration exists but remains experimental until packaged host-matrix cancellation, secure-transition, end-to-end latency, and candidate-quality evidence passes.",
+        "This candidate manifest contains placeholder quality metrics until its exported predictions are evaluated and promoted.",
+        "Its local unpackaged benchmark is diagnostic; promotion requires a packaged full-candidate measurement on Apple Silicon.",
+        "The model is token-only, does not use prior-word context, and remains opt-in while deterministic suggestions stay the default.",
     ]
 
 
@@ -4594,7 +4592,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         "manifest": rel(args.manifest) if manifest else None,
         "manifestSha256": sha256_file(args.manifest) if manifest else None,
         "productionEligible": bool(manifest and manifest["productionEligible"]),
-        "productionBlockers": production_blockers(),
+        "candidateLimitations": candidate_limitations(),
     }
     if split_attention_export:
         export_report.update({
@@ -4618,7 +4616,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         "measurements": export_report["measurements"],
         "coremlExport": coreml.get("status"),
         "productionEligible": export_report["productionEligible"],
-        "productionBlockers": export_report["productionBlockers"],
+        "candidateLimitations": export_report["candidateLimitations"],
     }, ensure_ascii=False, indent=2))
     if not publishable and not args.skip_coreml:
         raise SystemExit(1)

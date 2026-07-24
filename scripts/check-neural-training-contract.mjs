@@ -28,7 +28,7 @@ const canonicalPaths = {
   predictions: join(root, "data", "generated", "neural-open-vocab-model", "lekh-open-vocab-seq2seq-v1", "gold-predictions.jsonl"),
   vocab: join(root, "models", "macos", "LekhNeuralTransliterator.vocab.json"),
   datasetManifest: join(root, "data", "generated", "neural-open-vocab", "manifest.json"),
-  goldManifest: join(root, "data", "neural", "gold", "manifest.v2.json"),
+  goldManifest: join(root, "data", "neural", "gold", "manifest.v3.json"),
   manifest: join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json"),
   model: join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc")
 };
@@ -335,7 +335,7 @@ function inspectArtifactGraph(config, manifestValue) {
   const expectedArtifacts = {
     trainingConfig: "data/neural/training/open-vocab-seq2seq-v1.config.json",
     datasetManifest: "data/generated/neural-open-vocab/manifest.json",
-    goldManifest: "data/neural/gold/manifest.v2.json",
+    goldManifest: "data/neural/gold/manifest.v3.json",
     outDir: "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1",
     compiledModel: "models/macos/LekhNeuralTransliterator.mlmodelc",
     manifest: "models/macos/LekhNeuralTransliterator.manifest.json",

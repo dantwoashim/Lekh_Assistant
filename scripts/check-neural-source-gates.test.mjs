@@ -110,7 +110,8 @@ function withFixture(callback) {
 
 function runReadiness(root, value) {
   const datasetDir = join(root, "dataset");
-  for (const split of ["train.tsv", "dev.tsv", "test.tsv"]) write(join(datasetDir, split), "fixture\n");
+  writeJson(join(datasetDir, "manifest.json"), { fixture: true });
+  for (const split of ["train.jsonl", "dev.jsonl", "test.jsonl"]) write(join(datasetDir, split), "{}\n");
   const manifestPath = join(root, "model.manifest.json");
   const reportPath = join(root, "readiness.json");
   writeJson(manifestPath, value);
@@ -142,12 +143,11 @@ function prepareSotaFixture(root, sourceCounts) {
     "reports/neural-production-contract-report.json": "passed",
     "reports/neural-gold-eval-report.json": "passed-phase1-gold",
     "reports/neural-open-vocab-dataset-report.json": "passed-phase2-open-vocab-data",
-    "reports/neural-distillation-plan-report.json": "passed-phase3-distillation",
     "reports/neural-training-contract-report.json": "passed-phase4-training-contract",
     "reports/neural-open-vocab-evaluation.json": "passed-phase5-evaluation",
     "reports/neural-coreml-device-benchmark.json": "passed-phase5-benchmark",
     "reports/neural-native-integration-report.json": "passed-phase6-native",
-    "reports/neural-review-intake-report.json": "passed-phase7-review",
+    "reports/neural-runtime-manifest-conformance-report.json": "passed-runtime-conformance",
     "reports/neural-training-run-readiness-report.json": "passed-phase8-training-ready",
     "reports/neural-production-promotion-report.json": "passed-phase9-promotion",
     "reports/neural-model-selection-report.json": "passed",

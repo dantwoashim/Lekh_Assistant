@@ -85,11 +85,17 @@ export function validateNeuralComputePlanEvidence(evidence, context) {
       !["arm64", "x86_64"].includes(evidence.architecture)) {
     issues.push("neural-compute-plan.architecture-invalid");
   }
+  const expectedModelSha256 = context.expectedModelSha256 ??
+    context.manifest?.sha256?.compiledModel;
+  const expectedModelBytes = context.expectedModelBytes ??
+    context.manifest?.modelBytes;
   if (typeof evidence.modelPath !== "string" || !evidence.modelPath.endsWith(".mlmodelc") ||
       !/^[a-f0-9]{64}$/u.test(evidence.modelSha256) ||
-      evidence.modelSha256 !== context.manifest?.sha256?.compiledModel ||
+      evidence.modelSha256 !== expectedModelSha256 ||
       !Number.isSafeInteger(evidence.modelBytes) || evidence.modelBytes <= 0 ||
-      evidence.modelBytes !== context.manifest?.modelBytes) {
+      evidence.modelBytes !== expectedModelBytes ||
+      (context.expectedModelPath !== undefined &&
+        evidence.modelPath !== context.expectedModelPath)) {
     issues.push("neural-compute-plan.model-identity-invalid");
   }
   if (!sortedUniqueStrings(

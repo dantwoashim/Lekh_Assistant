@@ -160,7 +160,7 @@ function canonical(root) {
     predictions: join(out, "gold-predictions.jsonl"),
     vocab: join(root, "models", "macos", "LekhNeuralTransliterator.vocab.json"),
     datasetManifest: join(root, "data", "generated", "neural-open-vocab", "manifest.json"),
-    goldManifest: join(root, "data", "neural", "gold", "manifest.v2.json"),
+    goldManifest: join(root, "data", "neural", "gold", "manifest.v3.json"),
     manifest: join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json"),
     model: join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc")
   };

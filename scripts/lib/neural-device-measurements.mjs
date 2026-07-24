@@ -1,4 +1,5 @@
 import { validateNeuralComputePlanEvidence } from "./neural-compute-plan-evidence.mjs";
+import { basename } from "node:path";
 
 const legacyKeys = Object.freeze([
   "architecture",
@@ -15,6 +16,17 @@ const currentKeys = Object.freeze([
   ...legacyKeys,
   "computePlan",
   "configurationComputeUnits"
+].sort());
+const fullCandidateKeys = Object.freeze([
+  ...currentKeys,
+  "measurementKind"
+].sort());
+const artifactSetCandidateKeys = Object.freeze([
+  ...legacyKeys,
+  "artifactSetSha256",
+  "computePlans",
+  "configurationComputeUnits",
+  "measurementKind"
 ].sort());
 
 function isRecord(value) {
@@ -47,7 +59,13 @@ export function validateNeuralDeviceMeasurements(devices, context) {
   for (const [index, device] of devices.entries()) {
     const label = isRecord(device) && isShortText(device.name) ? device.name : `device-${index}`;
     const hasComputePlan = isRecord(device?.computePlan);
-    const expectedKeys = hasComputePlan ? currentKeys : legacyKeys;
+    const hasComputePlans = isRecord(device?.computePlans);
+    const fullCandidateMeasurement = device?.measurementKind === "full-candidate-generation";
+    const expectedKeys = hasComputePlans
+      ? artifactSetCandidateKeys
+      : fullCandidateMeasurement
+      ? fullCandidateKeys
+      : hasComputePlan ? currentKeys : legacyKeys;
     if (!exactKeys(device, expectedKeys)) {
       issues.push(`neural-device-measurements.schema-invalid:${label}`);
       continue;
@@ -63,9 +81,12 @@ export function validateNeuralDeviceMeasurements(devices, context) {
     architectures.add(device.architecture);
 
     const timings = [device.p50Ms, device.p95Ms, device.p99Ms].map(Number);
-    if (timings.some((value) => !Number.isFinite(value) || value < 0 || value > 3) ||
+    if (timings.some((value) => !Number.isFinite(value) || value < 0 || value >= 50) ||
         timings[0] > timings[1] || timings[1] > timings[2]) {
       issues.push(`neural-device-measurements.latency-invalid:${label}`);
+    }
+    if (production && !fullCandidateMeasurement) {
+      issues.push(`neural-device-measurements.not-full-candidate-generation:${label}`);
     }
     if (device.secureFieldInferenceCount !== 0) {
       issues.push(`neural-device-measurements.secure-field-inference:${label}`);
@@ -75,9 +96,74 @@ export function validateNeuralDeviceMeasurements(devices, context) {
       else warnings.push(`${label} is not a packaged-app measurement.`);
     }
 
-    if (!hasComputePlan) {
+    if (!hasComputePlan && !hasComputePlans) {
       if (production) issues.push(`neural-device-measurements.compute-plan-missing:${label}`);
       else warnings.push(`${label} predates compute-plan evidence and cannot support a compute-device claim.`);
+      continue;
+    }
+    if (hasComputePlans) {
+      const descriptor = context.artifactDescriptor;
+      if (!descriptor ||
+          device.artifactSetSha256 !== descriptor.artifactSetSha256 ||
+          !/^[a-f0-9]{64}$/u.test(String(device.artifactSetSha256 ?? "")) ||
+          device.configurationComputeUnits !== "all") {
+        issues.push(`neural-device-measurements.artifact-set-binding-invalid:${label}`);
+        continue;
+      }
+      const artifacts = Array.isArray(descriptor.artifacts)
+        ? descriptor.artifacts
+        : [];
+      const expectedRoles = artifacts.map((artifact) => artifact.role).sort();
+      if (expectedRoles.length < 1 ||
+          Object.keys(device.computePlans).sort().join("\0") !==
+            expectedRoles.join("\0")) {
+        issues.push(`neural-device-measurements.compute-plan-inventory-invalid:${label}`);
+        continue;
+      }
+      const roleValidations = [];
+      for (const artifact of artifacts) {
+        const plan = device.computePlans[artifact.role];
+        if (!isRecord(plan) ||
+            plan.configurationComputeUnits !== "all" ||
+            plan.architecture !== device.architecture ||
+            plan.macOS !== device.macOS ||
+            basename(String(plan.modelPath ?? "")) !== artifact.bundleName) {
+          issues.push(
+            `neural-device-measurements.compute-plan-binding-invalid:` +
+            `${label}:${artifact.role}`
+          );
+          continue;
+        }
+        const computeValidation = validateNeuralComputePlanEvidence(plan, {
+          expectedArchitecture: device.architecture,
+          expectedModelSha256: artifact.compiledSha256,
+          expectedModelBytes: artifact.compiledBytes,
+          now: context.now,
+          production
+        });
+        roleValidations.push(computeValidation);
+        if (!computeValidation.valid) {
+          issues.push(...computeValidation.issueCodes.map((issue) =>
+            `${issue}:${label}:${artifact.role}`
+          ));
+        }
+        warnings.push(...computeValidation.warnings.map((warning) =>
+          `${label}:${artifact.role}: ${warning}`
+        ));
+      }
+      if (roleValidations.length !== artifacts.length) continue;
+      if (device.architecture === "arm64" &&
+          roleValidations.every((validation) =>
+            validation.neuralEngineClaimAllowed
+          )) {
+        neuralEngineClaimAllowed = true;
+      }
+      if (device.architecture === "x86_64" &&
+          roleValidations.every((validation) =>
+            validation.deterministicFallbackProven
+          )) {
+        intelFallbackProven = true;
+      }
       continue;
     }
     if (device.configurationComputeUnits !== "all" ||
@@ -107,16 +193,11 @@ export function validateNeuralDeviceMeasurements(devices, context) {
   }
 
   if (production) {
-    for (const architecture of ["arm64", "x86_64"]) {
-      if (!architectures.has(architecture)) {
-        issues.push(`neural-device-measurements.architecture-missing:${architecture}`);
-      }
+    if (!architectures.has("arm64")) {
+      issues.push("neural-device-measurements.architecture-missing:arm64");
     }
     if (!neuralEngineClaimAllowed) {
       issues.push("neural-device-measurements.neural-engine-plan-unproven");
-    }
-    if (!intelFallbackProven) {
-      issues.push("neural-device-measurements.intel-fallback-unproven");
     }
   }
 

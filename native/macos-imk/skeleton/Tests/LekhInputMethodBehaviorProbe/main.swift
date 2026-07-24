@@ -311,6 +311,12 @@ private func benchmarkNeuralServiceIfRequested() {
         let bundle = Bundle(path: bundlePath) else {
     return
   }
+  let production = ProcessInfo.processInfo.environment["LEKH_NEURAL_BENCH_PRODUCTION"] == "1"
+  guard let runNonce = ProcessInfo.processInfo.environment["LEKH_NEURAL_BENCH_NONCE"],
+        !runNonce.isEmpty else {
+    require(false, "Packaged neural benchmark requires a fresh run nonce")
+    return
+  }
   let initializationStarted = DispatchTime.now().uptimeNanoseconds
   let service = LekhNeuralCandidateService(bundle: bundle)
   let initializationMilliseconds = Double(
@@ -325,8 +331,12 @@ private func benchmarkNeuralServiceIfRequested() {
     RunLoop.current.run(until: Date().addingTimeInterval(0.005))
   }
   require(
-    service.status.contains("ready"),
-    "Packaged neural service must be enabled for end-to-end measurement; status=\(service.status)"
+    service.status == (
+      production
+        ? "production-async-coreml-tail-attested-ready"
+        : "experimental-async-coreml-tail-artifact-verified-ready"
+    ),
+    "Packaged neural service mode does not match the requested benchmark mode; status=\(service.status)"
   )
   var deterministicBypass: [String]?
   service.candidates(for: "dhanyabad", secureInputActive: false) { deterministicBypass = $0 }
@@ -380,6 +390,7 @@ private func benchmarkNeuralServiceIfRequested() {
   let p95 = percentile(0.95)
   let p99 = percentile(0.99)
   require(p95 < 50, "End-to-end packaged neural service p95 must stay below 50 ms; observed=\(p95) ms")
+  require(p99 < 50, "End-to-end packaged neural service p99 must stay below 50 ms; observed=\(p99) ms")
   require(
     observed.values.flatMap { $0 }.allSatisfy { candidate in
       candidate.unicodeScalars.allSatisfy { !CharacterSet.whitespacesAndNewlines.contains($0) } &&
@@ -424,10 +435,31 @@ private func benchmarkNeuralServiceIfRequested() {
   )
 
   if let reportPath = ProcessInfo.processInfo.environment["LEKH_NEURAL_BENCH_REPORT"] {
+    let operatingSystem = ProcessInfo.processInfo.operatingSystemVersion
+    #if arch(arm64)
+    let architecture = "arm64"
+    #elseif arch(x86_64)
+    let architecture = "x86_64"
+    #else
+    let architecture = "unknown"
+    #endif
+    let device: [String: Any] = [
+      "name": "Mac-\(architecture)-\(operatingSystem.majorVersion)",
+      "macOS": "\(operatingSystem.majorVersion).\(operatingSystem.minorVersion).\(operatingSystem.patchVersion)",
+      "architecture": architecture,
+      "packagedApp": true,
+      "secureFieldInferenceCount": 0,
+      "p50Ms": p50,
+      "p95Ms": p95,
+      "p99Ms": p99,
+      "artifact": bundlePath,
+      "measurementKind": "full-candidate-generation"
+    ]
     let report: [String: Any] = [
       "generatedAt": ISO8601DateFormatter().string(from: Date()),
       "suite": "native-neural-service-e2e",
-      "status": "passed-experimental",
+      "status": production ? "passed-production" : "passed-experimental",
+      "runNonce": runNonce,
       "bundle": bundlePath,
       "serviceStatus": service.status,
       "serviceInitializationMs": initializationMilliseconds,
@@ -436,6 +468,7 @@ private func benchmarkNeuralServiceIfRequested() {
       "steadyStateSamples": steadyState.count,
       "targetP95Ms": 50,
       "performance": ["p50Ms": p50, "p95Ms": p95, "p99Ms": p99],
+      "devices": [device],
       "byTokenMs": steadyStateByToken,
       "predictions": observed,
       "singleTokenPhraseExpansionRate": 0,
@@ -446,15 +479,20 @@ private func benchmarkNeuralServiceIfRequested() {
       "cancelPendingSuppressesCompletion": !cancelledCompletionCalled,
       "notes": [
         "Measures the public async candidate service, including iterative beam decoding and main-queue completion.",
-        "The model remains experimental and production-ineligible; this is latency evidence, not production accuracy evidence."
+        production
+          ? "Production mode proves packaged full-candidate latency and runtime safety; accuracy remains separately evidence-bound."
+          : "Experimental mode provides latency evidence only and does not claim production eligibility."
       ]
     ]
-    if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
-      try? FileManager.default.createDirectory(
+    do {
+      let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+      try FileManager.default.createDirectory(
         at: URL(fileURLWithPath: reportPath).deletingLastPathComponent(),
         withIntermediateDirectories: true
       )
-      try? data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)
+      try data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)
+    } catch {
+      require(false, "Packaged neural benchmark could not publish fresh report evidence: \(error)")
     }
   }
 }

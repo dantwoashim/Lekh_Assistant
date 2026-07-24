@@ -1,754 +1,268 @@
-# Lekh Open-Vocabulary Neural Transliterator Production Contract
+# Lekh open-vocabulary neural tail contract
 
-Status: Phase 0 frozen contract.
+Status: implementation contract for candidate qualification and production
+promotion. The deterministic engine remains the first-line product path. A
+neural model is an optional, local candidate tail and is never a replacement
+for deterministic typing or its safety rules.
 
-This document defines the only neural model that may be called production for the macOS Lekh input method. It is intentionally stricter than the old closed-vocabulary Core ML baseline. A model that fails any item here must remain a research artifact and must not be packaged, advertised, or invoked by the native IMK hot path.
+## Product boundary
 
-## 1. Artifact identity
-
-The production neural artifact is:
-
-```txt
-models/macos/LekhNeuralTransliterator.mlmodelc
-```
-
-The production manifest is:
-
-```txt
-models/macos/LekhNeuralTransliterator.manifest.json
-```
-
-The manifest must validate against:
-
-```txt
-data/neural/schema/lekh-neural-manifest.schema.json
-```
-
-The production artifact identifier is fixed:
-
-```txt
-lekh-open-vocab-seq2seq-v1
-```
-
-The rejected closed-vocabulary baseline under `models/rejected/closed-vocabulary-baseline/` is not eligible for this contract.
-
-## 2. Product role
-
-The neural model is a tail candidate generator for hard Romanized-to-Nepali token cases. It is not the keyboard engine.
-
-Allowed role:
-
-- run after deterministic FST, dictionary, binary lexicon, context rows, and user memory have produced first paint;
-- add token-level Devanagari candidates when deterministic candidates are weak, sparse, or missing;
-- improve chat conventions, rare spellings, names, and ambiguity coverage;
-- run locally through Core ML only.
-
-Forbidden role:
-
-- no first-paint dependency;
 - no network inference;
-- no synchronous dependency in the per-keystroke deterministic path;
-- no auto-commit authority;
-- no phrase expansion for a single active token;
+- no text telemetry;
 - no inference in secure fields;
-- no raw text telemetry, OSLog payloads, filenames, crash annotations, or diagnostics.
+- no neural request for an exact deterministic token;
+- no automatic text commit from an unreviewed neural result;
+- cancellation and generation IDs prevent stale asynchronous results from
+  reaching the candidate window;
+- `autoCommitEligible` remains false for the neural tail;
+- raw Latin typing fails open when model loading, verification, prediction, or
+  decoding fails.
 
-## 3. Supported mode for v1
+The model consumes one normalized Romanized token. It does not consume previous
+words, clipboard contents, surrounding document text, or host-application
+state. Output is one Devanagari token candidate, never a phrase.
 
-Version 1 supports only:
+## Runtime artifacts
 
-```txt
-romanized-traditional
+The production unit is one atomic directory:
+
+```text
+models/macos/LekhNeuralTransliterator.production/
+  LekhNeuralTransliterator.manifest.json
+  LekhNeuralTransliterator.vocab.json
+  neural-candidate-promotion-report.json
+  ...one complete compiled runtime layout...
 ```
 
-That means Romanized source token to Devanagari candidate token.
-
-The v1 model must not be used for:
-
-- Romanized-to-Romanized;
-- Traditional-to-Nepali physical key composition;
-- Traditional-to-Romanized reverse romanization;
-- phrase or sentence generation.
-
-## 4. Runtime input contract
-
-The neural tail request may contain:
-
-```json
-{
-  "schemaVersion": 1,
-  "generation": 42,
-  "mode": "romanized-traditional",
-  "rawToken": "xaina",
-  "previousContextTokens": ["malai"],
-  "deterministicCandidateCount": 1,
-  "deterministicTopConfidence": 0.62
-}
-```
-
-Constraints:
-
-- `rawToken` is the active token only, not the document;
-- `previousContextTokens` contains at most two already committed tokens and is kept in memory only;
-- the request is never created while Secure Event Input is active;
-- the request is cancelled or ignored when a new generation starts;
-- the request is never persisted.
-
-## 5. Runtime output contract
-
-The neural tail output must be:
-
-```json
-{
-  "schemaVersion": 1,
-  "generation": 42,
-  "candidates": [
-    {
-      "text": "छैन",
-      "probability": 0.91,
-      "source": "neural",
-      "spanKind": "token",
-      "autoCommitEligible": false
-    }
-  ]
-}
-```
-
-Output constraints:
-
-- candidate text must be NFC-normalized Devanagari;
-- candidate text must contain no whitespace;
-- candidate text must not contain Latin text;
-- `spanKind` must be `token`;
-- `autoCommitEligible` must always be `false`;
-- maximum neural-tail candidate count is 2 for the latency-bounded v1 decoder;
-- stale generations must be ignored.
-
-## 6. Required model family
-
-The model must be open-vocabulary.
-
-Accepted architecture families:
-
-- GRU encoder-decoder seq2seq;
-- tiny Transformer encoder-decoder;
-- other Core ML compatible seq2seq decoder approved by the manifest schema.
-
-Rejected architecture families:
-
-- flat softmax over fixed words;
-- class-only top-N labels;
-- nearest-neighbor lookup pretending to be neural;
-- downloaded general-purpose text model;
-- remote API model.
-
-The compiled graph must not be only `inner_product + softmax` with no recurrent, decoder, attention, or sequence-generation structure.
-
-## 7. Size and latency budgets
-
-Hard limits:
-
-| Requirement | Limit |
-| --- | ---: |
-| Parameters | 1,000,000 to 5,000,000 |
-| Compiled model bytes | <= 16,777,216 |
-| Warm neural p99 | <= 3 ms |
-| Context window | Candidate: 0 while rescoring is disabled; production: 2 to 4 |
-| Beam width | 2 (the evidence and native runtime use the same latency-bounded decoder) |
-| Output candidates | 2 |
-
-The deterministic native path must still remain below the existing 5 ms p99 release gate with the model present.
-
-## 8. Required data provenance
-
-The production manifest must include at least these training sources:
-
-```txt
-syubraj-roman2nepali-transliteration
-human-reviewed-lekh-gold-v1
-lekh-chat-conventions-v1
-lekh-name-lexicon-v1
-```
-
-The model may use teacher-only sources, but teacher checkpoints must not be packaged.
-
-All raw upstream data must stay out of git unless a source is explicitly project-owned and approved for committed fixtures.
-
-## 9. Required evaluation suites
-
-The evaluation protocol is defined in:
-
-```txt
-data/neural/eval/README.md
-```
-
-The production manifest must point to evaluation reports proving these gates:
-
-| Gate | Minimum |
-| --- | ---: |
-| Tail token top-1 acceptable accuracy | >= 0.88 |
-| Tail token top-3 acceptable accuracy | >= 0.96 |
-| Chat convention top-1 accuracy | >= 0.92 |
-| Chat convention top-3 accuracy | >= 0.98 |
-| Names top-3 accuracy | >= 0.90 |
-| Protected false-conversion rate | 0 |
-| Single-token phrase expansion rate | 0 |
-| Secure-field inference count | 0 |
-
-The manifest must include the required cases:
-
-```txt
-vato -> बाटो
-bato -> बाटो
-baato -> बाटो
-chha -> छ
-cha -> छ
-xa -> छ
-xaina -> छैन
-```
-
-## 10. Manifest requirements
-
-The manifest must include:
-
-- schema version 2 plus distinct 32-character lowercase hexadecimal
-  `trainingRunId` and `exportRunId` identities;
-- artifact identity;
-- model family and architecture;
-- tokenizer/sequence contract;
-- decoder/beam-search contract;
-- language-model rescoring contract;
-- training sources;
-- dataset reports;
-- evaluation reports;
-- device benchmark reports;
-- model byte count;
-- parameter count;
-- compiled model SHA-256 directory digest;
-- source checkpoint SHA-256;
-- training dataset manifest SHA-256;
-- metrics and failure safety rates;
-- limitations.
-
-The schema file is authoritative for exact field names.
-
-## 11. Native IMK integration requirements
-
-The native IMK may invoke the model only through an async neural tail service with:
-
-- generation IDs;
-- stale result rejection;
-- secure-input cancellation;
-- mode-switch cancellation;
-- fail-open behavior when the model is absent, corrupt, slow, or unsupported;
-- no synchronous XPC/network dependency;
-- no raw text logging;
-- no persistence writes from inference.
-
-The model must not be copied by packaging until both production neural gates pass.
-
-## 12. Phase 0 completion proof
-
-Phase 0 is complete when all of these files exist and are internally consistent:
-
-```txt
-docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md
-data/neural/schema/lekh-neural-manifest.schema.json
-data/neural/eval/README.md
-scripts/check-neural-production-contract.mjs
-```
-
-The proof command is:
-
-```bash
-npm run check:neural-contract
-```
-
-## 13. Phase 1 gold evaluation foundation proof
-
-Phase 1 is complete when these files exist and pass the foundation validator:
-
-```txt
-data/neural/schema/lekh-neural-gold-row.schema.json
-data/neural/gold/manifest.v2.json
-data/neural/gold/romanized-nepali-token-gold.v1.jsonl
-data/neural/gold/chat-convention-gold.v1.jsonl
-data/neural/gold/names-gold.v1.jsonl
-data/neural/gold/ambiguity-gold.v1.jsonl
-data/neural/gold/non-nepali-pass-through-gold.v1.jsonl
-data/neural/gold/protected-token-gold.v1.jsonl
-data/neural/gold/adversarial-neural-tail-gold.v1.jsonl
-scripts/validate-neural-gold-eval.mjs
-```
-
-The proof command is:
-
-```bash
-npm run check:neural-gold
-```
-
-Production proof is intentionally separate:
-
-```bash
-npm run check:neural-gold:production
-```
-
-The production command must fail until the real human-reviewed row-count targets in `data/neural/gold/manifest.v2.json` are satisfied. Phase 1 seed rows prove the evaluation contract; they are not accuracy evidence for a public neural model.
-
-## 14. Phase 2 source-cleaning proof
-
-Phase 2 is complete when these files exist and pass the open-vocabulary dataset builder:
-
-```txt
-data/neural/sources.v1.json
-data/neural/schema/lekh-neural-source-registry.schema.json
-data/neural/schema/lekh-neural-open-vocab-row.schema.json
-scripts/build-neural-open-vocab-dataset.mjs
-data/generated/neural-open-vocab/manifest.json
-data/generated/neural-open-vocab/train.jsonl
-data/generated/neural-open-vocab/dev.jsonl
-data/generated/neural-open-vocab/test.jsonl
-reports/neural-open-vocab-dataset-report.json
-```
-
-The proof command is:
-
-```bash
-npm run neural:source:syubraj
-npm run check:neural-open-vocab-data
-```
-
-The builder must:
-
-- consume Phase 1 gold rows;
-- consume only allowed token-level local generated TSV sources;
-- reject phrase sources such as `runtime-phrases`;
-- reject whitespace outputs;
-- reject Latin outputs;
-- keep protected/pass-through rows as `no-neural-candidate` safety negatives;
-- finalize order-independent duplicate merges before computing a stable example
-  ID and full-record SHA-256;
-- split by normalized input so input/target pairs cannot leak across train/dev/test;
-- verify the locked gold release, private import manifests, source TSV snapshots,
-  legacy split inputs, builder, registry, and row schema;
-- write deterministic JSONL plus a schema-v2 manifest with split row counts,
-  byte counts, SHA-256 values, and one canonical `datasetContentSha256` that
-  excludes only `generatedAt`.
-
-An unchanged input snapshot and builder must reproduce the same dataset content
-identity even when generation time changes. A training report and checkpoint
-must bind that stable identity, exact split hashes, sampled-row digests, and the
-checkpoint digest. Historical evidence is never rewritten to match newer data.
-
-Production proof is intentionally separate:
-
-```bash
+Two closed manifest branches are supported:
+
+1. `lekh-open-vocab-seq2seq-v1`
+   (`single-seq2seq-v1` after normalization):
+   `LekhNeuralTransliterator.mlmodelc`.
+2. `lekh-open-vocab-bigru-attention-v1`
+   (`split-attention-incremental-v1`):
+   `LekhNeuralTransliteratorEncoder.mlmodelc` and
+   `LekhNeuralTransliteratorDecoderStep.mlmodelc`.
+
+The split branch also records its exact tensor I/O contract and its export-only
+`.mlpackage` identities. The packages are provenance artifacts; the app ships
+only compiled runtime models, vocabulary, and manifest.
+
+`scripts/lib/neural-artifact-descriptor.mjs` is the single normalization
+boundary. It verifies every source path, byte count, digest, role, canonical
+bundle name, and vocabulary identity. It produces `artifactSetSha256`, a stable
+digest over model ID, runtime contract, vocabulary digest, tensor-contract
+digest, and the sorted compiled role inventory. Absolute paths and timestamps
+are deliberately excluded.
+
+The JSON Schema at
+`data/neural/schema/lekh-neural-manifest.schema.json` is closed and
+discriminated. A baseline manifest cannot contain split fields; a split
+manifest must contain exactly `encoder` and `decoderStep`. Both use
+schemaVersion 2 and distinct 32-hex `trainingRunId` and `exportRunId` values.
+
+## Token and decoder contract
+
+- tokenization: `unicode-scalar-character`;
+- output grammar: `devanagari-word-sequence-v1`;
+- decoder: bounded beam search;
+- beam width: 2–8;
+- output tensor length: 32 scalars;
+- maximum decoder steps: 31, reserving the complete final EOS transition;
+- score: accumulated log-softmax;
+- length normalization: score divided by token count including SOS;
+- whitespace, Latin, malformed combining sequences, danda, unreachable EOS,
+  and invalid special-token transitions are rejected.
+
+The JavaScript/Python and Swift paths share
+`contracts/neural-decoder/v2/lekh-neural-decoder.v2.json`. Swift validates the
+same scalar grammar before exposing a candidate.
+
+The language-model rescorer is explicitly absent:
+`{"enabled":false,"source":"none","weight":0}`. `contextWindowWords` is 0.
+
+## Data lineage
+
+The canonical dataset is
+`data/generated/neural-open-vocab/manifest.json`. Its content identity covers
+the exact train/dev/test files. Production reconstruction is read-only and must
+be byte-stable:
+
+```sh
 npm run check:neural-open-vocab-data:production
 ```
 
-The production command must fail until required large licensed/public and human-reviewed sources are imported locally and the dataset reaches the production row-count gates.
+The canonical gold inventory is
+`data/neural/gold/manifest.v3.json`. Existing v1/v2 evidence is immutable; v3
+adds the token-only chat suite without rewriting old artifacts.
 
-## 15. Phase 3 distillation plan proof
+Training input snapshots bind:
 
-Phase 3 development readiness means the repo can prove the offline teacher
-boundary without presenting an unexecuted distillation design as a trained
-production model:
+- trainer bytes;
+- effective training config;
+- dataset manifest/content/split digests;
+- gold manifest/corpus/suite digests;
+- runtime versions;
+- training and export run identities.
 
-```txt
-data/neural/training/open-vocab-seq2seq-v1.config.json
-scripts/check-neural-distillation-plan.mjs
-reports/neural-distillation-plan-report.json
+Vocabulary construction uses train rows only. Normalized inputs may not cross
+train/dev/test. Prediction generation runs through the exact exported compiled
+Core ML artifact and cannot read expected labels.
+
+## Evaluation
+
+The locked suite measures safety and release regressions. Each JSONL row is one
+assertion; repeated inputs with distinct contexts remain distinct assertions.
+Production floors are:
+
+- tail top-1 acceptable accuracy: at least 0.88;
+- tail top-3 acceptable accuracy: at least 0.96;
+- chat-convention top-1: at least 0.92;
+- chat-convention top-3: at least 0.98;
+- names top-3: at least 0.90;
+- protected false-conversion rate: exactly 0;
+- single-token phrase expansion rate: exactly 0;
+- secure-field inference count: exactly 0.
+
+These small locked suites are promotion safety gates, not a scientific
+state-of-the-art claim. Model selection must also compare candidates on the
+same larger held-out benchmark with identical dataset/gold bindings. No result
+is comparable when those identities differ.
+
+Evaluation reads the candidate `export-report.json` and verifies the exact
+predictions, candidate manifest, vocabulary/model identities, gold corpus, and
+dataset snapshot before reporting metrics. A candidate remains
+`productionEligible=false` throughout evaluation.
+
+## Device and Neural Engine evidence
+
+Consumer latency is full candidate generation through the packaged async
+service: input admission, Core ML prediction(s), iterative beam decoding,
+sequence validation, cancellation checks, and main-queue completion. A single
+Core ML forward pass is never reported as consumer latency.
+
+Required production evidence:
+
+- p50, p95, and p99 are each below 50 ms;
+- at least one Apple Silicon packaged-app measurement;
+- `secureFieldInferenceCount=0`;
+- `measurementKind=full-candidate-generation`;
+- Core ML configuration uses `.all`;
+- each runtime role has a fresh compute-plan record;
+- every Apple Silicon runtime role has supported and preferred Neural Engine
+  operations;
+- the report binds `artifactSetSha256`.
+
+Intel fallback evidence is useful but optional. It cannot support a Neural
+Engine claim.
+
+## Immutable qualification and promotion
+
+Promotion is deliberately two-stage:
+
+1. Train/export a candidate whose manifest says `productionEligible=false`.
+2. Package that exact candidate with
+   `LEKH_NEURAL_PACKAGE_MODE=candidate-promotion`.
+3. Run `node scripts/benchmark-neural-native-service.mjs
+   --promotion-evidence`; the report must be
+   `passed-candidate-promotion-evidence`.
+4. Evaluate the exact exported predictions with
+   `node scripts/evaluate-neural-open-vocab-model.mjs --production`.
+5. Record a model-selection decision over candidates with identical evidence
+   bindings.
+6. Run `npm run neural:promote:candidate` with the candidate, export,
+   evaluation, benchmark, and selection inputs.
+7. The promoter verifies every live byte again, stages one complete directory,
+   writes measured metrics/performance without invention, and atomically swaps
+   it into `models/macos/LekhNeuralTransliterator.production`.
+8. Package the promoted directory with
+   `npm run package:macos:imk:neural:production`.
+9. Rerun `node scripts/benchmark-neural-native-service.mjs --production` and
+   production runtime conformance against the promoted package.
+
+Candidate files are never edited in place. A failure before or after the atomic
+swap restores the previous production directory and removes staging debris.
+The promotion receipt binds the candidate manifest, checkpoint, export report,
+predictions, gold corpus, dataset, evaluation, benchmark, vocabulary,
+artifacts, and resulting production manifest.
+
+No script may temporarily mark a candidate production-eligible to obtain
+benchmark evidence. No status-only report is sufficient.
+
+## Native runtime
+
+The IMK loader:
+
+- reads canonical manifest and vocabulary names;
+- resolves the selected runtime layout from the manifest;
+- verifies model sizes and directory hashes;
+- validates exact Core ML feature names, shapes, and data types;
+- runs known-answer semantic attestation;
+- remains unavailable while attestation is pending;
+- performs inference on a dedicated serial queue;
+- enforces latest-request-wins and explicit cancellation;
+- uses a 45 ms internal decode budget;
+- blocks deterministic exact and protected Latin inputs;
+- returns no candidates for secure fields.
+
+The split attention path runs the encoder once and the decoder step
+incrementally for each beam-search step.
+
+## Packaging policy
+
+Ordinary v1 scripts explicitly set `LEKH_PACKAGE_NEURAL_MODEL=0`; therefore the
+neural tail remains absent from the normal release until a separate promoted
+neural release is intentionally built.
+
+Candidate packaging requires:
+
+```sh
+LEKH_NEURAL_ARTIFACT_ROOT=/repository/relative/candidate \
+  npm run package:macos:imk:neural:candidate
 ```
 
-The proof command is:
+Production packaging uses:
 
-```bash
-npm run neural:phase3:distillation
+```sh
+npm run package:macos:imk:neural:production
 ```
 
-The Phase 3 gate must:
+The packager resolves the manifest first, copies every role, verifies the
+source and packaged artifact-set identities, copies vocabulary, and writes the
+manifest last. Experimental typing flags are forbidden for a promoted
+production model.
 
-- read the Phase 2 generated dataset manifest;
-- verify `ai4bharat-indicxlit` is teacher-only and not a training row source;
-- verify the production-required source ids are represented in the source registry;
-- consume only `training.distillation` as the distillation configuration;
-- allow `enabled: false` and `status: not-implemented` in development while
-  reporting `distillationImplemented: false` and warning clearly;
-- allow the teacher checkpoint to be absent in development while warning clearly;
-- never treat a downloaded teacher manifest as evidence that distillation ran.
+## Proof commands
 
-The current repository has no approved distillation runner. A draft run writes
-`reports/neural-distillation-run-report.json`. That report must bind the exact
-training-config digest, dataset-manifest digest, stable dataset content identity,
-all three rehashed dataset split artifacts, teacher-manifest digest, actual teacher artifact digest,
-generated teacher-supervision artifact and positive row count, and resulting
-student-checkpoint digest. Every referenced artifact must remain inside the repo
-workspace and be rehashed by the gate. Those checks prove artifact coexistence,
-not that distillation occurred. Production remains blocked until an approved
-runner additionally validates supervision rows against train-only identities,
-proves dev/test/gold disjointness, binds the extracted teacher files actually
-loaded, and embeds the complete provenance in a safely loadable student
-checkpoint. A teacher manifest or hand-authored report is never sufficient.
+Contract and data:
 
-Production proof is intentionally separate:
-
-```bash
-node scripts/check-neural-distillation-plan.mjs --production
+```sh
+npm run check:neural-contract
+npm run check:neural-gold:production
+npm run check:neural-open-vocab-data:production
 ```
 
-## 16. Phase 4 training and Core ML export contract proof
+Individual production checks:
 
-Phase 4 development readiness means the candidate's implemented architecture,
-optimization loop, export paths, and evidence bindings are executable and
-truthfully described:
-
-```txt
-data/neural/training/open-vocab-seq2seq-v1.config.json
-scripts/check-neural-training-contract.mjs
-reports/neural-training-contract-report.json
-```
-
-The proof command is:
-
-```bash
-npm run neural:phase4:training-contract
-```
-
-The Phase 4 gate must:
-
-- require `lekh-open-vocab-seq2seq-v1`;
-- require Core ML, local-only, neural-tail-only output;
-- require the implemented two-layer GRU encoder-decoder with 96-dimensional
-  embeddings, 256 hidden units, and no attention mechanism;
-- require beam search, no whitespace output, no Latin output, and no auto-commit eligibility;
-- require a 1M-5M parameter budget and a <= 16 MB compiled model budget;
-- load row caps, epochs, batch size, learning rate, label smoothing, gradient
-  clipping, seed, dimensions, decoder limits, and early-stopping policy from
-  the versioned config, with any effective override recorded explicitly;
-- optimize one weighted label-smoothed token-cross-entropy definition for both
-  train and dev, stop on dev loss, and restore the best finite checkpoint before
-  diagnostic evaluation or export;
-- execute the offline training publication step on CPU for deterministic,
-  portable behavior and to avoid process-level PyTorch MPS GRU failures; this
-  does not restrict the published Core ML model's inference compute units;
-- use each dataset row's versioned `weight` exactly once; source-stratified
-  sampling has no hidden source multiplier, pins a row when any provenance
-  source is reviewed, and reports per-source selected counts and weight mass;
-- reject normalized-input overlap across train, dev, and test inside the trainer,
-  even if an earlier dataset check was bypassed;
-- build tokenizer vocabularies from train only and never inject frozen required
-  evaluation answers into train or dev;
-- reject overlength rows instead of silently truncating them, reserve an
-  end-of-sequence slot, restrict input vocabulary to native `[a-z]` tokens, and
-  restrict outputs to the Devanagari block plus ZWNJ/ZWJ;
-- initialize every decoder layer from that encoder layer's state at EOS, not a
-  state mutated by trailing padding;
-- bind the raw config digest, configured and effective config snapshots,
-  effective-config digest, override provenance, exact sampled-row digests,
-  stable dataset identity, trainer and vocabulary digests, checkpoint digest,
-  and actual training-source counts;
-- hold an exclusive whole-run publication lock, generate a stable training run
-  identity and a separate export run identity, and reject mixed-run artifacts;
-- make missing historical checkpoint provenance fail closed instead of filling it
-  from the current dataset;
-- load checkpoints with tensor-only deserialization and semantically verify
-  checkpoint dimensions, parameter count, vocabularies, decoder limits, and
-  dataset bindings before any export;
-- derive manifest decoder, context, and training-source claims from the effective
-  run and actual checkpoint rather than hard-coded aspirational values;
-- encode unmeasured candidate safety and secure-field metrics as the fail-closed
-  sentinel `-1`, never as fabricated zero-event evidence;
-- confine writable paths to approved repository artifact subtrees, publish model
-  directories through recoverable staged replacement, and write checkpoint,
-  JSON, and prediction files atomically;
-- publish no runtime manifest unless conversion succeeds, the exact compiled
-  directory declares the exact native input/output names, shapes, and data
-  types, loads and predicts finite logits numerically equivalent to the bound
-  checkpoint, all native size,
-  length, and parameter bounds hold, and every checkpoint/trainer/vocabulary/
-  dataset/model/manifest/export-report digest forms one current artifact graph;
-- prove two-layer PyTorch-to-Core-ML input shape, `int32` type, exact `logits`
-  output shape and FLOAT16 specification, and known-answer parity in the macOS
-  trainer smoke test;
-- generate promotion predictions only through the exact published compiled
-  `.mlmodelc`, bind the frozen gold manifest/corpus/suite paths, row counts, and
-  SHA-256 identities, and reject any mutation before the export report is
-  published;
-- use the shared scalar decoder contract at
-  `contracts/neural-decoder/v2/lekh-neural-decoder.v2.json` so Python evidence
-  and Swift runtime agree on log-softmax scoring, beam width, invalid-token
-  filtering, tie breaks, length normalization, prefix grammar, and EOS
-  termination;
-- retain `contracts/neural-decoder/v1/lekh-neural-decoder.v1.json` unchanged
-  solely for quarantined schema-v1 development artifacts;
-- expose every output tensor step while reserving the final step for EOS, so
-  decoded candidates cannot exceed the lexical capacity used during training;
-- flag the existing closed-vocabulary model directory as disconnected until a matching production manifest and digest exist.
-
-Implementation-contract version 1 is deliberately token-only: zero context
-words and a disabled language-model rescorer. Production metadata must describe
-that behavior exactly. Context rescoring is a future, separately versioned
-capability and is never implied by this artifact.
-
-Production proof is intentionally separate:
-
-```bash
+```sh
 node scripts/check-neural-training-contract.mjs --production
-```
-
-## 17. Phase 5 evaluation and device benchmark proof
-
-Phase 5 is complete when evaluation and latency evidence can be generated from real model outputs:
-
-```txt
-scripts/evaluate-neural-open-vocab-model.mjs
-scripts/benchmark-neural-coreml-device.mjs
-reports/neural-open-vocab-evaluation.json
-reports/neural-coreml-device-benchmark.json
-```
-
-The proof commands are:
-
-```bash
-npm run neural:phase5:evaluate
-npm run neural:phase5:benchmark
-```
-
-Without a model, the dev commands pass only as harness proof and mark the reports as non-production evidence. Production requires:
-
-```bash
-node scripts/evaluate-neural-open-vocab-model.mjs --production --predictions <model-predictions.jsonl>
-node scripts/benchmark-neural-coreml-device.mjs --production --measurements <device-measurements.json>
-```
-
-The prediction JSONL must cover every frozen gold row exactly once. Each row must
-contain the original input so the evaluator can reject stale IDs whose meaning
-changed:
-
-```json
-{"id":"gold-row-id","input":"romanized-token","candidates":["देवनागरी","..."]}
-```
-
-Only rows frozen as `split: "test"` contribute to promotion metrics. Train and
-dev rows remain visible as diagnostics, but cannot raise a production score.
-Duplicate, missing, unknown, input-mismatched, non-NFC, Latin, whitespace, and
-duplicate candidate outputs fail the evaluation. Any candidate listed in a
-row's `forbiddenOutputs` also fails the safety gate, even when the preferred
-candidate ranked first.
-
-Raw-model diagnostics must decode every row without consulting
-`expectedAction`. Protected/pass-through and secure-field claims come only from
-the packaged native admission path; a prediction producer may not manufacture
-empty output from the expected answer.
-
-The device measurement JSON must contain packaged-app measurements for both Apple Silicon and Intel:
-
-```json
-{
-  "devices": [
-    {
-      "name": "Apple Silicon benchmark Mac",
-      "macOS": "26",
-      "architecture": "arm64",
-      "packagedApp": true,
-      "p50Ms": 0.8,
-      "p95Ms": 1.7,
-      "p99Ms": 2.6,
-      "secureFieldInferenceCount": 0
-    }
-  ]
-}
-```
-
-## 18. Phase 6 native integration and release guard proof
-
-Phase 6 is complete when native packaging and IMK source checks prove the model cannot be accidentally shipped or invoked before production evidence exists:
-
-```txt
-scripts/check-neural-native-integration.mjs
-reports/neural-native-integration-report.json
-```
-
-The proof command is:
-
-```bash
-npm run neural:phase6:native-integration
-```
-
-The Phase 6 dev gate must prove:
-
-- the old native `LekhNeuralTransliterator.swift` remains deleted;
-- the IMK diagnostics still say `neural=disabled-until-async-production-model`;
-- secure input checks and fail-open raw typing remain present;
-- dev packaging does not copy `LekhNeuralTransliterator.mlmodelc`;
-- candidate acceptance remains explicit.
-
-Production proof is intentionally separate:
-
-```bash
+node scripts/evaluate-neural-open-vocab-model.mjs --production --predictions <candidate>/gold-predictions.jsonl
+node scripts/benchmark-neural-coreml-device.mjs --production --measurements reports/neural-native-service-e2e-production-report.json
 node scripts/check-neural-native-integration.mjs --production
-```
-
-Production must fail until the disabled diagnostic is replaced by a verified async Core ML tail service backed by a production manifest, compiled model, evaluation report, and two-device benchmark.
-
-## 19. Aggregate Phase 3-6 proof
-
-The repo-level Phase 3-6 gate is:
-
-```bash
-npm run check:neural-phase3-6
-```
-
-The full neural dev readiness gate now includes Phase 0-6:
-
-```bash
-npm run check:neural-transliteration
-```
-
-The production Phase 3-6 command is expected to fail until real training data, model predictions, device measurements, and a verified Core ML artifact exist:
-
-```bash
-npm run check:neural-phase3-6:production
-```
-
-## 20. Phase 7 human review intake proof
-
-Phase 7 is complete when the repo defines the private reviewed-data intake contract:
-
-```txt
-data/neural/review/README.md
-data/neural/review/private-source-manifest.example.json
-scripts/check-neural-review-intake.mjs
-reports/neural-review-intake-report.json
-```
-
-The proof command is:
-
-```bash
-npm run neural:phase7:review-intake
-```
-
-Production proof is intentionally separate:
-
-```bash
-node scripts/check-neural-review-intake.mjs --production
-```
-
-Production must fail until private reviewed JSONL files exist for `human-reviewed-lekh-gold-v1`, `lekh-chat-conventions-v1`, and `lekh-name-lexicon-v1`, with sufficient row counts, categories, review tiers, and project-owned licensing.
-
-## 21. Phase 8 training-run readiness proof
-
-Phase 8 is complete when the repo can prove that the generated open-vocabulary dataset and production architecture config are ready for a real training job:
-
-```txt
-scripts/prepare-neural-training-run.mjs
-reports/neural-training-run-readiness-report.json
-```
-
-The proof command is:
-
-```bash
-npm run neural:phase8:training-run
-```
-
-Production proof is intentionally separate:
-
-```bash
 node scripts/prepare-neural-training-run.mjs --production
-```
-
-Production must fail until `data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/training-report.json` and `checkpoint.pt` exist and match the current generated dataset manifest.
-
-## 22. Phase 9 promotion guard proof
-
-Phase 9 is complete when the repo has a single promotion guard that refuses to promote the model unless every earlier report and artifact is present:
-
-```txt
-scripts/check-neural-production-promotion.mjs
-reports/neural-production-promotion-report.json
-```
-
-The proof command is:
-
-```bash
-npm run neural:phase9:promotion
-```
-
-Production proof is intentionally separate:
-
-```bash
 node scripts/check-neural-production-promotion.mjs --production
-```
-
-Production promotion requires:
-
-- at least 1,000,000 cleaned rows;
-- Phase 7 reviewed-source production pass;
-- Phase 8 completed training run;
-- production evaluation pass;
-- production Core ML device benchmark pass;
-- production native integration pass;
-- `models/macos/LekhNeuralTransliterator.mlmodelc`;
-- `models/macos/LekhNeuralTransliterator.manifest.json`;
-- model selection and readiness reports.
-
-## 23. Aggregate Phase 3-9 proof
-
-The repo-level Phase 3-9 gate is:
-
-```bash
-npm run check:neural-phase3-9
-```
-
-The full neural dev readiness gate includes Phase 0-9:
-
-```bash
-npm run check:neural-transliteration
-```
-
-The production Phase 3-9 command is expected to fail until reviewed data, trained checkpoint, model predictions, device measurements, and verified Core ML promotion artifacts exist:
-
-```bash
-npm run check:neural-phase3-9:production
-```
-
-## 24. Phase 10 SOTA/world-class verification proof
-
-Phase 10 is complete when the repo has a final audit gate that checks Phase 0-9 reports, Level-5 truthfulness, model artifact existence, production manifest validity, generated dataset scale, native fail-open safety, and promotion-readiness evidence:
-
-```txt
-scripts/check-neural-sota-worldclass.mjs
-reports/neural-sota-worldclass-report.json
-```
-
-The proof command is:
-
-```bash
-npm run neural:phase10:sota
-```
-
-The aggregate Phase 0-10 dev command is:
-
-```bash
-npm run check:neural-phase0-10
-```
-
-Production proof is intentionally separate:
-
-```bash
 node scripts/check-neural-sota-worldclass.mjs --production
 ```
 
-Production Phase 10 must fail unless the actual `lekh-open-vocab-seq2seq-v1` Core ML artifact, manifest, reviewed data, evaluation report, benchmark report, native integration report, and promotion report all exist and pass production criteria. If any of those are missing, the final verdict must be `production-neural-model-not-verified-no-artifact-or-production-evidence`.
+Aggregates:
 
-The full neural readiness command is:
-
-```bash
-npm run check:neural-transliteration
+```sh
+npm run check:neural-phase3-6
+npm run check:neural-phase3-9
+npm run check:neural-phase0-10
 ```
 
-The full production command is expected to fail until real model evidence exists:
-
-```bash
-npm run check:neural-phase0-10:production
-```
+Passing a development aggregate proves only that the harness and available
+candidate evidence are coherent. Production readiness requires the production
+commands, an immutable promotion receipt, a fresh packaged production
+benchmark, and zero failures.

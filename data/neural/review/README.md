@@ -12,7 +12,7 @@ cp data/neural/review/private-source-manifest.example.json data/private/neural/r
 Then add private JSONL files listed by that manifest. Each row must validate against:
 
 ```txt
-data/neural/schema/lekh-neural-gold-row.schema.json
+data/neural/schema/lekh-neural-gold-row-v2.schema.json
 ```
 
 Required production sources:

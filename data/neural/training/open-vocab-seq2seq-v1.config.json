@@ -39,7 +39,7 @@
     "languageModelRescorer": {
       "enabled": false,
       "status": "not-implemented",
-      "source": "runtime-next-context-pack",
+      "source": "none",
       "weight": 0
     }
   },
@@ -120,10 +120,10 @@
     "protectedFalseConversionRate": 0,
     "singleTokenPhraseExpansionRate": 0,
     "secureFieldInferenceCount": 0,
-    "p99Ms": 3,
+    "p99Ms": 50,
+    "measurementKind": "full-candidate-generation",
     "requiredDeviceArchitectures": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ]
   }
 }

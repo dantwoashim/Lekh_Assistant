@@ -54,6 +54,7 @@ function measurement(architecture, preferredNeural) {
     configurationComputeUnits: "all",
     macOS: plan.macOS,
     name: `Mac-${architecture}`,
+    measurementKind: "full-candidate-generation",
     p50Ms: 1,
     p95Ms: 1.5,
     p99Ms: 2,
@@ -63,7 +64,68 @@ function measurement(architecture, preferredNeural) {
 }
 
 describe("neural packaged-device measurements", () => {
-  it("requires Neural Engine placement on arm64 and deterministic fallback on Intel", () => {
+  it("requires every split runtime role to bind its own Neural Engine plan", () => {
+    const artifacts = [
+      {
+        role: "encoder",
+        sourcePath: "/Applications/Lekh/Encoder.mlmodelc",
+        bundleName: "Encoder.mlmodelc",
+        compiledSha256: "b".repeat(64),
+        compiledBytes: 1_000
+      },
+      {
+        role: "decoderStep",
+        sourcePath: "/Applications/Lekh/DecoderStep.mlmodelc",
+        bundleName: "DecoderStep.mlmodelc",
+        compiledSha256: "c".repeat(64),
+        compiledBytes: 2_000
+      }
+    ];
+    const artifactDescriptor = {
+      artifactSetSha256: "d".repeat(64),
+      artifacts
+    };
+    const splitDevice = {
+      architecture: "arm64",
+      artifact: "/Applications/Lekh Keyboard.app",
+      artifactSetSha256: artifactDescriptor.artifactSetSha256,
+      computePlans: Object.fromEntries(artifacts.map((artifact) => {
+        const plan = computePlan("arm64", true);
+        plan.modelPath = artifact.sourcePath;
+        plan.modelSha256 = artifact.compiledSha256;
+        plan.modelBytes = artifact.compiledBytes;
+        return [artifact.role, plan];
+      })),
+      configurationComputeUnits: "all",
+      macOS: "15.5.0",
+      name: "Mac-split-arm64",
+      measurementKind: "full-candidate-generation",
+      p50Ms: 2,
+      p95Ms: 4,
+      p99Ms: 5,
+      packagedApp: true,
+      secureFieldInferenceCount: 0
+    };
+    const result = validateNeuralDeviceMeasurements([splitDevice], {
+      artifactDescriptor,
+      now,
+      production: true
+    });
+    expect(result.valid).toBe(true);
+    expect(result.neuralEngineClaimAllowed).toBe(true);
+
+    delete splitDevice.computePlans.encoder;
+    const incomplete = validateNeuralDeviceMeasurements([splitDevice], {
+      artifactDescriptor,
+      now,
+      production: true
+    });
+    expect(incomplete.issueCodes).toContain(
+      "neural-device-measurements.compute-plan-inventory-invalid:Mac-split-arm64"
+    );
+  });
+
+  it("requires Neural Engine placement on arm64 and accepts optional Intel fallback evidence", () => {
     const result = validateNeuralDeviceMeasurements([
       measurement("arm64", true),
       measurement("x86_64", false)

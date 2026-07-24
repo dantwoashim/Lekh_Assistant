@@ -21,7 +21,7 @@ import {
 const root = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 const defaults = Object.freeze({
   datasetManifest: "data/generated/neural-open-vocab/manifest.json",
-  goldManifest: "data/neural/gold/manifest.v2.json",
+  goldManifest: "data/neural/gold/manifest.v3.json",
   benchmarkManifest: "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
   report: "data/neural/audits/open-vocab-data-quality-v1.json"
 });

@@ -1091,7 +1091,7 @@ private func verifySplitAttentionManifestContract() {
       "p50Ms": 999,
       "p95Ms": 999,
       "p99Ms": 999,
-      "targetP99Ms": 3,
+      "targetP99Ms": 50,
       "measuredOnDevice": false,
       "devices": [[
         "name": "fixture",
@@ -1102,7 +1102,8 @@ private func verifySplitAttentionManifestContract() {
         "p50Ms": 999,
         "p95Ms": 999,
         "p99Ms": 999,
-        "artifact": "Encoder.mlmodelc+DecoderStep.mlmodelc"
+        "artifact": "Encoder.mlmodelc+DecoderStep.mlmodelc",
+        "measurementKind": "full-candidate-generation"
       ]]
     ],
     "requiredCases": [

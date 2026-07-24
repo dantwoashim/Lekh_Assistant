@@ -811,14 +811,16 @@ final class LekhCompanionModel: ObservableObject {
     let contractURL = resources.appendingPathComponent("lekh-engine-contract.v1.json")
     let tokenCandidatesURL = resources.appendingPathComponent("lekh-token-candidates.v1.json")
     let manifestURL = resources.appendingPathComponent("LekhNeuralTransliterator.manifest.json")
-    let modelURL = resources.appendingPathComponent("LekhNeuralTransliterator.mlmodelc", isDirectory: true)
     let vocabURL = resources.appendingPathComponent("LekhNeuralTransliterator.vocab.json")
     let contract = readJSON(contractURL)
     let manifest = readJSON(manifestURL)
     let productionEligible = manifest?["productionEligible"] as? Bool == true
     let experimentalEnabled = bundle?.object(forInfoDictionaryKey: "LekhExperimentalNeuralTypingEnabled") as? Bool == true
-    let neuralAssetsPresent = FileManager.default.fileExists(atPath: modelURL.path) &&
-      FileManager.default.fileExists(atPath: vocabURL.path) && manifest != nil
+    let neuralAssetsPresent = neuralRuntimeAssetsPresent(
+      manifest: manifest,
+      resources: resources,
+      vocabulary: vocabURL
+    )
     let neuralRuntime: NativeKeyboardStatus.NeuralRuntime
     if neuralAssetsPresent && productionEligible {
       neuralRuntime = .claimedProduction
@@ -853,6 +855,52 @@ final class LekhCompanionModel: ObservableObject {
       readiness: runtime.readiness,
       lastChecked: Date()
     )
+  }
+
+  nonisolated private static func neuralRuntimeAssetsPresent(
+    manifest: [String: Any]?,
+    resources: URL,
+    vocabulary: URL
+  ) -> Bool {
+    guard let manifest,
+          FileManager.default.fileExists(atPath: vocabulary.path),
+          let selectedArtifact = manifest["selectedArtifact"] as? String else {
+      return false
+    }
+    if selectedArtifact == "lekh-open-vocab-seq2seq-v1" {
+      guard manifest["runtimeModelContract"] == nil else { return false }
+      return FileManager.default.fileExists(
+        atPath: resources
+          .appendingPathComponent(
+            "LekhNeuralTransliterator.mlmodelc",
+            isDirectory: true
+          )
+          .path
+      )
+    }
+    guard selectedArtifact == "lekh-open-vocab-bigru-attention-v1",
+          manifest["runtimeModelContract"] as? String ==
+            "split-attention-incremental-v1",
+          let compiledModels = manifest["compiledModels"] as? [String: Any],
+          Set(compiledModels.keys) == Set(["encoder", "decoderStep"]) else {
+      return false
+    }
+    let expectedNames = [
+      "encoder": "LekhNeuralTransliteratorEncoder.mlmodelc",
+      "decoderStep": "LekhNeuralTransliteratorDecoderStep.mlmodelc"
+    ]
+    return expectedNames.allSatisfy { role, expectedName in
+      guard let artifact = compiledModels[role] as? [String: Any],
+            let recordedPath = artifact["compiledModel"] as? String,
+            URL(fileURLWithPath: recordedPath).lastPathComponent == expectedName else {
+        return false
+      }
+      return FileManager.default.fileExists(
+        atPath: resources
+          .appendingPathComponent(expectedName, isDirectory: true)
+          .path
+      )
+    }
   }
 
   nonisolated private static func readKeyboardRuntimeSnapshot(

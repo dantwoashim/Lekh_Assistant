@@ -80,7 +80,7 @@ describe("neural evaluation", () => {
       metricUnit: "suite-assertion",
       rowCount: 47,
       suiteAssertionCount: 47,
-      distinctInputContextCount: 42,
+      distinctInputCount: 42,
       repeatedSuiteAssertionCount: 5
     });
 
@@ -96,21 +96,15 @@ describe("neural evaluation", () => {
 
   it("allows cross-suite categories and stricter forbidden-output supersets", () => {
     const duplicateGold = [
-      {
-        ...gold("test-general", "vato", "test", "romanized-token", ["बाटो", "वाटो"], ["भाटो"]),
-        previousContext: ["MERO"]
-      },
-      {
-        ...gold(
-          "test-safety",
-          " VATO ",
-          "test",
-          "adversarial-safety",
-          ["वाटो", "बाटो"],
-          ["भाटो", "बाटोमा"]
-        ),
-        previousContext: ["mero"]
-      }
+      gold("test-general", "vato", "test", "romanized-token", ["बाटो", "वाटो"], ["भाटो"]),
+      gold(
+        "test-safety",
+        " VATO ",
+        "test",
+        "adversarial-safety",
+        ["वाटो", "बाटो"],
+        ["भाटो", "बाटोमा"]
+      )
     ];
     const rows = [
       { id: "test-general", input: "vato", candidates: ["बाटो", "वाटो"] },
@@ -121,7 +115,7 @@ describe("neural evaluation", () => {
     expect(evaluateNeuralPredictions(duplicateGold, validation, "test")).toMatchObject({
       metricUnit: "suite-assertion",
       suiteAssertionCount: 2,
-      distinctInputContextCount: 1,
+      distinctInputCount: 1,
       repeatedSuiteAssertionCount: 1
     });
   });
@@ -138,11 +132,6 @@ describe("neural evaluation", () => {
       issue: "neural-evaluation.gold-input-duplicate-action-conflict:test-general:test-conflict"
     },
     {
-      name: "context",
-      change: { previousContext: ["timro"] },
-      issue: "neural-evaluation.gold-input-duplicate-context-conflict:test-general:test-conflict"
-    },
-    {
       name: "split",
       change: { split: "dev" },
       issue: "neural-evaluation.gold-input-duplicate-split-conflict:test-general:test-conflict"
@@ -153,13 +142,9 @@ describe("neural evaluation", () => {
       issue: "neural-evaluation.gold-input-duplicate-same-suite:test-general:test-conflict"
     }
   ])("fails closed on a repeated-input $name conflict", ({ change, issue }) => {
-    const baseline = {
-      ...gold("test-general", "vato", "test", "romanized-token", ["बाटो"], []),
-      previousContext: ["mero"]
-    };
+    const baseline = gold("test-general", "vato", "test", "romanized-token", ["बाटो"], []);
     const conflict = {
       ...gold("test-conflict", "VATO", "test", "adversarial-safety", ["बाटो"], ["भाटो"]),
-      previousContext: ["mero"],
       ...change
     };
     const validation = validateNeuralPredictionRows([
@@ -169,6 +154,20 @@ describe("neural evaluation", () => {
     expect(validation.issueCodes).toContain(issue);
     expect(validation.metricsReportable).toBe(false);
     expect(evaluateNeuralPredictions([baseline, conflict], validation, "test")).toBeNull();
+  });
+
+  it("rejects context-dependent gold rows for the token-only model", () => {
+    const contextual = {
+      ...gold("test-context", "vato", "test", "romanized-token", ["बाटो"], []),
+      previousContext: ["mero"]
+    };
+    const validation = validateNeuralPredictionRows([
+      { id: contextual.id, input: contextual.input, candidates: ["बाटो"] }
+    ], [contextual]);
+    expect(validation.issueCodes).toContain(
+      "neural-evaluation.gold-context-unsupported:test-context"
+    );
+    expect(validation.metricsReportable).toBe(false);
   });
 
   it.each([
@@ -259,7 +258,7 @@ function gold(id, input, split, suiteId, acceptable, forbiddenOutputs) {
 
 function loadCurrentGoldRows() {
   const manifest = JSON.parse(
-    readFileSync(new URL("../../data/neural/gold/manifest.v2.json", import.meta.url), "utf8")
+    readFileSync(new URL("../../data/neural/gold/manifest.v3.json", import.meta.url), "utf8")
   );
   return manifest.suites.flatMap((suite) =>
     readFileSync(new URL(`../../${suite.path}`, import.meta.url), "utf8")

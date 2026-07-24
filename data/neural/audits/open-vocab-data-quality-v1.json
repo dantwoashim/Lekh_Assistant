@@ -4,13 +4,13 @@
   "dataset": {
     "id": "lekh-open-vocab-cleaned-v1",
     "manifestPath": "data/generated/neural-open-vocab/manifest.json",
-    "manifestSha256": "c3c7d7d3eeb08026bc69dffd2960975e9b418d1cee066eb0c848a6f0fcc19d36",
-    "declaredContentSha256": "36c8d0d55d2e3ae16a44ed28e59b027e81dea0e27281ead4c5c9aea12a02f2de",
-    "declaredRows": 1048651,
+    "manifestSha256": "0121e85d484c8da84c9a74b68218d2b795418652c40ba3574cd967ab730f0b7a",
+    "declaredContentSha256": "a5f01518e9a094282f2e6338e981535f741abb8927dd84be661e991a779250ed",
+    "declaredRows": 1043619,
     "declaredCounts": {
-      "train": 871600,
-      "dev": 87381,
-      "test": 89670
+      "train": 867458,
+      "dev": 86887,
+      "test": 89274
     }
   },
   "artifacts": {
@@ -18,14 +18,14 @@
       "train": {
         "path": "data/generated/neural-open-vocab/train.jsonl",
         "expected": {
-          "bytes": 518322305,
-          "rows": 871600,
-          "sha256": "0daf2a6de9f96535d2c33b88e0ec88390d64057b77d2ccc9cdaeb3331b10b4dc"
+          "bytes": 515812016,
+          "rows": 867458,
+          "sha256": "21f564cac34cb9c59086fc88f1499e800a04c316f06f7f30818bec6f740f04a6"
         },
         "observed": {
-          "bytes": 518322305,
-          "rows": 871600,
-          "sha256": "0daf2a6de9f96535d2c33b88e0ec88390d64057b77d2ccc9cdaeb3331b10b4dc",
+          "bytes": 515812016,
+          "rows": 867458,
+          "sha256": "21f564cac34cb9c59086fc88f1499e800a04c316f06f7f30818bec6f740f04a6",
           "invalidJsonRows": 0
         },
         "integrityMatches": true
@@ -33,14 +33,14 @@
       "dev": {
         "path": "data/generated/neural-open-vocab/dev.jsonl",
         "expected": {
-          "bytes": 51712504,
-          "rows": 87381,
-          "sha256": "37c90e286d3c6c705dcb12f07e8fd5fa296a0cad0357dd6629af7d2970afab72"
+          "bytes": 51413961,
+          "rows": 86887,
+          "sha256": "6ac2ee42505c578535cb082730f385cb148e5ee54310a6c52a778977d65ccd3e"
         },
         "observed": {
-          "bytes": 51712504,
-          "rows": 87381,
-          "sha256": "37c90e286d3c6c705dcb12f07e8fd5fa296a0cad0357dd6629af7d2970afab72",
+          "bytes": 51413961,
+          "rows": 86887,
+          "sha256": "6ac2ee42505c578535cb082730f385cb148e5ee54310a6c52a778977d65ccd3e",
           "invalidJsonRows": 0
         },
         "integrityMatches": true
@@ -48,14 +48,14 @@
       "test": {
         "path": "data/generated/neural-open-vocab/test.jsonl",
         "expected": {
-          "bytes": 53075457,
-          "rows": 89670,
-          "sha256": "8ad8714c30350e5cbd220f7bca729598c207b9e216009f935c8f886c2151e51f"
+          "bytes": 52835610,
+          "rows": 89274,
+          "sha256": "43b12354c1d2a02b0c341a41fd2af6a2eafc61ae00fd70473ef62e16d05f28cb"
         },
         "observed": {
-          "bytes": 53075457,
-          "rows": 89670,
-          "sha256": "8ad8714c30350e5cbd220f7bca729598c207b9e216009f935c8f886c2151e51f",
+          "bytes": 52835610,
+          "rows": 89274,
+          "sha256": "43b12354c1d2a02b0c341a41fd2af6a2eafc61ae00fd70473ef62e16d05f28cb",
           "invalidJsonRows": 0
         },
         "integrityMatches": true
@@ -63,9 +63,9 @@
     },
     "evaluationReferences": {
       "gold-foundation": {
-        "manifestPath": "data/neural/gold/manifest.v2.json",
-        "manifestSha256": "bb898d28630e0b1fecb876fc2800bb75e95a89e9a31a5e5325cad10420d2b75b",
-        "releaseId": "lekh-neural-gold-foundation-v2",
+        "manifestPath": "data/neural/gold/manifest.v3.json",
+        "manifestSha256": "41c9247b8553363b0432342264eba0e9f2ba6ac0d75dea123e94c3d604006c59",
+        "releaseId": "lekh-neural-gold-token-only-v3",
         "rows": 47,
         "suites": [
           {
@@ -85,15 +85,15 @@
           },
           {
             "id": "chat-convention",
-            "path": "data/neural/gold/chat-convention-gold.v1.jsonl",
+            "path": "data/neural/gold/chat-convention-token-only-gold.v2.jsonl",
             "expected": {
               "rows": 7,
-              "sha256": "e372889b948a797ec7b2f7ab906f6e02551f383089df7a370544a05e25fc8bb7"
+              "sha256": "24485f88cbe8a50a1147f99185a3b93ae352084a6bd105d188225baa6f67eacb"
             },
             "observed": {
-              "bytes": 3357,
+              "bytes": 3463,
               "rows": 7,
-              "sha256": "e372889b948a797ec7b2f7ab906f6e02551f383089df7a370544a05e25fc8bb7",
+              "sha256": "24485f88cbe8a50a1147f99185a3b93ae352084a6bd105d188225baa6f67eacb",
               "invalidJsonRows": 0
             },
             "integrityMatches": true
@@ -230,44 +230,44 @@
       }
     }
   },
-  "rowsAudited": 1048651,
+  "rowsAudited": 1043619,
   "balance": {
     "splits": {
       "dev": {
-        "count": 87381,
-        "share": 0.08332706
+        "count": 86887,
+        "share": 0.08325548
       },
       "test": {
-        "count": 89670,
-        "share": 0.08550986
+        "count": 89274,
+        "share": 0.08554271
       },
       "train": {
-        "count": 871600,
-        "share": 0.83116308
+        "count": 867458,
+        "share": 0.83120181
       }
     },
     "actions": {
       "produce-candidate": {
-        "count": 1048651,
+        "count": 1043619,
         "share": 1
       }
     },
     "categories": {
       "ambiguity": {
         "count": 2,
-        "share": 0.00000191
+        "share": 0.00000192
       },
       "chat-convention": {
         "count": 11,
-        "share": 0.00001049
+        "share": 0.00001054
       },
       "name": {
         "count": 266,
-        "share": 0.00025366
+        "share": 0.00025488
       },
       "romanized-token": {
-        "count": 1048372,
-        "share": 0.99973394
+        "count": 1043340,
+        "share": 0.99973266
       }
     },
     "categoriesBySplit": {
@@ -278,89 +278,89 @@
         },
         "name": {
           "count": 86,
-          "share": 0.00009867
+          "share": 0.00009914
         },
         "romanized-token": {
-          "count": 871513,
-          "share": 0.99990018
+          "count": 867371,
+          "share": 0.99989971
         }
       },
       "dev": {
         "chat-convention": {
           "count": 1,
-          "share": 0.00001144
+          "share": 0.00001151
         },
         "name": {
           "count": 46,
-          "share": 0.00052643
+          "share": 0.00052942
         },
         "romanized-token": {
-          "count": 87334,
-          "share": 0.99946213
+          "count": 86840,
+          "share": 0.99945907
         }
       },
       "test": {
         "ambiguity": {
           "count": 2,
-          "share": 0.0000223
+          "share": 0.0000224
         },
         "chat-convention": {
           "count": 9,
-          "share": 0.00010037
+          "share": 0.00010081
         },
         "name": {
           "count": 134,
-          "share": 0.00149437
+          "share": 0.001501
         },
         "romanized-token": {
-          "count": 89525,
-          "share": 0.99838296
+          "count": 89129,
+          "share": 0.99837579
         }
       }
     },
     "sourceMemberships": {
       "ai4bharat-aksharantar-nepali": {
-        "count": 1006787,
-        "share": 0.96007823
+        "count": 1001856,
+        "share": 0.95998252
       },
       "dictionary-ne-ranked": {
-        "count": 35158,
-        "share": 0.03352688
+        "count": 35079,
+        "share": 0.03361284
       },
       "manual-ambiguity": {
         "count": 2,
-        "share": 0.00000191
+        "share": 0.00000192
       },
       "manual-chat-tail": {
         "count": 11,
-        "share": 0.00001049
+        "share": 0.00001054
       },
       "manual-name": {
         "count": 2,
-        "share": 0.00000191
+        "share": 0.00000192
       },
       "manual-x-ksha": {
         "count": 1,
-        "share": 9.5e-7
+        "share": 9.6e-7
       },
       "runtime-names": {
         "count": 264,
-        "share": 0.00025175
+        "share": 0.00025297
       },
       "runtime-words": {
-        "count": 14990,
-        "share": 0.01429456
+        "count": 14941,
+        "share": 0.01431653
       }
     },
     "sourceMembershipsBySplit": {
       "train": {
         "ai4bharat-aksharantar-nepali": {
-          "count": 838050,
-          "share": 0.96150757
+          "count": 833989,
+          "share": 0.96141715
         },
         "dictionary-ne-ranked": {
-          "count": 27881,
-          "share": 0.0319883
+          "count": 27815,
+          "share": 0.03206495
         },
         "manual-chat-tail": {
           "count": 1,
@@ -372,138 +372,138 @@
         },
         "runtime-names": {
           "count": 86,
-          "share": 0.00009867
+          "share": 0.00009914
         },
         "runtime-words": {
-          "count": 12410,
-          "share": 0.01423818
+          "count": 12373,
+          "share": 0.01426351
         }
       },
       "dev": {
         "ai4bharat-aksharantar-nepali": {
-          "count": 83469,
-          "share": 0.95523054
+          "count": 82988,
+          "share": 0.95512562
         },
         "dictionary-ne-ranked": {
-          "count": 3353,
-          "share": 0.03837219
+          "count": 3346,
+          "share": 0.03850979
         },
         "manual-chat-tail": {
           "count": 1,
-          "share": 0.00001144
+          "share": 0.00001151
         },
         "runtime-names": {
           "count": 46,
-          "share": 0.00052643
+          "share": 0.00052942
         },
         "runtime-words": {
-          "count": 1317,
-          "share": 0.01507193
+          "count": 1309,
+          "share": 0.01506554
         }
       },
       "test": {
         "ai4bharat-aksharantar-nepali": {
-          "count": 85268,
-          "share": 0.95090889
+          "count": 84879,
+          "share": 0.95076954
         },
         "dictionary-ne-ranked": {
-          "count": 3924,
-          "share": 0.04376046
+          "count": 3918,
+          "share": 0.04388736
         },
         "manual-ambiguity": {
           "count": 2,
-          "share": 0.0000223
+          "share": 0.0000224
         },
         "manual-chat-tail": {
           "count": 9,
-          "share": 0.00010037
+          "share": 0.00010081
         },
         "manual-name": {
           "count": 2,
-          "share": 0.0000223
+          "share": 0.0000224
         },
         "runtime-names": {
           "count": 132,
-          "share": 0.00147206
+          "share": 0.00147859
         },
         "runtime-words": {
-          "count": 1263,
-          "share": 0.01408498
+          "count": 1259,
+          "share": 0.01410265
         }
       }
     },
     "primarySources": {
       "ai4bharat-aksharantar-nepali": {
-        "count": 1006787,
-        "share": 0.96007823
+        "count": 1001856,
+        "share": 0.95998252
       },
       "dictionary-ne-ranked": {
-        "count": 32900,
-        "share": 0.03137364
+        "count": 32827,
+        "share": 0.03145497
       },
       "manual-ambiguity": {
         "count": 1,
-        "share": 9.5e-7
+        "share": 9.6e-7
       },
       "manual-chat-tail": {
         "count": 11,
-        "share": 0.00001049
+        "share": 0.00001054
       },
       "manual-name": {
         "count": 2,
-        "share": 0.00000191
+        "share": 0.00000192
       },
       "manual-x-ksha": {
         "count": 1,
-        "share": 9.5e-7
+        "share": 9.6e-7
       },
       "runtime-names": {
         "count": 256,
-        "share": 0.00024412
+        "share": 0.0002453
       },
       "runtime-words": {
-        "count": 8693,
-        "share": 0.0082897
+        "count": 8665,
+        "share": 0.00830284
       }
     },
     "sourceTiers": {
       "dictionary-derived": {
-        "count": 32900,
-        "share": 0.03137364
+        "count": 32827,
+        "share": 0.03145497
       },
       "licensed-public": {
-        "count": 1006787,
-        "share": 0.96007823
+        "count": 1001856,
+        "share": 0.95998252
       },
       "runtime-derived": {
-        "count": 8964,
-        "share": 0.00854813
+        "count": 8936,
+        "share": 0.00856251
       }
     },
     "reviewTiers": {
       "curated-public-aksharantar": {
-        "count": 6400,
-        "share": 0.00610308
+        "count": 6387,
+        "share": 0.00612005
       },
       "silver-dictionary-derived": {
-        "count": 32900,
-        "share": 0.03137364
+        "count": 32827,
+        "share": 0.03145497
       },
       "silver-dictionary-derived+silver-public-transliteration": {
-        "count": 1977,
-        "share": 0.00188528
+        "count": 1971,
+        "share": 0.00188862
       },
       "silver-public-transliteration": {
-        "count": 993542,
-        "share": 0.94744772
+        "count": 988651,
+        "share": 0.94732944
       },
       "silver-public-transliteration+silver-runtime-derived": {
-        "count": 4868,
-        "share": 0.00464215
+        "count": 4847,
+        "share": 0.00464442
       },
       "silver-runtime-derived": {
-        "count": 8964,
-        "share": 0.00854813
+        "count": 8936,
+        "share": 0.00856251
       }
     }
   },
@@ -511,123 +511,123 @@
     "inputCodePoints": {
       "global": {
         "distinct": 26,
-        "occurrences": 11356593,
+        "occurrences": 11286584,
         "singletons": 0,
         "top": [
           {
             "token": "a",
             "codePoints": "U+0061",
-            "count": 2537907
+            "count": 2519104
           },
           {
             "token": "i",
             "codePoints": "U+0069",
-            "count": 919357
+            "count": 914811
           },
           {
             "token": "h",
             "codePoints": "U+0068",
-            "count": 837485
+            "count": 831488
           },
           {
             "token": "r",
             "codePoints": "U+0072",
-            "count": 700933
+            "count": 699117
           },
           {
             "token": "n",
             "codePoints": "U+006E",
-            "count": 663806
+            "count": 652743
           },
           {
             "token": "k",
             "codePoints": "U+006B",
-            "count": 580393
+            "count": 578311
           },
           {
             "token": "t",
             "codePoints": "U+0074",
-            "count": 566198
+            "count": 564436
           },
           {
             "token": "s",
             "codePoints": "U+0073",
-            "count": 518368
+            "count": 513437
           },
           {
             "token": "e",
             "codePoints": "U+0065",
-            "count": 472587
+            "count": 471577
           },
           {
             "token": "u",
             "codePoints": "U+0075",
-            "count": 428933
+            "count": 425264
           },
           {
             "token": "l",
             "codePoints": "U+006C",
-            "count": 419240
+            "count": 418253
           },
           {
             "token": "m",
             "codePoints": "U+006D",
-            "count": 403433
+            "count": 402671
           },
           {
             "token": "o",
             "codePoints": "U+006F",
-            "count": 372764
+            "count": 371944
           },
           {
             "token": "d",
             "codePoints": "U+0064",
-            "count": 355698
+            "count": 353503
           },
           {
             "token": "b",
             "codePoints": "U+0062",
-            "count": 293738
+            "count": 292778
           },
           {
             "token": "p",
             "codePoints": "U+0070",
-            "count": 254051
+            "count": 253223
           },
           {
             "token": "g",
             "codePoints": "U+0067",
-            "count": 240641
+            "count": 236649
           },
           {
             "token": "y",
             "codePoints": "U+0079",
-            "count": 205474
+            "count": 204454
           },
           {
             "token": "c",
             "codePoints": "U+0063",
-            "count": 184058
+            "count": 182784
           },
           {
             "token": "w",
             "codePoints": "U+0077",
-            "count": 161452
+            "count": 160974
           },
           {
             "token": "j",
             "codePoints": "U+006A",
-            "count": 137239
+            "count": 136518
           },
           {
             "token": "f",
             "codePoints": "U+0066",
-            "count": 52068
+            "count": 51821
           },
           {
             "token": "v",
             "codePoints": "U+0076",
-            "count": 39344
+            "count": 39300
           },
           {
             "token": "z",
@@ -637,7 +637,7 @@
           {
             "token": "x",
             "codePoints": "U+0078",
-            "count": 3903
+            "count": 3901
           },
           {
             "token": "q",
@@ -654,7 +654,7 @@
           {
             "token": "x",
             "codePoints": "U+0078",
-            "count": 3903
+            "count": 3901
           },
           {
             "token": "z",
@@ -664,240 +664,240 @@
           {
             "token": "v",
             "codePoints": "U+0076",
-            "count": 39344
+            "count": 39300
           },
           {
             "token": "f",
             "codePoints": "U+0066",
-            "count": 52068
+            "count": 51821
           },
           {
             "token": "j",
             "codePoints": "U+006A",
-            "count": 137239
+            "count": 136518
           },
           {
             "token": "w",
             "codePoints": "U+0077",
-            "count": 161452
+            "count": 160974
           },
           {
             "token": "c",
             "codePoints": "U+0063",
-            "count": 184058
+            "count": 182784
           },
           {
             "token": "y",
             "codePoints": "U+0079",
-            "count": 205474
+            "count": 204454
           },
           {
             "token": "g",
             "codePoints": "U+0067",
-            "count": 240641
+            "count": 236649
           },
           {
             "token": "p",
             "codePoints": "U+0070",
-            "count": 254051
+            "count": 253223
           },
           {
             "token": "b",
             "codePoints": "U+0062",
-            "count": 293738
+            "count": 292778
           },
           {
             "token": "d",
             "codePoints": "U+0064",
-            "count": 355698
+            "count": 353503
           },
           {
             "token": "o",
             "codePoints": "U+006F",
-            "count": 372764
+            "count": 371944
           },
           {
             "token": "m",
             "codePoints": "U+006D",
-            "count": 403433
+            "count": 402671
           },
           {
             "token": "l",
             "codePoints": "U+006C",
-            "count": 419240
+            "count": 418253
           },
           {
             "token": "u",
             "codePoints": "U+0075",
-            "count": 428933
+            "count": 425264
           },
           {
             "token": "e",
             "codePoints": "U+0065",
-            "count": 472587
+            "count": 471577
           },
           {
             "token": "s",
             "codePoints": "U+0073",
-            "count": 518368
+            "count": 513437
           },
           {
             "token": "t",
             "codePoints": "U+0074",
-            "count": 566198
+            "count": 564436
           },
           {
             "token": "k",
             "codePoints": "U+006B",
-            "count": 580393
+            "count": 578311
           },
           {
             "token": "n",
             "codePoints": "U+006E",
-            "count": 663806
+            "count": 652743
           },
           {
             "token": "r",
             "codePoints": "U+0072",
-            "count": 700933
+            "count": 699117
           },
           {
             "token": "h",
             "codePoints": "U+0068",
-            "count": 837485
+            "count": 831488
           },
           {
             "token": "i",
             "codePoints": "U+0069",
-            "count": 919357
+            "count": 914811
           },
           {
             "token": "a",
             "codePoints": "U+0061",
-            "count": 2537907
+            "count": 2519104
           }
         ]
       },
       "bySplit": {
         "train": {
           "distinct": 26,
-          "occurrences": 9456693,
+          "occurrences": 9399266,
           "singletons": 0,
           "top": [
             {
               "token": "a",
               "codePoints": "U+0061",
-              "count": 2113102
+              "count": 2097700
             },
             {
               "token": "i",
               "codePoints": "U+0069",
-              "count": 765815
+              "count": 762099
             },
             {
               "token": "h",
               "codePoints": "U+0068",
-              "count": 697119
+              "count": 692191
             },
             {
               "token": "r",
               "codePoints": "U+0072",
-              "count": 582920
+              "count": 581452
             },
             {
               "token": "n",
               "codePoints": "U+006E",
-              "count": 552106
+              "count": 543014
             },
             {
               "token": "k",
               "codePoints": "U+006B",
-              "count": 484515
+              "count": 482801
             },
             {
               "token": "t",
               "codePoints": "U+0074",
-              "count": 471260
+              "count": 469808
             },
             {
               "token": "s",
               "codePoints": "U+0073",
-              "count": 431670
+              "count": 427610
             },
             {
               "token": "e",
               "codePoints": "U+0065",
-              "count": 393372
+              "count": 392531
             },
             {
               "token": "u",
               "codePoints": "U+0075",
-              "count": 356915
+              "count": 353921
             },
             {
               "token": "l",
               "codePoints": "U+006C",
-              "count": 349297
+              "count": 348474
             },
             {
               "token": "m",
               "codePoints": "U+006D",
-              "count": 336200
+              "count": 335576
             },
             {
               "token": "o",
               "codePoints": "U+006F",
-              "count": 310576
+              "count": 309920
             },
             {
               "token": "d",
               "codePoints": "U+0064",
-              "count": 296349
+              "count": 294544
             },
             {
               "token": "b",
               "codePoints": "U+0062",
-              "count": 244472
+              "count": 243677
             },
             {
               "token": "p",
               "codePoints": "U+0070",
-              "count": 211730
+              "count": 211062
             },
             {
               "token": "g",
               "codePoints": "U+0067",
-              "count": 200294
+              "count": 197048
             },
             {
               "token": "y",
               "codePoints": "U+0079",
-              "count": 171366
+              "count": 170520
             },
             {
               "token": "c",
               "codePoints": "U+0063",
-              "count": 153077
+              "count": 152023
             },
             {
               "token": "w",
               "codePoints": "U+0077",
-              "count": 134704
+              "count": 134294
             },
             {
               "token": "j",
               "codePoints": "U+006A",
-              "count": 114460
+              "count": 113870
             },
             {
               "token": "f",
               "codePoints": "U+0066",
-              "count": 43303
+              "count": 43094
             },
             {
               "token": "v",
               "codePoints": "U+0076",
-              "count": 32641
+              "count": 32608
             },
             {
               "token": "z",
@@ -907,7 +907,7 @@
             {
               "token": "x",
               "codePoints": "U+0078",
-              "count": 3223
+              "count": 3222
             },
             {
               "token": "q",
@@ -924,7 +924,7 @@
             {
               "token": "x",
               "codePoints": "U+0078",
-              "count": 3223
+              "count": 3222
             },
             {
               "token": "z",
@@ -934,239 +934,239 @@
             {
               "token": "v",
               "codePoints": "U+0076",
-              "count": 32641
+              "count": 32608
             },
             {
               "token": "f",
               "codePoints": "U+0066",
-              "count": 43303
+              "count": 43094
             },
             {
               "token": "j",
               "codePoints": "U+006A",
-              "count": 114460
+              "count": 113870
             },
             {
               "token": "w",
               "codePoints": "U+0077",
-              "count": 134704
+              "count": 134294
             },
             {
               "token": "c",
               "codePoints": "U+0063",
-              "count": 153077
+              "count": 152023
             },
             {
               "token": "y",
               "codePoints": "U+0079",
-              "count": 171366
+              "count": 170520
             },
             {
               "token": "g",
               "codePoints": "U+0067",
-              "count": 200294
+              "count": 197048
             },
             {
               "token": "p",
               "codePoints": "U+0070",
-              "count": 211730
+              "count": 211062
             },
             {
               "token": "b",
               "codePoints": "U+0062",
-              "count": 244472
+              "count": 243677
             },
             {
               "token": "d",
               "codePoints": "U+0064",
-              "count": 296349
+              "count": 294544
             },
             {
               "token": "o",
               "codePoints": "U+006F",
-              "count": 310576
+              "count": 309920
             },
             {
               "token": "m",
               "codePoints": "U+006D",
-              "count": 336200
+              "count": 335576
             },
             {
               "token": "l",
               "codePoints": "U+006C",
-              "count": 349297
+              "count": 348474
             },
             {
               "token": "u",
               "codePoints": "U+0075",
-              "count": 356915
+              "count": 353921
             },
             {
               "token": "e",
               "codePoints": "U+0065",
-              "count": 393372
+              "count": 392531
             },
             {
               "token": "s",
               "codePoints": "U+0073",
-              "count": 431670
+              "count": 427610
             },
             {
               "token": "t",
               "codePoints": "U+0074",
-              "count": 471260
+              "count": 469808
             },
             {
               "token": "k",
               "codePoints": "U+006B",
-              "count": 484515
+              "count": 482801
             },
             {
               "token": "n",
               "codePoints": "U+006E",
-              "count": 552106
+              "count": 543014
             },
             {
               "token": "r",
               "codePoints": "U+0072",
-              "count": 582920
+              "count": 581452
             },
             {
               "token": "h",
               "codePoints": "U+0068",
-              "count": 697119
+              "count": 692191
             },
             {
               "token": "i",
               "codePoints": "U+0069",
-              "count": 765815
+              "count": 762099
             },
             {
               "token": "a",
               "codePoints": "U+0061",
-              "count": 2113102
+              "count": 2097700
             }
           ]
         },
         "dev": {
           "distinct": 26,
-          "occurrences": 941954,
+          "occurrences": 934933,
           "singletons": 0,
           "top": [
             {
               "token": "a",
               "codePoints": "U+0061",
-              "count": 210708
+              "count": 208800
             },
             {
               "token": "i",
               "codePoints": "U+0069",
-              "count": 76462
+              "count": 76015
             },
             {
               "token": "h",
               "codePoints": "U+0068",
-              "count": 69724
+              "count": 69124
             },
             {
               "token": "r",
               "codePoints": "U+0072",
-              "count": 57998
+              "count": 57812
             },
             {
               "token": "n",
               "codePoints": "U+006E",
-              "count": 55436
+              "count": 54344
             },
             {
               "token": "k",
               "codePoints": "U+006B",
-              "count": 47652
+              "count": 47448
             },
             {
               "token": "t",
               "codePoints": "U+0074",
-              "count": 47019
+              "count": 46841
             },
             {
               "token": "s",
               "codePoints": "U+0073",
-              "count": 42763
+              "count": 42272
             },
             {
               "token": "e",
               "codePoints": "U+0065",
-              "count": 39109
+              "count": 39020
             },
             {
               "token": "u",
               "codePoints": "U+0075",
-              "count": 35790
+              "count": 35419
             },
             {
               "token": "l",
               "codePoints": "U+006C",
-              "count": 34659
+              "count": 34573
             },
             {
               "token": "m",
               "codePoints": "U+006D",
-              "count": 33505
+              "count": 33428
             },
             {
               "token": "o",
               "codePoints": "U+006F",
-              "count": 30717
+              "count": 30620
             },
             {
               "token": "d",
               "codePoints": "U+0064",
-              "count": 29454
+              "count": 29223
             },
             {
               "token": "b",
               "codePoints": "U+0062",
-              "count": 24463
+              "count": 24365
             },
             {
               "token": "p",
               "codePoints": "U+0070",
-              "count": 20930
+              "count": 20845
             },
             {
               "token": "g",
               "codePoints": "U+0067",
-              "count": 20297
+              "count": 19867
             },
             {
               "token": "y",
               "codePoints": "U+0079",
-              "count": 16952
+              "count": 16861
             },
             {
               "token": "c",
               "codePoints": "U+0063",
-              "count": 15274
+              "count": 15159
             },
             {
               "token": "w",
               "codePoints": "U+0077",
-              "count": 13219
+              "count": 13183
             },
             {
               "token": "j",
               "codePoints": "U+006A",
-              "count": 11328
+              "count": 11243
             },
             {
               "token": "f",
               "codePoints": "U+0066",
-              "count": 4315
+              "count": 4300
             },
             {
               "token": "v",
               "codePoints": "U+0076",
-              "count": 3203
+              "count": 3195
             },
             {
               "token": "z",
@@ -1176,7 +1176,7 @@
             {
               "token": "x",
               "codePoints": "U+0078",
-              "count": 330
+              "count": 329
             },
             {
               "token": "q",
@@ -1193,7 +1193,7 @@
             {
               "token": "x",
               "codePoints": "U+0078",
-              "count": 330
+              "count": 329
             },
             {
               "token": "z",
@@ -1203,239 +1203,239 @@
             {
               "token": "v",
               "codePoints": "U+0076",
-              "count": 3203
+              "count": 3195
             },
             {
               "token": "f",
               "codePoints": "U+0066",
-              "count": 4315
+              "count": 4300
             },
             {
               "token": "j",
               "codePoints": "U+006A",
-              "count": 11328
+              "count": 11243
             },
             {
               "token": "w",
               "codePoints": "U+0077",
-              "count": 13219
+              "count": 13183
             },
             {
               "token": "c",
               "codePoints": "U+0063",
-              "count": 15274
+              "count": 15159
             },
             {
               "token": "y",
               "codePoints": "U+0079",
-              "count": 16952
+              "count": 16861
             },
             {
               "token": "g",
               "codePoints": "U+0067",
-              "count": 20297
+              "count": 19867
             },
             {
               "token": "p",
               "codePoints": "U+0070",
-              "count": 20930
+              "count": 20845
             },
             {
               "token": "b",
               "codePoints": "U+0062",
-              "count": 24463
+              "count": 24365
             },
             {
               "token": "d",
               "codePoints": "U+0064",
-              "count": 29454
+              "count": 29223
             },
             {
               "token": "o",
               "codePoints": "U+006F",
-              "count": 30717
+              "count": 30620
             },
             {
               "token": "m",
               "codePoints": "U+006D",
-              "count": 33505
+              "count": 33428
             },
             {
               "token": "l",
               "codePoints": "U+006C",
-              "count": 34659
+              "count": 34573
             },
             {
               "token": "u",
               "codePoints": "U+0075",
-              "count": 35790
+              "count": 35419
             },
             {
               "token": "e",
               "codePoints": "U+0065",
-              "count": 39109
+              "count": 39020
             },
             {
               "token": "s",
               "codePoints": "U+0073",
-              "count": 42763
+              "count": 42272
             },
             {
               "token": "t",
               "codePoints": "U+0074",
-              "count": 47019
+              "count": 46841
             },
             {
               "token": "k",
               "codePoints": "U+006B",
-              "count": 47652
+              "count": 47448
             },
             {
               "token": "n",
               "codePoints": "U+006E",
-              "count": 55436
+              "count": 54344
             },
             {
               "token": "r",
               "codePoints": "U+0072",
-              "count": 57998
+              "count": 57812
             },
             {
               "token": "h",
               "codePoints": "U+0068",
-              "count": 69724
+              "count": 69124
             },
             {
               "token": "i",
               "codePoints": "U+0069",
-              "count": 76462
+              "count": 76015
             },
             {
               "token": "a",
               "codePoints": "U+0061",
-              "count": 210708
+              "count": 208800
             }
           ]
         },
         "test": {
           "distinct": 26,
-          "occurrences": 957946,
+          "occurrences": 952385,
           "singletons": 0,
           "top": [
             {
               "token": "a",
               "codePoints": "U+0061",
-              "count": 214097
+              "count": 212604
             },
             {
               "token": "i",
               "codePoints": "U+0069",
-              "count": 77080
+              "count": 76697
             },
             {
               "token": "h",
               "codePoints": "U+0068",
-              "count": 70642
+              "count": 70173
             },
             {
               "token": "r",
               "codePoints": "U+0072",
-              "count": 60015
+              "count": 59853
             },
             {
               "token": "n",
               "codePoints": "U+006E",
-              "count": 56264
+              "count": 55385
             },
             {
               "token": "k",
               "codePoints": "U+006B",
-              "count": 48226
+              "count": 48062
             },
             {
               "token": "t",
               "codePoints": "U+0074",
-              "count": 47919
+              "count": 47787
             },
             {
               "token": "s",
               "codePoints": "U+0073",
-              "count": 43935
+              "count": 43555
             },
             {
               "token": "e",
               "codePoints": "U+0065",
-              "count": 40106
+              "count": 40026
             },
             {
               "token": "u",
               "codePoints": "U+0075",
-              "count": 36228
+              "count": 35924
             },
             {
               "token": "l",
               "codePoints": "U+006C",
-              "count": 35284
+              "count": 35206
             },
             {
               "token": "m",
               "codePoints": "U+006D",
-              "count": 33728
+              "count": 33667
             },
             {
               "token": "o",
               "codePoints": "U+006F",
-              "count": 31471
+              "count": 31404
             },
             {
               "token": "d",
               "codePoints": "U+0064",
-              "count": 29895
+              "count": 29736
             },
             {
               "token": "b",
               "codePoints": "U+0062",
-              "count": 24803
+              "count": 24736
             },
             {
               "token": "p",
               "codePoints": "U+0070",
-              "count": 21391
+              "count": 21316
             },
             {
               "token": "g",
               "codePoints": "U+0067",
-              "count": 20050
+              "count": 19734
             },
             {
               "token": "y",
               "codePoints": "U+0079",
-              "count": 17156
+              "count": 17073
             },
             {
               "token": "c",
               "codePoints": "U+0063",
-              "count": 15707
+              "count": 15602
             },
             {
               "token": "w",
               "codePoints": "U+0077",
-              "count": 13529
+              "count": 13497
             },
             {
               "token": "j",
               "codePoints": "U+006A",
-              "count": 11451
+              "count": 11405
             },
             {
               "token": "f",
               "codePoints": "U+0066",
-              "count": 4450
+              "count": 4427
             },
             {
               "token": "v",
               "codePoints": "U+0076",
-              "count": 3500
+              "count": 3497
             },
             {
               "token": "z",
@@ -1472,117 +1472,117 @@
             {
               "token": "v",
               "codePoints": "U+0076",
-              "count": 3500
+              "count": 3497
             },
             {
               "token": "f",
               "codePoints": "U+0066",
-              "count": 4450
+              "count": 4427
             },
             {
               "token": "j",
               "codePoints": "U+006A",
-              "count": 11451
+              "count": 11405
             },
             {
               "token": "w",
               "codePoints": "U+0077",
-              "count": 13529
+              "count": 13497
             },
             {
               "token": "c",
               "codePoints": "U+0063",
-              "count": 15707
+              "count": 15602
             },
             {
               "token": "y",
               "codePoints": "U+0079",
-              "count": 17156
+              "count": 17073
             },
             {
               "token": "g",
               "codePoints": "U+0067",
-              "count": 20050
+              "count": 19734
             },
             {
               "token": "p",
               "codePoints": "U+0070",
-              "count": 21391
+              "count": 21316
             },
             {
               "token": "b",
               "codePoints": "U+0062",
-              "count": 24803
+              "count": 24736
             },
             {
               "token": "d",
               "codePoints": "U+0064",
-              "count": 29895
+              "count": 29736
             },
             {
               "token": "o",
               "codePoints": "U+006F",
-              "count": 31471
+              "count": 31404
             },
             {
               "token": "m",
               "codePoints": "U+006D",
-              "count": 33728
+              "count": 33667
             },
             {
               "token": "l",
               "codePoints": "U+006C",
-              "count": 35284
+              "count": 35206
             },
             {
               "token": "u",
               "codePoints": "U+0075",
-              "count": 36228
+              "count": 35924
             },
             {
               "token": "e",
               "codePoints": "U+0065",
-              "count": 40106
+              "count": 40026
             },
             {
               "token": "s",
               "codePoints": "U+0073",
-              "count": 43935
+              "count": 43555
             },
             {
               "token": "t",
               "codePoints": "U+0074",
-              "count": 47919
+              "count": 47787
             },
             {
               "token": "k",
               "codePoints": "U+006B",
-              "count": 48226
+              "count": 48062
             },
             {
               "token": "n",
               "codePoints": "U+006E",
-              "count": 56264
+              "count": 55385
             },
             {
               "token": "r",
               "codePoints": "U+0072",
-              "count": 60015
+              "count": 59853
             },
             {
               "token": "h",
               "codePoints": "U+0068",
-              "count": 70642
+              "count": 70173
             },
             {
               "token": "i",
               "codePoints": "U+0069",
-              "count": 77080
+              "count": 76697
             },
             {
               "token": "a",
               "codePoints": "U+0061",
-              "count": 214097
+              "count": 212604
             }
           ]
         }
@@ -1607,158 +1607,158 @@
     "outputCodePoints": {
       "global": {
         "distinct": 65,
-        "occurrences": 10114015,
+        "occurrences": 10059354,
         "singletons": 1,
         "top": [
           {
             "token": "ा",
             "codePoints": "U+093E",
-            "count": 1048967
+            "count": 1043682
           },
           {
             "token": "्",
             "codePoints": "U+094D",
-            "count": 880143
+            "count": 877923
           },
           {
             "token": "र",
             "codePoints": "U+0930",
-            "count": 684716
+            "count": 682959
           },
           {
             "token": "क",
             "codePoints": "U+0915",
-            "count": 549634
+            "count": 547842
           },
           {
             "token": "ि",
             "codePoints": "U+093F",
-            "count": 514128
+            "count": 512513
           },
           {
             "token": "न",
             "codePoints": "U+0928",
-            "count": 469710
+            "count": 468333
           },
           {
             "token": "ल",
             "codePoints": "U+0932",
-            "count": 416896
+            "count": 415909
           },
           {
             "token": "स",
             "codePoints": "U+0938",
-            "count": 414652
+            "count": 410111
           },
           {
             "token": "म",
             "codePoints": "U+092E",
-            "count": 401779
+            "count": 401040
           },
           {
             "token": "े",
             "codePoints": "U+0947",
-            "count": 387639
+            "count": 386734
           },
           {
             "token": "ो",
             "codePoints": "U+094B",
-            "count": 335322
+            "count": 334543
           },
           {
             "token": "त",
             "codePoints": "U+0924",
-            "count": 318464
+            "count": 317718
           },
           {
             "token": "ु",
             "codePoints": "U+0941",
-            "count": 261733
+            "count": 260581
           },
           {
             "token": "प",
             "codePoints": "U+092A",
-            "count": 250439
+            "count": 249614
           },
           {
             "token": "य",
             "codePoints": "U+092F",
-            "count": 224413
+            "count": 223387
           },
           {
             "token": "ी",
             "codePoints": "U+0940",
-            "count": 218611
+            "count": 218010
           },
           {
             "token": "व",
             "codePoints": "U+0935",
-            "count": 204271
+            "count": 203728
           },
           {
             "token": "ब",
             "codePoints": "U+092C",
-            "count": 203434
+            "count": 202744
           },
           {
             "token": "द",
             "codePoints": "U+0926",
-            "count": 196060
+            "count": 194710
           },
           {
             "token": "ह",
             "codePoints": "U+0939",
-            "count": 186270
+            "count": 185104
           },
           {
             "token": "ग",
             "codePoints": "U+0917",
-            "count": 185795
+            "count": 182105
           },
           {
             "token": "ट",
             "codePoints": "U+091F",
-            "count": 165111
+            "count": 164723
           },
           {
             "token": "ज",
             "codePoints": "U+091C",
-            "count": 140290
+            "count": 139837
           },
           {
             "token": "च",
             "codePoints": "U+091A",
-            "count": 91672
-          },
-          {
-            "token": "ै",
-            "codePoints": "U+0948",
-            "count": 88314
+            "count": 90974
           },
           {
             "token": "भ",
             "codePoints": "U+092D",
-            "count": 87709
+            "count": 87460
+          },
+          {
+            "token": "ै",
+            "codePoints": "U+0948",
+            "count": 86394
           },
           {
             "token": "ड",
             "codePoints": "U+0921",
-            "count": 80058
+            "count": 79540
           },
           {
             "token": "ू",
             "codePoints": "U+0942",
-            "count": 74505
+            "count": 74260
           },
           {
             "token": "श",
             "codePoints": "U+0936",
-            "count": 72925
+            "count": 72649
           },
           {
             "token": "ध",
             "codePoints": "U+0927",
-            "count": 72156
+            "count": 71913
           }
         ],
         "rare": [
@@ -1800,7 +1800,7 @@
           {
             "token": "ऊ",
             "codePoints": "U+090A",
-            "count": 440
+            "count": 438
           },
           {
             "token": "ऋ",
@@ -1810,265 +1810,265 @@
           {
             "token": "ऐ",
             "codePoints": "U+0910",
-            "count": 754
+            "count": 747
           },
           {
             "token": "औ",
             "codePoints": "U+0914",
-            "count": 1423
+            "count": 1387
           },
           {
             "token": "ः",
             "codePoints": "U+0903",
-            "count": 5546
-          },
-          {
-            "token": "ओ",
-            "codePoints": "U+0913",
-            "count": 9567
+            "count": 4972
           },
           {
             "token": "ढ",
             "codePoints": "U+0922",
-            "count": 9641
+            "count": 9554
+          },
+          {
+            "token": "ओ",
+            "codePoints": "U+0913",
+            "count": 9556
           },
           {
             "token": "ञ",
             "codePoints": "U+091E",
-            "count": 10858
+            "count": 10849
           },
           {
             "token": "ृ",
             "codePoints": "U+0943",
-            "count": 15165
+            "count": 15098
           },
           {
             "token": "ठ",
             "codePoints": "U+0920",
-            "count": 15521
+            "count": 15333
           },
           {
             "token": "झ",
             "codePoints": "U+091D",
-            "count": 17103
+            "count": 16831
           },
           {
             "token": "घ",
             "codePoints": "U+0918",
-            "count": 19533
-          },
-          {
-            "token": "आ",
-            "codePoints": "U+0906",
-            "count": 24387
+            "count": 19246
           },
           {
             "token": "ौ",
             "codePoints": "U+094C",
-            "count": 24418
+            "count": 23562
+          },
+          {
+            "token": "आ",
+            "codePoints": "U+0906",
+            "count": 24246
           },
           {
             "token": "ङ",
             "codePoints": "U+0919",
-            "count": 35046
+            "count": 35024
           },
           {
             "token": "ण",
             "codePoints": "U+0923",
-            "count": 40856
-          },
-          {
-            "token": "ष",
-            "codePoints": "U+0937",
-            "count": 44475
+            "count": 40742
           },
           {
             "token": "ं",
             "codePoints": "U+0902",
-            "count": 45395
+            "count": 41819
+          },
+          {
+            "token": "ष",
+            "codePoints": "U+0937",
+            "count": 44357
           },
           {
             "token": "छ",
             "codePoints": "U+091B",
-            "count": 46872
+            "count": 46311
           },
           {
             "token": "अ",
             "codePoints": "U+0905",
-            "count": 51594
+            "count": 51424
           },
           {
             "token": "ए",
             "codePoints": "U+090F",
-            "count": 53298
+            "count": 53210
           },
           {
             "token": "इ",
             "codePoints": "U+0907",
-            "count": 53979
+            "count": 53757
           },
           {
             "token": "फ",
             "codePoints": "U+092B",
-            "count": 54589
+            "count": 54339
           }
         ]
       },
       "bySplit": {
         "train": {
           "distinct": 65,
-          "occurrences": 8422827,
+          "occurrences": 8377878,
           "singletons": 2,
           "top": [
             {
               "token": "ा",
               "codePoints": "U+093E",
-              "count": 873535
+              "count": 869165
             },
             {
               "token": "्",
               "codePoints": "U+094D",
-              "count": 732703
+              "count": 730850
             },
             {
               "token": "र",
               "codePoints": "U+0930",
-              "count": 569437
+              "count": 568017
             },
             {
               "token": "क",
               "codePoints": "U+0915",
-              "count": 458579
+              "count": 457096
             },
             {
               "token": "ि",
               "codePoints": "U+093F",
-              "count": 428237
+              "count": 426907
             },
             {
               "token": "न",
               "codePoints": "U+0928",
-              "count": 390536
+              "count": 389398
             },
             {
               "token": "ल",
               "codePoints": "U+0932",
-              "count": 347394
+              "count": 346571
             },
             {
               "token": "स",
               "codePoints": "U+0938",
-              "count": 345517
+              "count": 341776
             },
             {
               "token": "म",
               "codePoints": "U+092E",
-              "count": 334825
+              "count": 334219
             },
             {
               "token": "े",
               "codePoints": "U+0947",
-              "count": 323130
+              "count": 322379
             },
             {
               "token": "ो",
               "codePoints": "U+094B",
-              "count": 279736
+              "count": 279112
             },
             {
               "token": "त",
               "codePoints": "U+0924",
-              "count": 265449
+              "count": 264831
             },
             {
               "token": "ु",
               "codePoints": "U+0941",
-              "count": 217843
+              "count": 216873
             },
             {
               "token": "प",
               "codePoints": "U+092A",
-              "count": 208705
+              "count": 208040
             },
             {
               "token": "य",
               "codePoints": "U+092F",
-              "count": 187037
+              "count": 186186
             },
             {
               "token": "ी",
               "codePoints": "U+0940",
-              "count": 181980
+              "count": 181477
             },
             {
               "token": "व",
               "codePoints": "U+0935",
-              "count": 170053
+              "count": 169593
             },
             {
               "token": "ब",
               "codePoints": "U+092C",
-              "count": 169566
+              "count": 168989
             },
             {
               "token": "द",
               "codePoints": "U+0926",
-              "count": 163269
+              "count": 162163
             },
             {
               "token": "ह",
               "codePoints": "U+0939",
-              "count": 154855
+              "count": 153886
             },
             {
               "token": "ग",
               "codePoints": "U+0917",
-              "count": 154634
+              "count": 151640
             },
             {
               "token": "ट",
               "codePoints": "U+091F",
-              "count": 137193
+              "count": 136874
             },
             {
               "token": "ज",
               "codePoints": "U+091C",
-              "count": 116961
+              "count": 116593
             },
             {
               "token": "च",
               "codePoints": "U+091A",
-              "count": 76285
-            },
-            {
-              "token": "ै",
-              "codePoints": "U+0948",
-              "count": 73704
+              "count": 75697
             },
             {
               "token": "भ",
               "codePoints": "U+092D",
-              "count": 72960
+              "count": 72759
+            },
+            {
+              "token": "ै",
+              "codePoints": "U+0948",
+              "count": 72165
             },
             {
               "token": "ड",
               "codePoints": "U+0921",
-              "count": 66677
+              "count": 66235
             },
             {
               "token": "ू",
               "codePoints": "U+0942",
-              "count": 61816
+              "count": 61619
             },
             {
               "token": "श",
               "codePoints": "U+0936",
-              "count": 60509
+              "count": 60283
             },
             {
               "token": "ध",
               "codePoints": "U+0927",
-              "count": 60223
+              "count": 60026
             }
           ],
           "rare": [
@@ -2110,7 +2110,7 @@
             {
               "token": "ऊ",
               "codePoints": "U+090A",
-              "count": 366
+              "count": 364
             },
             {
               "token": "ऋ",
@@ -2120,264 +2120,264 @@
             {
               "token": "ऐ",
               "codePoints": "U+0910",
-              "count": 619
+              "count": 613
             },
             {
               "token": "औ",
               "codePoints": "U+0914",
-              "count": 1175
+              "count": 1151
             },
             {
               "token": "ः",
               "codePoints": "U+0903",
-              "count": 4647
+              "count": 4164
             },
             {
               "token": "ओ",
               "codePoints": "U+0913",
-              "count": 7944
+              "count": 7935
             },
             {
               "token": "ढ",
               "codePoints": "U+0922",
-              "count": 7999
+              "count": 7938
             },
             {
               "token": "ञ",
               "codePoints": "U+091E",
-              "count": 9055
+              "count": 9046
             },
             {
               "token": "ृ",
               "codePoints": "U+0943",
-              "count": 12635
+              "count": 12580
             },
             {
               "token": "ठ",
               "codePoints": "U+0920",
-              "count": 12924
+              "count": 12776
             },
             {
               "token": "झ",
               "codePoints": "U+091D",
-              "count": 14193
+              "count": 13967
             },
             {
               "token": "घ",
               "codePoints": "U+0918",
-              "count": 16183
-            },
-            {
-              "token": "आ",
-              "codePoints": "U+0906",
-              "count": 20280
+              "count": 15944
             },
             {
               "token": "ौ",
               "codePoints": "U+094C",
-              "count": 20319
+              "count": 19634
+            },
+            {
+              "token": "आ",
+              "codePoints": "U+0906",
+              "count": 20153
             },
             {
               "token": "ङ",
               "codePoints": "U+0919",
-              "count": 29182
+              "count": 29164
             },
             {
               "token": "ण",
               "codePoints": "U+0923",
-              "count": 34030
-            },
-            {
-              "token": "ष",
-              "codePoints": "U+0937",
-              "count": 37054
+              "count": 33938
             },
             {
               "token": "ं",
               "codePoints": "U+0902",
-              "count": 37767
+              "count": 34837
+            },
+            {
+              "token": "ष",
+              "codePoints": "U+0937",
+              "count": 36958
             },
             {
               "token": "छ",
               "codePoints": "U+091B",
-              "count": 39030
+              "count": 38578
             },
             {
               "token": "अ",
               "codePoints": "U+0905",
-              "count": 42954
+              "count": 42820
             },
             {
               "token": "ए",
               "codePoints": "U+090F",
-              "count": 44347
+              "count": 44273
             },
             {
               "token": "इ",
               "codePoints": "U+0907",
-              "count": 44905
+              "count": 44710
             },
             {
               "token": "फ",
               "codePoints": "U+092B",
-              "count": 45424
+              "count": 45212
             }
           ]
         },
         "dev": {
           "distinct": 62,
-          "occurrences": 838270,
+          "occurrences": 832858,
           "singletons": 3,
           "top": [
             {
               "token": "ा",
               "codePoints": "U+093E",
-              "count": 86890
+              "count": 86380
             },
             {
               "token": "्",
               "codePoints": "U+094D",
-              "count": 72872
+              "count": 72665
             },
             {
               "token": "र",
               "codePoints": "U+0930",
-              "count": 56669
+              "count": 56486
             },
             {
               "token": "क",
               "codePoints": "U+0915",
-              "count": 45194
+              "count": 45028
             },
             {
               "token": "ि",
               "codePoints": "U+093F",
-              "count": 42786
+              "count": 42638
             },
             {
               "token": "न",
               "codePoints": "U+0928",
-              "count": 39098
+              "count": 38968
             },
             {
               "token": "ल",
               "codePoints": "U+0932",
-              "count": 34467
+              "count": 34381
             },
             {
               "token": "स",
               "codePoints": "U+0938",
-              "count": 34206
+              "count": 33750
             },
             {
               "token": "म",
               "codePoints": "U+092E",
-              "count": 33363
+              "count": 33288
             },
             {
               "token": "े",
               "codePoints": "U+0947",
-              "count": 32148
+              "count": 32066
             },
             {
               "token": "ो",
               "codePoints": "U+094B",
-              "count": 27581
+              "count": 27489
             },
             {
               "token": "त",
               "codePoints": "U+0924",
-              "count": 26406
+              "count": 26341
             },
             {
               "token": "ु",
               "codePoints": "U+0941",
-              "count": 21866
+              "count": 21756
             },
             {
               "token": "प",
               "codePoints": "U+092A",
-              "count": 20648
+              "count": 20563
             },
             {
               "token": "य",
               "codePoints": "U+092F",
-              "count": 18631
+              "count": 18540
             },
             {
               "token": "ी",
               "codePoints": "U+0940",
-              "count": 18062
+              "count": 18003
             },
             {
               "token": "व",
               "codePoints": "U+0935",
-              "count": 16872
+              "count": 16824
             },
             {
               "token": "ब",
               "codePoints": "U+092C",
-              "count": 16819
+              "count": 16753
             },
             {
               "token": "द",
               "codePoints": "U+0926",
-              "count": 16341
-            },
-            {
-              "token": "ग",
-              "codePoints": "U+0917",
-              "count": 15663
+              "count": 16202
             },
             {
               "token": "ह",
               "codePoints": "U+0939",
-              "count": 15591
+              "count": 15485
+            },
+            {
+              "token": "ग",
+              "codePoints": "U+0917",
+              "count": 15265
             },
             {
               "token": "ट",
               "codePoints": "U+091F",
-              "count": 13601
+              "count": 13562
             },
             {
               "token": "ज",
               "codePoints": "U+091C",
-              "count": 11510
+              "count": 11449
             },
             {
               "token": "च",
               "codePoints": "U+091A",
-              "count": 7626
-            },
-            {
-              "token": "ै",
-              "codePoints": "U+0948",
-              "count": 7415
+              "count": 7564
             },
             {
               "token": "भ",
               "codePoints": "U+092D",
-              "count": 7273
+              "count": 7245
+            },
+            {
+              "token": "ै",
+              "codePoints": "U+0948",
+              "count": 7207
             },
             {
               "token": "ड",
               "codePoints": "U+0921",
-              "count": 6531
+              "count": 6482
             },
             {
               "token": "ू",
               "codePoints": "U+0942",
-              "count": 6175
+              "count": 6144
             },
             {
               "token": "श",
               "codePoints": "U+0936",
-              "count": 6051
+              "count": 6028
             },
             {
               "token": "ध",
               "codePoints": "U+0927",
-              "count": 5932
+              "count": 5904
             }
           ],
           "rare": [
@@ -2414,27 +2414,27 @@
             {
               "token": "ऐ",
               "codePoints": "U+0910",
-              "count": 70
+              "count": 69
             },
             {
               "token": "औ",
               "codePoints": "U+0914",
-              "count": 129
+              "count": 125
             },
             {
               "token": "ः",
               "codePoints": "U+0903",
-              "count": 477
+              "count": 422
             },
             {
               "token": "ओ",
               "codePoints": "U+0913",
-              "count": 824
+              "count": 823
             },
             {
               "token": "ढ",
               "codePoints": "U+0922",
-              "count": 847
+              "count": 831
             },
             {
               "token": "ञ",
@@ -2444,249 +2444,249 @@
             {
               "token": "ृ",
               "codePoints": "U+0943",
-              "count": 1245
+              "count": 1241
             },
             {
               "token": "ठ",
               "codePoints": "U+0920",
-              "count": 1336
+              "count": 1314
             },
             {
               "token": "झ",
               "codePoints": "U+091D",
-              "count": 1477
+              "count": 1453
             },
             {
               "token": "घ",
               "codePoints": "U+0918",
-              "count": 1674
-            },
-            {
-              "token": "आ",
-              "codePoints": "U+0906",
-              "count": 2015
+              "count": 1644
             },
             {
               "token": "ौ",
               "codePoints": "U+094C",
-              "count": 2031
+              "count": 1942
+            },
+            {
+              "token": "आ",
+              "codePoints": "U+0906",
+              "count": 2006
             },
             {
               "token": "ङ",
               "codePoints": "U+0919",
-              "count": 3031
+              "count": 3028
             },
             {
               "token": "ण",
               "codePoints": "U+0923",
-              "count": 3333
-            },
-            {
-              "token": "ष",
-              "codePoints": "U+0937",
-              "count": 3605
+              "count": 3323
             },
             {
               "token": "ं",
               "codePoints": "U+0902",
-              "count": 3821
+              "count": 3468
+            },
+            {
+              "token": "ष",
+              "codePoints": "U+0937",
+              "count": 3593
             },
             {
               "token": "छ",
               "codePoints": "U+091B",
-              "count": 3881
+              "count": 3828
             },
             {
               "token": "अ",
               "codePoints": "U+0905",
-              "count": 4253
+              "count": 4232
             },
             {
               "token": "ए",
               "codePoints": "U+090F",
-              "count": 4413
+              "count": 4407
             },
             {
               "token": "इ",
               "codePoints": "U+0907",
-              "count": 4473
+              "count": 4458
             },
             {
               "token": "फ",
               "codePoints": "U+092B",
-              "count": 4511
+              "count": 4496
             },
             {
               "token": "ई",
               "codePoints": "U+0908",
-              "count": 4585
+              "count": 4572
             },
             {
               "token": "उ",
               "codePoints": "U+0909",
-              "count": 4744
+              "count": 4608
             },
             {
-              "token": "थ",
-              "codePoints": "U+0925",
-              "count": 5178
+              "token": "ँ",
+              "codePoints": "U+0901",
+              "count": 4976
             }
           ]
         },
         "test": {
           "distinct": 61,
-          "occurrences": 852918,
+          "occurrences": 848618,
           "singletons": 1,
           "top": [
             {
               "token": "ा",
               "codePoints": "U+093E",
-              "count": 88542
+              "count": 88137
             },
             {
               "token": "्",
               "codePoints": "U+094D",
-              "count": 74568
+              "count": 74408
             },
             {
               "token": "र",
               "codePoints": "U+0930",
-              "count": 58610
+              "count": 58456
             },
             {
               "token": "क",
               "codePoints": "U+0915",
-              "count": 45861
+              "count": 45718
             },
             {
               "token": "ि",
               "codePoints": "U+093F",
-              "count": 43105
+              "count": 42968
             },
             {
               "token": "न",
               "codePoints": "U+0928",
-              "count": 40076
+              "count": 39967
             },
             {
               "token": "ल",
               "codePoints": "U+0932",
-              "count": 35035
+              "count": 34957
             },
             {
               "token": "स",
               "codePoints": "U+0938",
-              "count": 34929
+              "count": 34585
             },
             {
               "token": "म",
               "codePoints": "U+092E",
-              "count": 33591
+              "count": 33533
             },
             {
               "token": "े",
               "codePoints": "U+0947",
-              "count": 32361
+              "count": 32289
             },
             {
               "token": "ो",
               "codePoints": "U+094B",
-              "count": 28005
+              "count": 27942
             },
             {
               "token": "त",
               "codePoints": "U+0924",
-              "count": 26609
+              "count": 26546
             },
             {
               "token": "ु",
               "codePoints": "U+0941",
-              "count": 22024
+              "count": 21952
             },
             {
               "token": "प",
               "codePoints": "U+092A",
-              "count": 21086
+              "count": 21011
             },
             {
               "token": "य",
               "codePoints": "U+092F",
-              "count": 18745
+              "count": 18661
             },
             {
               "token": "ी",
               "codePoints": "U+0940",
-              "count": 18569
+              "count": 18530
             },
             {
               "token": "व",
               "codePoints": "U+0935",
-              "count": 17346
+              "count": 17311
             },
             {
               "token": "ब",
               "codePoints": "U+092C",
-              "count": 17049
+              "count": 17002
             },
             {
               "token": "द",
               "codePoints": "U+0926",
-              "count": 16450
+              "count": 16345
             },
             {
               "token": "ह",
               "codePoints": "U+0939",
-              "count": 15824
+              "count": 15733
             },
             {
               "token": "ग",
               "codePoints": "U+0917",
-              "count": 15498
+              "count": 15200
             },
             {
               "token": "ट",
               "codePoints": "U+091F",
-              "count": 14317
+              "count": 14287
             },
             {
               "token": "ज",
               "codePoints": "U+091C",
-              "count": 11819
+              "count": 11795
             },
             {
               "token": "च",
               "codePoints": "U+091A",
-              "count": 7761
+              "count": 7713
             },
             {
               "token": "भ",
               "codePoints": "U+092D",
-              "count": 7476
+              "count": 7456
             },
             {
               "token": "ै",
               "codePoints": "U+0948",
-              "count": 7195
+              "count": 7022
             },
             {
               "token": "ड",
               "codePoints": "U+0921",
-              "count": 6850
+              "count": 6823
             },
             {
               "token": "ू",
               "codePoints": "U+0942",
-              "count": 6514
+              "count": 6497
             },
             {
               "token": "श",
               "codePoints": "U+0936",
-              "count": 6365
+              "count": 6338
             },
             {
               "token": "ध",
               "codePoints": "U+0927",
-              "count": 6001
+              "count": 5983
             }
           ],
           "rare": [
@@ -2723,22 +2723,22 @@
             {
               "token": "औ",
               "codePoints": "U+0914",
-              "count": 119
+              "count": 111
             },
             {
               "token": "ः",
               "codePoints": "U+0903",
-              "count": 422
+              "count": 386
             },
             {
               "token": "ढ",
               "codePoints": "U+0922",
-              "count": 795
+              "count": 785
             },
             {
               "token": "ओ",
               "codePoints": "U+0913",
-              "count": 799
+              "count": 798
             },
             {
               "token": "ञ",
@@ -2748,97 +2748,97 @@
             {
               "token": "ठ",
               "codePoints": "U+0920",
-              "count": 1261
+              "count": 1243
             },
             {
               "token": "ृ",
               "codePoints": "U+0943",
-              "count": 1285
+              "count": 1277
             },
             {
               "token": "झ",
               "codePoints": "U+091D",
-              "count": 1433
+              "count": 1411
             },
             {
               "token": "घ",
               "codePoints": "U+0918",
-              "count": 1676
+              "count": 1658
             },
             {
               "token": "ौ",
               "codePoints": "U+094C",
-              "count": 2068
+              "count": 1986
             },
             {
               "token": "आ",
               "codePoints": "U+0906",
-              "count": 2092
+              "count": 2087
             },
             {
               "token": "ङ",
               "codePoints": "U+0919",
-              "count": 2833
+              "count": 2832
             },
             {
               "token": "ण",
               "codePoints": "U+0923",
-              "count": 3493
+              "count": 3481
             },
             {
               "token": "ं",
               "codePoints": "U+0902",
-              "count": 3807
+              "count": 3514
             },
             {
               "token": "ष",
               "codePoints": "U+0937",
-              "count": 3816
+              "count": 3806
             },
             {
               "token": "छ",
               "codePoints": "U+091B",
-              "count": 3961
+              "count": 3905
             },
             {
               "token": "अ",
               "codePoints": "U+0905",
-              "count": 4387
-            },
-            {
-              "token": "ए",
-              "codePoints": "U+090F",
-              "count": 4538
-            },
-            {
-              "token": "इ",
-              "codePoints": "U+0907",
-              "count": 4601
+              "count": 4372
             },
             {
               "token": "उ",
               "codePoints": "U+0909",
-              "count": 4651
+              "count": 4528
+            },
+            {
+              "token": "ए",
+              "codePoints": "U+090F",
+              "count": 4530
+            },
+            {
+              "token": "इ",
+              "codePoints": "U+0907",
+              "count": 4589
             },
             {
               "token": "फ",
               "codePoints": "U+092B",
-              "count": 4654
+              "count": 4631
             },
             {
               "token": "ई",
               "codePoints": "U+0908",
-              "count": 4797
+              "count": 4784
+            },
+            {
+              "token": "ँ",
+              "codePoints": "U+0901",
+              "count": 5020
             },
             {
               "token": "थ",
               "codePoints": "U+0925",
-              "count": 5172
-            },
-            {
-              "token": "ख",
-              "codePoints": "U+0916",
-              "count": 5474
+              "count": 5152
             }
           ]
         }
@@ -2862,159 +2862,159 @@
     },
     "outputTrainerGraphemes": {
       "global": {
-        "distinct": 1193,
-        "occurrences": 6147911,
-        "singletons": 139,
+        "distinct": 1158,
+        "occurrences": 6119046,
+        "singletons": 124,
         "top": [
           {
             "token": "र",
             "codePoints": "U+0930",
-            "count": 241456
+            "count": 240861
           },
           {
             "token": "न",
             "codePoints": "U+0928",
-            "count": 155682
+            "count": 155256
           },
           {
             "token": "स",
             "codePoints": "U+0938",
-            "count": 152864
+            "count": 152529
           },
           {
             "token": "को",
             "codePoints": "U+0915 U+094B",
-            "count": 147182
+            "count": 146813
           },
           {
             "token": "मा",
             "codePoints": "U+092E U+093E",
-            "count": 144101
+            "count": 143830
           },
           {
             "token": "र्",
             "codePoints": "U+0930 U+094D",
-            "count": 134175
+            "count": 133934
           },
           {
             "token": "का",
             "codePoints": "U+0915 U+093E",
-            "count": 132959
+            "count": 132586
           },
           {
             "token": "न्",
             "codePoints": "U+0928 U+094D",
-            "count": 121121
+            "count": 120974
           },
           {
             "token": "त",
             "codePoints": "U+0924",
-            "count": 114004
+            "count": 113771
           },
           {
             "token": "म",
             "codePoints": "U+092E",
-            "count": 112794
+            "count": 112604
           },
           {
             "token": "क",
             "codePoints": "U+0915",
-            "count": 106034
+            "count": 105605
           },
           {
             "token": "ल",
             "codePoints": "U+0932",
-            "count": 105400
+            "count": 105186
           },
           {
             "token": "ला",
             "codePoints": "U+0932 U+093E",
-            "count": 101182
+            "count": 100897
           },
           {
             "token": "प",
             "codePoints": "U+092A",
-            "count": 96743
+            "count": 96527
           },
           {
             "token": "ले",
             "codePoints": "U+0932 U+0947",
-            "count": 95516
+            "count": 95390
           },
           {
             "token": "य",
             "codePoints": "U+092F",
-            "count": 94482
+            "count": 94249
           },
           {
             "token": "स्",
             "codePoints": "U+0938 U+094D",
-            "count": 90385
+            "count": 89994
           },
           {
             "token": "ह",
             "codePoints": "U+0939",
-            "count": 85373
+            "count": 85001
           },
           {
             "token": "ग",
             "codePoints": "U+0917",
-            "count": 80021
+            "count": 78231
           },
           {
             "token": "ट",
             "codePoints": "U+091F",
-            "count": 77516
+            "count": 77349
           },
           {
             "token": "रा",
             "codePoints": "U+0930 U+093E",
-            "count": 72208
+            "count": 72047
           },
           {
             "token": "क्",
             "codePoints": "U+0915 U+094D",
-            "count": 71859
+            "count": 71634
           },
           {
             "token": "या",
             "codePoints": "U+092F U+093E",
-            "count": 71539
+            "count": 71239
           },
           {
             "token": "त्",
             "codePoints": "U+0924 U+094D",
-            "count": 70798
+            "count": 70648
           },
           {
             "token": "बा",
             "codePoints": "U+092C U+093E",
-            "count": 70078
+            "count": 69980
           },
           {
             "token": "व",
             "codePoints": "U+0935",
-            "count": 65356
+            "count": 65234
           },
           {
             "token": "ज",
             "codePoints": "U+091C",
-            "count": 62046
+            "count": 61905
           },
           {
             "token": "वा",
             "codePoints": "U+0935 U+093E",
-            "count": 57394
+            "count": 57258
           },
           {
             "token": "प्",
             "codePoints": "U+092A U+094D",
-            "count": 56633
+            "count": 56533
           },
           {
             "token": "ई",
             "codePoints": "U+0908",
-            "count": 55682
+            "count": 55629
           }
         ],
         "rare": [
@@ -3044,18 +3044,8 @@
             "count": 1
           },
           {
-            "token": "केँः",
-            "codePoints": "U+0915 U+0947 U+0901 U+0903",
-            "count": 1
-          },
-          {
             "token": "कोँ",
             "codePoints": "U+0915 U+094B U+0901",
-            "count": 1
-          },
-          {
-            "token": "कौंः",
-            "codePoints": "U+0915 U+094C U+0902 U+0903",
             "count": 1
           },
           {
@@ -3074,13 +3064,18 @@
             "count": 1
           },
           {
+            "token": "खोः",
+            "codePoints": "U+0916 U+094B U+0903",
+            "count": 1
+          },
+          {
             "token": "खौः",
             "codePoints": "U+0916 U+094C U+0903",
             "count": 1
           },
           {
-            "token": "गेंः",
-            "codePoints": "U+0917 U+0947 U+0902 U+0903",
+            "token": "गेः",
+            "codePoints": "U+0917 U+0947 U+0903",
             "count": 1
           },
           {
@@ -3134,23 +3129,8 @@
             "count": 1
           },
           {
-            "token": "चेँः",
-            "codePoints": "U+091A U+0947 U+0901 U+0903",
-            "count": 1
-          },
-          {
-            "token": "चैः",
-            "codePoints": "U+091A U+0948 U+0903",
-            "count": 1
-          },
-          {
             "token": "चोः",
             "codePoints": "U+091A U+094B U+0903",
-            "count": 1
-          },
-          {
-            "token": "चौः",
-            "codePoints": "U+091A U+094C U+0903",
             "count": 1
           },
           {
@@ -3164,167 +3144,187 @@
             "count": 1
           },
           {
-            "token": "जिः",
-            "codePoints": "U+091C U+093F U+0903",
+            "token": "ज़ी",
+            "codePoints": "U+091C U+093C U+0940",
+            "count": 1
+          },
+          {
+            "token": "ज़ु",
+            "codePoints": "U+091C U+093C U+0941",
+            "count": 1
+          },
+          {
+            "token": "जूः",
+            "codePoints": "U+091C U+0942 U+0903",
+            "count": 1
+          },
+          {
+            "token": "जेँ",
+            "codePoints": "U+091C U+0947 U+0901",
+            "count": 1
+          },
+          {
+            "token": "जैः",
+            "codePoints": "U+091C U+0948 U+0903",
             "count": 1
           }
         ]
       },
       "bySplit": {
         "train": {
-          "distinct": 1166,
-          "occurrences": 5119665,
-          "singletons": 132,
+          "distinct": 1133,
+          "occurrences": 5095941,
+          "singletons": 118,
           "top": [
             {
               "token": "र",
               "codePoints": "U+0930",
-              "count": 200773
+              "count": 200287
             },
             {
               "token": "न",
               "codePoints": "U+0928",
-              "count": 129291
+              "count": 128943
             },
             {
               "token": "स",
               "codePoints": "U+0938",
-              "count": 127369
+              "count": 127087
             },
             {
               "token": "को",
               "codePoints": "U+0915 U+094B",
-              "count": 122984
+              "count": 122681
             },
             {
               "token": "मा",
               "codePoints": "U+092E U+093E",
-              "count": 120338
+              "count": 120119
             },
             {
               "token": "र्",
               "codePoints": "U+0930 U+094D",
-              "count": 111808
+              "count": 111619
             },
             {
               "token": "का",
               "codePoints": "U+0915 U+093E",
-              "count": 111127
+              "count": 110817
             },
             {
               "token": "न्",
               "codePoints": "U+0928 U+094D",
-              "count": 100506
+              "count": 100382
             },
             {
               "token": "त",
               "codePoints": "U+0924",
-              "count": 94975
+              "count": 94778
             },
             {
               "token": "म",
               "codePoints": "U+092E",
-              "count": 93860
+              "count": 93707
             },
             {
               "token": "क",
               "codePoints": "U+0915",
-              "count": 88148
+              "count": 87798
             },
             {
               "token": "ल",
               "codePoints": "U+0932",
-              "count": 87645
+              "count": 87473
             },
             {
               "token": "ला",
               "codePoints": "U+0932 U+093E",
-              "count": 84248
+              "count": 84012
             },
             {
               "token": "प",
               "codePoints": "U+092A",
-              "count": 80875
+              "count": 80692
             },
             {
               "token": "ले",
               "codePoints": "U+0932 U+0947",
-              "count": 79696
+              "count": 79592
             },
             {
               "token": "य",
               "codePoints": "U+092F",
-              "count": 78816
+              "count": 78613
             },
             {
               "token": "स्",
               "codePoints": "U+0938 U+094D",
-              "count": 75439
+              "count": 75119
             },
             {
               "token": "ह",
               "codePoints": "U+0939",
-              "count": 70929
+              "count": 70626
             },
             {
               "token": "ग",
               "codePoints": "U+0917",
-              "count": 66617
+              "count": 65155
             },
             {
               "token": "ट",
               "codePoints": "U+091F",
-              "count": 64522
+              "count": 64389
             },
             {
               "token": "रा",
               "codePoints": "U+0930 U+093E",
-              "count": 59920
+              "count": 59792
             },
             {
               "token": "क्",
               "codePoints": "U+0915 U+094D",
-              "count": 59802
+              "count": 59611
             },
             {
               "token": "या",
               "codePoints": "U+092F U+093E",
-              "count": 59507
+              "count": 59257
             },
             {
               "token": "त्",
               "codePoints": "U+0924 U+094D",
-              "count": 59060
+              "count": 58937
             },
             {
               "token": "बा",
               "codePoints": "U+092C U+093E",
-              "count": 58459
+              "count": 58379
             },
             {
               "token": "व",
               "codePoints": "U+0935",
-              "count": 54542
+              "count": 54438
             },
             {
               "token": "ज",
               "codePoints": "U+091C",
-              "count": 51740
+              "count": 51632
             },
             {
               "token": "वा",
               "codePoints": "U+0935 U+093E",
-              "count": 47790
+              "count": 47678
             },
             {
               "token": "प्",
               "codePoints": "U+092A U+094D",
-              "count": 47050
+              "count": 46973
             },
             {
               "token": "ई",
               "codePoints": "U+0908",
-              "count": 46421
+              "count": 46378
             }
           ],
           "rare": [
@@ -3359,11 +3359,6 @@
               "count": 1
             },
             {
-              "token": "कौंः",
-              "codePoints": "U+0915 U+094C U+0902 U+0903",
-              "count": 1
-            },
-            {
               "token": "खेः",
               "codePoints": "U+0916 U+0947 U+0903",
               "count": 1
@@ -3374,8 +3369,8 @@
               "count": 1
             },
             {
-              "token": "खोः",
-              "codePoints": "U+0916 U+094B U+0903",
+              "token": "गेः",
+              "codePoints": "U+0917 U+0947 U+0903",
               "count": 1
             },
             {
@@ -3399,6 +3394,11 @@
               "count": 1
             },
             {
+              "token": "घेँ",
+              "codePoints": "U+0918 U+0947 U+0901",
+              "count": 1
+            },
+            {
               "token": "ङाँ",
               "codePoints": "U+0919 U+093E U+0901",
               "count": 1
@@ -3419,33 +3419,13 @@
               "count": 1
             },
             {
-              "token": "चेँः",
-              "codePoints": "U+091A U+0947 U+0901 U+0903",
-              "count": 1
-            },
-            {
-              "token": "चैः",
-              "codePoints": "U+091A U+0948 U+0903",
-              "count": 1
-            },
-            {
               "token": "चोः",
               "codePoints": "U+091A U+094B U+0903",
               "count": 1
             },
             {
-              "token": "चौः",
-              "codePoints": "U+091A U+094C U+0903",
-              "count": 1
-            },
-            {
               "token": "छुं",
               "codePoints": "U+091B U+0941 U+0902",
-              "count": 1
-            },
-            {
-              "token": "जिः",
-              "codePoints": "U+091C U+093F U+0903",
               "count": 1
             },
             {
@@ -3477,171 +3457,186 @@
               "token": "जोः",
               "codePoints": "U+091C U+094B U+0903",
               "count": 1
+            },
+            {
+              "token": "ज़ो",
+              "codePoints": "U+091C U+093C U+094B",
+              "count": 1
+            },
+            {
+              "token": "झीः",
+              "codePoints": "U+091D U+0940 U+0903",
+              "count": 1
+            },
+            {
+              "token": "झुं",
+              "codePoints": "U+091D U+0941 U+0902",
+              "count": 1
+            },
+            {
+              "token": "ञं",
+              "codePoints": "U+091E U+0902",
+              "count": 1
             }
           ]
         },
         "dev": {
-          "distinct": 854,
-          "occurrences": 509307,
-          "singletons": 144,
+          "distinct": 838,
+          "occurrences": 506441,
+          "singletons": 138,
           "top": [
             {
               "token": "र",
               "codePoints": "U+0930",
-              "count": 20012
+              "count": 19955
             },
             {
               "token": "न",
               "codePoints": "U+0928",
-              "count": 12988
+              "count": 12940
             },
             {
               "token": "स",
               "codePoints": "U+0938",
-              "count": 12521
+              "count": 12495
             },
             {
               "token": "को",
               "codePoints": "U+0915 U+094B",
-              "count": 12022
+              "count": 11981
             },
             {
               "token": "मा",
               "codePoints": "U+092E U+093E",
-              "count": 11914
+              "count": 11885
             },
             {
               "token": "र्",
               "codePoints": "U+0930 U+094D",
-              "count": 11005
+              "count": 10976
             },
             {
               "token": "का",
               "codePoints": "U+0915 U+093E",
-              "count": 10856
+              "count": 10826
             },
             {
               "token": "न्",
               "codePoints": "U+0928 U+094D",
-              "count": 10080
+              "count": 10072
             },
             {
               "token": "त",
               "codePoints": "U+0924",
-              "count": 9517
+              "count": 9500
             },
             {
               "token": "म",
               "codePoints": "U+092E",
-              "count": 9410
-            },
-            {
-              "token": "क",
-              "codePoints": "U+0915",
-              "count": 8826
+              "count": 9390
             },
             {
               "token": "ल",
               "codePoints": "U+0932",
-              "count": 8824
+              "count": 8799
+            },
+            {
+              "token": "क",
+              "codePoints": "U+0915",
+              "count": 8785
             },
             {
               "token": "ला",
               "codePoints": "U+0932 U+093E",
-              "count": 8355
+              "count": 8330
             },
             {
               "token": "ले",
               "codePoints": "U+0932 U+0947",
-              "count": 7922
+              "count": 7912
             },
             {
               "token": "प",
               "codePoints": "U+092A",
-              "count": 7778
+              "count": 7764
             },
             {
               "token": "य",
               "codePoints": "U+092F",
-              "count": 7765
+              "count": 7749
             },
             {
               "token": "स्",
               "codePoints": "U+0938 U+094D",
-              "count": 7459
+              "count": 7413
             },
             {
               "token": "ह",
               "codePoints": "U+0939",
-              "count": 7042
+              "count": 6995
             },
             {
               "token": "ग",
               "codePoints": "U+0917",
-              "count": 6727
+              "count": 6535
             },
             {
               "token": "ट",
               "codePoints": "U+091F",
-              "count": 6291
+              "count": 6273
             },
             {
               "token": "रा",
               "codePoints": "U+0930 U+093E",
-              "count": 6052
+              "count": 6036
             },
             {
               "token": "या",
               "codePoints": "U+092F U+093E",
-              "count": 5998
+              "count": 5981
             },
             {
               "token": "क्",
               "codePoints": "U+0915 U+094D",
-              "count": 5946
+              "count": 5926
             },
             {
               "token": "त्",
               "codePoints": "U+0924 U+094D",
-              "count": 5909
+              "count": 5892
             },
             {
               "token": "बा",
               "codePoints": "U+092C U+093E",
-              "count": 5836
+              "count": 5822
             },
             {
               "token": "व",
               "codePoints": "U+0935",
-              "count": 5385
+              "count": 5377
             },
             {
               "token": "ज",
               "codePoints": "U+091C",
-              "count": 5099
+              "count": 5075
             },
             {
               "token": "वा",
               "codePoints": "U+0935 U+093E",
-              "count": 4759
+              "count": 4740
             },
             {
               "token": "प्",
               "codePoints": "U+092A U+094D",
-              "count": 4743
+              "count": 4735
             },
             {
               "token": "ई",
               "codePoints": "U+0908",
-              "count": 4532
+              "count": 4526
             }
           ],
           "rare": [
-            {
-              "token": "एँः",
-              "codePoints": "U+090F U+0901 U+0903",
-              "count": 1
-            },
             {
               "token": "ऑ",
               "codePoints": "U+0911",
@@ -3650,6 +3645,11 @@
             {
               "token": "कुः",
               "codePoints": "U+0915 U+0941 U+0903",
+              "count": 1
+            },
+            {
+              "token": "कों",
+              "codePoints": "U+0915 U+094B U+0902",
               "count": 1
             },
             {
@@ -3670,11 +3670,6 @@
             {
               "token": "खेँ",
               "codePoints": "U+0916 U+0947 U+0901",
-              "count": 1
-            },
-            {
-              "token": "खों",
-              "codePoints": "U+0916 U+094B U+0902",
               "count": 1
             },
             {
@@ -3700,6 +3695,16 @@
             {
               "token": "गाः",
               "codePoints": "U+0917 U+093E U+0903",
+              "count": 1
+            },
+            {
+              "token": "गिँ",
+              "codePoints": "U+0917 U+093F U+0901",
+              "count": 1
+            },
+            {
+              "token": "गिं",
+              "codePoints": "U+0917 U+093F U+0902",
               "count": 1
             },
             {
@@ -3781,168 +3786,163 @@
               "token": "चुं",
               "codePoints": "U+091A U+0941 U+0902",
               "count": 1
-            },
-            {
-              "token": "चेँ",
-              "codePoints": "U+091A U+0947 U+0901",
-              "count": 1
             }
           ]
         },
         "test": {
-          "distinct": 854,
-          "occurrences": 518939,
-          "singletons": 148,
+          "distinct": 840,
+          "occurrences": 516664,
+          "singletons": 143,
           "top": [
             {
               "token": "र",
               "codePoints": "U+0930",
-              "count": 20671
+              "count": 20619
             },
             {
               "token": "न",
               "codePoints": "U+0928",
-              "count": 13403
+              "count": 13373
             },
             {
               "token": "स",
               "codePoints": "U+0938",
-              "count": 12974
+              "count": 12947
             },
             {
               "token": "को",
               "codePoints": "U+0915 U+094B",
-              "count": 12176
+              "count": 12151
             },
             {
               "token": "मा",
               "codePoints": "U+092E U+093E",
-              "count": 11849
+              "count": 11826
             },
             {
               "token": "र्",
               "codePoints": "U+0930 U+094D",
-              "count": 11362
+              "count": 11339
             },
             {
               "token": "का",
               "codePoints": "U+0915 U+093E",
-              "count": 10976
+              "count": 10943
             },
             {
               "token": "न्",
               "codePoints": "U+0928 U+094D",
-              "count": 10535
+              "count": 10520
             },
             {
               "token": "म",
               "codePoints": "U+092E",
-              "count": 9524
+              "count": 9507
             },
             {
               "token": "त",
               "codePoints": "U+0924",
-              "count": 9512
+              "count": 9493
             },
             {
               "token": "क",
               "codePoints": "U+0915",
-              "count": 9060
+              "count": 9022
             },
             {
               "token": "ल",
               "codePoints": "U+0932",
-              "count": 8931
+              "count": 8914
             },
             {
               "token": "ला",
               "codePoints": "U+0932 U+093E",
-              "count": 8579
+              "count": 8555
             },
             {
               "token": "प",
               "codePoints": "U+092A",
-              "count": 8090
+              "count": 8071
             },
             {
               "token": "य",
               "codePoints": "U+092F",
-              "count": 7901
+              "count": 7887
             },
             {
               "token": "ले",
               "codePoints": "U+0932 U+0947",
-              "count": 7898
+              "count": 7886
             },
             {
               "token": "स्",
               "codePoints": "U+0938 U+094D",
-              "count": 7487
+              "count": 7462
             },
             {
               "token": "ह",
               "codePoints": "U+0939",
-              "count": 7402
+              "count": 7380
             },
             {
               "token": "ट",
               "codePoints": "U+091F",
-              "count": 6703
+              "count": 6687
             },
             {
               "token": "ग",
               "codePoints": "U+0917",
-              "count": 6677
+              "count": 6541
             },
             {
               "token": "रा",
               "codePoints": "U+0930 U+093E",
-              "count": 6236
+              "count": 6219
             },
             {
               "token": "क्",
               "codePoints": "U+0915 U+094D",
-              "count": 6111
+              "count": 6097
             },
             {
               "token": "या",
               "codePoints": "U+092F U+093E",
-              "count": 6034
+              "count": 6001
             },
             {
               "token": "त्",
               "codePoints": "U+0924 U+094D",
-              "count": 5829
+              "count": 5819
             },
             {
               "token": "बा",
               "codePoints": "U+092C U+093E",
-              "count": 5783
+              "count": 5779
             },
             {
               "token": "व",
               "codePoints": "U+0935",
-              "count": 5429
+              "count": 5419
             },
             {
               "token": "ज",
               "codePoints": "U+091C",
-              "count": 5207
+              "count": 5198
             },
             {
               "token": "वा",
               "codePoints": "U+0935 U+093E",
-              "count": 4845
+              "count": 4840
             },
             {
               "token": "प्",
               "codePoints": "U+092A U+094D",
-              "count": 4840
+              "count": 4825
             },
             {
               "token": "ई",
               "codePoints": "U+0908",
-              "count": 4729
+              "count": 4725
             }
           ],
           "rare": [
@@ -3954,11 +3954,6 @@
             {
               "token": "ओँ",
               "codePoints": "U+0913 U+0901",
-              "count": 1
-            },
-            {
-              "token": "केँः",
-              "codePoints": "U+0915 U+0947 U+0901 U+0903",
               "count": 1
             },
             {
@@ -4002,11 +3997,6 @@
               "count": 1
             },
             {
-              "token": "गेंः",
-              "codePoints": "U+0917 U+0947 U+0902 U+0903",
-              "count": 1
-            },
-            {
               "token": "गौँ",
               "codePoints": "U+0917 U+094C U+0901",
               "count": 1
@@ -4017,11 +4007,6 @@
               "count": 1
             },
             {
-              "token": "घां",
-              "codePoints": "U+0918 U+093E U+0902",
-              "count": 1
-            },
-            {
               "token": "घुं",
               "codePoints": "U+0918 U+0941 U+0902",
               "count": 1
@@ -4029,6 +4014,11 @@
             {
               "token": "घू",
               "codePoints": "U+0918 U+0942",
+              "count": 1
+            },
+            {
+              "token": "घों",
+              "codePoints": "U+0918 U+094B U+0902",
               "count": 1
             },
             {
@@ -4044,11 +4034,6 @@
             {
               "token": "चँ",
               "codePoints": "U+091A U+0901",
-              "count": 1
-            },
-            {
-              "token": "चेँ",
-              "codePoints": "U+091A U+0947 U+0901",
               "count": 1
             },
             {
@@ -4072,16 +4057,6 @@
               "count": 1
             },
             {
-              "token": "छैं",
-              "codePoints": "U+091B U+0948 U+0902",
-              "count": 1
-            },
-            {
-              "token": "छौः",
-              "codePoints": "U+091B U+094C U+0903",
-              "count": 1
-            },
-            {
               "token": "ज़",
               "codePoints": "U+091C U+093C",
               "count": 1
@@ -4095,19 +4070,49 @@
               "token": "जः",
               "codePoints": "U+091C U+0903",
               "count": 1
+            },
+            {
+              "token": "जां",
+              "codePoints": "U+091C U+093E U+0902",
+              "count": 1
+            },
+            {
+              "token": "ज़ा",
+              "codePoints": "U+091C U+093C U+093E",
+              "count": 1
+            },
+            {
+              "token": "जेँ",
+              "codePoints": "U+091C U+0947 U+0901",
+              "count": 1
+            },
+            {
+              "token": "जें",
+              "codePoints": "U+091C U+0947 U+0902",
+              "count": 1
+            },
+            {
+              "token": "झीं",
+              "codePoints": "U+091D U+0940 U+0902",
+              "count": 1
             }
           ]
         }
       },
       "unseenFromTrain": {
         "dev": {
-          "distinct": 12,
-          "occurrences": 12,
-          "singletons": 12,
+          "distinct": 11,
+          "occurrences": 11,
+          "singletons": 11,
           "top": [
             {
               "token": "खृ",
               "codePoints": "U+0916 U+0943",
+              "count": 1
+            },
+            {
+              "token": "खोः",
+              "codePoints": "U+0916 U+094B U+0903",
               "count": 1
             },
             {
@@ -4123,16 +4128,6 @@
             {
               "token": "ङौ",
               "codePoints": "U+0919 U+094C",
-              "count": 1
-            },
-            {
-              "token": "जेः",
-              "codePoints": "U+091C U+0947 U+0903",
-              "count": 1
-            },
-            {
-              "token": "जौंः",
-              "codePoints": "U+091C U+094C U+0902 U+0903",
               "count": 1
             },
             {
@@ -4173,6 +4168,11 @@
               "count": 1
             },
             {
+              "token": "खोः",
+              "codePoints": "U+0916 U+094B U+0903",
+              "count": 1
+            },
+            {
               "token": "खौः",
               "codePoints": "U+0916 U+094C U+0903",
               "count": 1
@@ -4185,16 +4185,6 @@
             {
               "token": "ङौ",
               "codePoints": "U+0919 U+094C",
-              "count": 1
-            },
-            {
-              "token": "जेः",
-              "codePoints": "U+091C U+0947 U+0903",
-              "count": 1
-            },
-            {
-              "token": "जौंः",
-              "codePoints": "U+091C U+094C U+0902 U+0903",
               "count": 1
             },
             {
@@ -4230,33 +4220,23 @@
           ]
         },
         "test": {
-          "distinct": 16,
-          "occurrences": 18,
+          "distinct": 15,
+          "occurrences": 16,
           "singletons": 14,
           "top": [
-            {
-              "token": "जेँ",
-              "codePoints": "U+091C U+0947 U+0901",
-              "count": 2
-            },
             {
               "token": "रॉ",
               "codePoints": "U+0930 U+0949",
               "count": 2
             },
             {
-              "token": "केँः",
-              "codePoints": "U+0915 U+0947 U+0901 U+0903",
-              "count": 1
-            },
-            {
-              "token": "गेंः",
-              "codePoints": "U+0917 U+0947 U+0902 U+0903",
-              "count": 1
-            },
-            {
               "token": "छीः",
               "codePoints": "U+091B U+0940 U+0903",
+              "count": 1
+            },
+            {
+              "token": "जेँ",
+              "codePoints": "U+091C U+0947 U+0901",
               "count": 1
             },
             {
@@ -4292,6 +4272,11 @@
             {
               "token": "भूः",
               "codePoints": "U+092D U+0942 U+0903",
+              "count": 1
+            },
+            {
+              "token": "मँ",
+              "codePoints": "U+092E U+0901",
               "count": 1
             },
             {
@@ -4317,18 +4302,13 @@
           ],
           "rare": [
             {
-              "token": "केँः",
-              "codePoints": "U+0915 U+0947 U+0901 U+0903",
-              "count": 1
-            },
-            {
-              "token": "गेंः",
-              "codePoints": "U+0917 U+0947 U+0902 U+0903",
-              "count": 1
-            },
-            {
               "token": "छीः",
               "codePoints": "U+091B U+0940 U+0903",
+              "count": 1
+            },
+            {
+              "token": "जेँ",
+              "codePoints": "U+091C U+0947 U+0901",
               "count": 1
             },
             {
@@ -4367,6 +4347,11 @@
               "count": 1
             },
             {
+              "token": "मँ",
+              "codePoints": "U+092E U+0901",
+              "count": 1
+            },
+            {
               "token": "यूं",
               "codePoints": "U+092F U+0942 U+0902",
               "count": 1
@@ -4387,11 +4372,6 @@
               "count": 1
             },
             {
-              "token": "जेँ",
-              "codePoints": "U+091C U+0947 U+0901",
-              "count": 2
-            },
-            {
               "token": "रॉ",
               "codePoints": "U+0930 U+0949",
               "count": 2
@@ -4409,7 +4389,7 @@
       },
       "dev": {
         "inputCharacterRows": 0,
-        "outputGraphemeRows": 12,
+        "outputGraphemeRows": 11,
         "inputExamples": [],
         "outputExamples": [
           {
@@ -4418,14 +4398,6 @@
             "target": "बेग्लैः",
             "tokens": [
               "लैः"
-            ]
-          },
-          {
-            "id": "neural_open_vocab_2ba5f87729694ffe",
-            "input": "nakhojaunh",
-            "target": "नखोजौंः",
-            "tokens": [
-              "जौंः"
             ]
           },
           {
@@ -4450,14 +4422,6 @@
             "target": "हेरौः",
             "tokens": [
               "रौः"
-            ]
-          },
-          {
-            "id": "neural_open_vocab_91578fe5a9a2d3dd",
-            "input": "khonjeh",
-            "target": "खोंजेः",
-            "tokens": [
-              "जेः"
             ]
           },
           {
@@ -4491,12 +4455,28 @@
             "tokens": [
               "ङौ"
             ]
+          },
+          {
+            "id": "neural_open_vocab_da6e04f5d8a5d00a",
+            "input": "pakhoh",
+            "target": "पाखोः",
+            "tokens": [
+              "खोः"
+            ]
+          },
+          {
+            "id": "neural_open_vocab_eed62d37297e0e87",
+            "input": "gariraheh",
+            "target": "गरिरहेः",
+            "tokens": [
+              "हेः"
+            ]
           }
         ]
       },
       "test": {
         "inputCharacterRows": 0,
-        "outputGraphemeRows": 18,
+        "outputGraphemeRows": 16,
         "inputExamples": [],
         "outputExamples": [
           {
@@ -4508,27 +4488,11 @@
             ]
           },
           {
-            "id": "neural_open_vocab_2eb6d876fa063b28",
-            "input": "ujenligaun",
-            "target": "उजेँलीगाउँ",
-            "tokens": [
-              "जेँ"
-            ]
-          },
-          {
             "id": "neural_open_vocab_47316adaa70d3a23",
             "input": "vrindavanma",
             "target": "वृंदावनमा",
             "tokens": [
               "वृं"
-            ]
-          },
-          {
-            "id": "neural_open_vocab_6c4c61909dc0a0a8",
-            "input": "bhetisakenh",
-            "target": "भेटिसकेँः",
-            "tokens": [
-              "केँः"
             ]
           },
           {
@@ -4578,6 +4542,22 @@
             "tokens": [
               "रॉ"
             ]
+          },
+          {
+            "id": "neural_open_vocab_bd5650d5c4ff8ba0",
+            "input": "wighnaih",
+            "target": "विघ्नैः",
+            "tokens": [
+              "नैः"
+            ]
+          },
+          {
+            "id": "neural_open_vocab_c1cb8bce7993571a",
+            "input": "bhuhbhagma",
+            "target": "भूःभागमा",
+            "tokens": [
+              "भूः"
+            ]
           }
         ]
       }
@@ -4595,7 +4575,7 @@
     },
     "inputTrainerTokens": {
       "train": {
-        "rows": 871600,
+        "rows": 867458,
         "min": 2,
         "p50": 11,
         "p90": 15,
@@ -4604,15 +4584,15 @@
         "p999": 23,
         "max": 28,
         "tail": {
-          "24": 293,
-          "25": 89,
-          "26": 23,
+          "24": 270,
+          "25": 80,
+          "26": 21,
           "27": 6,
-          "28": 2
+          "28": 1
         }
       },
       "dev": {
-        "rows": 87381,
+        "rows": 86887,
         "min": 2,
         "p50": 10,
         "p90": 15,
@@ -4621,31 +4601,30 @@
         "p999": 23,
         "max": 27,
         "tail": {
-          "24": 27,
+          "24": 25,
           "25": 9,
-          "26": 3,
+          "26": 2,
           "27": 2
         }
       },
       "test": {
-        "rows": 89670,
+        "rows": 89274,
         "min": 2,
         "p50": 10,
         "p90": 15,
         "p95": 17,
         "p99": 20,
         "p999": 23,
-        "max": 26,
+        "max": 25,
         "tail": {
-          "24": 27,
-          "25": 13,
-          "26": 1
+          "24": 23,
+          "25": 12
         }
       }
     },
     "outputTrainerGraphemes": {
       "train": {
-        "rows": 871600,
+        "rows": 867458,
         "min": 1,
         "p50": 6,
         "p90": 8,
@@ -4656,7 +4635,7 @@
         "tail": {}
       },
       "dev": {
-        "rows": 87381,
+        "rows": 86887,
         "min": 1,
         "p50": 6,
         "p90": 8,
@@ -4667,7 +4646,7 @@
         "tail": {}
       },
       "test": {
-        "rows": 89670,
+        "rows": 89274,
         "min": 1,
         "p50": 6,
         "p90": 8,
@@ -4680,7 +4659,7 @@
     },
     "inputUnicodeGraphemes": {
       "train": {
-        "rows": 871600,
+        "rows": 867458,
         "min": 2,
         "p50": 11,
         "p90": 15,
@@ -4689,15 +4668,15 @@
         "p999": 23,
         "max": 28,
         "tail": {
-          "24": 293,
-          "25": 89,
-          "26": 23,
+          "24": 270,
+          "25": 80,
+          "26": 21,
           "27": 6,
-          "28": 2
+          "28": 1
         }
       },
       "dev": {
-        "rows": 87381,
+        "rows": 86887,
         "min": 2,
         "p50": 10,
         "p90": 15,
@@ -4706,31 +4685,30 @@
         "p999": 23,
         "max": 27,
         "tail": {
-          "24": 27,
+          "24": 25,
           "25": 9,
-          "26": 3,
+          "26": 2,
           "27": 2
         }
       },
       "test": {
-        "rows": 89670,
+        "rows": 89274,
         "min": 2,
         "p50": 10,
         "p90": 15,
         "p95": 17,
         "p99": 20,
         "p999": 23,
-        "max": 26,
+        "max": 25,
         "tail": {
-          "24": 27,
-          "25": 13,
-          "26": 1
+          "24": 23,
+          "25": 12
         }
       }
     },
     "outputUnicodeGraphemes": {
       "train": {
-        "rows": 871600,
+        "rows": 867458,
         "min": 1,
         "p50": 5,
         "p90": 7,
@@ -4741,7 +4719,7 @@
         "tail": {}
       },
       "dev": {
-        "rows": 87381,
+        "rows": 86887,
         "min": 1,
         "p50": 5,
         "p90": 7,
@@ -4752,7 +4730,7 @@
         "tail": {}
       },
       "test": {
-        "rows": 89670,
+        "rows": 89274,
         "min": 1,
         "p50": 5,
         "p90": 7,
@@ -4775,12 +4753,6 @@
       "trainingWouldAbort": false
     },
     "longestInputs": [
-      {
-        "id": "neural_open_vocab_4f9e94853e28cae6",
-        "split": "train",
-        "input": "aamasancharamadhyamharusanga",
-        "length": 28
-      },
       {
         "id": "neural_open_vocab_6c8da8ff47b4a43b",
         "split": "train",
@@ -4834,6 +4806,12 @@
         "split": "train",
         "input": "dhanupuchchhamridangsammaka",
         "length": 27
+      },
+      {
+        "id": "neural_open_vocab_04b573a4b3339f2f",
+        "split": "train",
+        "input": "sudurapashchimanchalasanga",
+        "length": 26
       }
     ],
     "longestOutputs": [
@@ -4910,8 +4888,8 @@
     ]
   },
   "conflicts": {
-    "conflictingInputs": 44683,
-    "conflictingRows": 93808,
+    "conflictingInputs": 44273,
+    "conflictingRows": 92916,
     "maximumTargetsPerInput": 9,
     "examples": [
       {
@@ -4986,14 +4964,6 @@
         "targets": [
           "भट्टराईविरुद्ध",
           "भट्टाराईविरुद्ध"
-        ]
-      },
-      {
-        "input": "khandaichhaun",
-        "rows": 2,
-        "targets": [
-          "खन्दैछौं",
-          "खाँदैछौं"
         ]
       },
       {
@@ -5076,6 +5046,14 @@
           "परमाण",
           "परमान"
         ]
+      },
+      {
+        "input": "mantrasangai",
+        "rows": 2,
+        "targets": [
+          "मन्त्रसँगै",
+          "मन्त्रसंगै"
+        ]
       }
     ]
   },
@@ -5085,7 +5063,7 @@
     "examples": {}
   },
   "punctuationAndDigits": {
-    "inputLettersOnly": 1048651,
+    "inputLettersOnly": 1043619,
     "inputContainsDigit": 0,
     "inputContainsPunctuation": 0,
     "inputMixedLetterDigit": 0,
@@ -5110,56 +5088,56 @@
   "weights": {
     "min": 1,
     "max": 1.95,
-    "mean": 1.02754405,
+    "mean": 1.02760126,
     "p50": 1,
     "p90": 1,
     "p99": 1.8,
     "distribution": {
       "1": {
-        "count": 993542,
-        "share": 0.94744772
+        "count": 988651,
+        "share": 0.94732944
       },
       "1.2": {
         "count": 1935,
-        "share": 0.00184523
+        "share": 0.00185412
       },
       "1.25": {
-        "count": 278,
-        "share": 0.0002651
+        "count": 273,
+        "share": 0.00026159
       },
       "1.35": {
-        "count": 2468,
-        "share": 0.0023535
+        "count": 2460,
+        "share": 0.00235718
       },
       "1.4": {
-        "count": 32900,
-        "share": 0.03137364
+        "count": 32827,
+        "share": 0.03145497
       },
       "1.55": {
-        "count": 2258,
-        "share": 0.00215324
+        "count": 2252,
+        "share": 0.00215788
       },
       "1.8": {
-        "count": 8964,
-        "share": 0.00854813
+        "count": 8936,
+        "share": 0.00856251
       },
       "1.95": {
-        "count": 6306,
-        "share": 0.00601344
+        "count": 6285,
+        "share": 0.00602231
       }
     },
     "bySplit": {
       "train": {
-        "count": 871600,
-        "mean": 1.02546156
+        "count": 867458,
+        "mean": 1.02551478
       },
       "dev": {
-        "count": 87381,
-        "mean": 1.03171914
+        "count": 86887,
+        "mean": 1.03177575
       },
       "test": {
-        "count": 89670,
-        "mean": 1.04371752
+        "count": 89274,
+        "mean": 1.04381231
       }
     }
   },
@@ -5330,12 +5308,12 @@
           "examples": []
         },
         "test": {
-          "inputRows": 4307,
-          "targetRows": 4571,
-          "exactPairRows": 4101,
-          "uniqueInputs": 4085,
-          "uniqueTargets": 3944,
-          "uniquePairs": 4101,
+          "inputRows": 4299,
+          "targetRows": 4563,
+          "exactPairRows": 4093,
+          "uniqueInputs": 4077,
+          "uniqueTargets": 3939,
+          "uniquePairs": 4093,
           "examples": [
             {
               "id": "neural_open_vocab_00214bfbccfb08dc",
@@ -5417,19 +5395,19 @@
     {
       "severity": "warning",
       "code": "conflicting-targets",
-      "message": "44683 normalized inputs map to multiple targets.",
+      "message": "44273 normalized inputs map to multiple targets.",
       "evidence": {
-        "rows": 93808,
+        "rows": 92916,
         "maximumTargetsPerInput": 9
       }
     },
     {
       "severity": "warning",
       "code": "source-concentration",
-      "message": "ai4bharat-aksharantar-nepali supplies 96.007823% of rows.",
+      "message": "ai4bharat-aksharantar-nepali supplies 95.998252% of rows.",
       "evidence": {
-        "count": 1006787,
-        "share": 0.96007823
+        "count": 1001856,
+        "share": 0.95998252
       }
     },
     {
@@ -5439,27 +5417,27 @@
       "evidence": {
         "ambiguity": {
           "count": 2,
-          "share": 0.00000191
+          "share": 0.00000192
         },
         "chat-convention": {
           "count": 11,
-          "share": 0.00001049
+          "share": 0.00001054
         },
         "name": {
           "count": 266,
-          "share": 0.00025366
+          "share": 0.00025488
         }
       }
     },
     {
       "severity": "warning",
       "code": "sparse-output-token-tail",
-      "message": "132 trainer output tokens occur only once in train.",
+      "message": "118 trainer output tokens occur only once in train.",
       "evidence": {
-        "trainDistinct": 1166,
-        "trainSingletons": 132,
-        "globalDistinct": 1193,
-        "globalSingletons": 139
+        "trainDistinct": 1133,
+        "trainSingletons": 118,
+        "globalDistinct": 1158,
+        "globalSingletons": 124
       }
     },
     {
@@ -5468,7 +5446,7 @@
       "message": "dev contains rows with vocabulary absent from train.",
       "evidence": {
         "inputCharacterRows": 0,
-        "outputGraphemeRows": 12,
+        "outputGraphemeRows": 11,
         "inputExamples": [],
         "outputExamples": [
           {
@@ -5477,14 +5455,6 @@
             "target": "बेग्लैः",
             "tokens": [
               "लैः"
-            ]
-          },
-          {
-            "id": "neural_open_vocab_2ba5f87729694ffe",
-            "input": "nakhojaunh",
-            "target": "नखोजौंः",
-            "tokens": [
-              "जौंः"
             ]
           },
           {
@@ -5509,14 +5479,6 @@
             "target": "हेरौः",
             "tokens": [
               "रौः"
-            ]
-          },
-          {
-            "id": "neural_open_vocab_91578fe5a9a2d3dd",
-            "input": "khonjeh",
-            "target": "खोंजेः",
-            "tokens": [
-              "जेः"
             ]
           },
           {
@@ -5550,6 +5512,22 @@
             "tokens": [
               "ङौ"
             ]
+          },
+          {
+            "id": "neural_open_vocab_da6e04f5d8a5d00a",
+            "input": "pakhoh",
+            "target": "पाखोः",
+            "tokens": [
+              "खोः"
+            ]
+          },
+          {
+            "id": "neural_open_vocab_eed62d37297e0e87",
+            "input": "gariraheh",
+            "target": "गरिरहेः",
+            "tokens": [
+              "हेः"
+            ]
           }
         ]
       }
@@ -5560,7 +5538,7 @@
       "message": "test contains rows with vocabulary absent from train.",
       "evidence": {
         "inputCharacterRows": 0,
-        "outputGraphemeRows": 18,
+        "outputGraphemeRows": 16,
         "inputExamples": [],
         "outputExamples": [
           {
@@ -5572,27 +5550,11 @@
             ]
           },
           {
-            "id": "neural_open_vocab_2eb6d876fa063b28",
-            "input": "ujenligaun",
-            "target": "उजेँलीगाउँ",
-            "tokens": [
-              "जेँ"
-            ]
-          },
-          {
             "id": "neural_open_vocab_47316adaa70d3a23",
             "input": "vrindavanma",
             "target": "वृंदावनमा",
             "tokens": [
               "वृं"
-            ]
-          },
-          {
-            "id": "neural_open_vocab_6c4c61909dc0a0a8",
-            "input": "bhetisakenh",
-            "target": "भेटिसकेँः",
-            "tokens": [
-              "केँः"
             ]
           },
           {
@@ -5641,6 +5603,22 @@
             "target": "ब्रॉडकास्टिंग",
             "tokens": [
               "रॉ"
+            ]
+          },
+          {
+            "id": "neural_open_vocab_bd5650d5c4ff8ba0",
+            "input": "wighnaih",
+            "target": "विघ्नैः",
+            "tokens": [
+              "नैः"
+            ]
+          },
+          {
+            "id": "neural_open_vocab_c1cb8bce7993571a",
+            "input": "bhuhbhagma",
+            "target": "भूःभागमा",
+            "tokens": [
+              "भूः"
             ]
           }
         ]

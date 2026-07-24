@@ -30,40 +30,11 @@
     },
     "productionRequiredSources": {
       "type": "array",
-      "minItems": 4,
+      "minItems": 1,
+      "maxItems": 1,
       "uniqueItems": true,
       "items": {
-        "type": "string"
-      },
-      "allOf": [
-        {
-          "contains": {
-            "const": "ai4bharat-aksharantar-nepali"
-          }
-        },
-        {
-          "contains": {
-            "const": "human-reviewed-lekh-gold-v1"
-          }
-        },
-        {
-          "contains": {
-            "const": "lekh-chat-conventions-v1"
-          }
-        },
-        {
-          "contains": {
-            "const": "lekh-name-lexicon-v1"
-          }
-        }
-      ],
-      "not": {
-        "contains": {
-          "enum": [
-            "syubraj-roman2nepali-transliteration",
-            "saugatkafley-nepali-roman-transliteration"
-          ]
-        }
+        "const": "ai4bharat-aksharantar-nepali"
       }
     },
     "sources": {

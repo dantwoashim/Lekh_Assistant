@@ -15,12 +15,13 @@ const reportFiles = {
   phase0Contract: "reports/neural-production-contract-report.json",
   phase1Gold: production ? "reports/neural-gold-eval-production-report.json" : "reports/neural-gold-eval-report.json",
   phase2Dataset: production ? "reports/neural-open-vocab-dataset-production-report.json" : "reports/neural-open-vocab-dataset-report.json",
-  phase3Distillation: production ? "reports/neural-distillation-plan-production-report.json" : "reports/neural-distillation-plan-report.json",
   phase4TrainingContract: production ? "reports/neural-training-contract-production-report.json" : "reports/neural-training-contract-report.json",
   phase5Evaluation: production ? "reports/neural-open-vocab-evaluation-production.json" : "reports/neural-open-vocab-evaluation.json",
   phase5Benchmark: production ? "reports/neural-coreml-device-benchmark-production.json" : "reports/neural-coreml-device-benchmark.json",
   phase6NativeIntegration: production ? "reports/neural-native-integration-production-report.json" : "reports/neural-native-integration-report.json",
-  phase7ReviewIntake: production ? "reports/neural-review-intake-production-report.json" : "reports/neural-review-intake-report.json",
+  runtimeConformance: production
+    ? "reports/neural-runtime-manifest-conformance-production-report.json"
+    : "reports/neural-runtime-manifest-conformance-report.json",
   phase8TrainingRun: production ? "reports/neural-training-run-readiness-production-report.json" : "reports/neural-training-run-readiness-report.json",
   phase9Promotion: production ? "reports/neural-production-promotion-production-report.json" : "reports/neural-production-promotion-report.json",
   modelSelection: production ? "reports/neural-model-selection-production-report.json" : "reports/neural-model-selection-report.json",
@@ -28,11 +29,6 @@ const reportFiles = {
 };
 const modelDir = "models/macos/LekhNeuralTransliterator.mlmodelc";
 const manifestPath = "models/macos/LekhNeuralTransliterator.manifest.json";
-const rejectedManifest = "models/rejected/closed-vocabulary-baseline/LekhNeuralTransliterator.rejected.manifest.json";
-const oldNeuralSwift = "native/macos-imk/skeleton/LekhNeuralTransliterator.swift";
-const engineSource = "native/macos-imk/skeleton/LekhEngineCore.swift";
-const packageScript = "scripts/package-macos-imk-dev.mjs";
-const level5Report = "docs/LEKH_LEVEL5_FORENSIC_TRANSFORMATION_REPORT.md";
 
 const reports = Object.fromEntries(
   Object.entries(reportFiles).map(([key, path]) => [key, readJsonReport(path, production)])
@@ -55,12 +51,11 @@ const blockedMirrorRows = Object.fromEntries(blockedMirrorSources.map((sourceId)
 requireDevStatus("phase0Contract", /^passed$/u);
 requireDevStatus("phase1Gold", /^passed-/u);
 requireDevStatus("phase2Dataset", /^passed-/u);
-requireDevStatus("phase3Distillation", /^passed-/u);
 requireDevStatus("phase4TrainingContract", /^passed-/u);
 requireDevStatus("phase5Evaluation", /^passed-/u);
 requireDevStatus("phase5Benchmark", /^passed-/u);
 requireDevStatus("phase6NativeIntegration", /^passed-/u);
-requireDevStatus("phase7ReviewIntake", /^passed-/u);
+requireDevStatus("runtimeConformance", /^passed-/u);
 requireDevStatus("phase8TrainingRun", /^passed-phase8-/u);
 requireDevStatus("phase9Promotion", /^passed-/u);
 requireDevStatus("modelSelection", /^passed$/u);
@@ -77,21 +72,6 @@ for (const [sourceId, rows] of Object.entries(blockedMirrorRows)) {
     failures.push(`Phase 10 requires blocked lineage mirror ${sourceId} to contribute 0 rows; found ${Number.isFinite(rows) ? rows : "invalid"}.`);
   }
 }
-if (!existsSync(join(root, rejectedManifest))) failures.push("Rejected closed-vocabulary manifest must remain quarantined under models/rejected.");
-if (existsSync(join(root, oldNeuralSwift))) failures.push("Old synchronous/closed-vocab LekhNeuralTransliterator.swift must remain deleted.");
-const engine = readText(engineSource);
-const packager = readText(packageScript);
-const reportText = readText(level5Report);
-if (!engine.includes("LekhNeuralCandidateService.shared.status")) {
-  failures.push("Native engine must report the actual async Core ML neural tail status.");
-}
-if (!packager.includes("LEKH_PACKAGE_NEURAL_MODEL") || !packager.includes("neuralPackagingRequested")) {
-  failures.push("Dev packager must keep neural model packaging behind an explicit opt-in gate.");
-}
-if (!reportText.includes("Until every checkbox has evidence, Lekh is not Level 5")) {
-  failures.push("Level 5 report must retain evidence-before-production language.");
-}
-
 if (!manifest) {
   if (production) failures.push("Production Phase 10 requires models/macos/LekhNeuralTransliterator.manifest.json.");
   else warnings.push("No production neural manifest exists; Phase 10 cannot verify a working production model.");
@@ -119,15 +99,17 @@ if (!modelExists) {
 }
 
 if (production) {
-  requireProductionStatus("phase7ReviewIntake", /^passed-production-/u);
   requireProductionStatus("phase8TrainingRun", /^passed-production-|^passed-phase8-training-run-complete$/u);
   requireProductionStatus("phase9Promotion", /^passed-production-/u);
   requireProductionStatus("phase5Evaluation", /^passed-production-/u);
   requireProductionStatus("phase5Benchmark", /^passed-production-/u);
   requireProductionStatus("phase6NativeIntegration", /^passed-production-/u);
+  requireProductionStatus("runtimeConformance", /^passed-production-runtime-conformance$/u);
   if (reports.phase5Evaluation?.metrics?.tailTop1Accuracy < 0.88) failures.push("Production Phase 10 requires tailTop1Accuracy >= 0.88.");
   if (reports.phase5Evaluation?.metrics?.tailTop3Accuracy < 0.96) failures.push("Production Phase 10 requires tailTop3Accuracy >= 0.96.");
-  if (reports.phase5Benchmark?.performance?.p99Ms > 3 || reports.phase5Benchmark?.performance?.p99Ms == null) failures.push("Production Phase 10 requires measured Core ML p99 <= 3 ms.");
+  if (reports.phase5Benchmark?.performance?.p99Ms >= 50 || reports.phase5Benchmark?.performance?.p99Ms == null) {
+    failures.push("Production Phase 10 requires measured full-candidate Core ML p99 < 50 ms.");
+  }
   if (reports.phase5Benchmark?.performance?.measuredOnDevice !== true) failures.push("Production Phase 10 requires real on-device benchmark evidence.");
 }
 

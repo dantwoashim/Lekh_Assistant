@@ -13,7 +13,7 @@ import {
   statSync,
   writeFileSync
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
@@ -22,6 +22,9 @@ import {
   classifyMacOSCodeSigning,
   macOSSourceStatusArguments
 } from "./lib/macos-imk-dev-release-integrity.mjs";
+import {
+  resolveNeuralArtifactDescriptor
+} from "./lib/neural-artifact-descriptor.mjs";
 import { readProductionReleasePolicy } from "./lib/macos-production-release-attestation.mjs";
 
 const root = process.cwd();
@@ -53,12 +56,31 @@ const tokenCompletionManifestSourcePath = join(root, "data", "completion", "runt
 const tokenCompletionBundlePath = join(appBundle, "Contents", "Resources", "lekh-token-completions.v1.json");
 const tokenCompletionManifestBundlePath = join(appBundle, "Contents", "Resources", "lekh-token-completions.v1.manifest.json");
 const buildProvenanceBundlePath = join(appBundle, "Contents", "Resources", "LekhBuildProvenance.v1.json");
-const neuralModelSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
-const neuralManifestSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
-const neuralVocabSourcePath = join(root, "models", "macos", "LekhNeuralTransliterator.vocab.json");
-const neuralModelBundlePath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.mlmodelc");
-const neuralManifestBundlePath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.manifest.json");
-const neuralVocabBundlePath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.vocab.json");
+const neuralArtifactRoot = resolve(
+  root,
+  process.env.LEKH_NEURAL_ARTIFACT_ROOT ??
+    "models/macos/LekhNeuralTransliterator.production"
+);
+const neuralManifestSourcePath = join(
+  neuralArtifactRoot,
+  "LekhNeuralTransliterator.manifest.json"
+);
+const neuralVocabSourcePath = join(
+  neuralArtifactRoot,
+  "LekhNeuralTransliterator.vocab.json"
+);
+const neuralManifestBundlePath = join(
+  appBundle,
+  "Contents",
+  "Resources",
+  "LekhNeuralTransliterator.manifest.json"
+);
+const neuralVocabBundlePath = join(
+  appBundle,
+  "Contents",
+  "Resources",
+  "LekhNeuralTransliterator.vocab.json"
+);
 const universalExecutable = join(buildWorkDir, `${executableName}.universal`);
 const atomicInstallSwap = join(skeletonDir, "atomic-install-swap.swift");
 const archs = (process.env.LEKH_MAC_ARCHS ?? "arm64,x86_64")
@@ -393,18 +415,111 @@ writeFileSync(buildProvenanceBundlePath, `${JSON.stringify(buildProvenance, null
 // opt-in so the dev bundle cannot silently ship a non-production neural tail.
 const neuralPackagingRequested = process.env.LEKH_PACKAGE_NEURAL_MODEL === "1";
 const experimentalNeuralTypingRequested = process.env.LEKH_EXPERIMENTAL_NEURAL_TYPING === "1";
+const neuralPackageMode = process.env.LEKH_NEURAL_PACKAGE_MODE ?? "experimental";
 let neuralModelPackaged = false;
+let packagedNeuralArtifacts = [];
+let packagedNeuralModelBytes = 0;
+let neuralArtifactSetSha256 = null;
 if (neuralPackagingRequested) {
-  const neuralPackagingFailures = [];
-  if (!existsSync(neuralModelSourcePath)) neuralPackagingFailures.push("Missing models/macos/LekhNeuralTransliterator.mlmodelc.");
-  if (!existsSync(neuralManifestSourcePath)) neuralPackagingFailures.push("Missing models/macos/LekhNeuralTransliterator.manifest.json.");
-  if (!existsSync(neuralVocabSourcePath)) neuralPackagingFailures.push("Missing models/macos/LekhNeuralTransliterator.vocab.json.");
-  if (neuralPackagingFailures.length > 0) {
-    finish("failed", { step: "neural-packaging", failures: neuralPackagingFailures }, 1);
+  if (!["experimental", "candidate-promotion", "production"].includes(neuralPackageMode)) {
+    finish("failed", {
+      step: "neural-packaging",
+      reason: `Unsupported LEKH_NEURAL_PACKAGE_MODE=${neuralPackageMode}.`
+    }, 1);
   }
-  cpSync(neuralModelSourcePath, neuralModelBundlePath, { recursive: true });
-  copyFileSync(neuralManifestSourcePath, neuralManifestBundlePath);
+  let sourceDescriptor;
+  try {
+    sourceDescriptor = resolveNeuralArtifactDescriptor({
+      repoRoot: root,
+      manifestPath: neuralManifestSourcePath,
+      vocabPath: neuralVocabSourcePath
+    });
+  } catch (error) {
+    finish("failed", {
+      step: "neural-packaging",
+      reason: error instanceof Error ? error.message : String(error),
+      artifactRoot: neuralArtifactRoot
+    }, 1);
+  }
+  if (neuralPackageMode === "production" &&
+      sourceDescriptor.manifest.productionEligible !== true) {
+    finish("failed", {
+      step: "neural-packaging",
+      reason: "Production packaging requires productionEligible=true."
+    }, 1);
+  }
+  if (neuralPackageMode === "candidate-promotion" &&
+      sourceDescriptor.manifest.productionEligible !== false) {
+    finish("failed", {
+      step: "neural-packaging",
+      reason: "Candidate-promotion packaging requires productionEligible=false."
+    }, 1);
+  }
+  if (neuralPackageMode === "production" && experimentalNeuralTypingRequested) {
+    finish("failed", {
+      step: "neural-packaging",
+      reason: "A promoted production model must not use the experimental typing flag."
+    }, 1);
+  }
+  if (neuralPackageMode === "candidate-promotion" &&
+      !experimentalNeuralTypingRequested) {
+    finish("failed", {
+      step: "neural-packaging",
+      reason: "Candidate-promotion packaging requires the explicit experimental typing flag."
+    }, 1);
+  }
+
+  for (const artifact of sourceDescriptor.artifacts) {
+    const destination = join(
+      appBundle,
+      "Contents",
+      "Resources",
+      artifact.bundleName
+    );
+    cpSync(artifact.sourcePath, destination, {
+      recursive: true,
+      dereference: false,
+      errorOnExist: true,
+      force: false,
+      preserveTimestamps: true
+    });
+  }
   copyFileSync(neuralVocabSourcePath, neuralVocabBundlePath);
+  // Publish the manifest last so no intermediate bundle state advertises an
+  // incomplete role inventory, even inside the private build directory.
+  copyFileSync(neuralManifestSourcePath, neuralManifestBundlePath);
+
+  let packagedDescriptor;
+  try {
+    packagedDescriptor = resolveNeuralArtifactDescriptor({
+      repoRoot: appBundle,
+      manifestPath: neuralManifestBundlePath,
+      vocabPath: neuralVocabBundlePath,
+      artifactDirectory: join(appBundle, "Contents", "Resources"),
+      verifyExportArtifacts: false
+    });
+  } catch (error) {
+    finish("failed", {
+      step: "neural-packaging-verification",
+      reason: error instanceof Error ? error.message : String(error)
+    }, 1);
+  }
+  if (packagedDescriptor.artifactSetSha256 !== sourceDescriptor.artifactSetSha256 ||
+      packagedDescriptor.manifestSha256 !== sourceDescriptor.manifestSha256 ||
+      packagedDescriptor.vocabSha256 !== sourceDescriptor.vocabSha256) {
+    finish("failed", {
+      step: "neural-packaging-verification",
+      reason: "Packaged neural bytes differ from the exact selected artifact set."
+    }, 1);
+  }
+  packagedNeuralArtifacts = packagedDescriptor.artifacts.map((artifact) => ({
+    role: artifact.role,
+    bundleName: artifact.bundleName,
+    bytes: artifact.compiledBytes,
+    sha256: artifact.compiledSha256
+  }));
+  packagedNeuralModelBytes = packagedDescriptor.totalCompiledBytes;
+  neuralArtifactSetSha256 = packagedDescriptor.artifactSetSha256;
   neuralModelPackaged = true;
 }
 if (experimentalNeuralTypingRequested && !neuralModelPackaged) {
@@ -653,9 +768,9 @@ finish(publishedStatus, {
   codeDirectoryHash: publishedCodeDirectoryHash,
   signingClassification: publishedSigningEvidence.classification,
   signingTeamIdentifier: publishedSigningEvidence.teamIdentifier,
-  packagedNeuralModelBytes: neuralModelPackaged
-    ? treeBytes(join(publishedResources, "LekhNeuralTransliterator.mlmodelc"))
-    : 0,
+  packagedNeuralModelBytes,
+  packagedNeuralArtifacts,
+  neuralArtifactSetSha256,
   deterministicP99Nanoseconds,
   runtimeBinaryBytes: statSync(join(publishedResources, "runtime-suggestions.lkb")).size,
   frequencyReport: "reports/nepali-frequency-model-report.json",
@@ -664,15 +779,9 @@ finish(publishedStatus, {
   tokenCompletionAuditReport: "reports/token-completion-source-audit.json",
   tokenCompletionQualityReport: "reports/token-completion-quality-report.json",
   neuralModelPackaged,
+  neuralPackageMode: neuralModelPackaged ? neuralPackageMode : null,
   experimentalNeuralTypingEnabled: experimentalNeuralTypingRequested,
   shortVersion,
   buildNumber,
   productionSigningRequired: publishedSigningEvidence.productionSigningRequired
 }, 0);
-
-function treeBytes(path) {
-  if (!existsSync(path)) return 0;
-  const stat = lstatSync(path);
-  if (!stat.isDirectory()) return stat.size;
-  return readdirSync(path).reduce((total, entry) => total + treeBytes(join(path, entry)), 0);
-}

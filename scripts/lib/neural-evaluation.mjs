@@ -13,12 +13,6 @@ function normalizedInput(value) {
   return normalizedText(value).trim().toLowerCase().replace(/\s+/gu, " ");
 }
 
-function normalizedContext(row) {
-  const context = row.previousContext ?? [];
-  if (!Array.isArray(context) || context.some((token) => typeof token !== "string")) return null;
-  return context.map((token) => normalizedInput(token));
-}
-
 function normalizedAcceptableSet(row) {
   const acceptable = row.acceptableOutputs ?? row.acceptable ?? row.expected ?? [];
   if (!Array.isArray(acceptable) || acceptable.some((candidate) => typeof candidate !== "string")) {
@@ -30,11 +24,6 @@ function normalizedAcceptableSet(row) {
 function sameOrderedValues(left, right) {
   return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
     left.every((value, index) => value === right[index]);
-}
-
-function inputContextIdentity(row) {
-  const context = normalizedContext(row);
-  return context === null ? null : JSON.stringify([normalizedInput(row.input), context]);
 }
 
 function isModelOutcomeIssue(issue) {
@@ -72,6 +61,9 @@ export function validateNeuralPredictionRows(predictionRows, goldRows) {
       continue;
     }
     goldById.set(gold.id, gold);
+    if (!Array.isArray(gold.previousContext) || gold.previousContext.length !== 0) {
+      issues.push(`neural-evaluation.gold-context-unsupported:${gold.id}`);
+    }
     const inputIdentity = normalizedInput(gold.input);
     const inputGroup = goldByNormalizedInput.get(inputIdentity) ?? [];
     inputGroup.push(gold);
@@ -81,7 +73,6 @@ export function validateNeuralPredictionRows(predictionRows, goldRows) {
   for (const inputGroup of goldByNormalizedInput.values()) {
     if (inputGroup.length < 2) continue;
     const anchor = inputGroup[0];
-    const anchorContext = normalizedContext(anchor);
     const anchorAcceptable = normalizedAcceptableSet(anchor);
     const suiteOwners = new Map();
     let compatible = true;
@@ -101,10 +92,6 @@ export function validateNeuralPredictionRows(predictionRows, goldRows) {
     }
 
     for (const row of inputGroup.slice(1)) {
-      if (!sameOrderedValues(anchorContext, normalizedContext(row))) {
-        issues.push(`neural-evaluation.gold-input-duplicate-context-conflict:${anchor.id}:${row.id}`);
-        compatible = false;
-      }
       if (anchor.split !== row.split) {
         issues.push(`neural-evaluation.gold-input-duplicate-split-conflict:${anchor.id}:${row.id}`);
         compatible = false;
@@ -237,17 +224,15 @@ export function evaluateNeuralPredictions(goldRows, predictionValidation, split 
   const hasPhraseCandidate = (row) =>
     (predictionsById.get(row.id)?.candidates ?? []).some((candidate) => /\s/u.test(String(candidate)));
   const producedCandidate = (row) => (predictionsById.get(row.id)?.candidates ?? []).length > 0;
-  const inputContextIdentities = new Set(
-    rows.map((row) => inputContextIdentity(row) ?? `invalid-context:${row.id}`)
-  );
+  const inputIdentities = new Set(rows.map((row) => normalizedInput(row.input)));
 
   return Object.freeze({
     split,
     metricUnit,
     rowCount: rows.length,
     suiteAssertionCount: rows.length,
-    distinctInputContextCount: inputContextIdentities.size,
-    repeatedSuiteAssertionCount: rows.length - inputContextIdentities.size,
+    distinctInputCount: inputIdentities.size,
+    repeatedSuiteAssertionCount: rows.length - inputIdentities.size,
     tailTop1Accuracy: top(buckets.tail, 1),
     tailTop3Accuracy: top(buckets.tail, 3),
     chatConventionTop1Accuracy: top(buckets.chat, 1),

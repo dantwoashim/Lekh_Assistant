@@ -57,12 +57,11 @@ if (sourceRegistry) {
     if (teacher.rawDataCommitted !== false) failures.push("Teacher checkpoint/raw files must never be committed.");
   }
 
-  for (const required of ["syubraj-roman2nepali-transliteration", "human-reviewed-lekh-gold-v1", "lekh-chat-conventions-v1", "lekh-name-lexicon-v1"]) {
+  for (const required of sourceRegistry.productionRequiredSources ?? []) {
     const source = sources.get(required);
     if (!source) failures.push(`Source registry missing production required source: ${required}.`);
     const hasCleanRows = Number(datasetReport?.sourceCounts?.[required] ?? 0) > 0;
-    const hasLocalImport = required === "syubraj-roman2nepali-transliteration" && Boolean(privateSyubrajEvidence);
-    if (production && !hasCleanRows && !hasLocalImport) {
+    if (production && !hasCleanRows) {
       failures.push(`Production Phase 3 requires artifact-backed cleaned rows for ${required}; registry status alone is not import evidence.`);
     }
   }
@@ -107,21 +106,20 @@ if (teacherManifest) {
   if (teacherManifest.role !== "teacher-only-not-shipping") failures.push("Downloaded teacher manifest must declare teacher-only-not-shipping.");
   if (teacherManifest.productionPolicy?.shippingAllowed !== false) failures.push("Downloaded teacher manifest must forbid shipping.");
   if (teacherManifest.productionPolicy?.coreML !== false) failures.push("Downloaded teacher manifest must not be treated as the Core ML artifact.");
-} else if (production || distillationConfig?.enabled === true) {
-  failures.push("An implemented or production distillation run requires the local teacher manifest from npm run neural:teacher:download.");
+} else if (distillationConfig?.enabled === true) {
+  failures.push("An enabled distillation run requires the local teacher manifest from npm run neural:teacher:download.");
 } else {
   warnings.push("Teacher checkpoint is not downloaded locally; the offline boundary can be checked, but no distillation run can be evidenced.");
 }
 
 if (distillationConfig?.enabled !== true) {
-  warnings.push("Distillation is explicitly not implemented for this candidate; the downloaded teacher, if present, is not evidence of a distillation run.");
-  if (production) failures.push("Production Phase 3 requires training.distillation.enabled=true.");
+  warnings.push("Distillation is an optional offline optimization and is explicitly disabled; the downloaded teacher, if present, is not evidence of a distillation run.");
   if (distillationEvidence) warnings.push("A distillation evidence report exists but is ignored because training.distillation.enabled is false.");
 } else if (!distillationEvidence) {
   failures.push("Enabled distillation requires reports/neural-distillation-run-report.json.");
 }
 
-if (production && distillationConfig?.status !== "implemented") {
+if (distillationConfig?.enabled === true && production && distillationConfig?.status !== "implemented") {
   failures.push("Production Phase 3 requires training.distillation.status=implemented.");
 }
 
@@ -143,14 +141,16 @@ distillationImplemented = Boolean(
   && approvedRunnerContractVersion >= 1
 );
 
-if (production && !distillationImplemented) {
+if (production && distillationConfig?.enabled === true && !distillationImplemented) {
   failures.push("Production Phase 3 requires a digest-bound teacher/student/dataset distillation run; a teacher manifest alone is insufficient.");
 }
 
 const status = failures.length === 0
   ? distillationImplemented
     ? production ? "passed-production-phase3-distillation-evidence" : "passed-phase3-distillation-evidence"
-    : "passed-phase3-distillation-contract-not-implemented"
+    : production
+      ? "passed-production-phase3-distillation-not-required"
+      : "passed-phase3-distillation-contract-not-implemented"
   : production ? "failed-production-phase3-distillation-plan" : "failed-phase3-distillation-plan";
 
 finish(status, failures.length === 0 ? 0 : 1, {

@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
+import {
+  resolveNeuralArtifactDescriptor
+} from "./lib/neural-artifact-descriptor.mjs";
 import { validateNeuralDeviceMeasurements } from "./lib/neural-device-measurements.mjs";
 
 const root = process.cwd();
@@ -15,17 +18,34 @@ const measurementsPath = args.get("measurements") ?? (
     : undefined
 );
 const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-coreml-device-benchmark-production.json" : "neural-coreml-device-benchmark.json");
-const modelDir = join(root, "models", "macos", "LekhNeuralTransliterator.mlmodelc");
-const manifestPath = join(root, "models", "macos", "LekhNeuralTransliterator.manifest.json");
+const artifactRoot = resolve(
+  root,
+  args.get("artifact-root") ??
+    "models/macos/LekhNeuralTransliterator.production"
+);
+const manifestPath = join(artifactRoot, "LekhNeuralTransliterator.manifest.json");
+const vocabPath = join(artifactRoot, "LekhNeuralTransliterator.vocab.json");
 const failures = [];
 const warnings = [];
-const manifest = existsSync(manifestPath)
-  ? JSON.parse(readFileSync(manifestPath, "utf8"))
-  : null;
+let descriptor = null;
+if (existsSync(manifestPath) && existsSync(vocabPath)) {
+  try {
+    descriptor = resolveNeuralArtifactDescriptor({
+      repoRoot: root,
+      manifestPath,
+      vocabPath
+    });
+  } catch (error) {
+    failures.push(`Invalid runtime artifact inventory: ${error.message}`);
+  }
+}
+const manifest = descriptor?.manifest ?? null;
 
 let measurements = [];
+let measurementReport = null;
 if (measurementsPath) {
-  measurements = loadMeasurements(measurementsPath);
+  measurementReport = loadMeasurements(measurementsPath);
+  measurements = measurementReport.devices;
 } else if (production) {
   failures.push("Production Phase 5 requires --measurements JSON from real packaged Core ML device runs.");
 } else {
@@ -39,13 +59,16 @@ const summary = {
   p50Ms: p50Values.length ? round(Math.max(...p50Values)) : null,
   p95Ms: p95Values.length ? round(Math.max(...p95Values)) : null,
   p99Ms: p99Values.length ? round(Math.max(...p99Values)) : null,
-  targetP99Ms: 3,
+  targetP99Ms: 50,
   measuredOnDevice: measurements.length > 0,
   devices: measurements
 };
 
-const deviceValidation = measurements.length > 0 && manifest
-  ? validateNeuralDeviceMeasurements(measurements, { manifest, production })
+const deviceValidation = measurements.length > 0 && descriptor
+  ? validateNeuralDeviceMeasurements(measurements, {
+      artifactDescriptor: descriptor,
+      production
+    })
   : null;
 if (deviceValidation) {
   failures.push(...deviceValidation.issueCodes);
@@ -53,9 +76,19 @@ if (deviceValidation) {
 }
 
 if (production) {
-  if (!existsSync(modelDir)) failures.push("Production benchmark requires models/macos/LekhNeuralTransliterator.mlmodelc.");
-  if (!existsSync(manifestPath)) failures.push("Production benchmark requires models/macos/LekhNeuralTransliterator.manifest.json.");
-  if (summary.p99Ms === null || summary.p99Ms > 3) failures.push(`Production neural p99 must be <=3 ms; got ${summary.p99Ms}.`);
+  if (!descriptor) failures.push("Production benchmark requires a complete verified runtime artifact set.");
+  if (measurementReport?.status !== "passed-production" ||
+      measurementReport?.proofMode !== "production") {
+    failures.push("Production benchmark requires a fresh passed-production full-service report.");
+  }
+  if (descriptor && (
+    measurementReport?.artifactIdentity?.manifestSha256 !== descriptor.manifestSha256 ||
+    measurementReport?.artifactIdentity?.vocabSha256 !== descriptor.vocabSha256 ||
+    measurementReport?.artifactIdentity?.artifactSetSha256 !== descriptor.artifactSetSha256
+  )) {
+    failures.push("Production benchmark report is stale for the current runtime artifact set.");
+  }
+  if (summary.p99Ms === null || summary.p99Ms >= 50) failures.push(`Production full-candidate p99 must be <50 ms; got ${summary.p99Ms}.`);
 }
 
 const status = failures.length === 0
@@ -67,7 +100,14 @@ const status = failures.length === 0
 finish(status, failures.length === 0 ? 0 : 1, {
   phase: 5,
   production,
-  model: relative(root, modelDir),
+  artifactRoot: relative(root, artifactRoot),
+  artifactSetSha256: descriptor?.artifactSetSha256 ?? null,
+  models: descriptor?.artifacts.map((artifact) => ({
+    role: artifact.role,
+    path: artifact.sourceRelativePath,
+    bytes: artifact.compiledBytes,
+    sha256: artifact.compiledSha256
+  })) ?? [],
   manifest: relative(root, manifestPath),
   measurements: measurementsPath ? relative(root, measurementsPath) : null,
   performance: summary,
@@ -95,17 +135,24 @@ function parseArgs(argv) {
 }
 
 function loadMeasurements(pathValue) {
-  const path = join(root, pathValue);
+  const path = resolve(root, pathValue);
   if (!existsSync(path)) {
     failures.push(`Missing measurements JSON: ${pathValue}.`);
-    return [];
+    return { devices: [] };
   }
   try {
     const json = JSON.parse(readFileSync(path, "utf8"));
-    return Array.isArray(json.devices) ? json.devices : Array.isArray(json.measurements) ? json.measurements : [];
+    return {
+      ...json,
+      devices: Array.isArray(json.devices)
+        ? json.devices
+        : Array.isArray(json.measurements)
+          ? json.measurements
+          : []
+    };
   } catch (error) {
     failures.push(`Invalid measurements JSON at ${pathValue}: ${error instanceof Error ? error.message : String(error)}`);
-    return [];
+    return { devices: [] };
   }
 }
 
