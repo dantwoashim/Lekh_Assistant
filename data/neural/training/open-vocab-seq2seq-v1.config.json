@@ -13,7 +13,7 @@
   "architecture": {
     "family": "gru-encoder-decoder-seq2seq",
     "openVocabulary": true,
-    "tokenization": "unicode-grapheme-character",
+    "tokenization": "unicode-scalar-character",
     "encoderLayers": 2,
     "decoderLayers": 2,
     "embeddingDim": 96,
@@ -46,10 +46,7 @@
   "training": {
     "datasetManifest": "data/generated/neural-open-vocab/manifest.json",
     "requiredSources": [
-      "ai4bharat-aksharantar-nepali",
-      "human-reviewed-lekh-gold-v1",
-      "lekh-chat-conventions-v1",
-      "lekh-name-lexicon-v1"
+      "ai4bharat-aksharantar-nepali"
     ],
     "distillation": {
       "enabled": false,
@@ -67,10 +64,11 @@
       "sourceQuotaWeight": "square-root-of-source-row-count",
       "sourceMultipliers": {},
       "pinnedSources": [
-        "lekh-phase1-contract-seed-v1",
-        "human-reviewed-lekh-gold-v1",
-        "lekh-chat-conventions-v1",
-        "lekh-name-lexicon-v1"
+        "manual-ambiguity",
+        "manual-chat-tail",
+        "manual-name",
+        "manual-x-ksha",
+        "runtime-names"
       ]
     },
     "loss": "weighted-label-smoothed-sequence-cross-entropy",

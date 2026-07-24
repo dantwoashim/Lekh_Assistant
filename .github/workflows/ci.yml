@@ -47,6 +47,14 @@ jobs:
       - name: Run deterministic v1 unit tests
         run: npm run test:v1
 
+      - name: Verify scalar neural contracts
+        run: |
+          npx vitest run \
+            scripts/lib/devanagari-word-sequence.test.mjs \
+            scripts/lib/neural-training-contract.test.mjs \
+            --pool=forks \
+            --maxWorkers=1
+
       - name: Build application
         run: npm run build
 
@@ -58,6 +66,12 @@ jobs:
 
       - name: Build Swift input method
         run: npm run build:macos
+
+      - name: Run Swift input method unit probe
+        run: >-
+          swift run --configuration release
+          --package-path native/macos-imk/skeleton
+          LekhInputMethodUnitProbe
 
       - name: Compare TypeScript and Swift behavior contracts
         shell: bash

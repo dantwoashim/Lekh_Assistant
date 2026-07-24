@@ -54,7 +54,7 @@ export function validateNeuralTrainingConfig(config) {
   const architecture = config.architecture;
   requireEqual(architecture?.family, "gru-encoder-decoder-seq2seq", "Config must name the implemented GRU encoder-decoder architecture.");
   requireEqual(architecture?.openVocabulary, true, "Config must describe an open-vocabulary model.");
-  requireEqual(architecture?.tokenization, "unicode-grapheme-character", "Config must describe the implemented grapheme tokenizer.");
+  requireEqual(architecture?.tokenization, "unicode-scalar-character", "Config must describe the implemented Unicode-scalar tokenizer.");
   requireEqual(architecture?.encoderLayers, 2, "Config encoderLayers must match the implementation contract.");
   requireEqual(architecture?.decoderLayers, 2, "Config decoderLayers must match the implementation contract.");
   requireEqual(architecture?.embeddingDim, 96, "Config embeddingDim must match the implementation contract.");
@@ -104,10 +104,11 @@ export function validateNeuralTrainingConfig(config) {
     failures.push("Config sampling sourceMultipliers must be empty; dataset row weight is the sole loss multiplier.");
   }
   for (const source of [
-    "lekh-phase1-contract-seed-v1",
-    "human-reviewed-lekh-gold-v1",
-    "lekh-chat-conventions-v1",
-    "lekh-name-lexicon-v1"
+    "manual-ambiguity",
+    "manual-chat-tail",
+    "manual-name",
+    "manual-x-ksha",
+    "runtime-names"
   ]) {
     if (!training?.samplingPolicy?.pinnedSources?.includes(source)) {
       failures.push(`Config sampling policy must pin ${source}.`);
@@ -115,12 +116,7 @@ export function validateNeuralTrainingConfig(config) {
   }
   requireEqual(training?.loss, "weighted-label-smoothed-sequence-cross-entropy", "Config loss must describe weighted label-smoothed token loss.");
   requireEqual(training?.optimizer, "adamw", "Config optimizer must be AdamW.");
-  for (const requiredSource of [
-    CANONICAL_PUBLIC_SOURCE,
-    "human-reviewed-lekh-gold-v1",
-    "lekh-chat-conventions-v1",
-    "lekh-name-lexicon-v1"
-  ]) {
+  for (const requiredSource of [CANONICAL_PUBLIC_SOURCE]) {
     if (!training?.requiredSources?.includes(requiredSource)) {
       failures.push(`Config missing required training source ${requiredSource}.`);
     }

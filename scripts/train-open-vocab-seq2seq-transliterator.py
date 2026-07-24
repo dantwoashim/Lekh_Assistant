@@ -53,6 +53,9 @@ BASELINE_ARCHITECTURE_FAMILY = "gru-encoder-decoder-seq2seq"
 ATTENTION_ARCHITECTURE_FAMILY = "bidirectional-gru-additive-attention-seq2seq"
 ADDITIVE_ATTENTION = "bahdanau-additive"
 ATTENTION_INCREMENTAL_RUNTIME_CONTRACT = "split-attention-incremental-v1"
+OUTPUT_TOKENIZATION = "unicode-scalar-character"
+LEGACY_OUTPUT_TOKENIZATION = "unicode-grapheme-character"
+OUTPUT_SEQUENCE_VALIDATION = "devanagari-word-sequence-v1"
 VOCAB_METADATA_PATH = ROOT / "models/macos/LekhNeuralTransliterator.vocab.json"
 GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v2.json"
 CONFIG_PATH = ROOT / "data/neural/training/open-vocab-seq2seq-v1.config.json"
@@ -144,7 +147,8 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
     config_path = config_args.config.resolve()
     if not config_path.is_file():
         raise SystemExit(f"Missing training config: {config_path}")
-    config = read_json(config_path)
+    config_bytes = read_regular_bytes(config_path, "training config", maximum_bytes=8 * 1024 * 1024)
+    config = parse_json_object_bytes(config_bytes, "training config")
     validate_executable_config(config)
 
     architecture = config["architecture"]
@@ -161,13 +165,9 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
     parser.add_argument("--dataset-manifest", type=Path, default=ROOT / training["datasetManifest"])
     parser.add_argument("--gold-manifest", type=Path, default=GOLD_MANIFEST_PATH)
     parser.add_argument("--out-dir", type=Path, default=(ROOT / config["export"]["sourceCheckpoint"]).parent)
-    parser.add_argument("--compiled-model", type=Path, default=ROOT / config["export"]["compiledModel"])
-    parser.add_argument("--manifest", type=Path, default=ROOT / config["export"]["manifest"])
-    parser.add_argument(
-        "--vocab-metadata",
-        type=Path,
-        default=ROOT / config["export"].get("vocabMetadata", rel(VOCAB_METADATA_PATH)),
-    )
+    parser.add_argument("--compiled-model", type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--vocab-metadata", type=Path)
     add_configurable_argument(parser, "--max-train-rows", int, training_run["maximumTrainRows"], "LEKH_NEURAL_MAX_TRAIN_ROWS", environment)
     add_configurable_argument(parser, "--max-dev-rows", int, training_run["maximumDevRows"], "LEKH_NEURAL_MAX_DEV_ROWS", environment)
     add_configurable_argument(parser, "--epochs", int, training_run["maximumEpochs"], "LEKH_NEURAL_EPOCHS", environment)
@@ -201,9 +201,20 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
     args.model_id = str(config["modelId"])
     args.architecture_family = str(architecture["family"])
     args.attention_type = str(architecture["attention"])
+    candidate_stem = (
+        "LekhNeuralTransliteratorBiGRUAttention"
+        if args.model_id == ATTENTION_MODEL_ID
+        else "LekhNeuralTransliterator"
+    )
+    if args.compiled_model is None:
+        args.compiled_model = args.out_dir / f"{candidate_stem}.mlmodelc"
+    if args.manifest is None:
+        args.manifest = args.out_dir / f"{candidate_stem}.manifest.json"
+    if args.vocab_metadata is None:
+        args.vocab_metadata = args.out_dir / f"{candidate_stem}.vocab.json"
     validate_effective_args(args, early_stopping)
     validate_output_paths(args)
-    args.training_contract_sha256 = sha256_file(config_path)
+    args.training_contract_sha256 = hashlib.sha256(config_bytes).hexdigest()
     args.config = config_path
     args.early_stopping_enabled = bool(early_stopping["enabled"])
     args.early_stopping_metric = str(early_stopping["metric"])
@@ -290,16 +301,19 @@ def validate_executable_config(config: dict[str, Any]) -> None:
         raise SystemExit("Context rescoring is not implemented; the executable config must keep it disabled.")
     if config.get("training", {}).get("loss") != "weighted-label-smoothed-sequence-cross-entropy":
         raise SystemExit("Training config must declare the implemented weighted label-smoothed loss.")
+    if architecture.get("tokenization") != OUTPUT_TOKENIZATION:
+        raise SystemExit(f"Training config must use {OUTPUT_TOKENIZATION} output tokenization.")
     expected_sampling_policy = {
         "type": "deterministic-source-stratified-sampling",
         "version": 1,
         "sourceQuotaWeight": "square-root-of-source-row-count",
         "sourceMultipliers": {},
         "pinnedSources": [
-            "lekh-phase1-contract-seed-v1",
-            "human-reviewed-lekh-gold-v1",
-            "lekh-chat-conventions-v1",
-            "lekh-name-lexicon-v1",
+            "manual-ambiguity",
+            "manual-chat-tail",
+            "manual-name",
+            "manual-x-ksha",
+            "runtime-names",
         ],
     }
     if config.get("training", {}).get("samplingPolicy") != expected_sampling_policy:
@@ -370,17 +384,17 @@ def validate_effective_args(args: argparse.Namespace, early_stopping: dict[str, 
 def validate_output_paths(args: argparse.Namespace) -> None:
     temporary_root = ROOT / ".tmp"
     generated_root = ROOT / "data/generated/neural-open-vocab-model"
-    model_root = ROOT / "models/macos"
     require_safe_output_path(args.out_dir, [generated_root, temporary_root], "output directory", directory=True)
-    require_safe_output_path(args.compiled_model, [model_root, temporary_root], "compiled model", suffix=".mlmodelc", directory=True)
-    require_safe_output_path(args.manifest, [model_root, temporary_root], "runtime manifest", suffix=".json")
-    require_safe_output_path(args.vocab_metadata, [model_root, temporary_root], "vocabulary metadata", suffix=".json")
+    require_safe_output_path(args.compiled_model, [generated_root, temporary_root], "compiled model", suffix=".mlmodelc", directory=True)
+    require_safe_output_path(args.manifest, [generated_root, temporary_root], "runtime manifest", suffix=".json")
+    require_safe_output_path(args.vocab_metadata, [generated_root, temporary_root], "vocabulary metadata", suffix=".json")
     if args.model_id == ATTENTION_MODEL_ID:
+        baseline_output = ROOT / "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1"
         protected_baseline_paths = {
-            "output directory": (ROOT / "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1").resolve(),
-            "compiled model": (ROOT / "models/macos/LekhNeuralTransliterator.mlmodelc").resolve(),
-            "runtime manifest": (ROOT / "models/macos/LekhNeuralTransliterator.manifest.json").resolve(),
-            "vocabulary metadata": VOCAB_METADATA_PATH.resolve(),
+            "output directory": baseline_output.resolve(),
+            "compiled model": (baseline_output / "LekhNeuralTransliterator.mlmodelc").resolve(),
+            "runtime manifest": (baseline_output / "LekhNeuralTransliterator.manifest.json").resolve(),
+            "vocabulary metadata": (baseline_output / "LekhNeuralTransliterator.vocab.json").resolve(),
         }
         selected_paths = {
             "output directory": args.out_dir.resolve(),
@@ -394,6 +408,22 @@ def validate_output_paths(args: argparse.Namespace) -> None:
                 "Attention challenger outputs cannot replace baseline artifacts: "
                 + ", ".join(collisions)
             )
+    output_root = args.out_dir.resolve()
+    for label, path in (
+        ("compiled model", args.compiled_model),
+        ("runtime manifest", args.manifest),
+        ("vocabulary metadata", args.vocab_metadata),
+    ):
+        if path.resolve().parent != output_root:
+            raise SystemExit(
+                f"Candidate {label} must be a direct child of the locked output directory: {path}"
+            )
+    if len({
+        args.compiled_model.resolve(),
+        args.manifest.resolve(),
+        args.vocab_metadata.resolve(),
+    }) != 3:
+        raise SystemExit("Candidate compiled model, manifest, and vocabulary paths must be distinct.")
 
 
 def require_safe_output_path(
@@ -638,15 +668,185 @@ def normalize_input(value: str) -> str:
     return " ".join(nfc(value).lower().split())
 
 
-def graphemes(value: str) -> list[str]:
-    # Nepali matras/virama/anusvara bind to the previous base code point.
-    output: list[str] = []
-    for char in nfc(value):
-        if output and ("\u093c" <= char <= "\u094d" or "\u0951" <= char <= "\u0957" or char in "ँंः"):
-            output[-1] += char
-        else:
-            output.append(char)
-    return output
+def output_scalars(value: str) -> list[str]:
+    """Tokenize NFC output as exactly one Unicode scalar per lexical token."""
+    return list(nfc(value))
+
+
+def analyze_devanagari_output_sequence(value: str) -> dict[str, Any]:
+    """Validate one Devanagari word while preserving legal unfinished prefixes.
+
+    `validPrefix` is suitable for constrained decoding. `terminable` is stricter:
+    it also rejects the empty sequence and a trailing ZWJ/ZWNJ whose required
+    consonant has not arrived yet. The state machine intentionally validates
+    scalar order, not lexical spelling.
+    """
+    text = str(value or "")
+    issue_codes: list[str] = []
+
+    def issue(code: str) -> None:
+        if code not in issue_codes:
+            issue_codes.append(code)
+
+    if text != unicodedata.normalize("NFC", text):
+        issue("not-nfc")
+
+    scalars = list(text)
+    base_kind: str | None = None
+    dependent_vowel_seen = False
+    nukta_seen = False
+    after_virama = False
+    modifier_seen = False
+    syllable_modifier_seen = False
+    preceding_mark: str | None = None
+    pending_joiner = False
+
+    def reset_unit() -> None:
+        nonlocal base_kind, dependent_vowel_seen, nukta_seen
+        nonlocal after_virama, modifier_seen, syllable_modifier_seen
+        nonlocal preceding_mark, pending_joiner
+        base_kind = None
+        dependent_vowel_seen = False
+        nukta_seen = False
+        after_virama = False
+        modifier_seen = False
+        syllable_modifier_seen = False
+        preceding_mark = None
+        pending_joiner = False
+
+    for index, scalar in enumerate(scalars):
+        code_point = ord(scalar)
+        category = unicodedata.category(scalar)
+        previous = scalars[index - 1] if index else None
+        following = scalars[index + 1] if index + 1 < len(scalars) else None
+
+        if scalar.isspace():
+            issue("whitespace")
+            reset_unit()
+            continue
+        if category.startswith("N"):
+            issue("digit")
+            reset_unit()
+            continue
+        if category.startswith("P"):
+            issue("punctuation")
+            reset_unit()
+            continue
+
+        if scalar in ("\u200C", "\u200D"):
+            if previous != "\u094D":
+                issue("joiner-not-after-virama")
+            if following is not None and not is_devanagari_consonant(following):
+                issue("joiner-not-before-consonant")
+            pending_joiner = True
+            continue
+
+        if not (0x0900 <= code_point <= 0x097F):
+            issue("unsupported-scalar")
+            reset_unit()
+            continue
+
+        if category.startswith("L"):
+            if pending_joiner and not is_devanagari_consonant(scalar):
+                issue("joiner-not-before-consonant")
+            base_kind = "consonant" if is_devanagari_consonant(scalar) else "other-letter"
+            dependent_vowel_seen = False
+            nukta_seen = False
+            after_virama = False
+            modifier_seen = False
+            syllable_modifier_seen = False
+            preceding_mark = None
+            pending_joiner = False
+            continue
+
+        if pending_joiner:
+            issue("joiner-not-before-consonant")
+            pending_joiner = False
+
+        if scalar == "\u093C":
+            if base_kind != "consonant" or after_virama or dependent_vowel_seen or modifier_seen:
+                issue("orphan-or-misordered-nukta")
+            elif nukta_seen:
+                issue("duplicate-nukta")
+            nukta_seen = True
+            preceding_mark = scalar
+            continue
+
+        if scalar == "\u094D":
+            if base_kind != "consonant" or after_virama:
+                issue("virama-without-consonant")
+            if dependent_vowel_seen:
+                issue("virama-after-dependent-vowel-sign")
+            if modifier_seen:
+                issue("virama-after-syllable-modifier")
+            after_virama = True
+            preceding_mark = scalar
+            continue
+
+        if is_dependent_vowel_sign(code_point):
+            if after_virama:
+                issue("dependent-vowel-sign-after-virama")
+            if base_kind != "consonant":
+                issue("dependent-vowel-sign-without-consonant")
+            if dependent_vowel_seen:
+                issue("multiple-dependent-vowel-signs")
+            if modifier_seen:
+                issue("dependent-vowel-sign-after-syllable-modifier")
+            dependent_vowel_seen = True
+            preceding_mark = scalar
+            continue
+
+        if code_point in range(0x0900, 0x0904) or category.startswith("M"):
+            if after_virama:
+                issue("mark-after-virama")
+            elif base_kind is None:
+                issue("mark-without-base")
+            if preceding_mark == scalar:
+                issue("duplicate-mark")
+            if code_point in range(0x0900, 0x0904) and syllable_modifier_seen:
+                issue("multiple-syllable-modifiers")
+            modifier_seen = True
+            if code_point in range(0x0900, 0x0904):
+                syllable_modifier_seen = True
+            preceding_mark = scalar
+            continue
+
+        issue("unsupported-devanagari-scalar")
+        reset_unit()
+
+    valid_prefix = not issue_codes
+    return {
+        "validPrefix": valid_prefix,
+        "terminable": valid_prefix and bool(scalars) and not pending_joiner,
+        "issueCodes": issue_codes,
+    }
+
+
+def is_devanagari_consonant(value: str | None) -> bool:
+    if not value or len(value) != 1:
+        return False
+    code_point = ord(value)
+    return (
+        0x0915 <= code_point <= 0x0939
+        or 0x0958 <= code_point <= 0x095F
+        or 0x0978 <= code_point <= 0x097F
+    )
+
+
+def is_dependent_vowel_sign(code_point: int) -> bool:
+    return (
+        0x093A <= code_point <= 0x093B
+        or 0x093E <= code_point <= 0x094C
+        or code_point in (0x094E, 0x094F, 0x0962, 0x0963)
+        or 0x0955 <= code_point <= 0x0957
+    )
+
+
+def is_valid_output_scalar(value: str) -> bool:
+    return (
+        len(value) == 1
+        and (0x0900 <= ord(value) <= 0x097F or ord(value) in (0x200C, 0x200D))
+    )
 
 
 def require_repo_regular_file(path: Path, label: str = "artifact") -> Path:
@@ -940,12 +1140,23 @@ def load_rows(
     seed: int,
     max_input_len: int,
     max_output_len: int,
+    split_paths: dict[str, Path] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     manifest = read_json(dataset_manifest_path)
-    split_paths = verify_dataset_split_artifacts(manifest)
-    train_path = split_paths["train"]
-    dev_path = split_paths["dev"]
-    test_path = split_paths["test"]
+    selected_paths = split_paths or verify_dataset_split_artifacts(manifest)
+    if set(selected_paths) != {"train", "dev", "test"}:
+        raise SystemExit("Training requires one frozen artifact for every dataset split.")
+    for split, path in selected_paths.items():
+        observed = inspect_jsonl_artifact(path)
+        if (
+            observed["sha256"] != manifest.get("sha256", {}).get(split)
+            or observed["rows"] != manifest.get("counts", {}).get(split)
+            or observed["bytes"] != manifest.get("bytes", {}).get(split)
+        ):
+            raise SystemExit(f"Frozen dataset split {split} does not match its manifest.")
+    train_path = selected_paths["train"]
+    dev_path = selected_paths["dev"]
+    test_path = selected_paths["test"]
     split_identities = {
         "train": load_split_identities(train_path),
         "dev": load_split_identities(dev_path),
@@ -1015,6 +1226,166 @@ def inspect_jsonl_artifact(path: Path) -> dict[str, Any]:
     return {"sha256": digest.hexdigest(), "bytes": byte_count, "rows": row_count}
 
 
+def read_regular_bytes(path: Path, label: str, *, maximum_bytes: int) -> bytes:
+    with open_regular_binary(path, label) as handle:
+        payload = handle.read(maximum_bytes + 1)
+    if len(payload) > maximum_bytes:
+        raise SystemExit(f"{label.capitalize()} exceeds the {maximum_bytes}-byte safety limit.")
+    return payload
+
+
+def parse_json_object_bytes(payload: bytes, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SystemExit(f"{label.capitalize()} is not a valid UTF-8 JSON object.") from error
+    if not isinstance(value, dict):
+        raise SystemExit(f"{label.capitalize()} must be a JSON object.")
+    return value
+
+
+def freeze_verified_dataset_splits(
+    args: argparse.Namespace,
+    dataset_manifest: dict[str, Any],
+    source_paths: dict[str, Path],
+) -> dict[str, Path]:
+    snapshot_root = args.out_dir / f".run-input-snapshot.{args.export_run_id}"
+    if snapshot_root.exists() or snapshot_root.is_symlink():
+        raise SystemExit(f"Run-input snapshot path unexpectedly exists: {snapshot_root}")
+    snapshot_root.mkdir(parents=True, mode=0o700)
+    frozen: dict[str, Path] = {}
+    try:
+        for split in ("train", "dev", "test"):
+            source = source_paths[split]
+            target = snapshot_root / f"{split}.jsonl"
+            expected_sha256 = dataset_manifest["sha256"][split]
+            expected_bytes = int(dataset_manifest["bytes"][split])
+            digest = hashlib.sha256()
+            byte_count = 0
+            with (
+                open_regular_binary(source, f"dataset {split} split") as source_handle,
+                target.open("xb") as target_handle,
+            ):
+                for chunk in iter(lambda: source_handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    byte_count += len(chunk)
+                    target_handle.write(chunk)
+                target_handle.flush()
+                os.fsync(target_handle.fileno())
+            if digest.hexdigest() != expected_sha256 or byte_count != expected_bytes:
+                raise SystemExit(
+                    f"Dataset {split} changed while its immutable run snapshot was being created."
+                )
+            target.chmod(0o400)
+            frozen[split] = target
+        return frozen
+    except BaseException:
+        safe_remove_sibling_directory(snapshot_root, args.out_dir)
+        raise
+
+
+def cleanup_run_input_snapshot(args: argparse.Namespace) -> None:
+    snapshot_paths = getattr(args, "run_dataset_split_paths", None)
+    if not isinstance(snapshot_paths, dict) or not snapshot_paths:
+        return
+    roots = {Path(path).parent for path in snapshot_paths.values()}
+    if len(roots) != 1:
+        raise RuntimeError("Run-input snapshot paths do not share one directory.")
+    snapshot_root = roots.pop()
+    safe_remove_sibling_directory(snapshot_root, args.out_dir)
+    args.run_dataset_split_paths = None
+
+
+def capture_run_input_snapshot(
+    args: argparse.Namespace,
+    *,
+    freeze_dataset: bool = False,
+) -> dict[str, Any]:
+    """Capture every mutable source that can influence training or publication."""
+    dataset_manifest_bytes = read_regular_bytes(
+        args.dataset_manifest,
+        "dataset manifest",
+        maximum_bytes=8 * 1024 * 1024,
+    )
+    dataset_manifest = parse_json_object_bytes(dataset_manifest_bytes, "dataset manifest")
+    split_paths = verify_dataset_split_artifacts(dataset_manifest)
+    evidence_paths = split_paths
+    if freeze_dataset:
+        frozen_paths = freeze_verified_dataset_splits(args, dataset_manifest, split_paths)
+        args.run_dataset_split_paths = frozen_paths
+        evidence_paths = frozen_paths
+    split_evidence = {
+        split: {
+            "path": rel(split_paths[split]),
+            **inspect_jsonl_artifact(path),
+        }
+        for split, path in evidence_paths.items()
+    }
+    _, gold_evidence = load_verified_gold_rows(args)
+    snapshot = {
+        "schemaVersion": 1,
+        "trainer": {
+            "path": rel(Path(__file__)),
+            "sha256": sha256_file(Path(__file__)),
+        },
+        "trainingConfig": {
+            "path": rel(args.config),
+            "sha256": hashlib.sha256(read_regular_bytes(
+                args.config,
+                "training config",
+                maximum_bytes=8 * 1024 * 1024,
+            )).hexdigest(),
+        },
+        "dataset": {
+            "manifest": rel(args.dataset_manifest),
+            "manifestSha256": hashlib.sha256(dataset_manifest_bytes).hexdigest(),
+            "contentSha256": dataset_manifest.get("datasetContentSha256"),
+            "splits": split_evidence,
+        },
+        "gold": gold_evidence,
+        "runtime": {
+            "python": platform.python_version(),
+            "unicodeDatabase": unicodedata.unidata_version,
+            "numpy": np.__version__,
+            "torch": str(torch.__version__),
+            "coremltools": (
+                str(getattr(ct, "__version__"))
+                if getattr(ct, "__version__", None) is not None
+                else None
+            ),
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "torchThreads": torch.get_num_threads(),
+            "torchInteropThreads": torch.get_num_interop_threads(),
+            "deterministicAlgorithms": torch.are_deterministic_algorithms_enabled(),
+        },
+    }
+    if snapshot["trainingConfig"]["sha256"] != args.training_contract_sha256:
+        raise SystemExit("Training config changed while the executable arguments were being frozen.")
+    if not snapshot["dataset"]["contentSha256"]:
+        raise SystemExit("Run input snapshot requires a stable dataset content identity.")
+    return snapshot
+
+
+def ensure_run_input_snapshot(args: argparse.Namespace) -> dict[str, Any]:
+    torch.use_deterministic_algorithms(True)
+    snapshot = getattr(args, "run_input_snapshot", None)
+    if snapshot is None:
+        snapshot = capture_run_input_snapshot(args, freeze_dataset=True)
+        args.run_input_snapshot = snapshot
+    return snapshot
+
+
+def assert_run_input_snapshot_unchanged(args: argparse.Namespace) -> None:
+    expected = ensure_run_input_snapshot(args)
+    observed = capture_run_input_snapshot(args)
+    if observed != expected:
+        raise SystemExit(
+            "Trainer, config, dataset, or gold evidence changed during this run; "
+            "refusing to publish mixed-provenance artifacts."
+        )
+
+
 def load_split_identities(path: Path) -> dict[str, set[str]]:
     inputs: set[str] = set()
     targets: set[str] = set()
@@ -1027,15 +1398,32 @@ def load_split_identities(path: Path) -> dict[str, set[str]]:
             if value:
                 inputs.add(value)
             if row.get("action") == "produce-candidate":
-                target = nfc(row.get("target", ""))
-                if target:
-                    targets.add(target)
+                targets.update(normalized_row_targets(row))
     return {"inputs": inputs, "targets": targets}
 
 
 def load_split_inputs(path: Path) -> set[str]:
     """Compatibility helper retained for callers that only need Roman identities."""
     return load_split_identities(path)["inputs"]
+
+
+def normalized_row_targets(row: dict[str, Any]) -> list[str]:
+    primary = row.get("target")
+    acceptable = row.get("acceptable")
+    if not isinstance(primary, str):
+        raise SystemExit("Dataset candidate target must be a string.")
+    if acceptable is None:
+        raw_targets = [primary]
+    elif not isinstance(acceptable, list) or not all(isinstance(value, str) for value in acceptable):
+        raise SystemExit("Dataset acceptable targets must be an array of strings.")
+    else:
+        raw_targets = [primary, *acceptable]
+    output: list[str] = []
+    for raw_target in raw_targets:
+        target = nfc(raw_target)
+        if target and target not in output:
+            output.append(target)
+    return output
 
 
 def load_split(path: Path, split: str, max_input_len: int, max_output_len: int) -> list[dict[str, Any]]:
@@ -1051,7 +1439,8 @@ def load_split(path: Path, split: str, max_input_len: int, max_output_len: int) 
             source_ids = row.get("sourceIds") or []
             identifier = str(row.get("id") or "")
             normalized_input = normalize_input(row.get("input", ""))
-            target = nfc(row.get("target", ""))
+            acceptable_targets = normalized_row_targets(row)
+            target = acceptable_targets[0] if acceptable_targets else ""
             if not identifier:
                 raise SystemExit(f"Dataset {split} row is missing an id.")
             if identifier in seen_ids:
@@ -1063,12 +1452,22 @@ def load_split(path: Path, split: str, max_input_len: int, max_output_len: int) 
                 raise SystemExit(f"Dataset {split} row {identifier} contains input tokens unsupported by the native runtime.")
             if len(normalized_input) > max_input_len - 1:
                 raise SystemExit(f"Dataset {split} row {identifier} exceeds the configured input length.")
-            if not target or any(ch.isspace() for ch in target) or contains_ascii_latin(target):
-                raise SystemExit(f"Dataset {split} row {identifier} has an invalid token target.")
-            if not valid_native_output(target):
-                raise SystemExit(f"Dataset {split} row {identifier} contains output scalars unsupported by the native runtime.")
-            if len(graphemes(target)) > max_output_len - 2:
-                raise SystemExit(f"Dataset {split} row {identifier} exceeds the configured output length.")
+            if not target:
+                raise SystemExit(f"Dataset {split} row {identifier} has an empty token target.")
+            for acceptable_target in acceptable_targets:
+                if (
+                    any(ch.isspace() for ch in acceptable_target)
+                    or contains_ascii_latin(acceptable_target)
+                    or not valid_native_output(acceptable_target)
+                ):
+                    raise SystemExit(
+                        f"Dataset {split} row {identifier} contains an invalid acceptable target."
+                    )
+                if len(output_scalars(acceptable_target)) > max_output_len - 2:
+                    raise SystemExit(
+                        f"Dataset {split} row {identifier} contains an acceptable target "
+                        "that exceeds the configured output length."
+                    )
             weight = float(row.get("weight", 1.0))
             if not math.isfinite(weight) or weight <= 0:
                 raise SystemExit(f"Dataset {split} row {identifier} has an invalid training weight.")
@@ -1076,7 +1475,7 @@ def load_split(path: Path, split: str, max_input_len: int, max_output_len: int) 
                 "id": identifier,
                 "input": normalized_input,
                 "target": target,
-                "acceptable": row.get("acceptable") or [target],
+                "acceptable": acceptable_targets,
                 "sourceIds": source_ids,
                 "weight": weight,
             })
@@ -1088,7 +1487,10 @@ def contains_ascii_latin(value: str) -> bool:
 
 
 def valid_native_output(value: str) -> bool:
-    return all(0x0900 <= ord(char) <= 0x097F or ord(char) in (0x200C, 0x200D) for char in value)
+    return (
+        all(is_valid_output_scalar(char) for char in value)
+        and analyze_devanagari_output_sequence(value)["terminable"]
+    )
 
 
 def deterministic_source_sample(rows: list[dict[str, Any]], limit: int, seed: int, split: str) -> list[dict[str, Any]]:
@@ -1146,10 +1548,11 @@ def primary_source(row: dict[str, Any]) -> str:
 
 def is_pinned_source(source: str) -> bool:
     return source in {
-        "lekh-phase1-contract-seed-v1",
-        "human-reviewed-lekh-gold-v1",
-        "lekh-chat-conventions-v1",
-        "lekh-name-lexicon-v1",
+        "manual-ambiguity",
+        "manual-chat-tail",
+        "manual-name",
+        "manual-x-ksha",
+        "runtime-names",
     }
 
 
@@ -1173,7 +1576,7 @@ def source_weight_mass(rows: list[dict[str, Any]]) -> dict[str, float]:
 def build_vocab(rows: list[dict[str, Any]], side: str) -> dict[str, int]:
     counter: Counter[str] = Counter()
     for row in rows:
-        tokens = list(normalize_input(row["input"])) if side == "input" else graphemes(row["target"])
+        tokens = list(normalize_input(row["input"])) if side == "input" else output_scalars(row["target"])
         counter.update(tokens)
     vocab = {token: index for index, token in enumerate(SPECIAL)}
     for token, _ in counter.most_common():
@@ -1196,7 +1599,7 @@ class TransliterationDataset(Dataset):
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         row = self.rows[index]
         src = encode(list(normalize_input(row["input"])), self.input_vocab, self.max_input_len, add_sos=False)
-        tgt = encode(graphemes(row["target"]), self.output_vocab, self.max_output_len, add_sos=True)
+        tgt = encode(output_scalars(row["target"]), self.output_vocab, self.max_output_len, add_sos=True)
         dec_in = tgt[:-1]
         dec_out = tgt[1:]
         weight = torch.tensor(float(row.get("weight", 1.0)), dtype=torch.float32)
@@ -1764,6 +2167,7 @@ def checkpoint_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def train_model(args: argparse.Namespace) -> dict[str, Any]:
+    run_input_snapshot = ensure_run_input_snapshot(args)
     if args.training_run_id is None:
         args.training_run_id = uuid.uuid4().hex
     if not is_run_identifier(args.training_run_id):
@@ -1771,6 +2175,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    torch.use_deterministic_algorithms(True)
     train_rows, dev_rows, dataset_manifest = load_rows(
         args.dataset_manifest,
         args.max_train_rows,
@@ -1778,6 +2183,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         args.seed,
         args.max_input_len,
         args.max_output_len,
+        split_paths=args.run_dataset_split_paths,
     )
     if not train_rows:
         raise SystemExit("Training selection is empty.")
@@ -1866,6 +2272,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         model.load_state_dict(best_state)
 
     evaluation = evaluate_model(model, dev_rows, input_vocab, output_vocab, args, device)
+    assert_run_input_snapshot_unchanged(args)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_vocab_metadata(input_vocab, output_vocab, args, dataset_manifest)
     train_sample_sha256 = sampled_rows_sha256(train_rows)
@@ -1888,11 +2295,15 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "effectiveArtifactInputsCanonicalJson": args.effective_artifact_inputs_canonical_json,
         "effectiveArtifactInputsSha256": args.effective_artifact_inputs_sha256,
         "artifactOverrides": args.artifact_overrides,
-        "trainerSha256": sha256_file(Path(__file__)),
+        "runInputSnapshot": run_input_snapshot,
+        "trainerSha256": run_input_snapshot["trainer"]["sha256"],
         "vocabMetadataSha256": sha256_file(args.vocab_metadata),
-        "datasetManifestSha256": sha256_file(args.dataset_manifest),
-        "datasetContentSha256": dataset_manifest.get("datasetContentSha256", ""),
-        "datasetSplitSha256": dataset_manifest.get("sha256", {}),
+        "datasetManifestSha256": run_input_snapshot["dataset"]["manifestSha256"],
+        "datasetContentSha256": run_input_snapshot["dataset"]["contentSha256"],
+        "datasetSplitSha256": {
+            split: evidence["sha256"]
+            for split, evidence in run_input_snapshot["dataset"]["splits"].items()
+        },
         "parameterCount": sum(parameter.numel() for parameter in model.parameters()),
         "trainingRows": len(train_rows),
         "devRows": len(dev_rows),
@@ -1915,6 +2326,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
             torch.save(checkpoint, handle)
             handle.flush()
             os.fsync(handle.fileno())
+        assert_run_input_snapshot_unchanged(args)
         os.replace(checkpoint_staging, checkpoint_target)
     finally:
         checkpoint_staging.unlink(missing_ok=True)
@@ -1941,6 +2353,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "effectiveArtifactInputsCanonicalJson": args.effective_artifact_inputs_canonical_json,
         "effectiveArtifactInputsSha256": args.effective_artifact_inputs_sha256,
         "artifactOverrides": args.artifact_overrides,
+        "runInputSnapshot": checkpoint["runInputSnapshot"],
         "trainerSha256": checkpoint["trainerSha256"],
         "vocabMetadataSha256": checkpoint["vocabMetadataSha256"],
         "inputDatasetManifest": rel(args.dataset_manifest),
@@ -1987,11 +2400,13 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "productionEligible": False,
         "productionBlockers": production_blockers(),
     }
+    assert_run_input_snapshot_unchanged(args)
     write_json(training_report_path(args), report)
     return {"model": model.cpu(), "checkpoint": checkpoint, "report": report}
 
 
 def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
+    run_input_snapshot = ensure_run_input_snapshot(args)
     current_checkpoint_path = checkpoint_path(args)
     current_report_path = training_report_path(args)
     if not current_checkpoint_path.exists():
@@ -2027,6 +2442,7 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         "effectiveArtifactInputsCanonicalJson",
         "effectiveArtifactInputsSha256",
         "artifactOverrides",
+        "runInputSnapshot",
         "trainerSha256",
         "vocabMetadataSha256",
         "sampledRowDigests",
@@ -2055,6 +2471,8 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("Checkpoint effective artifact input digest is invalid.")
     if checkpoint["artifactOverrides"] != args.artifact_overrides:
         raise SystemExit("Checkpoint artifact overrides do not match this invocation.")
+    if checkpoint["runInputSnapshot"] != run_input_snapshot:
+        raise SystemExit("Checkpoint run-input snapshot does not match the current trainer/config/data/gold evidence.")
     if checkpoint["trainerSha256"] != sha256_file(Path(__file__)):
         raise SystemExit("Checkpoint trainerSha256 does not match the current trainer implementation.")
     if not args.vocab_metadata.is_file():
@@ -2077,6 +2495,7 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         "effectiveArtifactInputsCanonicalJson",
         "effectiveArtifactInputsSha256",
         "artifactOverrides",
+        "runInputSnapshot",
         "trainerSha256",
         "vocabMetadataSha256",
         "sampledRowDigests",
@@ -2120,6 +2539,8 @@ def validate_checkpoint_runtime_bindings(
     expected_output_tokens = tokens_by_id(checkpoint["outputVocab"])
     if vocab.get("modelId") != checkpoint.get("modelId"):
         raise SystemExit("Vocabulary modelId does not match the checkpoint.")
+    if vocab.get("tokenization") != OUTPUT_TOKENIZATION:
+        raise SystemExit("Vocabulary output tokenization does not match the scalar runtime contract.")
     if vocab.get("input", {}).get("tokensById") != expected_input_tokens or vocab.get("input", {}).get("idsByToken") != checkpoint["inputVocab"]:
         raise SystemExit("Input vocabulary metadata does not match the checkpoint vocabulary.")
     if vocab.get("output", {}).get("tokensById") != expected_output_tokens or vocab.get("output", {}).get("idsByToken") != checkpoint["outputVocab"]:
@@ -2130,6 +2551,17 @@ def validate_checkpoint_runtime_bindings(
         raise SystemExit("Vocabulary output maxLength does not match the checkpoint.")
     if vocab.get("decoder", {}).get("beamWidth") != checkpoint["config"]["beam_width"]:
         raise SystemExit("Vocabulary beam width does not match the checkpoint.")
+    if vocab.get("decoder", {}).get("maxSteps") != checkpoint["config"]["max_output_len"] - 1:
+        raise SystemExit("Vocabulary decoder maxSteps does not expose the complete output tensor.")
+    if vocab.get("decoder", {}).get("outputSequenceValidation") != OUTPUT_SEQUENCE_VALIDATION:
+        raise SystemExit("Vocabulary output sequence validator does not match the runtime contract.")
+    lexical_output_tokens = [
+        token
+        for token in expected_output_tokens
+        if token not in SPECIAL
+    ]
+    if not lexical_output_tokens or not all(is_valid_output_scalar(token) for token in lexical_output_tokens):
+        raise SystemExit("Checkpoint output vocabulary must contain exactly one Unicode scalar per lexical token.")
     if vocab.get("dataset", {}).get("manifestSha256") != checkpoint.get("datasetManifestSha256"):
         raise SystemExit("Vocabulary dataset manifest digest does not match the checkpoint.")
     if vocab.get("dataset", {}).get("splitSha256") != checkpoint.get("datasetSplitSha256"):
@@ -2173,12 +2605,14 @@ def decode_candidates(
         eos_id=output_vocab[EOS],
         unk_id=output_vocab[UNK],
         vocab_size=len(output_vocab),
+        tokens_by_id=tokens_by_id(output_vocab),
     )
     return decode_token_sequences(token_sequences, output_vocab, maximum_candidates)
 
 
 def decoder_max_steps(input_grapheme_count: int, max_output_len: int) -> int:
-    return max(0, min(max_output_len - 1, input_grapheme_count + 8))
+    del input_grapheme_count  # Retained for compatibility with frozen callers.
+    return max(0, max_output_len - 1)
 
 
 def padded_decoder_ids(prefix: list[int], output_vocab: dict[str, int], max_output_len: int) -> list[int]:
@@ -2223,13 +2657,16 @@ def beam_search_token_ids(
     eos_id: int,
     unk_id: int,
     vocab_size: int,
+    tokens_by_id: list[str] | None = None,
 ) -> list[list[int]]:
     if beam_width < 1 or maximum_candidates < 1 or vocab_size < 1:
         raise SystemExit("Decoder contract values must be positive.")
     beams: list[tuple[list[int], float]] = [([sos_id], 0.0)]
     completed: list[tuple[list[int], float]] = []
     invalid_ids = {pad_id, sos_id, unk_id}
-    for _ in range(decoder_max_steps(input_grapheme_count, max_output_len)):
+    max_steps = decoder_max_steps(input_grapheme_count, max_output_len)
+    for iteration in range(max_steps):
+        final_step = iteration + 1 == max_steps
         next_beams: list[tuple[list[int], float]] = []
         for ids, score in beams:
             if ids[-1] == eos_id:
@@ -2240,14 +2677,26 @@ def beam_search_token_ids(
             if logits.shape != (vocab_size,) or not np.isfinite(logits).all():
                 raise SystemExit("Decoder backend returned an invalid vocabulary logit vector.")
             log_probabilities = log_softmax_numpy(logits)
-            eligible = [token_id for token_id in range(vocab_size) if token_id not in invalid_ids]
+            eligible = [
+                token_id
+                for token_id in range(vocab_size)
+                if token_id not in invalid_ids
+                and (not final_step or token_id == eos_id)
+                and output_token_permitted(
+                    ids,
+                    token_id,
+                    eos_id=eos_id,
+                    tokens_by_id=tokens_by_id,
+                )
+            ]
             eligible.sort(key=lambda token_id: (-float(log_probabilities[token_id]), token_id))
             for token_id in eligible[:beam_width]:
                 next_beams.append((ids + [token_id], score + float(log_probabilities[token_id])))
         if not next_beams:
             break
         beams = sorted(next_beams, key=beam_rank_key)[:beam_width]
-    ranked = sorted(completed + beams, key=beam_rank_key)
+    completed.extend(item for item in beams if item[0][-1] == eos_id)
+    ranked = sorted(completed, key=beam_rank_key)
     unique: list[list[int]] = []
     seen: set[tuple[int, ...]] = set()
     for ids, _ in ranked:
@@ -2282,12 +2731,38 @@ def decode_token_sequences(
             candidate
             and not any(character.isspace() for character in candidate)
             and not contains_ascii_latin(candidate)
+            and analyze_devanagari_output_sequence(candidate)["terminable"]
             and candidate not in candidates
         ):
             candidates.append(candidate)
         if len(candidates) >= maximum_candidates:
             break
     return candidates
+
+
+def output_token_permitted(
+    prefix_ids: list[int],
+    token_id: int,
+    *,
+    eos_id: int,
+    tokens_by_id: list[str] | None,
+) -> bool:
+    """Apply the scalar grammar without changing decoder score or tie ordering."""
+    if tokens_by_id is None:
+        return True
+    if not 0 <= token_id < len(tokens_by_id):
+        return False
+    prefix = "".join(
+        tokens_by_id[index]
+        for index in prefix_ids
+        if 0 <= index < len(tokens_by_id) and tokens_by_id[index] not in SPECIAL
+    )
+    if token_id == eos_id:
+        return bool(analyze_devanagari_output_sequence(prefix)["terminable"])
+    token = tokens_by_id[token_id]
+    if not is_valid_output_scalar(token):
+        return False
+    return bool(analyze_devanagari_output_sequence(prefix + token)["validPrefix"])
 
 
 def evaluate_model(model: nn.Module, rows: list[dict[str, Any]], input_vocab: dict[str, int], output_vocab: dict[str, int], args: argparse.Namespace, device: torch.device) -> dict[str, Any]:
@@ -2959,7 +3434,12 @@ def gold_corpus_sha256(suites: list[dict[str, Any]]) -> str:
 
 def load_verified_gold_rows(args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     require_repo_regular_file(args.gold_manifest, "gold manifest")
-    manifest = read_json(args.gold_manifest)
+    manifest_bytes = read_regular_bytes(
+        args.gold_manifest,
+        "gold manifest",
+        maximum_bytes=8 * 1024 * 1024,
+    )
+    manifest = parse_json_object_bytes(manifest_bytes, "gold manifest")
     suites = manifest.get("suites")
     if manifest.get("schemaVersion") != 2 or not isinstance(suites, list) or not suites:
         raise SystemExit("Gold prediction evidence requires a non-empty schema-v2 gold manifest.")
@@ -2984,16 +3464,24 @@ def load_verified_gold_rows(args: argparse.Namespace) -> tuple[list[dict[str, An
             raise SystemExit(f"Gold suite {suite_id} path is not canonical: {recorded_path}")
         suite_path = ROOT / recorded_path
         require_repo_regular_file(suite_path, f"gold suite {suite_id}")
-        observed = inspect_jsonl_artifact(suite_path)
+        suite_bytes = read_regular_bytes(
+            suite_path,
+            f"gold suite {suite_id}",
+            maximum_bytes=64 * 1024 * 1024,
+        )
+        observed = {
+            "sha256": hashlib.sha256(suite_bytes).hexdigest(),
+            "bytes": len(suite_bytes),
+            "rows": sum(1 for line in suite_bytes.splitlines() if line.strip()),
+        }
         if observed["sha256"] != expected_sha256:
             raise SystemExit(f"Gold suite {suite_id} SHA-256 does not match the manifest.")
         if observed["rows"] != expected_rows:
             raise SystemExit(f"Gold suite {suite_id} row count does not match the manifest.")
-        with open_regular_binary(suite_path, f"gold suite {suite_id}") as handle:
-            try:
-                lines = handle.read().decode("utf-8").splitlines()
-            except UnicodeDecodeError as error:
-                raise SystemExit(f"Gold suite {suite_id} is not valid UTF-8.") from error
+        try:
+            lines = suite_bytes.decode("utf-8").splitlines()
+        except UnicodeDecodeError as error:
+            raise SystemExit(f"Gold suite {suite_id} is not valid UTF-8.") from error
         for line_number, line in enumerate(lines, start=1):
             if not line.strip():
                 continue
@@ -3015,7 +3503,7 @@ def load_verified_gold_rows(args: argparse.Namespace) -> tuple[list[dict[str, An
         })
     return rows, {
         "goldManifest": rel(args.gold_manifest),
-        "goldManifestSha256": sha256_file(args.gold_manifest),
+        "goldManifestSha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "goldCorpusSha256": manifest["corpusSha256"],
         "goldSuites": suite_evidence,
         "goldRows": len(rows),
@@ -3058,6 +3546,7 @@ def decode_coreml_candidates(
         eos_id=output_vocab[EOS],
         unk_id=output_vocab[UNK],
         vocab_size=len(output_vocab),
+        tokens_by_id=tokens_by_id(output_vocab),
     )
     return decode_token_sequences(token_sequences, output_vocab, args.maximum_candidates)
 
@@ -3093,7 +3582,10 @@ def decode_attention_coreml_candidates(
     completed: list[tuple[list[int], float]] = []
     invalid_ids = {output_vocab[PAD], output_vocab[SOS], output_vocab[UNK]}
     vocabulary_size = len(output_vocab)
-    for _ in range(decoder_max_steps(len(normalized), args.max_output_len)):
+    output_tokens_by_id = tokens_by_id(output_vocab)
+    max_steps = decoder_max_steps(len(normalized), args.max_output_len)
+    for iteration in range(max_steps):
+        final_step = iteration + 1 == max_steps
         active: list[tuple[list[int], float, np.ndarray]] = []
         for ids, score, state in beams:
             if ids[-1] == output_vocab[EOS]:
@@ -3114,7 +3606,18 @@ def decode_attention_coreml_candidates(
         next_beams: list[tuple[list[int], float, np.ndarray]] = []
         for lane, (ids, score, _) in enumerate(active[:args.beam_width]):
             log_probabilities = log_softmax_numpy(logits[lane])
-            eligible = [token_id for token_id in range(vocabulary_size) if token_id not in invalid_ids]
+            eligible = [
+                token_id
+                for token_id in range(vocabulary_size)
+                if token_id not in invalid_ids
+                and (not final_step or token_id == output_vocab[EOS])
+                and output_token_permitted(
+                    ids,
+                    token_id,
+                    eos_id=output_vocab[EOS],
+                    tokens_by_id=output_tokens_by_id,
+                )
+            ]
             eligible.sort(key=lambda token_id: (-float(log_probabilities[token_id]), token_id))
             state = next_hidden[:, lane, :].copy()
             for token_id in eligible[:args.beam_width]:
@@ -3127,10 +3630,12 @@ def decode_attention_coreml_candidates(
             break
         next_beams.sort(key=lambda item: beam_rank_key((item[0], item[1])))
         beams = next_beams[:args.beam_width]
-    ranked = sorted(
-        completed + [(ids, score) for ids, score, _ in beams],
-        key=beam_rank_key,
+    completed.extend(
+        (ids, score)
+        for ids, score, _ in beams
+        if ids[-1] == output_vocab[EOS]
     )
+    ranked = sorted(completed, key=beam_rank_key)
     unique: list[list[int]] = []
     seen: set[tuple[int, ...]] = set()
     for ids, _ in ranked:
@@ -3302,6 +3807,7 @@ def export_attention_incremental_coreml(
             for role in ("encoder", "decoderStep")
             for kind in ("mlpackage", "compiledModel")
         ]
+        assert_run_input_snapshot_unchanged(args)
         publish_directories_atomically(publications)
         artifacts = attention_artifact_evidence_from_paths(targets)
         for role in ("encoder", "decoderStep"):
@@ -3386,8 +3892,11 @@ def export_coreml(model: nn.Module, checkpoint: dict[str, Any], args: argparse.N
         shutil.copytree(compiled_source, compiled_staging)
         secure_directory_files(package_staging)
         secure_directory_files(compiled_staging)
-        publish_directory(package_staging, package_target)
-        publish_directory(compiled_staging, args.compiled_model)
+        assert_run_input_snapshot_unchanged(args)
+        publish_directories_atomically([
+            (package_staging, package_target),
+            (compiled_staging, args.compiled_model),
+        ])
         return {
             "status": "passed",
             "trainingRunId": args.training_run_id,
@@ -3466,34 +3975,31 @@ def benchmark_coreml(
         "p99Ms": None,
     }
     output_path = measurements_path(args)
+    benchmark_inputs: list[str] = []
     try:
-        input_ids, decoder_ids = known_answer_tensors(checkpoint, args)
+        benchmark_inputs = benchmark_input_texts(checkpoint, args)
         if isinstance(backend, CompiledAttentionIncrementalCoreMLBackend):
             result["artifact"] = attention_benchmark_artifact_identity(args)
 
-            def invoke() -> None:
-                encoded = backend.encode(input_ids)
-                context = {
-                    "encoderOutputs": encoded["encoderOutputs"],
-                    "encoderEnergy": encoded["encoderEnergy"],
-                    "validMask": encoded["validMask"],
-                }
-                hidden = np.repeat(encoded["initialDecoderHidden"], args.beam_width, axis=1)
-                tokens = np.repeat(decoder_ids[:, :1], args.beam_width, axis=0)
-                backend.predict_step(tokens, hidden, context)
+            def invoke(text: str) -> None:
+                decode_attention_coreml_candidates(backend, text, checkpoint, args)
         else:
             result["artifact"] = rel(args.compiled_model)
 
-            def invoke() -> None:
-                backend.predict(input_ids, decoder_ids)
+            def invoke(text: str) -> None:
+                decode_coreml_candidates(backend, text, checkpoint, args)
 
-        for _ in range(10):
-            invoke()
+        for _ in range(3):
+            for text in benchmark_inputs:
+                invoke(text)
         durations = []
-        for _ in range(120):
-            started = time.perf_counter()
-            invoke()
-            durations.append((time.perf_counter() - started) * 1000)
+        while len(durations) < 120:
+            for text in benchmark_inputs:
+                started = time.perf_counter()
+                invoke(text)
+                durations.append((time.perf_counter() - started) * 1000)
+                if len(durations) >= 120:
+                    break
         result["p50Ms"] = round(float(np.percentile(durations, 50)), 6)
         result["p95Ms"] = round(float(np.percentile(durations, 95)), 6)
         result["p99Ms"] = round(float(np.percentile(durations, 99)), 6)
@@ -3506,8 +4012,46 @@ def benchmark_coreml(
             result["error"] = str(error)
     elif directory_sha256(args.compiled_model) != backend.compiled_sha256:
         result["error"] = "Compiled Core ML bytes changed during benchmark execution."
-    write_json(output_path, {"generatedAt": iso_now(), "devices": [result]})
+    write_json(output_path, {
+        "generatedAt": iso_now(),
+        "measurementKind": "full-candidate-generation",
+        "sampleCount": 120,
+        "benchmarkInputsSha256": sha256_text("\n".join(benchmark_inputs)) if benchmark_inputs else None,
+        "devices": [result],
+    })
     return result
+
+
+def benchmark_input_texts(checkpoint: dict[str, Any], args: argparse.Namespace) -> list[str]:
+    input_vocab = checkpoint["inputVocab"]
+    lexical_tokens = [
+        token
+        for token, _ in sorted(input_vocab.items(), key=lambda item: item[1])
+        if token not in SPECIAL and len(token) == 1
+    ]
+    if not lexical_tokens:
+        raise SystemExit("Candidate-generation benchmark requires lexical input tokens.")
+    candidates = [
+        value
+        for value in REQUIRED_CASES
+        if len(value) < args.max_input_len and all(token in input_vocab for token in value)
+    ]
+    maximum_lexical_length = args.max_input_len - 1
+    for requested_length in (3, 8, 16):
+        length = min(requested_length, maximum_lexical_length)
+        if length <= 0:
+            continue
+        value = "".join(lexical_tokens[index % len(lexical_tokens)] for index in range(length))
+        if value not in candidates:
+            candidates.append(value)
+    output = [
+        value
+        for value in candidates
+        if 0 < len(value) <= maximum_lexical_length
+    ][:3]
+    if not output:
+        raise SystemExit("Candidate-generation benchmark could not construct a representable input.")
+    return output
 
 
 def valid_benchmark_result(result: dict[str, Any], args: argparse.Namespace) -> bool:
@@ -3515,6 +4059,10 @@ def valid_benchmark_result(result: dict[str, Any], args: argparse.Namespace) -> 
         "name", "macOS", "architecture", "packagedApp", "secureFieldInferenceCount",
         "p50Ms", "p95Ms", "p99Ms", "artifact",
     }
+    try:
+        evidence = read_json(measurements_path(args))
+    except (OSError, json.JSONDecodeError):
+        return False
     return (
         set(result) == required
         and all(isinstance(result.get(key), (int, float)) and math.isfinite(float(result[key])) and result[key] >= 0
@@ -3525,6 +4073,11 @@ def valid_benchmark_result(result: dict[str, Any], args: argparse.Namespace) -> 
             if args.model_id == ATTENTION_MODEL_ID
             else rel(args.compiled_model)
         )
+        and evidence.get("measurementKind") == "full-candidate-generation"
+        and evidence.get("sampleCount") == 120
+        and isinstance(evidence.get("benchmarkInputsSha256"), str)
+        and len(evidence["benchmarkInputsSha256"]) == 64
+        and evidence.get("devices") == [result]
     )
 
 
@@ -3537,13 +4090,14 @@ def attention_benchmark_artifact_identity(args: argparse.Namespace) -> str:
 
 
 def write_vocab_metadata(input_vocab: dict[str, int], output_vocab: dict[str, int], args: argparse.Namespace, dataset_manifest: dict[str, Any]) -> None:
+    run_input_snapshot = ensure_run_input_snapshot(args)
     input_by_id = tokens_by_id(input_vocab)
     output_by_id = tokens_by_id(output_vocab)
     payload = {
         "schemaVersion": 1,
         "modelId": args.model_id,
         "generatedAt": iso_now(),
-        "tokenization": "unicode-grapheme-character",
+        "tokenization": OUTPUT_TOKENIZATION,
         "input": {
             "maxLength": args.max_input_len,
             "tokensById": input_by_id,
@@ -3565,13 +4119,18 @@ def write_vocab_metadata(input_vocab: dict[str, int], output_vocab: dict[str, in
         "decoder": {
             "type": "beam-search",
             "beamWidth": args.beam_width,
+            "maxSteps": args.max_output_len - 1,
+            "outputSequenceValidation": OUTPUT_SEQUENCE_VALIDATION,
             "rejectWhitespaceCandidates": True,
             "rejectLatinCandidates": True,
         },
         "dataset": {
             "manifest": rel(args.dataset_manifest),
-            "manifestSha256": sha256_file(args.dataset_manifest) if args.dataset_manifest.exists() else "",
-            "splitSha256": dataset_manifest.get("sha256", {}),
+            "manifestSha256": run_input_snapshot["dataset"]["manifestSha256"],
+            "splitSha256": {
+                split: evidence["sha256"]
+                for split, evidence in run_input_snapshot["dataset"]["splits"].items()
+            },
         },
         "nativeRuntimePolicy": {
             "asyncOnly": True,
@@ -3591,6 +4150,8 @@ def tokens_by_id(vocab: dict[str, int]) -> list[str]:
 
 
 def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], training_report: dict[str, Any], coreml: dict[str, Any], benchmark: dict[str, Any]) -> dict[str, Any]:
+    if checkpoint.get("runInputSnapshot") != ensure_run_input_snapshot(args):
+        raise SystemExit("Refusing to publish a runtime manifest from mixed run-input evidence.")
     if coreml.get("status") != "passed":
         raise SystemExit("Refusing to write a runtime manifest without a successful Core ML export.")
     if not is_run_identifier(args.training_run_id) or not is_run_identifier(args.export_run_id):
@@ -3648,9 +4209,15 @@ def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], trainin
         "productionEligible": production_eligible,
         "architecture": args.effective_training_config["architecture"]["family"],
         "openVocabulary": True,
-        "tokenization": "unicode-grapheme-character",
+        "tokenization": OUTPUT_TOKENIZATION,
+        "outputSequenceValidation": OUTPUT_SEQUENCE_VALIDATION,
         "decoder": "beam-search",
-        "beamSearch": {"enabled": True, "beamWidth": args.beam_width, "maxOutputGraphemes": args.max_output_len},
+        "beamSearch": {
+            "enabled": True,
+            "beamWidth": args.beam_width,
+            "maxOutputGraphemes": args.max_output_len,
+            "maxSteps": args.max_output_len - 1,
+        },
         "languageModelRescorer": {
             "enabled": bool(configured_rescorer["enabled"]),
             "source": str(configured_rescorer["source"]),
@@ -3788,9 +4355,15 @@ def write_attention_incremental_manifest(
         "productionEligible": False,
         "architecture": args.effective_training_config["architecture"]["family"],
         "openVocabulary": True,
-        "tokenization": "unicode-grapheme-character",
+        "tokenization": OUTPUT_TOKENIZATION,
+        "outputSequenceValidation": OUTPUT_SEQUENCE_VALIDATION,
         "decoder": "beam-search",
-        "beamSearch": {"enabled": True, "beamWidth": args.beam_width, "maxOutputGraphemes": args.max_output_len},
+        "beamSearch": {
+            "enabled": True,
+            "beamWidth": args.beam_width,
+            "maxOutputGraphemes": args.max_output_len,
+            "maxSteps": args.max_output_len - 1,
+        },
         "languageModelRescorer": {
             "enabled": bool(configured_rescorer["enabled"]),
             "source": str(configured_rescorer["source"]),
@@ -3889,6 +4462,7 @@ def iso_now() -> str:
 
 
 def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
+    ensure_run_input_snapshot(args)
     if args.skip_train:
         loaded = load_checkpoint(args)
     else:
@@ -3898,6 +4472,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     training_report: dict[str, Any] = loaded["report"]
     if args.training_run_id == args.export_run_id:
         raise SystemExit("Training and export publication identities must be distinct.")
+    assert_run_input_snapshot_unchanged(args)
     coreml = export_coreml(model, checkpoint, args)
     export_succeeded = coreml.get("status") == "passed"
     split_attention_export = (
@@ -3940,6 +4515,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         ),
     )
     publishable = benchmark_succeeded and prediction_evidence is not None and not runtime_contract_issues
+    assert_run_input_snapshot_unchanged(args)
     manifest = write_manifest(args, checkpoint, training_report, coreml, benchmark) if publishable else None
     if publishable:
         export_status = (
@@ -3994,6 +4570,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         "effectiveTrainingConfigSha256": args.effective_training_config_sha256,
         "effectiveArtifactInputsSha256": args.effective_artifact_inputs_sha256,
         "artifactOverrides": args.artifact_overrides,
+        "runInputSnapshot": ensure_run_input_snapshot(args),
         "runtimeArtifactContractIssues": runtime_contract_issues,
         "checkpoint": rel(checkpoint_path(args)),
         "checkpointSha256": checkpoint_sha256,
@@ -4027,6 +4604,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             "prePublicationValidation": coreml["prePublicationValidation"],
             "compiledModels": compiled_models,
         })
+    assert_run_input_snapshot_unchanged(args)
     write_json(export_report_path(args), export_report)
 
     print(json.dumps({
@@ -4050,7 +4628,11 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
 def main() -> None:
     args = parse_args()
     with exclusive_run_lock(args):
-        run_pipeline(args)
+        try:
+            ensure_run_input_snapshot(args)
+            run_pipeline(args)
+        finally:
+            cleanup_run_input_snapshot(args)
 
 
 if __name__ == "__main__":

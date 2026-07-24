@@ -22,7 +22,7 @@ const unicodeWhitespace = /^\s$/u;
 export const DEVANAGARI_WORD_SEQUENCE_VALIDATOR_ID = "devanagari-word-sequence-v1";
 
 /**
- * Conservatively validates a single NFC Devanagari word for scalar decoding.
+ * Analyzes one NFC Devanagari scalar sequence, including unfinished prefixes.
  *
  * The validator deliberately does not adjudicate lexical spelling. Adjacent
  * letters and explicit halant boundaries remain legal, including terminal
@@ -30,14 +30,13 @@ export const DEVANAGARI_WORD_SEQUENCE_VALIDATOR_ID = "devanagari-word-sequence-v
  * scalar/category violations and mark/joiner orders that are structurally
  * unambiguous.
  */
-export function validateDevanagariWordSequence(value) {
+export function analyzeDevanagariOutputSequence(value) {
   const text = String(value ?? "");
   const issueCodes = [];
   const addIssue = (code) => {
     if (!issueCodes.includes(code)) issueCodes.push(code);
   };
 
-  if (!text) addIssue("empty");
   if (text !== text.normalize("NFC")) addIssue("not-nfc");
 
   const scalars = [...text];
@@ -46,7 +45,9 @@ export function validateDevanagariWordSequence(value) {
   let nuktaSeen = false;
   let afterVirama = false;
   let modifierSeen = false;
+  let syllableModifierSeen = false;
   let precedingMark = null;
+  let pendingJoiner = false;
 
   for (let index = 0; index < scalars.length; index += 1) {
     const scalar = scalars[index];
@@ -71,8 +72,10 @@ export function validateDevanagariWordSequence(value) {
 
     if (joiners.has(scalar)) {
       if (previous !== virama) addIssue("joiner-not-after-virama");
-      if (!isDevanagariConsonant(next)) addIssue("joiner-not-before-consonant");
-      if (previous !== virama || !isDevanagariConsonant(next)) resetUnit();
+      if (next !== undefined && !isDevanagariConsonant(next)) {
+        addIssue("joiner-not-before-consonant");
+      }
+      pendingJoiner = true;
       continue;
     }
 
@@ -83,13 +86,22 @@ export function validateDevanagariWordSequence(value) {
     }
 
     if (isDevanagariLetter(scalar)) {
+      if (pendingJoiner && !isDevanagariConsonant(scalar)) {
+        addIssue("joiner-not-before-consonant");
+      }
       baseKind = isDevanagariConsonant(scalar) ? "consonant" : "other-letter";
       dependentVowelSeen = false;
       nuktaSeen = false;
       afterVirama = false;
       modifierSeen = false;
       precedingMark = null;
+      pendingJoiner = false;
       continue;
+    }
+
+    if (pendingJoiner) {
+      addIssue("joiner-not-before-consonant");
+      pendingJoiner = false;
     }
 
     if (scalar === nukta) {
@@ -126,7 +138,11 @@ export function validateDevanagariWordSequence(value) {
       if (afterVirama) addIssue("mark-after-virama");
       else if (baseKind === null) addIssue("mark-without-base");
       if (precedingMark === scalar) addIssue("duplicate-mark");
+      if (syllableModifiers.has(scalar) && syllableModifierSeen) {
+        addIssue("multiple-syllable-modifiers");
+      }
       modifierSeen = true;
+      if (syllableModifiers.has(scalar)) syllableModifierSeen = true;
       precedingMark = scalar;
       continue;
     }
@@ -135,10 +151,11 @@ export function validateDevanagariWordSequence(value) {
     resetUnit();
   }
 
+  const validPrefix = issueCodes.length === 0;
   return Object.freeze({
-    valid: issueCodes.length === 0,
+    validPrefix,
+    terminable: validPrefix && scalars.length > 0 && !pendingJoiner,
     issueCodes: Object.freeze(issueCodes),
-    primaryIssueCode: issueCodes[0] ?? null
   });
 
   function resetUnit() {
@@ -147,8 +164,30 @@ export function validateDevanagariWordSequence(value) {
     nuktaSeen = false;
     afterVirama = false;
     modifierSeen = false;
+    syllableModifierSeen = false;
     precedingMark = null;
+    pendingJoiner = false;
   }
+}
+
+export function validateDevanagariWordSequence(value) {
+  const text = String(value ?? "");
+  const analysis = analyzeDevanagariOutputSequence(text);
+  const issueCodes = [...analysis.issueCodes];
+  if (!text && !issueCodes.includes("empty")) issueCodes.push("empty");
+  if (
+    analysis.validPrefix &&
+    !analysis.terminable &&
+    joiners.has([...text].at(-1)) &&
+    !issueCodes.includes("joiner-not-before-consonant")
+  ) {
+    issueCodes.push("joiner-not-before-consonant");
+  }
+  return Object.freeze({
+    valid: analysis.terminable,
+    issueCodes: Object.freeze(issueCodes),
+    primaryIssueCode: issueCodes[0] ?? null
+  });
 }
 
 export function isValidDevanagariWordSequence(value) {

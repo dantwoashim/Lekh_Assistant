@@ -93,11 +93,16 @@ if (schema) {
   assert(propertyConst(schema, "neuralTailOnly") === true, "schema must require neuralTailOnly=true");
   assert(propertyConst(schema, "productionEligible") === true, "schema must require productionEligible=true");
   assert(propertyConst(schema, "openVocabulary") === true, "schema must require openVocabulary=true");
+  assert(propertyConst(schema, "tokenization") === "unicode-scalar-character", "schema must require Unicode-scalar output tokens");
+  assert(propertyConst(schema, "outputSequenceValidation") === "devanagari-word-sequence-v1", "schema must require the shared Devanagari output validator");
   assert(propertyConst(schema, "decoder") === "beam-search", "schema must require beam-search decoder");
+  assert(property(schema, "beamSearch")?.properties?.maxOutputGraphemes?.const === 32, "schema must bind the output tensor length");
+  assert(property(schema, "beamSearch")?.properties?.maxSteps?.const === 31, "schema must bind every scalar decoder step");
   assert(property(schema, "parameterCount")?.minimum === 1_000_000, "schema must enforce minimum parameter count");
   assert(property(schema, "parameterCount")?.maximum === 5_000_000, "schema must enforce maximum parameter count");
   assert(property(schema, "modelBytes")?.maximum === 16_777_216, "schema must enforce 16 MB compiled model cap");
-  assert(property(schema, "contextWindowWords")?.minimum === 2, "schema must require at least two context tokens");
+  assert(propertyConst(schema, "contextWindowWords") === 0, "schema must bind token-only inference with no context window");
+  assert(property(schema, "languageModelRescorer")?.properties?.enabled?.const === false, "schema must forbid an unimplemented context rescorer");
   assert(property(schema, "performance")?.properties?.p99Ms?.maximum === 3, "schema must enforce p99 <= 3ms");
   const deviceSchema = property(schema, "performance")?.properties?.devices?.items;
   assert(deviceSchema?.properties?.packagedApp?.const === true, "schema must require packaged-app device evidence");
@@ -125,6 +130,7 @@ if (schema) {
     "architecture",
     "openVocabulary",
     "tokenization",
+    "outputSequenceValidation",
     "decoder",
     "beamSearch",
     "languageModelRescorer",
@@ -144,12 +150,7 @@ if (schema) {
     assert(required.has(field), `schema required[] must include ${field}`);
   }
 
-  for (const source of [
-    "syubraj-roman2nepali-transliteration",
-    "human-reviewed-lekh-gold-v1",
-    "lekh-chat-conventions-v1",
-    "lekh-name-lexicon-v1"
-  ]) {
+  for (const source of ["ai4bharat-aksharantar-nepali"]) {
     assert(JSON.stringify(property(schema, "trainingSources")).includes(source), `schema must require training source ${source}`);
   }
 

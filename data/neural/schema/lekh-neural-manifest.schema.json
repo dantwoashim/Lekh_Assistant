@@ -16,6 +16,7 @@
     "architecture",
     "openVocabulary",
     "tokenization",
+    "outputSequenceValidation",
     "decoder",
     "beamSearch",
     "languageModelRescorer",
@@ -65,13 +66,10 @@
       "const": true
     },
     "tokenization": {
-      "type": "string",
-      "enum": [
-        "unicode-grapheme-character",
-        "character-sequence",
-        "bpe-subword",
-        "unigram-subword"
-      ]
+      "const": "unicode-scalar-character"
+    },
+    "outputSequenceValidation": {
+      "const": "devanagari-word-sequence-v1"
     },
     "decoder": {
       "const": "beam-search"
@@ -79,7 +77,7 @@
     "beamSearch": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "beamWidth", "maxOutputGraphemes"],
+      "required": ["enabled", "beamWidth", "maxOutputGraphemes", "maxSteps"],
       "properties": {
         "enabled": {
           "const": true
@@ -90,9 +88,10 @@
           "maximum": 8
         },
         "maxOutputGraphemes": {
-          "type": "integer",
-          "minimum": 8,
-          "maximum": 48
+          "const": 32
+        },
+        "maxSteps": {
+          "const": 31
         }
       }
     },
@@ -102,23 +101,18 @@
       "required": ["enabled", "source", "weight"],
       "properties": {
         "enabled": {
-          "const": true
+          "const": false
         },
         "source": {
-          "type": "string",
-          "minLength": 1
+          "const": "runtime-next-context-pack"
         },
         "weight": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
+          "const": 0
         }
       }
     },
     "contextWindowWords": {
-      "type": "integer",
-      "minimum": 2,
-      "maximum": 4
+      "const": 0
     },
     "parameterCount": {
       "type": "integer",
@@ -132,7 +126,7 @@
     },
     "trainingSources": {
       "type": "array",
-      "minItems": 4,
+      "minItems": 1,
       "uniqueItems": true,
       "items": {
         "type": "string",
@@ -141,22 +135,7 @@
       "allOf": [
         {
           "contains": {
-            "const": "syubraj-roman2nepali-transliteration"
-          }
-        },
-        {
-          "contains": {
-            "const": "human-reviewed-lekh-gold-v1"
-          }
-        },
-        {
-          "contains": {
-            "const": "lekh-chat-conventions-v1"
-          }
-        },
-        {
-          "contains": {
-            "const": "lekh-name-lexicon-v1"
+            "const": "ai4bharat-aksharantar-nepali"
           }
         }
       ]

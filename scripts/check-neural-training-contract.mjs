@@ -88,7 +88,8 @@ if (!trainer.includes('build_vocab(train_rows, "input")') ||
     !trainer.includes('build_vocab(train_rows, "output")')) {
   failures.push("Tokenizer vocabulary must be derived from the training split only.");
 }
-if (!trainer.includes("Dataset input leakage between") || !trainer.includes("load_split_inputs(test_path)")) {
+if (!trainer.includes("Dataset input leakage between") ||
+    !trainer.includes('load_split_identities(test_path)')) {
   failures.push("Trainer must fail closed on normalized-input overlap between train, dev, and test.");
 }
 if (!trainer.includes("def exclusive_run_lock(") || !trainer.includes("with exclusive_run_lock(args):")) {

@@ -477,8 +477,18 @@ private struct NeuralDecoderFixture: Decodable {
   let schemaVersion: Int
   let score: String
   let lengthNormalization: String
+  let tokenization: String
+  let outputSequenceValidation: String
   let maxSteps: String
+  let sequenceCases: [SequenceCase]
   let cases: [DecoderCase]
+
+  struct SequenceCase: Decodable {
+    let value: String
+    let validPrefix: Bool
+    let terminable: Bool
+    let issueCodes: [String]
+  }
 
   struct DecoderCase: Decodable {
     let id: String
@@ -486,8 +496,8 @@ private struct NeuralDecoderFixture: Decodable {
     let sosTokenId: Int
     let eosTokenId: Int
     let invalidTokenIds: [Int]
+    let tokensById: [String]
     let beamWidth: Int
-    let inputGraphemeCount: Int
     let maxOutputLength: Int
     let logitsByPrefix: [String: [Double]]
     let expectedTokenIds: [[Int]]
@@ -496,25 +506,39 @@ private struct NeuralDecoderFixture: Decodable {
 
 private func verifyNeuralDecoderContract() {
   let fixtureURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    .appendingPathComponent("contracts/neural-decoder/v1/lekh-neural-decoder.v1.json")
+    .appendingPathComponent("contracts/neural-decoder/v2/lekh-neural-decoder.v2.json")
   guard let data = try? Data(contentsOf: fixtureURL),
         let fixture = try? JSONDecoder().decode(NeuralDecoderFixture.self, from: data) else {
     require(false, "Shared neural decoder fixture must be readable from \(fixtureURL.path)")
     return
   }
-  require(fixture.schemaVersion == 1, "Shared neural decoder fixture schema must remain v1")
+  require(fixture.schemaVersion == 2, "Shared neural decoder fixture schema must remain v2")
   require(fixture.score == "accumulated-log-softmax", "Decoder fixture must freeze log-softmax scoring")
   require(
     fixture.lengthNormalization == "score-divided-by-token-count-including-sos",
     "Decoder fixture must freeze length normalization"
   )
   require(
-    fixture.maxSteps == "min(maxOutputLength-minus-1,inputGraphemeCount-plus-8)",
-    "Decoder fixture must freeze the native latency bound"
+    fixture.tokenization == "unicode-scalar-character" &&
+      fixture.outputSequenceValidation == "devanagari-word-sequence-v1",
+    "Decoder fixture must freeze scalar tokenization and sequence validation"
   )
+  require(
+    fixture.maxSteps == "maxOutputLength-minus-1",
+    "Decoder fixture must expose every output tensor step"
+  )
+  for item in fixture.sequenceCases {
+    let analysis = LekhDevanagariOutputSequence.analyze(item.value)
+    require(
+      analysis.validPrefix == item.validPrefix &&
+        analysis.terminable == item.terminable &&
+        analysis.issueCodes == item.issueCodes,
+      "Swift sequence grammar diverged from shared fixture \(item.value): \(analysis)"
+    )
+  }
 
   for item in fixture.cases {
-    let maxSteps = max(0, min(item.maxOutputLength - 1, item.inputGraphemeCount + 8))
+    let maxSteps = max(0, item.maxOutputLength - 1)
     do {
       let hypotheses = try LekhNeuralBeamSearch.rank(
         vocabularySize: item.vocabularySize,
@@ -522,7 +546,21 @@ private func verifyNeuralDecoderContract() {
         eosTokenId: item.eosTokenId,
         invalidTokenIds: Set(item.invalidTokenIds),
         beamWidth: item.beamWidth,
-        maxSteps: maxSteps
+        maxSteps: maxSteps,
+        permitsToken: { prefix, tokenId in
+          let prefixText = prefix.compactMap { id -> String? in
+            guard item.tokensById.indices.contains(id) else { return nil }
+            let token = item.tokensById[id]
+            return ["<pad>", "<s>", "</s>", "<unk>"].contains(token) ? nil : token
+          }.joined()
+          if tokenId == item.eosTokenId {
+            return LekhDevanagariOutputSequence.analyze(prefixText).terminable
+          }
+          guard item.tokensById.indices.contains(tokenId) else { return false }
+          let token = item.tokensById[tokenId]
+          return LekhDevanagariOutputSequence.isSupportedScalarToken(token) &&
+            LekhDevanagariOutputSequence.analyze(prefixText + token).validPrefix
+        }
       ) { prefix, _ in
         let key = prefix.map(String.init).joined(separator: ",")
         guard let logits = item.logitsByPrefix[key] else {
@@ -538,6 +576,38 @@ private func verifyNeuralDecoderContract() {
       require(false, "Swift decoder fixture \(item.id) failed: \(error)")
     }
   }
+
+  for value in [
+    "नेपाल", "क्षेत्र", "क़लम", "किं", "गाउँ", "दुःख",
+    "पश्चात्", "क्‍ष", "पुनर्अभिमुखीकरण"
+  ] {
+    let analysis = LekhDevanagariOutputSequence.analyze(value)
+    require(
+      analysis.validPrefix && analysis.terminable,
+      "Valid scalar output sequence was rejected: \(value), \(analysis.issueCodes)"
+    )
+  }
+  for (value, issue) in [
+    ("ेनेपाल", "dependent-vowel-sign-without-consonant"),
+    ("ंचुनाव", "mark-without-base"),
+    ("किी", "multiple-dependent-vowel-signs"),
+    ("कुँँ", "duplicate-mark"),
+    ("छन्ः", "mark-after-virama"),
+    ("कि्", "virama-after-dependent-vowel-sign"),
+    ("क्‍ा", "joiner-not-before-consonant"),
+    ("राम।", "punctuation")
+  ] {
+    let analysis = LekhDevanagariOutputSequence.analyze(value)
+    require(
+      !analysis.validPrefix && analysis.issueCodes.contains(issue),
+      "Malformed scalar output sequence escaped validation: \(value), \(analysis.issueCodes)"
+    )
+  }
+  let pendingJoiner = LekhDevanagariOutputSequence.analyze("क्‍")
+  require(
+    pendingJoiner.validPrefix && !pendingJoiner.terminable,
+    "A trailing joiner must remain a legal but non-terminable prefix"
+  )
 
   do {
     _ = try LekhNeuralBeamSearch.rank(
@@ -724,6 +794,47 @@ private func verifySplitAttentionRuntime() {
     require(false, "Split attention recurrent fixture failed: \(error)")
   }
 
+  var constrainedStep = 0
+  let constrainedEncoder = FakeNeuralModel { _ in splitEncoderOutput(contract: contract) }
+  let constrainedDecoder = FakeNeuralModel { _ in
+    constrainedStep += 1
+    let row = constrainedStep == 1
+      ? [-20.0, -20.0, -20.0, -20.0, 10.0, 100.0]
+      : [-20.0, -20.0, 10.0, -20.0, -20.0, -20.0]
+    return neuralProvider([
+      "stepLogits": neuralArray(
+        shape: [contract.beamWidth, contract.vocabularySize],
+        dataType: .float16,
+        values: (0..<contract.beamWidth).flatMap { _ in row }
+      ),
+      "nextDecoderHidden": neuralArray(
+        shape: [contract.decoderLayers, contract.beamWidth, contract.hiddenWidth],
+        dataType: .float16
+      )
+    ])
+  }
+  do {
+    let constrained = try LekhNeuralSplitAttentionRuntime.rank(
+      models: .init(encoder: constrainedEncoder, decoderStep: constrainedDecoder),
+      contract: contract,
+      inputIds: inputIds,
+      padTokenId: 0,
+      sosTokenId: 1,
+      eosTokenId: 2,
+      invalidTokenIds: [0, 1, 3],
+      maxSteps: 2,
+      permitsToken: { prefix, tokenId in
+        prefix == [1] ? tokenId == 4 : tokenId == 2
+      }
+    )
+    require(
+      constrained.map(\.tokenIds) == [[1, 4, 2]],
+      "Split decoding must mask a higher-logit illegal scalar and require EOS"
+    )
+  } catch {
+    require(false, "Split constrained-decoder fixture failed: \(error)")
+  }
+
   let malformedEncoder = FakeNeuralModel { _ in
     splitEncoderOutput(contract: contract, initialHiddenShape: [2, 1, 3])
   }
@@ -870,12 +981,14 @@ private func verifySplitAttentionManifestContract() {
     "schemaVersion": 1,
     "modelId": "lekh-open-vocab-bigru-attention-v1",
     "generatedAt": "2026-07-23T00:00:00Z",
-    "tokenization": "unicode-grapheme-character",
+    "tokenization": "unicode-scalar-character",
     "input": vocabulary,
     "output": outputVocabulary,
     "decoder": [
       "type": "beam-search",
       "beamWidth": 4,
+      "maxSteps": 7,
+      "outputSequenceValidation": "devanagari-word-sequence-v1",
       "rejectWhitespaceCandidates": true,
       "rejectLatinCandidates": true
     ],
@@ -947,9 +1060,15 @@ private func verifySplitAttentionManifestContract() {
     "productionEligible": false,
     "architecture": "bidirectional-gru-additive-attention-seq2seq",
     "openVocabulary": true,
-    "tokenization": "unicode-grapheme-character",
+    "tokenization": "unicode-scalar-character",
+    "outputSequenceValidation": "devanagari-word-sequence-v1",
     "decoder": "beam-search",
-    "beamSearch": ["enabled": true, "beamWidth": 4, "maxOutputGraphemes": 8],
+    "beamSearch": [
+      "enabled": true,
+      "beamWidth": 4,
+      "maxOutputGraphemes": 8,
+      "maxSteps": 7
+    ],
     "languageModelRescorer": ["enabled": false, "source": "none", "weight": 0],
     "contextWindowWords": 0,
     "parameterCount": 1_000_000,
@@ -1010,6 +1129,34 @@ private func verifySplitAttentionManifestContract() {
   }
 
   require(validates(manifest), "The exact two-artifact split manifest contract must parse")
+
+  var overflowingTensor = manifest
+  var overflowingTensorContract = overflowingTensor["tensorContract"] as! [String: Any]
+  var overflowingEncoder = overflowingTensorContract["encoder"] as! [String: Any]
+  var overflowingOutputs = overflowingEncoder["outputs"] as! [String: Any]
+  overflowingOutputs["initialDecoderHidden"] = [
+    "shape": [2, 1, Int.max],
+    "dataType": "FLOAT16"
+  ]
+  overflowingEncoder["outputs"] = overflowingOutputs
+  overflowingTensorContract["encoder"] = overflowingEncoder
+  overflowingTensor["tensorContract"] = overflowingTensorContract
+  require(
+    !validates(overflowingTensor),
+    "Adversarial tensor dimensions must fail closed without integer overflow"
+  )
+
+  var underflow = manifest
+  underflow["beamSearch"] = [
+    "enabled": true,
+    "beamWidth": 4,
+    "maxOutputGraphemes": Int.min,
+    "maxSteps": 7
+  ]
+  require(
+    !validates(underflow),
+    "An adversarial decoder length must fail closed without integer underflow"
+  )
 
   var partial = manifest
   var partialModels = partial["compiledModels"] as! [String: Any]

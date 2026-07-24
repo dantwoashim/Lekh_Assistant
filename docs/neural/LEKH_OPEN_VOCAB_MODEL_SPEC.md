@@ -474,17 +474,21 @@ The Phase 4 gate must:
   `.mlmodelc`, bind the frozen gold manifest/corpus/suite paths, row counts, and
   SHA-256 identities, and reject any mutation before the export report is
   published;
-- use the shared `contracts/neural-decoder/v1/lekh-neural-decoder.v1.json`
-  corpus so Python evidence and Swift runtime agree on log-softmax scoring,
-  beam width, invalid-token filtering, tie breaks, length normalization, and
-  the input-length-bounded maximum step count;
+- use the shared scalar decoder contract at
+  `contracts/neural-decoder/v2/lekh-neural-decoder.v2.json` so Python evidence
+  and Swift runtime agree on log-softmax scoring, beam width, invalid-token
+  filtering, tie breaks, length normalization, prefix grammar, and EOS
+  termination;
+- retain `contracts/neural-decoder/v1/lekh-neural-decoder.v1.json` unchanged
+  solely for quarantined schema-v1 development artifacts;
+- expose every output tensor step while reserving the final step for EOS, so
+  decoded candidates cannot exceed the lexical capacity used during training;
 - flag the existing closed-vocabulary model directory as disconnected until a matching production manifest and digest exist.
 
-Implementation-contract version 1 deliberately has `attention: none`, zero
-context words, and a disabled `not-implemented` language-model rescorer. Those
-are candidate limitations, not hidden production claims. Development reports
-them as readiness warnings. Production fails until an implemented, native-bound
-context rescorer and a newly trained artifact satisfy the production contract.
+Implementation-contract version 1 is deliberately token-only: zero context
+words and a disabled language-model rescorer. Production metadata must describe
+that behavior exactly. Context rescoring is a future, separately versioned
+capability and is never implied by this artifact.
 
 Production proof is intentionally separate:
 

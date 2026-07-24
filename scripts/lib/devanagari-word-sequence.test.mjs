@@ -1,12 +1,31 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   DEVANAGARI_WORD_SEQUENCE_VALIDATOR_ID,
+  analyzeDevanagariOutputSequence,
   isValidDevanagariWordSequence,
   partitionDevanagariWordTargets,
   validateDevanagariWordSequence
 } from "./devanagari-word-sequence.mjs";
 
+const sharedDecoderContract = JSON.parse(readFileSync(
+  new URL("../../contracts/neural-decoder/v2/lekh-neural-decoder.v2.json", import.meta.url),
+  "utf8"
+));
+
 describe("Devanagari scalar word-sequence validator", () => {
+  it("matches every shared Python/Swift sequence-contract case exactly", () => {
+    expect(sharedDecoderContract.outputSequenceValidation)
+      .toBe(DEVANAGARI_WORD_SEQUENCE_VALIDATOR_ID);
+    for (const item of sharedDecoderContract.sequenceCases) {
+      expect(analyzeDevanagariOutputSequence(item.value), item.value).toEqual({
+        validPrefix: item.validPrefix,
+        terminable: item.terminable,
+        issueCodes: item.issueCodes
+      });
+    }
+  });
+
   it("accepts normal syllables, conjuncts, modifiers, nukta, and adjacent units", () => {
     expect(DEVANAGARI_WORD_SEQUENCE_VALIDATOR_ID).toBe("devanagari-word-sequence-v1");
     for (const value of [

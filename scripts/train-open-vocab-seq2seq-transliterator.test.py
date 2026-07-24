@@ -135,12 +135,13 @@ class TrainerContractTests(unittest.TestCase):
         temporary_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="lekh-split-inventory-test-", dir=temporary_root) as directory:
             root = Path(directory)
+            out_dir = root / "run"
             args = TRAINER.parse_args([
                 "--config", str(TRAINER.ROOT / "data/neural/training/open-vocab-bigru-attention-v1.config.json"),
-                "--out-dir", str(root / "run"),
-                "--compiled-model", str(root / "Attention.mlmodelc"),
-                "--manifest", str(root / "Attention.manifest.json"),
-                "--vocab-metadata", str(root / "Attention.vocab.json"),
+                "--out-dir", str(out_dir),
+                "--compiled-model", str(out_dir / "Attention.mlmodelc"),
+                "--manifest", str(out_dir / "Attention.manifest.json"),
+                "--vocab-metadata", str(out_dir / "Attention.vocab.json"),
             ], {})
             paths = TRAINER.attention_artifact_paths(args)
             for role in ("encoder", "decoderStep"):
@@ -193,16 +194,32 @@ class TrainerContractTests(unittest.TestCase):
                 TRAINER.directory_bytes(model_dir)
 
     def test_shared_decoder_fixture_uses_log_softmax_and_stable_ties(self) -> None:
-        fixture_path = TRAINER.ROOT / "contracts/neural-decoder/v1/lekh-neural-decoder.v1.json"
+        fixture_path = TRAINER.ROOT / "contracts/neural-decoder/v2/lekh-neural-decoder.v2.json"
         fixture = TRAINER.read_json(fixture_path)
-        self.assertEqual(fixture["schemaVersion"], 1)
+        self.assertEqual(fixture["schemaVersion"], 2)
+        self.assertEqual(fixture["tokenization"], TRAINER.OUTPUT_TOKENIZATION)
+        self.assertEqual(
+            fixture["outputSequenceValidation"],
+            TRAINER.OUTPUT_SEQUENCE_VALIDATION,
+        )
+        self.assertEqual(fixture["maxSteps"], "maxOutputLength-minus-1")
+        for case in fixture["sequenceCases"]:
+            self.assertEqual(
+                TRAINER.analyze_devanagari_output_sequence(case["value"]),
+                {
+                    "validPrefix": case["validPrefix"],
+                    "terminable": case["terminable"],
+                    "issueCodes": case["issueCodes"],
+                },
+                case["value"],
+            )
         for case in fixture["cases"]:
             def predict(prefix: list[int], _step: int) -> TRAINER.np.ndarray:
                 return TRAINER.np.asarray(case["logitsByPrefix"][",".join(map(str, prefix))], dtype=TRAINER.np.float64)
 
             observed = TRAINER.beam_search_token_ids(
                 predict,
-                input_grapheme_count=case["inputGraphemeCount"],
+                input_grapheme_count=0,
                 max_output_len=case["maxOutputLength"],
                 beam_width=case["beamWidth"],
                 maximum_candidates=case["beamWidth"],
@@ -211,8 +228,125 @@ class TrainerContractTests(unittest.TestCase):
                 eos_id=case["eosTokenId"],
                 unk_id=case["invalidTokenIds"][2],
                 vocab_size=case["vocabularySize"],
+                tokens_by_id=case["tokensById"],
             )
             self.assertEqual(observed, case["expectedTokenIds"], case["id"])
+
+    def test_unicode_scalar_output_contract_and_sequence_grammar(self) -> None:
+        self.assertEqual(TRAINER.output_scalars("किं"), ["क", "ि", "ं"])
+        for value in [
+            "नेपाल",
+            "क्षेत्र",
+            "क़लम",
+            "किं",
+            "गाउँ",
+            "दुःख",
+            "पश्चात्",
+            "क्‍ष",
+            "पुनर्अभिमुखीकरण",
+        ]:
+            analysis = TRAINER.analyze_devanagari_output_sequence(value)
+            self.assertTrue(analysis["validPrefix"], value)
+            self.assertTrue(analysis["terminable"], value)
+        for value, issue in [
+            ("ेनेपाल", "dependent-vowel-sign-without-consonant"),
+            ("ंचुनाव", "mark-without-base"),
+            ("किी", "multiple-dependent-vowel-signs"),
+            ("कुँँ", "duplicate-mark"),
+            ("छन्ः", "mark-after-virama"),
+            ("कि्", "virama-after-dependent-vowel-sign"),
+            ("क्‍ा", "joiner-not-before-consonant"),
+            ("राम।", "punctuation"),
+        ]:
+            analysis = TRAINER.analyze_devanagari_output_sequence(value)
+            self.assertFalse(analysis["validPrefix"], value)
+            self.assertIn(issue, analysis["issueCodes"], value)
+        pending_joiner = TRAINER.analyze_devanagari_output_sequence("क्‍")
+        self.assertTrue(pending_joiner["validPrefix"])
+        self.assertFalse(pending_joiner["terminable"])
+
+    def test_scalar_decoder_masks_invalid_prefixes_and_uses_every_tensor_step(self) -> None:
+        tokens = [TRAINER.PAD, TRAINER.SOS, TRAINER.EOS, TRAINER.UNK, "क", "ा", "ि", "्", "\u200D", "ष"]
+        self.assertEqual(TRAINER.decoder_max_steps(1, 32), 31)
+        self.assertFalse(TRAINER.output_token_permitted([1], 2, eos_id=2, tokens_by_id=tokens))
+        self.assertFalse(TRAINER.output_token_permitted([1], 5, eos_id=2, tokens_by_id=tokens))
+        self.assertTrue(TRAINER.output_token_permitted([1], 4, eos_id=2, tokens_by_id=tokens))
+        self.assertTrue(TRAINER.output_token_permitted([1, 4], 5, eos_id=2, tokens_by_id=tokens))
+        self.assertFalse(TRAINER.output_token_permitted([1, 4, 5], 6, eos_id=2, tokens_by_id=tokens))
+        self.assertTrue(TRAINER.output_token_permitted([1, 4, 7], 8, eos_id=2, tokens_by_id=tokens))
+        self.assertFalse(TRAINER.output_token_permitted([1, 4, 7, 8], 2, eos_id=2, tokens_by_id=tokens))
+        self.assertTrue(TRAINER.output_token_permitted([1, 4, 7, 8], 9, eos_id=2, tokens_by_id=tokens))
+        self.assertTrue(TRAINER.output_token_permitted([1, 4, 7, 8, 9], 2, eos_id=2, tokens_by_id=tokens))
+
+    def test_decoder_requires_eos_and_never_exceeds_training_lexical_capacity(self) -> None:
+        tokens = [TRAINER.PAD, TRAINER.SOS, TRAINER.EOS, TRAINER.UNK, "क", "ख"]
+
+        def predict(_prefix: list[int], _step: int) -> TRAINER.np.ndarray:
+            return TRAINER.np.asarray([0, 0, -100, 0, 100, 99], dtype=TRAINER.np.float64)
+
+        observed = TRAINER.beam_search_token_ids(
+            predict,
+            input_grapheme_count=1,
+            max_output_len=4,
+            beam_width=2,
+            maximum_candidates=2,
+            pad_id=0,
+            sos_id=1,
+            eos_id=2,
+            unk_id=3,
+            vocab_size=len(tokens),
+            tokens_by_id=tokens,
+        )
+        self.assertTrue(observed)
+        self.assertTrue(all(ids[-1] == 2 for ids in observed))
+        self.assertTrue(all(len(ids[1:-1]) <= 2 for ids in observed))
+
+    def test_latency_benchmark_exercises_complete_beam_candidate_generation(self) -> None:
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-full-decode-benchmark-", dir=temporary_root) as directory:
+            args = TRAINER.parse_args([
+                "--out-dir", str(Path(directory) / "run"),
+                "--max-input-len", "8",
+                "--max-output-len", "4",
+                "--beam-width", "2",
+                "--maximum-candidates", "2",
+            ], {})
+            input_vocab = {
+                TRAINER.PAD: 0, TRAINER.SOS: 1, TRAINER.EOS: 2, TRAINER.UNK: 3,
+                "a": 4, "b": 5, "c": 6,
+            }
+            output_vocab = {
+                TRAINER.PAD: 0, TRAINER.SOS: 1, TRAINER.EOS: 2, TRAINER.UNK: 3,
+                "क": 4, "ख": 5,
+            }
+
+            class CountingModel:
+                def __init__(self) -> None:
+                    self.calls = 0
+
+                def predict(self, _payload: dict[str, TRAINER.np.ndarray]) -> dict[str, TRAINER.np.ndarray]:
+                    self.calls += 1
+                    logits = TRAINER.np.zeros((1, 3, 6), dtype=TRAINER.np.float32)
+                    logits[:, :, 2] = -10
+                    logits[:, :, 4] = 10
+                    logits[:, :, 5] = 9
+                    return {"logits": logits}
+
+            model = CountingModel()
+            backend = TRAINER.CompiledCoreMLBackend(model, (1, 3, 6), "a" * 64)
+            with mock.patch.object(TRAINER, "directory_sha256", return_value="a" * 64):
+                result = TRAINER.benchmark_coreml(
+                    args,
+                    backend,
+                    {"inputVocab": input_vocab, "outputVocab": output_vocab},
+                )
+
+            self.assertGreater(model.calls, 129)
+            self.assertTrue(TRAINER.valid_benchmark_result(result, args))
+            evidence = TRAINER.read_json(TRAINER.measurements_path(args))
+            self.assertEqual(evidence["measurementKind"], "full-candidate-generation")
+            self.assertEqual(evidence["sampleCount"], 120)
 
     def test_gold_manifest_and_every_suite_are_content_addressed(self) -> None:
         temporary_root = TRAINER.ROOT / ".tmp"
@@ -577,9 +711,9 @@ class TrainerContractTests(unittest.TestCase):
                 "--config", str(TRAINER.ROOT / "data/neural/training/open-vocab-bigru-attention-v1.config.json"),
                 "--gold-manifest", str(gold_manifest),
                 "--out-dir", str(out_dir),
-                "--compiled-model", str(root / "Attention.mlmodelc"),
-                "--manifest", str(root / "Attention.manifest.json"),
-                "--vocab-metadata", str(root / "Attention.vocab.json"),
+                "--compiled-model", str(out_dir / "Attention.mlmodelc"),
+                "--manifest", str(out_dir / "Attention.manifest.json"),
+                "--vocab-metadata", str(out_dir / "Attention.vocab.json"),
                 "--embedding-dim", "4",
                 "--hidden-dim", "8",
                 "--attention-dim", "6",
@@ -617,6 +751,7 @@ class TrainerContractTests(unittest.TestCase):
                 len(output_vocab),
                 TRAINER.checkpoint_runtime_config(args),
             ).eval()
+            run_input_snapshot = TRAINER.ensure_run_input_snapshot(args)
             checkpoint = {
                 "modelId": TRAINER.ATTENTION_MODEL_ID,
                 "trainingRunId": args.training_run_id,
@@ -625,11 +760,12 @@ class TrainerContractTests(unittest.TestCase):
                 "outputVocab": output_vocab,
                 "stateDict": model.state_dict(),
                 "parameterCount": sum(parameter.numel() for parameter in model.parameters()),
+                "runInputSnapshot": run_input_snapshot,
                 "datasetManifestSha256": "d" * 64,
                 "vocabMetadataSha256": "e" * 64,
                 "trainingSourceCounts": {"test-fixture": 1},
             }
-            out_dir.mkdir(parents=True)
+            out_dir.mkdir(parents=True, exist_ok=True)
             torch.save(checkpoint, TRAINER.checkpoint_path(args))
             training_report = {
                 "trainingRunId": args.training_run_id,
@@ -850,6 +986,50 @@ class TrainerContractTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "dev SHA-256"):
                 TRAINER.verify_dataset_split_artifacts(manifest)
 
+    def test_run_input_snapshot_detects_dataset_mutation_before_publication(self) -> None:
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-run-snapshot-test-", dir=temporary_root) as directory:
+            root = Path(directory)
+            paths = {split: root / f"{split}.jsonl" for split in ("train", "dev", "test")}
+            for split, path in paths.items():
+                write_rows(path, [row(f"{split}-1", f"{split}a", "क")])
+            evidence = {split: TRAINER.inspect_jsonl_artifact(path) for split, path in paths.items()}
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps({
+                "schemaVersion": 2,
+                "datasetContentSha256": "c" * 64,
+                "splitFiles": {split: str(path) for split, path in paths.items()},
+                "sha256": {split: item["sha256"] for split, item in evidence.items()},
+                "counts": {split: item["rows"] for split, item in evidence.items()},
+                "bytes": {split: item["bytes"] for split, item in evidence.items()},
+                "totalRows": 3,
+            }), encoding="utf-8")
+            args = TRAINER.parse_args([
+                "--dataset-manifest", str(manifest_path),
+                "--out-dir", str(root / "run"),
+                "--compiled-model", str(root / "run" / "model.mlmodelc"),
+                "--manifest", str(root / "run" / "model.manifest.json"),
+                "--vocab-metadata", str(root / "run" / "model.vocab.json"),
+                "--max-train-rows", "1",
+                "--max-dev-rows", "1",
+                "--epochs", "1",
+                "--batch-size", "1",
+                "--embedding-dim", "4",
+                "--hidden-dim", "8",
+                "--layers", "1",
+                "--dropout", "0",
+                "--max-input-len", "16",
+                "--max-output-len", "8",
+                "--skip-coreml",
+            ], {})
+            TRAINER.ensure_run_input_snapshot(args)
+            paths["dev"].write_text(paths["dev"].read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "dev SHA-256"):
+                TRAINER.assert_run_input_snapshot_unchanged(args)
+            self.assertFalse((root / "run" / "checkpoint.pt").exists())
+
     def test_target_identity_cannot_leak_across_dataset_splits(self) -> None:
         temporary_root = TRAINER.ROOT / ".tmp"
         temporary_root.mkdir(parents=True, exist_ok=True)
@@ -872,6 +1052,56 @@ class TrainerContractTests(unittest.TestCase):
             }), encoding="utf-8")
 
             with self.assertRaisesRegex(SystemExit, "target leakage between train and dev: बाटो"):
+                TRAINER.load_rows(manifest_path, 10, 10, 42, 32, 32)
+
+    def test_acceptable_alias_cannot_hide_target_leakage_across_splits(self) -> None:
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-alias-leakage-test-", dir=temporary_root) as directory:
+            root = Path(directory)
+            paths = {split: root / f"{split}.jsonl" for split in ("train", "dev", "test")}
+            write_rows(paths["train"], [row("train-1", "baato", "बाटो")])
+            dev_row = row("dev-1", "patha", "पथ")
+            dev_row["acceptable"] = ["पथ", "बाटो"]
+            write_rows(paths["dev"], [dev_row])
+            write_rows(paths["test"], [row("test-1", "ghar", "घर")])
+            evidence = {split: TRAINER.inspect_jsonl_artifact(path) for split, path in paths.items()}
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps({
+                "schemaVersion": 2,
+                "datasetContentSha256": "e" * 64,
+                "splitFiles": {split: str(path) for split, path in paths.items()},
+                "sha256": {split: item["sha256"] for split, item in evidence.items()},
+                "counts": {split: item["rows"] for split, item in evidence.items()},
+                "bytes": {split: item["bytes"] for split, item in evidence.items()},
+                "totalRows": 3,
+            }), encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "target leakage between train and dev: बाटो"):
+                TRAINER.load_rows(manifest_path, 10, 10, 42, 32, 32)
+
+    def test_normalized_input_identity_cannot_leak_across_dataset_splits(self) -> None:
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="lekh-input-leakage-test-", dir=temporary_root) as directory:
+            root = Path(directory)
+            paths = {split: root / f"{split}.jsonl" for split in ("train", "dev", "test")}
+            write_rows(paths["train"], [row("train-1", "  BaaTo  ", "बाटो")])
+            write_rows(paths["dev"], [row("dev-1", "ghar", "घर")])
+            write_rows(paths["test"], [row("test-1", "baato", "पथ")])
+            evidence = {split: TRAINER.inspect_jsonl_artifact(path) for split, path in paths.items()}
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps({
+                "schemaVersion": 2,
+                "datasetContentSha256": "d" * 64,
+                "splitFiles": {split: str(path) for split, path in paths.items()},
+                "sha256": {split: item["sha256"] for split, item in evidence.items()},
+                "counts": {split: item["rows"] for split, item in evidence.items()},
+                "bytes": {split: item["bytes"] for split, item in evidence.items()},
+                "totalRows": 3,
+            }), encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "input leakage between train and test: baato"):
                 TRAINER.load_rows(manifest_path, 10, 10, 42, 32, 32)
 
     def test_internal_accuracy_is_unreportable_when_decoder_cannot_emit_top_three(self) -> None:
@@ -929,9 +1159,9 @@ class TrainerContractTests(unittest.TestCase):
             args = TRAINER.parse_args([
                 "--dataset-manifest", str(dataset_manifest),
                 "--out-dir", str(out_dir),
-                "--compiled-model", str(root / "model.mlmodelc"),
-                "--manifest", str(root / "model.manifest.json"),
-                "--vocab-metadata", str(root / "model.vocab.json"),
+                "--compiled-model", str(out_dir / "model.mlmodelc"),
+                "--manifest", str(out_dir / "model.manifest.json"),
+                "--vocab-metadata", str(out_dir / "model.vocab.json"),
                 "--max-train-rows", "3",
                 "--max-dev-rows", "2",
                 "--epochs", "1",
@@ -961,18 +1191,28 @@ class TrainerContractTests(unittest.TestCase):
             self.assertEqual(report["sampledRowDigests"], checkpoint["sampledRowDigests"])
             self.assertEqual(report["effectiveTrainingConfigSha256"], checkpoint["effectiveTrainingConfigSha256"])
             self.assertEqual(report["trainerSha256"], checkpoint["trainerSha256"])
+            self.assertEqual(report["runInputSnapshot"], checkpoint["runInputSnapshot"])
             self.assertEqual(report["vocabMetadataSha256"], checkpoint["vocabMetadataSha256"])
             reloaded = TRAINER.load_checkpoint(args)
             self.assertEqual(reloaded["report"]["checkpointSha256"], report["checkpointSha256"])
-            vocab = json.loads((root / "model.vocab.json").read_text(encoding="utf-8"))
+            vocab = json.loads((out_dir / "model.vocab.json").read_text(encoding="utf-8"))
             self.assertEqual(
                 set(vocab),
                 {"schemaVersion", "modelId", "generatedAt", "tokenization", "input", "output", "decoder", "dataset", "nativeRuntimePolicy"},
             )
             self.assertEqual(
                 set(vocab["decoder"]),
-                {"type", "beamWidth", "rejectWhitespaceCandidates", "rejectLatinCandidates"},
+                {
+                    "type",
+                    "beamWidth",
+                    "maxSteps",
+                    "outputSequenceValidation",
+                    "rejectWhitespaceCandidates",
+                    "rejectLatinCandidates",
+                },
             )
+            self.assertEqual(vocab["tokenization"], TRAINER.OUTPUT_TOKENIZATION)
+            self.assertEqual(vocab["decoder"]["maxSteps"], 7)
             self.assertEqual(set(vocab["dataset"]), {"manifest", "manifestSha256", "splitSha256"})
 
             args.compiled_model.mkdir(parents=True)
@@ -1098,9 +1338,9 @@ class TrainerContractTests(unittest.TestCase):
                 "--dataset-manifest", str(dataset_manifest),
                 "--gold-manifest", str(gold_manifest),
                 "--out-dir", str(out_dir),
-                "--compiled-model", str(root / "Pipeline.mlmodelc"),
-                "--manifest", str(root / "Pipeline.manifest.json"),
-                "--vocab-metadata", str(root / "Pipeline.vocab.json"),
+                "--compiled-model", str(out_dir / "Pipeline.mlmodelc"),
+                "--manifest", str(out_dir / "Pipeline.manifest.json"),
+                "--vocab-metadata", str(out_dir / "Pipeline.vocab.json"),
                 "--max-train-rows", "3",
                 "--max-dev-rows", "1",
                 "--epochs", "1",

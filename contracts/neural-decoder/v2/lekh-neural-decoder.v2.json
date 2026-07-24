@@ -1,0 +1,83 @@
+{
+  "$id": "lekh-neural-decoder-v2",
+  "schemaVersion": 2,
+  "score": "accumulated-log-softmax",
+  "lengthNormalization": "score-divided-by-token-count-including-sos",
+  "tokenization": "unicode-scalar-character",
+  "outputSequenceValidation": "devanagari-word-sequence-v1",
+  "maxSteps": "maxOutputLength-minus-1",
+  "sequenceCases": [
+    {"value": "नेपाल", "validPrefix": true, "terminable": true, "issueCodes": []},
+    {"value": "क्षेत्र", "validPrefix": true, "terminable": true, "issueCodes": []},
+    {"value": "क़लम", "validPrefix": true, "terminable": true, "issueCodes": []},
+    {"value": "किं", "validPrefix": true, "terminable": true, "issueCodes": []},
+    {"value": "गाउँ", "validPrefix": true, "terminable": true, "issueCodes": []},
+    {"value": "दुःख", "validPrefix": true, "terminable": true, "issueCodes": []},
+    {"value": "पश्चात्", "validPrefix": true, "terminable": true, "issueCodes": []},
+    {"value": "क्‍ष", "validPrefix": true, "terminable": true, "issueCodes": []},
+    {"value": "पुनर्अभिमुखीकरण", "validPrefix": true, "terminable": true, "issueCodes": []},
+    {"value": "क्‍", "validPrefix": true, "terminable": false, "issueCodes": []},
+    {"value": "ेनेपाल", "validPrefix": false, "terminable": false, "issueCodes": ["dependent-vowel-sign-without-consonant"]},
+    {"value": "ंचुनाव", "validPrefix": false, "terminable": false, "issueCodes": ["mark-without-base"]},
+    {"value": "किी", "validPrefix": false, "terminable": false, "issueCodes": ["multiple-dependent-vowel-signs"]},
+    {"value": "कुँँ", "validPrefix": false, "terminable": false, "issueCodes": ["duplicate-mark", "multiple-syllable-modifiers"]},
+    {"value": "कंँ", "validPrefix": false, "terminable": false, "issueCodes": ["multiple-syllable-modifiers"]},
+    {"value": "कःं", "validPrefix": false, "terminable": false, "issueCodes": ["multiple-syllable-modifiers"]},
+    {"value": "छन्ः", "validPrefix": false, "terminable": false, "issueCodes": ["mark-after-virama"]},
+    {"value": "कि्", "validPrefix": false, "terminable": false, "issueCodes": ["virama-after-dependent-vowel-sign"]},
+    {"value": "क्‍ा", "validPrefix": false, "terminable": false, "issueCodes": ["joiner-not-before-consonant", "dependent-vowel-sign-after-virama"]},
+    {"value": "राम।", "validPrefix": false, "terminable": false, "issueCodes": ["punctuation"]},
+    {"value": "दामल१", "validPrefix": false, "terminable": false, "issueCodes": ["digit"]},
+    {"value": "़कलम", "validPrefix": false, "terminable": false, "issueCodes": ["orphan-or-misordered-nukta"]}
+  ],
+  "cases": [
+    {
+      "id": "prefix-normalization-changes-the-winner",
+      "vocabularySize": 6,
+      "sosTokenId": 1,
+      "eosTokenId": 2,
+      "invalidTokenIds": [0, 1, 3],
+      "tokensById": ["<pad>", "<s>", "</s>", "<unk>", "क", "ख"],
+      "beamWidth": 2,
+      "maxOutputLength": 3,
+      "logitsByPrefix": {
+        "1": [0, 0, -50, -50, 10, 9],
+        "1,4": [100, 100, 100, 100, 100, 100],
+        "1,5": [-100, -100, 1, -100, -100, -100]
+      },
+      "expectedTokenIds": [[1, 5, 2], [1, 4, 2]]
+    },
+    {
+      "id": "invalid-tokens-are-filtered-before-width-and-ties-use-token-id",
+      "vocabularySize": 6,
+      "sosTokenId": 1,
+      "eosTokenId": 2,
+      "invalidTokenIds": [0, 1, 3],
+      "tokensById": ["<pad>", "<s>", "</s>", "<unk>", "क", "ख"],
+      "beamWidth": 2,
+      "maxOutputLength": 3,
+      "logitsByPrefix": {
+        "1": [100, 99, 3, 98, 2, 2],
+        "1,4": [0, 0, 10, 0, 0, 0],
+        "1,5": [0, 0, 10, 0, 0, 0]
+      },
+      "expectedTokenIds": [[1, 4, 2], [1, 5, 2]]
+    },
+    {
+      "id": "illegal-dependent-vowel-winner-is-masked",
+      "vocabularySize": 7,
+      "sosTokenId": 1,
+      "eosTokenId": 2,
+      "invalidTokenIds": [0, 1, 3],
+      "tokensById": ["<pad>", "<s>", "</s>", "<unk>", "क", "ख", "ा"],
+      "beamWidth": 2,
+      "maxOutputLength": 3,
+      "logitsByPrefix": {
+        "1": [0, 0, -50, 0, 10, 9, 100],
+        "1,4": [0, 0, 10, 0, 0, 0, 0],
+        "1,5": [0, 0, 10, 0, 0, 0, 0]
+      },
+      "expectedTokenIds": [[1, 4, 2], [1, 5, 2]]
+    }
+  ]
+}
