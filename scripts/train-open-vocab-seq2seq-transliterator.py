@@ -201,11 +201,7 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
     args.model_id = str(config["modelId"])
     args.architecture_family = str(architecture["family"])
     args.attention_type = str(architecture["attention"])
-    candidate_stem = (
-        "LekhNeuralTransliteratorBiGRUAttention"
-        if args.model_id == ATTENTION_MODEL_ID
-        else "LekhNeuralTransliterator"
-    )
+    candidate_stem = "LekhNeuralTransliterator"
     if args.compiled_model is None:
         args.compiled_model = args.out_dir / f"{candidate_stem}.mlmodelc"
     if args.manifest is None:
@@ -268,9 +264,9 @@ def validate_executable_config(config: dict[str, Any]) -> None:
             "export": {
                 "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/checkpoint.pt",
                 "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlpackage",
-                "compiledModel": "models/macos/LekhNeuralTransliterator.mlmodelc",
-                "manifest": "models/macos/LekhNeuralTransliterator.manifest.json",
-                "vocabMetadata": rel(VOCAB_METADATA_PATH),
+                "compiledModel": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlmodelc",
+                "manifest": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.manifest.json",
+                "vocabMetadata": "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.vocab.json",
             },
         },
         ATTENTION_ARCHITECTURE_FAMILY: {
@@ -279,9 +275,9 @@ def validate_executable_config(config: dict[str, Any]) -> None:
             "export": {
                 "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/checkpoint.pt",
                 "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlpackage",
-                "compiledModel": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.mlmodelc",
-                "manifest": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.manifest.json",
-                "vocabMetadata": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.vocab.json",
+                "compiledModel": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlmodelc",
+                "manifest": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.manifest.json",
+                "vocabMetadata": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.vocab.json",
             },
         },
     }

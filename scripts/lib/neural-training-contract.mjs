@@ -16,9 +16,9 @@ const ARCHITECTURE_PROFILES = Object.freeze({
     attentionDim: 256,
     dropout: 0.12,
     artifact: Object.freeze({
-      compiledModel: "models/macos/LekhNeuralTransliterator.mlmodelc",
-      manifest: "models/macos/LekhNeuralTransliterator.manifest.json",
-      vocabMetadata: "models/macos/LekhNeuralTransliterator.vocab.json"
+      compiledModel: "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlmodelc",
+      manifest: "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.manifest.json",
+      vocabMetadata: "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.vocab.json"
     }),
     export: Object.freeze({
       sourceCheckpoint: "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/checkpoint.pt",
@@ -35,9 +35,9 @@ const ARCHITECTURE_PROFILES = Object.freeze({
     attentionDim: 256,
     dropout: 0.15,
     artifact: Object.freeze({
-      compiledModel: "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.mlmodelc",
-      manifest: "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.manifest.json",
-      vocabMetadata: "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.vocab.json"
+      compiledModel: "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlmodelc",
+      manifest: "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.manifest.json",
+      vocabMetadata: "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.vocab.json"
     }),
     export: Object.freeze({
       sourceCheckpoint: "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/checkpoint.pt",

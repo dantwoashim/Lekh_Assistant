@@ -4,9 +4,9 @@
   "phase": "challenger-bigru-additive-attention",
   "modelId": "lekh-open-vocab-bigru-attention-v1",
   "artifact": {
-    "compiledModel": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.mlmodelc",
-    "manifest": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.manifest.json",
-    "vocabMetadata": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.vocab.json",
+    "compiledModel": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlmodelc",
+    "manifest": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.manifest.json",
+    "vocabMetadata": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.vocab.json",
     "runtime": "CoreML",
     "localOnly": true,
     "neuralTailOnly": true
@@ -101,9 +101,9 @@
   "export": {
     "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/checkpoint.pt",
     "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlpackage",
-    "compiledModel": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.mlmodelc",
-    "manifest": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.manifest.json",
-    "vocabMetadata": "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.vocab.json",
+    "compiledModel": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlmodelc",
+    "manifest": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.manifest.json",
+    "vocabMetadata": "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.vocab.json",
     "reports": {
       "dataset": "reports/neural-open-vocab-dataset-report.json",
       "evaluation": "reports/neural-bigru-attention-evaluation.json",
