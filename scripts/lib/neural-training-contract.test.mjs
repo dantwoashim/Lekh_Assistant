@@ -11,6 +11,13 @@ import {
 } from "./neural-training-contract.mjs";
 
 const configPath = join(process.cwd(), "data", "neural", "training", "open-vocab-seq2seq-v1.config.json");
+const attentionConfigPath = join(
+  process.cwd(),
+  "data",
+  "neural",
+  "training",
+  "open-vocab-bigru-attention-v1.config.json"
+);
 
 describe("neural training implementation contract", () => {
   it("accepts the truthful schema-v2 candidate config without requiring an estimated parameter count", () => {
@@ -23,6 +30,18 @@ describe("neural training implementation contract", () => {
     expect(result.warnings).toEqual([
       "Context language-model rescoring is disabled and not implemented."
     ]);
+  });
+
+  it("accepts the implemented split-attention candidate contract", () => {
+    const config = JSON.parse(readFileSync(attentionConfigPath, "utf8"));
+
+    const result = validateNeuralTrainingConfig(config);
+
+    expect(result.failures).toEqual([]);
+    expect(result.warnings).toEqual([
+      "Context language-model rescoring is disabled and not implemented."
+    ]);
+    expect(configuredNeuralTrainingContract(config).architecture.attentionDim).toBe(256);
   });
 
   it("rejects unimplemented architecture and optimization claims", () => {
@@ -50,6 +69,20 @@ describe("neural training implementation contract", () => {
       expect.stringContaining("sourceMultipliers must be empty"),
       expect.stringContaining("export.compiledModel"),
       expect.stringContaining("requires context rescoring to remain disabled")
+    ]));
+  });
+
+  it("rejects a model id paired with another candidate's architecture and paths", () => {
+    const config = currentConfig();
+    config.modelId = "lekh-open-vocab-bigru-attention-v1";
+
+    const result = validateNeuralTrainingConfig(config);
+
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.stringContaining("canonical compiled-model path"),
+      expect.stringContaining("canonical model-manifest path"),
+      expect.stringContaining("architecture family"),
+      expect.stringContaining("attention mechanism")
     ]));
   });
 

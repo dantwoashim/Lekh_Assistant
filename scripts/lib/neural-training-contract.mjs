@@ -1,11 +1,50 @@
 import { createHash } from "node:crypto";
 
-const MODEL_ID = "lekh-open-vocab-seq2seq-v1";
 const CANONICAL_PUBLIC_SOURCE = "ai4bharat-aksharantar-nepali";
 const BLOCKED_MIRROR_SOURCES = [
   "syubraj-roman2nepali-transliteration",
   "saugatkafley-nepali-roman-transliteration"
 ];
+const ARCHITECTURE_PROFILES = Object.freeze({
+  "lekh-open-vocab-seq2seq-v1": Object.freeze({
+    family: "gru-encoder-decoder-seq2seq",
+    attention: "none",
+    encoderLayers: 2,
+    decoderLayers: 2,
+    embeddingDim: 96,
+    hiddenDim: 256,
+    attentionDim: 256,
+    dropout: 0.12,
+    artifact: Object.freeze({
+      compiledModel: "models/macos/LekhNeuralTransliterator.mlmodelc",
+      manifest: "models/macos/LekhNeuralTransliterator.manifest.json",
+      vocabMetadata: "models/macos/LekhNeuralTransliterator.vocab.json"
+    }),
+    export: Object.freeze({
+      sourceCheckpoint: "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/checkpoint.pt",
+      intermediateMLPackage: "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlpackage"
+    })
+  }),
+  "lekh-open-vocab-bigru-attention-v1": Object.freeze({
+    family: "bidirectional-gru-additive-attention-seq2seq",
+    attention: "bahdanau-additive",
+    encoderLayers: 2,
+    decoderLayers: 2,
+    embeddingDim: 128,
+    hiddenDim: 256,
+    attentionDim: 256,
+    dropout: 0.15,
+    artifact: Object.freeze({
+      compiledModel: "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.mlmodelc",
+      manifest: "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.manifest.json",
+      vocabMetadata: "models/macos/challengers/LekhNeuralTransliteratorBiGRUAttention.vocab.json"
+    }),
+    export: Object.freeze({
+      sourceCheckpoint: "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/checkpoint.pt",
+      intermediateMLPackage: "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlpackage"
+    })
+  })
+});
 
 export function configuredNeuralTrainingContract(config) {
   return {
@@ -15,6 +54,7 @@ export function configuredNeuralTrainingContract(config) {
       decoderLayers: config?.architecture?.decoderLayers,
       embeddingDim: config?.architecture?.embeddingDim,
       hiddenDim: config?.architecture?.hiddenDim,
+      attentionDim: config?.architecture?.attentionDim ?? config?.architecture?.hiddenDim,
       attention: config?.architecture?.attention,
       dropout: config?.architecture?.dropout
     },
@@ -40,27 +80,43 @@ export function validateNeuralTrainingConfig(config) {
 
   requireEqual(config.schemaVersion, 2, "Config schemaVersion must be 2.");
   requireEqual(config.implementationContractVersion, 1, "Config implementationContractVersion must be 1.");
-  requireEqual(config.modelId, MODEL_ID, "Config modelId must match the open-vocabulary artifact id.");
-  requireEqual(config.artifact?.compiledModel, "models/macos/LekhNeuralTransliterator.mlmodelc", "Config must declare the canonical compiled-model path.");
-  requireEqual(config.artifact?.manifest, "models/macos/LekhNeuralTransliterator.manifest.json", "Config must declare the canonical model-manifest path.");
+  const profile = ARCHITECTURE_PROFILES[config.modelId];
+  if (!profile) {
+    failures.push(`Config modelId names an unsupported executable candidate: ${JSON.stringify(config.modelId)}.`);
+  }
+  if (profile) {
+    requireEqual(config.artifact?.compiledModel, profile.artifact.compiledModel, "Config must declare the candidate's canonical compiled-model path.");
+    requireEqual(config.artifact?.manifest, profile.artifact.manifest, "Config must declare the candidate's canonical model-manifest path.");
+    if (config.artifact?.vocabMetadata !== undefined) {
+      requireEqual(config.artifact.vocabMetadata, profile.artifact.vocabMetadata, "Config must declare the candidate's canonical vocabulary path.");
+    }
+  }
   requireEqual(config.artifact?.runtime, "CoreML", "Config runtime must be CoreML.");
   requireEqual(config.artifact?.localOnly, true, "Config must be local-only.");
   requireEqual(config.artifact?.neuralTailOnly, true, "Config must be neural-tail-only.");
-  requireEqual(config.export?.sourceCheckpoint, "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/checkpoint.pt", "Config must declare the canonical source checkpoint path.");
-  requireEqual(config.export?.intermediateMLPackage, "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/LekhNeuralTransliterator.mlpackage", "Config must declare the canonical intermediate package path.");
+  if (profile) {
+    requireEqual(config.export?.sourceCheckpoint, profile.export.sourceCheckpoint, "Config must declare the candidate's canonical source checkpoint path.");
+    requireEqual(config.export?.intermediateMLPackage, profile.export.intermediateMLPackage, "Config must declare the candidate's canonical intermediate package path.");
+    if (config.export?.vocabMetadata !== undefined) {
+      requireEqual(config.export.vocabMetadata, profile.artifact.vocabMetadata, "Config export must declare the candidate's canonical vocabulary path.");
+    }
+  }
   requireEqual(config.export?.compiledModel, config.artifact?.compiledModel, "Config export.compiledModel must match artifact.compiledModel.");
   requireEqual(config.export?.manifest, config.artifact?.manifest, "Config export.manifest must match artifact.manifest.");
 
   const architecture = config.architecture;
-  requireEqual(architecture?.family, "gru-encoder-decoder-seq2seq", "Config must name the implemented GRU encoder-decoder architecture.");
   requireEqual(architecture?.openVocabulary, true, "Config must describe an open-vocabulary model.");
   requireEqual(architecture?.tokenization, "unicode-scalar-character", "Config must describe the implemented Unicode-scalar tokenizer.");
-  requireEqual(architecture?.encoderLayers, 2, "Config encoderLayers must match the implementation contract.");
-  requireEqual(architecture?.decoderLayers, 2, "Config decoderLayers must match the implementation contract.");
-  requireEqual(architecture?.embeddingDim, 96, "Config embeddingDim must match the implementation contract.");
-  requireEqual(architecture?.hiddenDim, 256, "Config hiddenDim must match the implementation contract.");
-  requireEqual(architecture?.attention, "none", "Config must not claim an attention mechanism that is not implemented.");
-  requireEqual(architecture?.dropout, 0.12, "Config dropout must match the implementation contract.");
+  if (profile) {
+    requireEqual(architecture?.family, profile.family, "Config architecture family must match its executable candidate.");
+    requireEqual(architecture?.encoderLayers, profile.encoderLayers, "Config encoderLayers must match the implementation contract.");
+    requireEqual(architecture?.decoderLayers, profile.decoderLayers, "Config decoderLayers must match the implementation contract.");
+    requireEqual(architecture?.embeddingDim, profile.embeddingDim, "Config embeddingDim must match the implementation contract.");
+    requireEqual(architecture?.hiddenDim, profile.hiddenDim, "Config hiddenDim must match the implementation contract.");
+    requireEqual(architecture?.attentionDim ?? architecture?.hiddenDim, profile.attentionDim, "Config attentionDim must match the implementation contract.");
+    requireEqual(architecture?.attention, profile.attention, "Config attention mechanism must match its executable candidate.");
+    requireEqual(architecture?.dropout, profile.dropout, "Config dropout must match the implementation contract.");
+  }
   requireEqual(architecture?.minimumParameterCount, 1_000_000, "Config minimumParameterCount must be the frozen 1,000,000 lower bound.");
   requireEqual(architecture?.maximumParameterCount, 5_000_000, "Config maximumParameterCount must be the frozen 5,000,000 upper bound.");
   requireEqual(architecture?.maximumCompiledBytes, 16_777_216, "Config maximumCompiledBytes must be 16,777,216.");
