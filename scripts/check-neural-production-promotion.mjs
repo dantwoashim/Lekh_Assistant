@@ -57,7 +57,7 @@ if (production) {
   requireReportStatus("benchmark", /^passed-production-/u);
   requireReportStatus("nativeIntegration", /^passed-production-/u);
   requireReportStatus("runtimeConformance", /^passed-production-runtime-conformance$/u);
-  requireReportStatus("modelSelection", /^passed$/u);
+  requireReportStatus("modelSelection", /^passed-neural-model-selection$/u);
   requireReportStatus("readiness", /^passed$/u);
 }
 

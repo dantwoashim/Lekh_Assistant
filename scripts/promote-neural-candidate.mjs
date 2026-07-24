@@ -37,6 +37,9 @@ import {
 import {
   validateNeuralDeviceMeasurements
 } from "./lib/neural-device-measurements.mjs";
+import {
+  validateNeuralSelectionReport
+} from "./lib/neural-model-selection.mjs";
 
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
@@ -98,6 +101,11 @@ export function promoteNeuralCandidate(options) {
     options?.benchmarkReport,
     "benchmarkReport"
   );
+  const selectionReportPath = resolveRequiredPath(
+    repoRoot,
+    options?.selectionReport,
+    "selectionReport"
+  );
   const now = typeof options?.now === "function"
     ? options.now
     : () => new Date().toISOString();
@@ -138,6 +146,12 @@ export function promoteNeuralCandidate(options) {
     "Packaged full-candidate benchmark report",
     trackedInputs
   );
+  const selectionEvidence = readJsonEvidence(
+    repoRoot,
+    selectionReportPath,
+    "Neural model selection report",
+    trackedInputs
+  );
   const vocabularyEvidence = trackFile(
     repoRoot,
     vocabularyPath,
@@ -150,6 +164,7 @@ export function promoteNeuralCandidate(options) {
   const exportReport = exportEvidence.value;
   const evaluationReport = evaluationEvidence.value;
   const benchmarkReport = benchmarkEvidence.value;
+  const selectionReport = selectionEvidence.value;
   const artifactDescriptor = resolveNeuralArtifactDescriptor({
     repoRoot,
     manifest: candidateManifest,
@@ -224,6 +239,19 @@ export function promoteNeuralCandidate(options) {
     artifactSet,
     artifactDescriptor
   });
+  const selectionResult = verifySelectionEvidence({
+    repoRoot,
+    candidateRoot,
+    candidateManifest,
+    candidateManifestEvidence: candidateManifestEvidence.file,
+    exportEvidence: exportEvidence.file,
+    evaluationEvidence: evaluationEvidence.file,
+    benchmarkEvidence: benchmarkEvidence.file,
+    selectionReport,
+    artifactDescriptor,
+    goldEvidence,
+    trackedInputs
+  });
 
   const metrics = exactRecord(evaluationReport.metrics, "Evaluation report metrics");
   const performance = productionPerformanceFromBenchmark(benchmarkReport);
@@ -242,6 +270,13 @@ export function promoteNeuralCandidate(options) {
     exportReportSha256: exportEvidence.file.sha256,
     evaluationReportSha256: evaluationEvidence.file.sha256,
     benchmarkReportSha256: benchmarkEvidence.file.sha256,
+    selectionReportSha256: selectionEvidence.file.sha256,
+    selectionId: selectionResult.selectionId,
+    candidateSpecificationSha256: selectionResult.specification.sha256,
+    comparisonReportSha256: selectionResult.comparisonReport.sha256,
+    comparisonPredictionsSha256: selectionResult.comparisonPredictions.sha256,
+    comparisonBenchmarkManifestSha256:
+      selectionResult.benchmarkManifest.sha256,
     predictionsSha256: goldEvidence.predictions.sha256,
     goldManifestSha256: goldEvidence.manifest.file.sha256,
     goldCorpusSha256: goldEvidence.manifest.value.corpusSha256,
@@ -310,6 +345,24 @@ export function promoteNeuralCandidate(options) {
         exportReport: evidenceRecord(repoRoot, exportEvidence.file),
         evaluationReport: evidenceRecord(repoRoot, evaluationEvidence.file),
         benchmarkReport: evidenceRecord(repoRoot, benchmarkEvidence.file),
+        selectionReport: evidenceRecord(repoRoot, selectionEvidence.file),
+        selectionId: selectionResult.selectionId,
+        candidateSpecification: evidenceRecord(
+          repoRoot,
+          selectionResult.specification
+        ),
+        comparisonReport: evidenceRecord(
+          repoRoot,
+          selectionResult.comparisonReport
+        ),
+        comparisonPredictions: evidenceRecord(
+          repoRoot,
+          selectionResult.comparisonPredictions
+        ),
+        comparisonBenchmarkManifest: evidenceRecord(
+          repoRoot,
+          selectionResult.benchmarkManifest
+        ),
         predictions: evidenceRecord(repoRoot, goldEvidence.predictions),
         goldManifest: evidenceRecord(repoRoot, goldEvidence.manifest.file),
         goldCorpusSha256: goldEvidence.manifest.value.corpusSha256,
@@ -888,6 +941,194 @@ function verifyPackagedBenchmarkEvidence({
   }
 }
 
+function verifySelectionEvidence({
+  repoRoot,
+  candidateRoot,
+  candidateManifest,
+  candidateManifestEvidence,
+  exportEvidence,
+  evaluationEvidence,
+  benchmarkEvidence,
+  selectionReport,
+  artifactDescriptor,
+  goldEvidence,
+  trackedInputs
+}) {
+  const validated = validateNeuralSelectionReport(selectionReport);
+  const winner = validated.winner;
+  if (resolve(repoRoot, winner.candidateRoot) !== candidateRoot) {
+    fail("Model-selection winner does not identify this immutable candidate directory.");
+  }
+  const identity = winner.identity;
+  if (identity.trainingRunId !== candidateManifest.trainingRunId ||
+      identity.exportRunId !== candidateManifest.exportRunId ||
+      identity.manifestSha256 !== candidateManifestEvidence.sha256 ||
+      identity.exportReportSha256 !== exportEvidence.sha256 ||
+      identity.vocabSha256 !== artifactDescriptor.vocabSha256 ||
+      identity.artifactSetSha256 !== artifactDescriptor.artifactSetSha256) {
+    fail("Model-selection winner identity does not match this candidate artifact set.");
+  }
+
+  verifySelectionEvidenceRecord(
+    repoRoot,
+    winner.evidence.manifest,
+    candidateManifestEvidence,
+    "Model-selection winner manifest"
+  );
+  verifySelectionEvidenceRecord(
+    repoRoot,
+    winner.evidence.exportReport,
+    exportEvidence,
+    "Model-selection winner export report"
+  );
+  verifySelectionEvidenceRecord(
+    repoRoot,
+    winner.evidence.evaluationReport,
+    evaluationEvidence,
+    "Model-selection winner evaluation report"
+  );
+  verifySelectionEvidenceRecord(
+    repoRoot,
+    winner.evidence.benchmarkReport,
+    benchmarkEvidence,
+    "Model-selection winner packaged benchmark report"
+  );
+  verifySelectionEvidenceRecord(
+    repoRoot,
+    winner.evidence.datasetManifest,
+    goldEvidence.dataset.file,
+    "Model-selection winner dataset manifest"
+  );
+  verifySelectionEvidenceRecord(
+    repoRoot,
+    winner.evidence.goldManifest,
+    goldEvidence.manifest.file,
+    "Model-selection winner gold manifest"
+  );
+
+  const specification = trackSelectionEvidenceFile(
+    repoRoot,
+    winner.evidence.specification,
+    "Winning candidate specification",
+    trackedInputs
+  );
+  const comparisonEvidence = readJsonEvidence(
+    repoRoot,
+    resolveSelectionEvidencePath(
+      repoRoot,
+      winner.evidence.comparisonReport,
+      "Winning official benchmark report"
+    ),
+    "Winning official benchmark report",
+    trackedInputs
+  );
+  if (comparisonEvidence.file.sha256 !==
+      winner.evidence.comparisonReport.sha256) {
+    fail("Winning official benchmark report changed after model selection.");
+  }
+  const comparison = comparisonEvidence.value;
+  if (comparison.status !== "passed-official-benchmark-evaluation" ||
+      comparison.suite !== "neural-official-benchmark-evaluation" ||
+      comparison.productionEligible !== true ||
+      comparison.qualityGate?.passed !== true ||
+      !Array.isArray(comparison.failures) ||
+      comparison.failures.length !== 0 ||
+      comparison.trainingRunId !== candidateManifest.trainingRunId ||
+      comparison.exportRunId !== candidateManifest.exportRunId ||
+      comparison.candidateManifestSha256 !==
+        candidateManifestEvidence.sha256 ||
+      comparison.artifactIdentity?.artifactSetSha256 !==
+        artifactDescriptor.artifactSetSha256 ||
+      comparison.artifactIdentity?.manifestSha256 !==
+        candidateManifestEvidence.sha256 ||
+      comparison.artifactIdentity?.vocabSha256 !==
+        artifactDescriptor.vocabSha256) {
+    fail("Winning official benchmark report is stale or no longer production eligible.");
+  }
+
+  const comparisonPredictions = trackSelectionEvidenceFile(
+    repoRoot,
+    winner.evidence.comparisonPredictions,
+    "Winning official benchmark predictions",
+    trackedInputs,
+    { maxBytes: 64 * 1024 * 1024 }
+  );
+  const benchmarkManifest = trackSelectionEvidenceFile(
+    repoRoot,
+    winner.evidence.benchmarkManifest,
+    "Winning official benchmark manifest",
+    trackedInputs
+  );
+  if (resolveDeclaredPath(
+    repoRoot,
+    comparison.predictions,
+    "Official benchmark predictions path"
+  ) !== comparisonPredictions.path ||
+      comparison.predictionsSha256 !== comparisonPredictions.sha256 ||
+      resolveDeclaredPath(
+        repoRoot,
+        comparison.benchmarkManifest,
+        "Official benchmark manifest path"
+      ) !== benchmarkManifest.path ||
+      comparison.benchmarkManifestSha256 !== benchmarkManifest.sha256 ||
+      winner.bindings.benchmarkManifestSha256 !== benchmarkManifest.sha256 ||
+      winner.bindings.benchmarkCorpusSha256 !==
+        comparison.benchmarkCorpusSha256) {
+    fail("Winning official benchmark inputs do not match the selection receipt.");
+  }
+  return {
+    selectionId: validated.selectionId,
+    specification,
+    comparisonReport: comparisonEvidence.file,
+    comparisonPredictions,
+    benchmarkManifest
+  };
+}
+
+function verifySelectionEvidenceRecord(
+  repoRoot,
+  record,
+  expectedEvidence,
+  label
+) {
+  const path = resolveSelectionEvidencePath(repoRoot, record, label);
+  if (path !== expectedEvidence.path ||
+      record.sha256 !== expectedEvidence.sha256) {
+    fail(`${label} path or SHA-256 differs from the qualified input.`);
+  }
+}
+
+function trackSelectionEvidenceFile(
+  repoRoot,
+  record,
+  label,
+  trackedInputs,
+  options = {}
+) {
+  const path = resolveSelectionEvidencePath(repoRoot, record, label);
+  const evidence = trackFile(
+    repoRoot,
+    path,
+    label,
+    trackedInputs,
+    {
+      maxBytes: options.maxBytes ?? 16 * 1024 * 1024
+    }
+  );
+  if (evidence.sha256 !== record.sha256) {
+    fail(`${label} changed after model selection.`);
+  }
+  return evidence;
+}
+
+function resolveSelectionEvidencePath(repoRoot, record, label) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    fail(`${label} evidence must be an object.`);
+  }
+  requireSha256(record.sha256, `${label} SHA-256`);
+  return resolveDeclaredPath(repoRoot, record.path, label);
+}
+
 function productionPerformanceFromBenchmark(benchmarkReport) {
   const source = exactRecord(
     benchmarkReport.performance,
@@ -1391,6 +1632,7 @@ function parseCli(argv) {
     "export-report",
     "evaluation-report",
     "benchmark-report",
+    "selection-report",
     "vocabulary",
     "production-dir"
   ]);
@@ -1403,6 +1645,7 @@ function parseCli(argv) {
     exportReport: values.get("export-report"),
     evaluationReport: values.get("evaluation-report"),
     benchmarkReport: values.get("benchmark-report"),
+    selectionReport: values.get("selection-report"),
     vocabulary: values.get("vocabulary"),
     productionDir: values.get("production-dir")
   };

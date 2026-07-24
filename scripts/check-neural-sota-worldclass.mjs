@@ -58,7 +58,10 @@ requireDevStatus("phase6NativeIntegration", /^passed-/u);
 requireDevStatus("runtimeConformance", /^passed-/u);
 requireDevStatus("phase8TrainingRun", /^passed-phase8-/u);
 requireDevStatus("phase9Promotion", /^passed-/u);
-requireDevStatus("modelSelection", /^passed$/u);
+requireDevStatus(
+  "modelSelection",
+  /^passed$|^passed-neural-model-selection$|^passed-source-lineage-policy$/u
+);
 requireDevStatus("readiness", /^passed$/u);
 
 if (!Number.isFinite(datasetRows) || datasetRows < 1_000_000) {
@@ -105,6 +108,7 @@ if (production) {
   requireProductionStatus("phase5Benchmark", /^passed-production-/u);
   requireProductionStatus("phase6NativeIntegration", /^passed-production-/u);
   requireProductionStatus("runtimeConformance", /^passed-production-runtime-conformance$/u);
+  requireProductionStatus("modelSelection", /^passed-neural-model-selection$/u);
   if (reports.phase5Evaluation?.metrics?.tailTop1Accuracy < 0.88) failures.push("Production Phase 10 requires tailTop1Accuracy >= 0.88.");
   if (reports.phase5Evaluation?.metrics?.tailTop3Accuracy < 0.96) failures.push("Production Phase 10 requires tailTop3Accuracy >= 0.96.");
   if (reports.phase5Benchmark?.performance?.p99Ms >= 50 || reports.phase5Benchmark?.performance?.p99Ms == null) {

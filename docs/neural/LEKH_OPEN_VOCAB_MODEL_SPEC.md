@@ -125,9 +125,24 @@ Production floors are:
 - secure-field inference count: exactly 0.
 
 These small locked suites are promotion safety gates, not a scientific
-state-of-the-art claim. Model selection must also compare candidates on the
-same larger held-out benchmark with identical dataset/gold bindings. No result
-is comparable when those identities differ.
+state-of-the-art claim. Candidate ranking therefore uses the locked 4,085-input
+official Aksharantar Nepali test benchmark. Its native-frequency, Indian-name,
+and foreign-name partitions remain separate, duplicate inputs are already
+collapsed into acceptable-output sets, and the bytes are forbidden for
+training.
+
+The official comparison uses the same runtime-visible candidate validation for
+both Lekh and the frozen AI4Bharat IndicXlit v1.0 beam-4 reference. Promotion
+requires near-parity: no more than 0.02 regression in overall top-1, overall
+top-3, or native-frequency top-1, and no more than 0.03 regression in either
+name-partition top-1. These are release-quality floors, not a state-of-the-art
+claim.
+
+All selection candidates must have identical dataset, Lekh gold, and official
+benchmark identities. Ranking is deterministic: official overall top-1,
+native-frequency top-1, combined name top-1, official overall top-3, Lekh gold
+tail top-1, packaged p99 latency, compiled bytes, then artifact-set SHA-256.
+At least two distinct exports and artifact sets are required.
 
 Evaluation reads the candidate `export-report.json` and verifies the exact
 predictions, candidate manifest, vocabulary/model identities, gold corpus, and
@@ -168,23 +183,28 @@ Promotion is deliberately two-stage:
    `passed-candidate-promotion-evidence`.
 4. Evaluate the exact exported predictions with
    `node scripts/evaluate-neural-open-vocab-model.mjs --production`.
-5. Record a model-selection decision over candidates with identical evidence
-   bindings.
-6. Run `npm run neural:promote:candidate` with the candidate, export,
-   evaluation, benchmark, and selection inputs.
-7. The promoter verifies every live byte again, stages one complete directory,
+5. Evaluate each candidate on the exact official benchmark with
+   `npm run neural:evaluate:official -- --predictions <path>`. The export
+   report must already bind those prediction and benchmark bytes.
+6. Create one candidate-specification JSON dossier per export, then run
+   `node scripts/check-neural-model-selection.mjs --production
+   --candidate-spec <baseline.json> --candidate-spec <challenger.json>`.
+7. Run `npm run neural:promote:candidate --` with the candidate, export,
+   evaluation, benchmark, and `--selection-report` inputs.
+8. The promoter verifies every live byte again, stages one complete directory,
    writes measured metrics/performance without invention, and atomically swaps
    it into `models/macos/LekhNeuralTransliterator.production`.
-8. Package the promoted directory with
+9. Package the promoted directory with
    `npm run package:macos:imk:neural:production`.
-9. Rerun `node scripts/benchmark-neural-native-service.mjs --production` and
+10. Rerun `node scripts/benchmark-neural-native-service.mjs --production` and
    production runtime conformance against the promoted package.
 
 Candidate files are never edited in place. A failure before or after the atomic
 swap restores the previous production directory and removes staging debris.
-The promotion receipt binds the candidate manifest, checkpoint, export report,
-predictions, gold corpus, dataset, evaluation, benchmark, vocabulary,
-artifacts, and resulting production manifest.
+The promotion receipt binds the candidate specification, selection receipt and
+selection ID, official benchmark manifest and predictions, candidate manifest,
+checkpoint, export report, gold predictions and corpus, dataset, evaluation,
+packaged benchmark, vocabulary, artifacts, and resulting production manifest.
 
 No script may temporarily mark a candidate production-eligible to obtain
 benchmark evidence. No status-only report is sufficient.
@@ -247,6 +267,8 @@ Individual production checks:
 ```sh
 node scripts/check-neural-training-contract.mjs --production
 node scripts/evaluate-neural-open-vocab-model.mjs --production --predictions <candidate>/gold-predictions.jsonl
+node scripts/evaluate-neural-official-benchmark.mjs --predictions <candidate>/official-benchmark-predictions.jsonl --report <candidate-report>.json
+node scripts/check-neural-model-selection.mjs --production --candidate-spec <baseline.json> --candidate-spec <challenger.json>
 node scripts/benchmark-neural-coreml-device.mjs --production --measurements reports/neural-native-service-e2e-production-report.json
 node scripts/check-neural-native-integration.mjs --production
 node scripts/prepare-neural-training-run.mjs --production

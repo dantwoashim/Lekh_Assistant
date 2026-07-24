@@ -94,6 +94,7 @@ export function analyzeDevanagariOutputSequence(value) {
       nuktaSeen = false;
       afterVirama = false;
       modifierSeen = false;
+      syllableModifierSeen = false;
       precedingMark = null;
       pendingJoiner = false;
       continue;

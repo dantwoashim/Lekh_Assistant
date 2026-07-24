@@ -23,6 +23,9 @@ import {
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
 import {
+  buildNeuralSelectionReport
+} from "./lib/neural-model-selection.mjs";
+import {
   NeuralCandidatePromotionError,
   promoteNeuralCandidate
 } from "./promote-neural-candidate.mjs";
@@ -80,6 +83,19 @@ describe("evidence-bound neural candidate promotion", () => {
       );
       assert.equal(report.productionManifest.metricsSourceSha256, fixture.identities.evaluation.sha256);
       assert.equal(report.productionManifest.performanceSourceSha256, fixture.identities.benchmark.sha256);
+      assert.equal(report.inputs.selectionId, fixture.selection.selectionId);
+      assert.equal(
+        report.inputs.selectionReport.sha256,
+        fixture.identities.selection.sha256
+      );
+      assert.equal(
+        report.inputs.comparisonPredictions.sha256,
+        fixture.identities.comparisonPredictions.sha256
+      );
+      assert.equal(
+        report.inputs.comparisonBenchmarkManifest.sha256,
+        fixture.identities.comparisonBenchmarkManifest.sha256
+      );
 
       assert.equal(
         inspectContainedDirectoryTree(
@@ -162,6 +178,38 @@ describe("evidence-bound neural candidate promotion", () => {
         (error) =>
           error instanceof NeuralCandidatePromotionError &&
           /full-candidate service benchmark/u.test(error.message)
+      );
+      assert.equal(existsProduction(fixture), false);
+    });
+  });
+
+  it("rejects a tampered selection winner or official comparison input", () => {
+    withFixture("baseline", (fixture) => {
+      const tampered = structuredClone(fixture.selection);
+      tampered.winner = tampered.candidates.find((candidate) =>
+        candidate.candidateId !== fixture.selection.winner.candidateId
+      );
+      writeJson(fixture.paths.selection, tampered);
+      assert.throws(
+        () => promote(fixture),
+        (error) =>
+          error instanceof Error &&
+          /winner|selectionId|ranking/u.test(error.message)
+      );
+      assert.equal(existsProduction(fixture), false);
+    });
+
+    withFixture("baseline", (fixture) => {
+      write(fixture.paths.comparisonPredictions, `${JSON.stringify({
+        id: "official-1",
+        input: "nepal",
+        candidates: ["नेपाळ"]
+      })}\n`);
+      assert.throws(
+        () => promote(fixture),
+        (error) =>
+          error instanceof NeuralCandidatePromotionError &&
+          /changed after model selection/u.test(error.message)
       );
       assert.equal(existsProduction(fixture), false);
     });
@@ -294,6 +342,18 @@ function buildFixture(root, kind) {
     predictions: join(candidate, "gold-predictions.jsonl"),
     evaluation: join(root, "reports", "evaluation.json"),
     benchmark: join(root, "reports", "benchmark.json"),
+    candidateSpecification: join(root, "reports", "candidate-specification.json"),
+    comparison: join(root, "reports", "official-comparison.json"),
+    comparisonPredictions: join(candidate, "official-benchmark-predictions.jsonl"),
+    comparisonBenchmarkManifest: join(
+      root,
+      "data",
+      "neural",
+      "benchmarks",
+      "official",
+      "manifest.json"
+    ),
+    selection: join(root, "reports", "model-selection.json"),
     goldManifest: join(root, "data", "neural", "gold", "manifest.json"),
     goldSuite: join(root, "data", "neural", "gold", "suite.jsonl"),
     datasetManifest: join(root, "data", "generated", "neural-open-vocab", "manifest.json"),
@@ -550,6 +610,140 @@ function buildFixture(root, kind) {
   writeJson(paths.benchmark, benchmark);
   identities.benchmark = inspectContainedRegularFile(root, paths.benchmark);
 
+  write(paths.comparisonPredictions, `${JSON.stringify({
+    id: "official-1",
+    input: "nepal",
+    candidates: ["नेपाल"]
+  })}\n`);
+  writeJson(paths.comparisonBenchmarkManifest, {
+    schemaVersion: 2,
+    corpusSha256: "8".repeat(64),
+    suites: []
+  });
+  identities.comparisonPredictions = inspectContainedRegularFile(
+    root,
+    paths.comparisonPredictions
+  );
+  identities.comparisonBenchmarkManifest = inspectContainedRegularFile(
+    root,
+    paths.comparisonBenchmarkManifest
+  );
+  const comparison = {
+    schemaVersion: 1,
+    status: "passed-official-benchmark-evaluation",
+    suite: "neural-official-benchmark-evaluation",
+    productionEligible: true,
+    trainingRunId: TRAINING_RUN_ID,
+    exportRunId: EXPORT_RUN_ID,
+    candidateManifestSha256: identities.manifest.sha256,
+    artifactIdentity: {
+      manifestSha256: identities.manifest.sha256,
+      vocabSha256: identities.vocabulary.sha256,
+      artifactSetSha256: artifactDescriptor.artifactSetSha256
+    },
+    benchmarkManifest: portable(root, paths.comparisonBenchmarkManifest),
+    benchmarkManifestSha256: identities.comparisonBenchmarkManifest.sha256,
+    benchmarkCorpusSha256: "8".repeat(64),
+    predictions: portable(root, paths.comparisonPredictions),
+    predictionsSha256: identities.comparisonPredictions.sha256,
+    predictionRows: 1,
+    distinctInputCount: 1,
+    qualityGate: { passed: true },
+    failures: []
+  };
+  writeJson(paths.comparison, comparison);
+  identities.comparison = inspectContainedRegularFile(root, paths.comparison);
+  const candidateSpecification = {
+    schemaVersion: 1,
+    label: kind,
+    candidateRoot: portable(root, candidate),
+    evaluationReport: portable(root, paths.evaluation),
+    benchmarkReport: portable(root, paths.benchmark),
+    comparisonReport: portable(root, paths.comparison)
+  };
+  writeJson(paths.candidateSpecification, candidateSpecification);
+  identities.candidateSpecification = inspectContainedRegularFile(
+    root,
+    paths.candidateSpecification
+  );
+  const winningCandidate = {
+    candidateId: `${kind}:${EXPORT_RUN_ID}`,
+    candidateRoot: portable(root, candidate),
+    modelId: manifest.selectedArtifact,
+    architecture: manifest.architecture,
+    eligible: true,
+    identity: {
+      trainingRunId: TRAINING_RUN_ID,
+      exportRunId: EXPORT_RUN_ID,
+      manifestSha256: identities.manifest.sha256,
+      exportReportSha256: inspectContainedRegularFile(
+        root,
+        paths.exportReport
+      ).sha256,
+      vocabSha256: identities.vocabulary.sha256,
+      artifactSetSha256: artifactDescriptor.artifactSetSha256
+    },
+    evidence: {
+      specification: evidence(root, identities.candidateSpecification),
+      manifest: evidence(root, identities.manifest),
+      exportReport: evidence(
+        root,
+        inspectContainedRegularFile(root, paths.exportReport)
+      ),
+      evaluationReport: evidence(root, identities.evaluation),
+      datasetManifest: evidence(root, identities.datasetManifest),
+      goldManifest: evidence(root, identities.goldManifest),
+      benchmarkReport: evidence(root, identities.benchmark),
+      comparisonReport: evidence(root, identities.comparison),
+      benchmarkManifest: evidence(
+        root,
+        identities.comparisonBenchmarkManifest
+      ),
+      comparisonPredictions: evidence(root, identities.comparisonPredictions)
+    },
+    bindings: {
+      datasetManifestSha256: identities.datasetManifest.sha256,
+      datasetContentSha256: datasetManifest.datasetContentSha256,
+      goldManifestSha256: identities.goldManifest.sha256,
+      goldCorpusSha256: goldManifest.corpusSha256,
+      benchmarkManifestSha256:
+        identities.comparisonBenchmarkManifest.sha256,
+      benchmarkCorpusSha256: comparison.benchmarkCorpusSha256
+    },
+    metrics: {
+      officialOverallTop1Accuracy: 0.75,
+      officialOverallTop3Accuracy: 0.9,
+      officialNativeTop1Accuracy: 0.8,
+      officialNameTop1Accuracy: 0.65,
+      goldTailTop1Accuracy: evaluation.metrics.tailTop1Accuracy,
+      goldTailTop3Accuracy: evaluation.metrics.tailTop3Accuracy,
+      latencyP99Ms: benchmark.performance.p99Ms,
+      compiledBytes: artifactDescriptor.totalCompiledBytes
+    }
+  };
+  const losingCandidate = structuredClone(winningCandidate);
+  losingCandidate.candidateId = `loser:${"b".repeat(32)}`;
+  losingCandidate.candidateRoot = "data/generated/losing-candidate";
+  losingCandidate.modelId = "losing-fixture";
+  losingCandidate.architecture = "fixture";
+  losingCandidate.identity.trainingRunId = "a".repeat(32);
+  losingCandidate.identity.exportRunId = "b".repeat(32);
+  losingCandidate.identity.manifestSha256 = "c".repeat(64);
+  losingCandidate.identity.exportReportSha256 = "d".repeat(64);
+  losingCandidate.identity.vocabSha256 = "e".repeat(64);
+  losingCandidate.identity.artifactSetSha256 = "f".repeat(64);
+  losingCandidate.evidence.manifest.sha256 =
+    losingCandidate.identity.manifestSha256;
+  losingCandidate.evidence.exportReport.sha256 =
+    losingCandidate.identity.exportReportSha256;
+  losingCandidate.metrics.officialOverallTop1Accuracy = 0.5;
+  const selection = buildNeuralSelectionReport({
+    candidates: [winningCandidate, losingCandidate],
+    generatedAt: FIXED_TIME
+  });
+  writeJson(paths.selection, selection);
+  identities.selection = inspectContainedRegularFile(root, paths.selection);
+
   return {
     root,
     kind,
@@ -559,6 +753,8 @@ function buildFixture(root, kind) {
     exportReport,
     evaluation,
     benchmark,
+    comparison,
+    selection,
     goldManifest,
     datasetManifest,
     artifactDescriptor
@@ -678,6 +874,7 @@ function promote(fixture, overrides = {}) {
     exportReport: fixture.paths.exportReport,
     evaluationReport: fixture.paths.evaluation,
     benchmarkReport: fixture.paths.benchmark,
+    selectionReport: fixture.paths.selection,
     vocabulary: fixture.paths.vocabulary,
     productionDir: fixture.paths.production,
     now: () => FIXED_TIME,
@@ -803,6 +1000,13 @@ function readJson(path) {
 
 function portable(root, path) {
   return relative(root, path).split(sep).join("/");
+}
+
+function evidence(root, value) {
+  return {
+    path: portable(root, value.path),
+    sha256: value.sha256
+  };
 }
 
 function goldCorpusSha256(suites) {

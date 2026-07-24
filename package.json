@@ -113,6 +113,7 @@
     "neural:phase8:training-run": "node scripts/prepare-neural-training-run.mjs",
     "neural:phase9:promotion": "node scripts/check-neural-production-promotion.mjs",
     "neural:promote:candidate": "node scripts/promote-neural-candidate.mjs",
+    "neural:evaluate:official": "node scripts/evaluate-neural-official-benchmark.mjs",
     "neural:phase10:sota": "node scripts/check-neural-sota-worldclass.mjs",
     "check:neural-open-vocab-data": "node scripts/build-neural-open-vocab-dataset.mjs --check",
     "check:neural-open-vocab-data:production": "node scripts/build-neural-open-vocab-dataset.mjs --production --check",

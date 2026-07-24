@@ -1,0 +1,405 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, sep } from "node:path";
+import { describe, it } from "vitest";
+import {
+  inspectContainedDirectoryTree,
+  inspectContainedRegularFile
+} from "./lib/neural-artifact-filesystem.mjs";
+import {
+  resolveNeuralArtifactDescriptor
+} from "./lib/neural-artifact-descriptor.mjs";
+
+const checker = join(
+  process.cwd(),
+  "scripts",
+  "check-neural-model-selection.mjs"
+);
+const DATASET_CONTENT_SHA = "1".repeat(64);
+const GOLD_CORPUS_SHA = "2".repeat(64);
+const BENCHMARK_CORPUS_SHA = "3".repeat(64);
+
+describe("neural model-selection CLI evidence graph", () => {
+  it("verifies two complete candidate graphs and publishes one immutable winner", () => {
+    withFixture((fixture) => {
+      const result = runSelection(fixture);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      const report = readJson(fixture.report);
+      assert.equal(report.status, "passed-neural-model-selection");
+      assert.equal(
+        report.winner.candidateId,
+        `attention:${fixture.candidates[1].exportRunId}`
+      );
+      assert.equal(report.candidates.length, 2);
+      assert.equal(
+        report.comparableBindings.benchmarkCorpusSha256,
+        BENCHMARK_CORPUS_SHA
+      );
+    });
+  });
+
+  it("refuses official predictions that changed after their evaluation report", () => {
+    withFixture((fixture) => {
+      write(
+        fixture.candidates[1].comparisonPredictions,
+        `${JSON.stringify({
+          id: "official-native",
+          input: "nepal",
+          candidates: ["नेपाळ"]
+        })}\n`
+      );
+      const result = runSelection(fixture);
+      assert.equal(result.status, 1);
+      const report = readJson(fixture.report);
+      assert.ok(report.failures.some((failure) =>
+        /bytes do not match the declared SHA-256/u.test(failure)
+      ));
+    });
+  });
+});
+
+function withFixture(callback) {
+  const parent = mkdtempSync(join(tmpdir(), "lekh-neural-selection-"));
+  const rootAlias = join(parent, "repo");
+  mkdirSync(rootAlias, { recursive: true });
+  const root = realpathSync(rootAlias);
+  try {
+    const shared = buildSharedEvidence(root);
+    const baseline = buildCandidate(root, shared, {
+      label: "baseline",
+      runSeed: "a",
+      officialTop1Hits: 1
+    });
+    const attention = buildCandidate(root, shared, {
+      label: "attention",
+      runSeed: "c",
+      officialTop1Hits: 3
+    });
+    callback({
+      root,
+      report: join(root, "reports", "selection.json"),
+      candidates: [baseline, attention]
+    });
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+}
+
+function buildSharedEvidence(root) {
+  const datasetManifest = join(
+    root,
+    "data",
+    "generated",
+    "neural-open-vocab",
+    "manifest.json"
+  );
+  const goldManifest = join(root, "data", "neural", "gold", "manifest.json");
+  const benchmarkManifest = join(
+    root,
+    "data",
+    "neural",
+    "benchmarks",
+    "official",
+    "manifest.json"
+  );
+  writeJson(datasetManifest, {
+    schemaVersion: 2,
+    datasetContentSha256: DATASET_CONTENT_SHA
+  });
+  writeJson(goldManifest, {
+    schemaVersion: 2,
+    corpusSha256: GOLD_CORPUS_SHA,
+    suites: []
+  });
+  writeJson(benchmarkManifest, {
+    schemaVersion: 2,
+    corpusSha256: BENCHMARK_CORPUS_SHA,
+    suites: []
+  });
+  return {
+    datasetManifest,
+    datasetEvidence: inspectContainedRegularFile(root, datasetManifest),
+    goldManifest,
+    goldEvidence: inspectContainedRegularFile(root, goldManifest),
+    benchmarkManifest,
+    benchmarkEvidence: inspectContainedRegularFile(root, benchmarkManifest)
+  };
+}
+
+function buildCandidate(root, shared, options) {
+  const candidateRoot = join(
+    root,
+    "data",
+    "generated",
+    options.label
+  );
+  const manifestPath = join(
+    candidateRoot,
+    "LekhNeuralTransliterator.manifest.json"
+  );
+  const vocabularyPath = join(
+    candidateRoot,
+    "LekhNeuralTransliterator.vocab.json"
+  );
+  const compiledModel = join(
+    candidateRoot,
+    "LekhNeuralTransliterator.mlmodelc"
+  );
+  const exportReportPath = join(candidateRoot, "export-report.json");
+  const comparisonPredictions = join(
+    candidateRoot,
+    "official-benchmark-predictions.jsonl"
+  );
+  const evaluationPath = join(
+    root,
+    "reports",
+    `${options.label}-evaluation.json`
+  );
+  const benchmarkPath = join(
+    root,
+    "reports",
+    `${options.label}-benchmark.json`
+  );
+  const comparisonPath = join(
+    root,
+    "reports",
+    `${options.label}-official.json`
+  );
+  const specificationPath = join(
+    root,
+    "reports",
+    `${options.label}-specification.json`
+  );
+  write(vocabularyPath, JSON.stringify({
+    schemaVersion: 1,
+    modelId: options.label,
+    tokenization: "unicode-scalar-character"
+  }));
+  write(join(compiledModel, "model.bin"), `compiled-${options.label}`);
+  const vocabularyEvidence = inspectContainedRegularFile(root, vocabularyPath);
+  const compiledEvidence = inspectContainedDirectoryTree(root, compiledModel);
+  const trainingRunId = options.runSeed.repeat(32);
+  const exportRunId = String.fromCharCode(options.runSeed.charCodeAt(0) + 1)
+    .repeat(32);
+  const manifest = {
+    schemaVersion: 2,
+    trainingRunId,
+    exportRunId,
+    selectedArtifact: "lekh-open-vocab-seq2seq-v1",
+    architecture: "gru-encoder-decoder-seq2seq",
+    runtime: "CoreML",
+    localOnly: true,
+    neuralTailOnly: true,
+    productionEligible: false,
+    openVocabulary: true,
+    trainingSources: ["ai4bharat-aksharantar-nepali"],
+    modelBytes: compiledEvidence.bytes,
+    sha256: {
+      vocabMetadata: vocabularyEvidence.sha256,
+      compiledModel: compiledEvidence.sha256
+    }
+  };
+  writeJson(manifestPath, manifest);
+  const manifestEvidence = inspectContainedRegularFile(root, manifestPath);
+  const descriptor = resolveNeuralArtifactDescriptor({
+    repoRoot: root,
+    manifest,
+    manifestPath,
+    vocabPath: vocabularyPath
+  });
+  const exportReport = {
+    status: "passed-open-vocab-seq2seq-candidate",
+    productionEligible: false,
+    coremlExport: { status: "passed" },
+    runtimeArtifactContractIssues: [],
+    trainingRunId,
+    exportRunId,
+    modelId: manifest.selectedArtifact,
+    manifest: portable(root, manifestPath),
+    manifestSha256: manifestEvidence.sha256
+  };
+  writeJson(exportReportPath, exportReport);
+  const exportEvidence = inspectContainedRegularFile(root, exportReportPath);
+  const artifactIdentity = {
+    trainingRunId,
+    exportRunId,
+    manifestSha256: manifestEvidence.sha256,
+    vocabSha256: vocabularyEvidence.sha256,
+    artifactSetSha256: descriptor.artifactSetSha256
+  };
+  const evaluation = {
+    status: "passed-production-phase5-evaluation",
+    production: true,
+    productionEligible: true,
+    predictionValidation: {
+      exactCoverage: true,
+      metricsReportable: true
+    },
+    failures: [],
+    trainingRunId,
+    exportRunId,
+    candidateManifestSha256: manifestEvidence.sha256,
+    exportReportSha256: exportEvidence.sha256,
+    artifactIdentity,
+    datasetManifest: portable(root, shared.datasetManifest),
+    datasetManifestSha256: shared.datasetEvidence.sha256,
+    datasetContentSha256: DATASET_CONTENT_SHA,
+    goldManifest: portable(root, shared.goldManifest),
+    goldManifestSha256: shared.goldEvidence.sha256,
+    goldCorpusSha256: GOLD_CORPUS_SHA,
+    metrics: {
+      tailTop1Accuracy: 0.91,
+      tailTop3Accuracy: 0.98
+    }
+  };
+  writeJson(evaluationPath, evaluation);
+  const benchmark = {
+    status: "passed-candidate-promotion-evidence",
+    proofMode: "candidate-promotion",
+    singleForwardBenchmarkIsConsumerLatency: false,
+    failures: [],
+    artifactIdentity,
+    computePlacement: {
+      neuralEngineClaimAllowed: true,
+      architectures: ["arm64"]
+    },
+    performance: {
+      p99Ms: options.label === "attention" ? 20 : 10
+    }
+  };
+  writeJson(benchmarkPath, benchmark);
+  write(
+    comparisonPredictions,
+    [
+      {
+        id: "official-native",
+        input: "nepal",
+        candidates: ["नेपाल"]
+      },
+      {
+        id: "official-indian",
+        input: "niraj",
+        candidates: ["निरज"]
+      },
+      {
+        id: "official-foreign",
+        input: "rohan",
+        candidates: ["रोहन"]
+      }
+    ].map((row) => JSON.stringify(row)).join("\n") + "\n"
+  );
+  const predictionEvidence = inspectContainedRegularFile(
+    root,
+    comparisonPredictions
+  );
+  const top1Hits = options.officialTop1Hits;
+  const comparison = {
+    schemaVersion: 1,
+    status: "passed-official-benchmark-evaluation",
+    suite: "neural-official-benchmark-evaluation",
+    productionEligible: true,
+    failures: [],
+    qualityGate: { passed: true },
+    trainingRunId,
+    exportRunId,
+    candidateManifestSha256: manifestEvidence.sha256,
+    artifactIdentity,
+    benchmarkManifest: portable(root, shared.benchmarkManifest),
+    benchmarkManifestSha256: shared.benchmarkEvidence.sha256,
+    benchmarkCorpusSha256: BENCHMARK_CORPUS_SHA,
+    predictions: portable(root, comparisonPredictions),
+    predictionsSha256: predictionEvidence.sha256,
+    predictionRows: 3,
+    distinctInputCount: 3,
+    metrics: {
+      overall: metric(3, top1Hits, 3),
+      byBucket: {
+        "native-frequent": metric(
+          1,
+          top1Hits >= 1 ? 1 : 0,
+          1
+        ),
+        "indian-name": metric(
+          1,
+          top1Hits >= 2 ? 1 : 0,
+          1
+        ),
+        "foreign-name": metric(
+          1,
+          top1Hits >= 3 ? 1 : 0,
+          1
+        )
+      }
+    }
+  };
+  writeJson(comparisonPath, comparison);
+  writeJson(specificationPath, {
+    schemaVersion: 1,
+    label: options.label,
+    candidateRoot: portable(root, candidateRoot),
+    evaluationReport: portable(root, evaluationPath),
+    benchmarkReport: portable(root, benchmarkPath),
+    comparisonReport: portable(root, comparisonPath)
+  });
+  return {
+    specificationPath,
+    comparisonPredictions,
+    exportRunId
+  };
+}
+
+function runSelection(fixture) {
+  return spawnSync(process.execPath, [
+    checker,
+    "--production",
+    "--candidate-spec",
+    fixture.candidates[0].specificationPath,
+    "--candidate-spec",
+    fixture.candidates[1].specificationPath,
+    "--report",
+    fixture.report
+  ], {
+    cwd: fixture.root,
+    encoding: "utf8"
+  });
+}
+
+function metric(rows, top1Hits, top3Hits) {
+  return {
+    rows,
+    top1Hits,
+    top3Hits,
+    top1Accuracy: round(top1Hits / rows),
+    top3Accuracy: round(top3Hits / rows)
+  };
+}
+
+function round(value) {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function write(path, contents) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, contents);
+}
+
+function writeJson(path, value) {
+  write(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function portable(root, path) {
+  return relative(root, path).split(sep).join("/");
+}
