@@ -48,6 +48,14 @@ const BASELINE_PACKAGE_NAME = "LekhNeuralTransliterator.mlpackage";
 const VOCABULARY_NAME = "LekhNeuralTransliterator.vocab.json";
 const PRODUCTION_MANIFEST_NAME = "LekhNeuralTransliterator.manifest.json";
 const PROMOTION_REPORT_NAME = "neural-candidate-promotion-report.json";
+const CANONICAL_OFFICIAL_BENCHMARK_MANIFEST =
+  "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json";
+const CANONICAL_OFFICIAL_BENCHMARK_MANIFEST_SHA256 =
+  "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f";
+const CANONICAL_REFERENCE_MANIFEST =
+  "data/neural/benchmarks/indicxlit-v1/manifest.json";
+const CANONICAL_REFERENCE_MANIFEST_SHA256 =
+  "c3bd96c57a322455026df920dab74dc214113bb2a33aa67f6420805b195c52c6";
 const SPLIT_ARTIFACT_NAMES = Object.freeze({
   encoder: Object.freeze({
     compiledModel: "LekhNeuralTransliteratorEncoder.mlmodelc",
@@ -244,6 +252,7 @@ export function promoteNeuralCandidate(options) {
     candidateRoot,
     candidateManifest,
     candidateManifestEvidence: candidateManifestEvidence.file,
+    exportReport,
     exportEvidence: exportEvidence.file,
     evaluationEvidence: evaluationEvidence.file,
     benchmarkEvidence: benchmarkEvidence.file,
@@ -946,6 +955,7 @@ function verifySelectionEvidence({
   candidateRoot,
   candidateManifest,
   candidateManifestEvidence,
+  exportReport,
   exportEvidence,
   evaluationEvidence,
   benchmarkEvidence,
@@ -1045,6 +1055,54 @@ function verifySelectionEvidence({
         artifactDescriptor.vocabSha256) {
     fail("Winning official benchmark report is stale or no longer production eligible.");
   }
+  const expectedBackend = artifactDescriptor.runtimeModelContract ===
+    "split-attention-incremental-v1"
+    ? "coreml-compiled-split-attention-models"
+    : "coreml-compiled-model";
+  const expectedPredictionArtifactIdentity = {
+    runtimeModelContract: artifactDescriptor.runtimeModelContract,
+    compiledArtifacts: Object.fromEntries(
+      artifactDescriptor.artifacts.map((artifact) => [
+        artifact.role,
+        {
+          path: portableRelative(repoRoot, artifact.sourcePath),
+          sha256: artifact.compiledSha256,
+          bytes: artifact.compiledBytes
+        }
+      ])
+    )
+  };
+  const isolation = comparison.benchmarkIsolation;
+  if (comparison.benchmarkManifest !==
+        CANONICAL_OFFICIAL_BENCHMARK_MANIFEST ||
+      comparison.benchmarkManifestSha256 !==
+        CANONICAL_OFFICIAL_BENCHMARK_MANIFEST_SHA256 ||
+      comparison.reference?.manifest !== CANONICAL_REFERENCE_MANIFEST ||
+      comparison.reference?.manifestSha256 !==
+        CANONICAL_REFERENCE_MANIFEST_SHA256 ||
+      comparison.predictionsBackend !== expectedBackend ||
+      canonicalJson(comparison.predictionArtifactIdentity) !==
+        canonicalJson(expectedPredictionArtifactIdentity) ||
+      canonicalJson(isolation) !== canonicalJson(
+        exportReport.comparisonBenchmark?.trainingIsolation
+      ) ||
+      isolation?.policy !==
+        "official-benchmark-inputs-absent-from-train-and-dev-v1" ||
+      isolation?.overlappingInputCount !== 0 ||
+      canonicalJson(isolation?.comparedSplitSha256) !== canonicalJson({
+        train: exportReport.runInputSnapshot?.dataset?.splits?.train?.sha256,
+        dev: exportReport.runInputSnapshot?.dataset?.splits?.dev?.sha256
+      }) ||
+      canonicalJson(
+        exportReport.runInputSnapshot?.officialBenchmark?.trainingIsolation
+      ) !== canonicalJson(isolation) ||
+      exportReport.artifactOverrides?.officialBenchmarkManifest !==
+        undefined) {
+    fail(
+      "Winning official benchmark evidence is substitutable, stale, or not " +
+      "bound to the exact compiled candidate and training-isolation proof."
+    );
+  }
 
   const comparisonPredictions = trackSelectionEvidenceFile(
     repoRoot,
@@ -1075,6 +1133,13 @@ function verifySelectionEvidence({
       winner.bindings.benchmarkCorpusSha256 !==
         comparison.benchmarkCorpusSha256) {
     fail("Winning official benchmark inputs do not match the selection receipt.");
+  }
+  if (benchmarkManifest.path !== resolve(
+    repoRoot,
+    CANONICAL_OFFICIAL_BENCHMARK_MANIFEST
+  ) || benchmarkManifest.sha256 !==
+      CANONICAL_OFFICIAL_BENCHMARK_MANIFEST_SHA256) {
+    fail("Winning official benchmark manifest is not the canonical locked release.");
   }
   return {
     selectionId: validated.selectionId,

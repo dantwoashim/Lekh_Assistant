@@ -30,6 +30,14 @@ const reportPath = canonicalPath(
     )
 );
 const CANONICAL_TRAINING_SOURCE = "ai4bharat-aksharantar-nepali";
+const CANONICAL_OFFICIAL_BENCHMARK_MANIFEST =
+  "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json";
+const CANONICAL_OFFICIAL_BENCHMARK_MANIFEST_SHA256 =
+  "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f";
+const CANONICAL_REFERENCE_MANIFEST =
+  "data/neural/benchmarks/indicxlit-v1/manifest.json";
+const CANONICAL_REFERENCE_MANIFEST_SHA256 =
+  "c3bd96c57a322455026df920dab74dc214113bb2a33aa67f6420805b195c52c6";
 const BLOCKED_MIRROR_SOURCES = Object.freeze([
   "syubraj-roman2nepali-transliteration",
   "saugatkafley-nepali-roman-transliteration"
@@ -199,6 +207,7 @@ function buildVerifiedCandidate(specificationPath, index) {
     label: specification.label,
     manifest,
     manifestEvidence: manifestEvidence.file,
+    exportReport,
     comparison,
     descriptor
   });
@@ -471,6 +480,7 @@ function validateComparisonReport({
   label,
   manifest,
   manifestEvidence,
+  exportReport,
   comparison,
   descriptor
 }) {
@@ -492,6 +502,73 @@ function validateComparisonReport({
       comparison.artifactIdentity?.artifactSetSha256 !==
         descriptor.artifactSetSha256) {
     fail(`Candidate ${label} official benchmark identity is stale.`);
+  }
+  if (comparison.benchmarkManifest !==
+        CANONICAL_OFFICIAL_BENCHMARK_MANIFEST ||
+      comparison.benchmarkManifestSha256 !==
+        CANONICAL_OFFICIAL_BENCHMARK_MANIFEST_SHA256 ||
+      comparison.reference?.manifest !== CANONICAL_REFERENCE_MANIFEST ||
+      comparison.reference?.manifestSha256 !==
+        CANONICAL_REFERENCE_MANIFEST_SHA256) {
+    fail(
+      `Candidate ${label} official benchmark or reference is not the locked ` +
+      "canonical release."
+    );
+  }
+  const expectedBackend = descriptor.runtimeModelContract ===
+    "split-attention-incremental-v1"
+    ? "coreml-compiled-split-attention-models"
+    : "coreml-compiled-model";
+  const expectedPredictionArtifactIdentity = {
+    runtimeModelContract: descriptor.runtimeModelContract,
+    compiledArtifacts: Object.fromEntries(
+      descriptor.artifacts.map((artifact) => [
+        artifact.role,
+        {
+          path: portable(artifact.sourcePath),
+          sha256: artifact.compiledSha256,
+          bytes: artifact.compiledBytes
+        }
+      ])
+    )
+  };
+  if (comparison.predictionsBackend !== expectedBackend ||
+      !deepEqual(
+        comparison.predictionArtifactIdentity,
+        expectedPredictionArtifactIdentity
+      )) {
+    fail(
+      `Candidate ${label} official predictions are not bound to the exact ` +
+      "compiled artifact set."
+    );
+  }
+  const isolation = comparison.benchmarkIsolation;
+  const exportIsolation =
+    exportReport.comparisonBenchmark?.trainingIsolation;
+  if (!deepEqual(isolation, exportIsolation) ||
+      isolation?.policy !==
+        "official-benchmark-inputs-absent-from-train-and-dev-v1" ||
+      isolation?.overlappingInputCount !== 0 ||
+      isolation?.benchmarkInputSha256 !==
+        exportReport.runInputSnapshot?.officialBenchmark
+          ?.trainingIsolation?.benchmarkInputSha256 ||
+      !deepEqual(
+        isolation?.comparedSplitSha256,
+        {
+          train: exportReport.runInputSnapshot?.dataset?.splits?.train?.sha256,
+          dev: exportReport.runInputSnapshot?.dataset?.splits?.dev?.sha256
+        }
+      ) ||
+      !deepEqual(
+        exportReport.runInputSnapshot?.officialBenchmark?.trainingIsolation,
+        isolation
+      ) ||
+      exportReport.artifactOverrides?.officialBenchmarkManifest !==
+        undefined) {
+    fail(
+      `Candidate ${label} official benchmark training-isolation evidence is ` +
+      "missing, stale, or overridden."
+    );
   }
   requireSha256(
     comparison.benchmarkManifestSha256,
@@ -835,6 +912,26 @@ function requireRate(value, label) {
     fail(`${label} must be a finite rate from 0 through 1.`);
   }
   return value;
+}
+
+function deepEqual(left, right) {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => deepEqual(value, right[index]));
+  }
+  if (!left || !right || typeof left !== "object" ||
+      typeof right !== "object") {
+    return false;
+  }
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key, index) =>
+        key === rightKeys[index] && deepEqual(left[key], right[key])
+    );
 }
 
 function portable(path) {

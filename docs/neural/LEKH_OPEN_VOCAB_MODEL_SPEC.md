@@ -112,8 +112,8 @@ Vocabulary construction uses train rows only. Normalized inputs may not cross
 train/dev/test. Candidate artifacts are written only under their immutable
 `data/generated/neural-open-vocab-model/<modelId>` root; promotion alone may
 write the production directory. Gold and official-benchmark prediction
-generation run through the exact exported compiled Core ML artifact and cannot
-read expected labels.
+generation run through the exact exported compiled Core ML artifact; each
+decoder invocation receives only the row input, never its acceptable outputs.
 
 ## Evaluation
 

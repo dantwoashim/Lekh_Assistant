@@ -22,6 +22,26 @@ import {
 } from "./lib/neural-official-benchmark.mjs";
 
 const ROOT = realpathSync(process.cwd());
+const CANONICAL_BENCHMARK_MANIFEST = join(
+  ROOT,
+  "data",
+  "neural",
+  "benchmarks",
+  "aksharantar-nepali-test-v1",
+  "manifest.json"
+);
+const CANONICAL_BENCHMARK_MANIFEST_SHA256 =
+  "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f";
+const CANONICAL_REFERENCE_MANIFEST = join(
+  ROOT,
+  "data",
+  "neural",
+  "benchmarks",
+  "indicxlit-v1",
+  "manifest.json"
+);
+const CANONICAL_REFERENCE_MANIFEST_SHA256 =
+  "c3bd96c57a322455026df920dab74dc214113bb2a33aa67f6420805b195c52c6";
 const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
 const predictionsPath = requiredPath(args, "predictions");
@@ -93,6 +113,13 @@ process.stdout.write(`${JSON.stringify({
 process.exitCode = passed ? 0 : 1;
 
 function evaluate() {
+  if (benchmarkManifestPath !== CANONICAL_BENCHMARK_MANIFEST ||
+      referenceManifestPath !== CANONICAL_REFERENCE_MANIFEST) {
+    fail(
+      "Official evaluation requires the canonical locked benchmark and " +
+      "IndicXlit reference manifests."
+    );
+  }
   const exportEvidence = readJsonEvidence(
     exportReportPath,
     "Candidate export report"
@@ -137,6 +164,10 @@ function evaluate() {
     benchmarkEvidence.value,
     benchmarkEvidence.file
   );
+  if (benchmarkEvidence.file.sha256 !==
+      CANONICAL_BENCHMARK_MANIFEST_SHA256) {
+    fail("Canonical official benchmark manifest bytes are not the locked v1 release.");
+  }
   const predictionEvidence = readTextEvidence(
     predictionsPath,
     "Candidate official benchmark predictions",
@@ -147,7 +178,8 @@ function evaluate() {
     benchmarkEvidence: benchmarkEvidence.file,
     benchmarkManifest: benchmarkEvidence.value,
     predictionEvidence,
-    benchmarkRows
+    benchmarkRows,
+    descriptor
   });
   const predictions = parseJsonLines(
     predictionEvidence.contents,
@@ -164,6 +196,9 @@ function evaluate() {
     "IndicXlit reference manifest"
   );
   const reference = referenceEvidence.value;
+  if (referenceEvidence.file.sha256 !== CANONICAL_REFERENCE_MANIFEST_SHA256) {
+    fail("Canonical IndicXlit reference manifest bytes are not the locked v1 release.");
+  }
   validateReferenceManifest({
     reference,
     benchmarkEvidence: benchmarkEvidence.file,
@@ -228,8 +263,15 @@ function evaluate() {
     benchmarkManifest: portable(benchmarkManifestPath),
     benchmarkManifestSha256: benchmarkEvidence.file.sha256,
     benchmarkCorpusSha256: benchmarkEvidence.value.corpusSha256,
+    benchmarkIsolation:
+      exportReport.comparisonBenchmark.trainingIsolation,
     predictions: portable(predictionsPath),
     predictionsSha256: predictionEvidence.sha256,
+    predictionsBackend:
+      exportReport.comparisonBenchmark.predictionsBackend,
+    predictionArtifactIdentity: structuredClone(
+      exportReport.comparisonBenchmark.predictionArtifactIdentity
+    ),
     predictionRows: candidateScore.predictionRows,
     distinctInputCount: candidateScore.distinctInputCount,
     exactCoverage: candidateScore.exactCoverage,
@@ -295,7 +337,8 @@ function validateCandidateComparisonBinding({
   benchmarkEvidence,
   benchmarkManifest,
   predictionEvidence,
-  benchmarkRows
+  benchmarkRows,
+  descriptor
 }) {
   const binding = exportReport.comparisonBenchmark;
   if (!binding || typeof binding !== "object" || Array.isArray(binding)) {
@@ -313,6 +356,73 @@ function validateCandidateComparisonBinding({
     fail(
       "Candidate export report does not bind the exact official benchmark and " +
       "prediction bytes."
+    );
+  }
+  const expectedSuiteEvidence = benchmarkManifest.suites.map((suite) => ({
+    id: suite.id,
+    path: suite.path,
+    sha256: suite.sha256,
+    rows: suite.rows,
+    benchmarkBucket: suite.benchmarkBucket
+  }));
+  if (!deepEqual(binding.suites, expectedSuiteEvidence)) {
+    fail("Candidate export report official suite inventory is stale.");
+  }
+  const isolation = binding.trainingIsolation;
+  const snapshot = exportReport.runInputSnapshot;
+  const snapshotOfficial = snapshot?.officialBenchmark;
+  const expectedIsolation = {
+    policy: "official-benchmark-inputs-absent-from-train-and-dev-v1",
+    benchmarkInputSha256: officialBenchmarkInputSha256(benchmarkRows),
+    comparedSplitSha256: {
+      train: snapshot?.dataset?.splits?.train?.sha256,
+      dev: snapshot?.dataset?.splits?.dev?.sha256
+    },
+    overlappingInputCount: 0
+  };
+  const expectedSnapshotOfficial = {
+    manifest: portable(benchmarkEvidence.path),
+    manifestSha256: benchmarkEvidence.sha256,
+    corpusSha256: benchmarkManifest.corpusSha256,
+    suites: expectedSuiteEvidence,
+    rows: benchmarkRows.length,
+    trainingIsolation: expectedIsolation
+  };
+  if (!deepEqual(isolation, expectedIsolation) ||
+      !deepEqual(snapshotOfficial, expectedSnapshotOfficial)) {
+    fail(
+      "Candidate export report does not bind the locked official benchmark " +
+      "training-isolation proof."
+    );
+  }
+  if (exportReport.artifactOverrides?.officialBenchmarkManifest !== undefined) {
+    fail("Candidate export used an official benchmark manifest override.");
+  }
+  const expectedBackend = descriptor.runtimeModelContract ===
+    "split-attention-incremental-v1"
+    ? "coreml-compiled-split-attention-models"
+    : "coreml-compiled-model";
+  const expectedArtifactIdentity = {
+    runtimeModelContract: descriptor.runtimeModelContract,
+    compiledArtifacts: Object.fromEntries(
+      descriptor.artifacts.map((artifact) => [
+        artifact.role,
+        {
+          path: portable(artifact.sourcePath),
+          sha256: artifact.compiledSha256,
+          bytes: artifact.compiledBytes
+        }
+      ])
+    )
+  };
+  if (binding.predictionsBackend !== expectedBackend ||
+      !deepEqual(
+        binding.predictionArtifactIdentity,
+        expectedArtifactIdentity
+      )) {
+    fail(
+      "Official predictions are not bound to the exact compiled candidate " +
+      "artifact set."
     );
   }
 }
@@ -338,6 +448,8 @@ function loadBenchmarkRows(manifest, manifestEvidence) {
   if (manifest.schemaVersion !== 2 ||
       manifest.status !== "official-public-benchmark-locked" ||
       manifest.trainingUse !== "forbidden-evaluation-only" ||
+      manifest.uniqueInputPolicy !==
+        "trim-lowercase-NFC-collapse-whitespace" ||
       !Array.isArray(manifest.suites) ||
       manifest.suites.length !== 3 ||
       !/^[a-f0-9]{64}$/u.test(String(manifest.corpusSha256 ?? ""))) {
@@ -349,6 +461,8 @@ function loadBenchmarkRows(manifest, manifestEvidence) {
   const rows = [];
   const suiteIds = new Set();
   const buckets = new Set();
+  const rowIds = new Set();
+  const normalizedInputs = new Set();
   for (const suite of manifest.suites) {
     if (!suite || typeof suite !== "object" ||
         typeof suite.id !== "string" ||
@@ -380,10 +494,29 @@ function loadBenchmarkRows(manifest, manifestEvidence) {
     if (suiteRows.length !== suite.rows) {
       fail(`Official benchmark suite ${suite.id} row count changed.`);
     }
+    for (const row of suiteRows) {
+      const inputIdentity = normalizedInput(row?.input);
+      if (!isRecord(row) || typeof row.id !== "string" || row.id.length === 0 ||
+          rowIds.has(row.id) || inputIdentity.length === 0 ||
+          normalizedInputs.has(inputIdentity)) {
+        fail(
+          `Official benchmark suite ${suite.id} contains an invalid or ` +
+          "duplicate row identity."
+        );
+      }
+      rowIds.add(row.id);
+      normalizedInputs.add(inputIdentity);
+    }
     rows.push(...suiteRows.map((row) => ({
       ...row,
       benchmarkBucket: suite.benchmarkBucket
     })));
+  }
+  if (!deepEqual(
+    [...buckets].sort(),
+    ["foreign-name", "indian-name", "native-frequent"]
+  )) {
+    fail("Official benchmark suite inventory does not cover every locked bucket.");
   }
   if (manifestEvidence.sha256 !== sha256File(benchmarkManifestPath)) {
     fail("Official benchmark manifest changed while being loaded.");
@@ -439,6 +572,45 @@ function benchmarkCorpusSha256(suites) {
     }
   }
   return hash.digest("hex");
+}
+
+function officialBenchmarkInputSha256(rows) {
+  const hash = createHash("sha256");
+  for (const row of rows) {
+    hash.update(String(row.id));
+    hash.update("\0");
+    hash.update(normalizedInput(row.input));
+    hash.update("\n");
+  }
+  return hash.digest("hex");
+}
+
+function normalizedInput(value) {
+  return typeof value === "string"
+    ? value.normalize("NFC").trim().toLocaleLowerCase("en-US")
+      .replace(/\s+/gu, " ")
+    : "";
+}
+
+function deepEqual(left, right) {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => deepEqual(value, right[index]));
+  }
+  if (!isRecord(left) || !isRecord(right)) return false;
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key, index) =>
+        key === rightKeys[index] && deepEqual(left[key], right[key])
+    );
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function sha256File(path) {

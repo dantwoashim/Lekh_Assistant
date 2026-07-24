@@ -57,10 +57,6 @@ OUTPUT_TOKENIZATION = "unicode-scalar-character"
 LEGACY_OUTPUT_TOKENIZATION = "unicode-grapheme-character"
 OUTPUT_SEQUENCE_VALIDATION = "devanagari-word-sequence-v1"
 VOCAB_METADATA_PATH = ROOT / "models/macos/LekhNeuralTransliterator.vocab.json"
-GOLD_MANIFEST_PATH = ROOT / "data/neural/gold/manifest.v3.json"
-OFFICIAL_BENCHMARK_MANIFEST_PATH = (
-    ROOT / "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
-)
 CONFIG_PATH = ROOT / "data/neural/training/open-vocab-seq2seq-v1.config.json"
 
 PAD = "<pad>"
@@ -4031,15 +4027,37 @@ def verified_prediction_backend_evidence(
             "backend": "coreml-compiled-split-attention-models",
             "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
             "compiledModels": backend.artifacts,
+            "artifactIdentity": {
+                "runtimeModelContract": ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+                "compiledArtifacts": {
+                    role: {
+                        "path": artifact["compiledModel"],
+                        "sha256": artifact["compiledSha256"],
+                        "bytes": artifact["compiledBytes"],
+                    }
+                    for role, artifact in backend.artifacts.items()
+                },
+            },
         }
     if directory_sha256(args.compiled_model) != backend.compiled_sha256:
         raise SystemExit(
             f"Compiled Core ML bytes changed during {operation}."
         )
+    compiled_bytes = directory_bytes(args.compiled_model)
     return {
         "backend": "coreml-compiled-model",
         "compiledModel": rel(args.compiled_model),
         "compiledModelSha256": backend.compiled_sha256,
+        "artifactIdentity": {
+            "runtimeModelContract": "single-seq2seq-v1",
+            "compiledArtifacts": {
+                "model": {
+                    "path": rel(args.compiled_model),
+                    "sha256": backend.compiled_sha256,
+                    "bytes": compiled_bytes,
+                },
+            },
+        },
     }
 
 
@@ -4986,6 +5004,9 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             "predictions": comparison_evidence["predictions"],
             "predictionsSha256": comparison_evidence["predictionsSha256"],
             "predictionsBackend": comparison_evidence["backend"],
+            "predictionArtifactIdentity": comparison_evidence[
+                "artifactIdentity"
+            ],
         } if comparison_evidence else None),
         "measurements": rel(measurements_path(args)) if export_succeeded else None,
         "measurementsSha256": sha256_file(measurements_path(args)) if export_succeeded else None,

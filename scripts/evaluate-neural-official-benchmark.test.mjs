@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -22,6 +23,7 @@ const evaluator = join(
   "scripts",
   "evaluate-neural-official-benchmark.mjs"
 );
+const sourceRoot = process.cwd();
 
 describe("official benchmark evaluator CLI", () => {
   it("binds exact export/model/benchmark bytes and reproduces reference metrics", () => {
@@ -57,6 +59,37 @@ describe("official benchmark evaluator CLI", () => {
       ));
     });
   });
+
+  it("rejects missing or stale benchmark training-isolation evidence", () => {
+    withFixture((fixture) => {
+      const exportReport = readJson(fixture.exportReport);
+      delete exportReport.comparisonBenchmark.trainingIsolation;
+      writeJson(fixture.exportReport, exportReport);
+
+      const result = run(fixture);
+
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /training-isolation proof/u.test(failure)
+      ));
+    });
+  });
+
+  it("rejects a prediction backend identity that differs from the model bytes", () => {
+    withFixture((fixture) => {
+      const exportReport = readJson(fixture.exportReport);
+      exportReport.comparisonBenchmark.predictionArtifactIdentity
+        .compiledArtifacts.model.sha256 = "f".repeat(64);
+      writeJson(fixture.exportReport, exportReport);
+
+      const result = run(fixture);
+
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /exact compiled candidate artifact set/u.test(failure)
+      ));
+    });
+  });
 });
 
 function withFixture(callback) {
@@ -89,7 +122,7 @@ function buildFixture(root) {
     "data",
     "neural",
     "benchmarks",
-    "official"
+    "aksharantar-nepali-test-v1"
   );
   const benchmarkManifest = join(benchmarkRoot, "manifest.json");
   const referenceRoot = join(
@@ -97,91 +130,55 @@ function buildFixture(root) {
     "data",
     "neural",
     "benchmarks",
-    "reference"
+    "indicxlit-v1"
   );
-  const referencePredictions = join(referenceRoot, "predictions.jsonl");
+  const referencePredictions = join(
+    referenceRoot,
+    "nepali-aksharantar-v1.predictions.jsonl"
+  );
   const referenceManifest = join(referenceRoot, "manifest.json");
   const report = join(root, "reports", "official-evaluation.json");
 
-  const suiteDefinitions = [
-    ["native", "native-frequent", "nepal", "नेपाल"],
-    ["indian", "indian-name", "niraj", "निरज"],
-    ["foreign", "foreign-name", "rohan", "रोहन"]
-  ];
-  const suites = suiteDefinitions.map(([id, bucket, input, output]) => {
-    const path = join(benchmarkRoot, `${id}.jsonl`);
-    write(path, `${JSON.stringify({
-      schemaVersion: 1,
-      id,
-      input,
-      acceptable: [output],
-      expected: [output]
-    })}\n`);
-    const evidence = inspectContainedRegularFile(root, path);
-    return {
-      id,
-      path: portable(root, path),
-      sha256: evidence.sha256,
-      rows: 1,
-      benchmarkBucket: bucket
-    };
-  });
-  const corpusSha256 = benchmarkCorpusSha256(suites);
-  writeJson(benchmarkManifest, {
-    schemaVersion: 2,
-    status: "official-public-benchmark-locked",
-    trainingUse: "forbidden-evaluation-only",
-    corpusSha256,
-    suites
-  });
+  copyRelativeEvidence(
+    root,
+    "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
+  );
+  const benchmark = readJson(benchmarkManifest);
+  for (const suite of benchmark.suites) {
+    copyRelativeEvidence(root, suite.path);
+  }
+  copyRelativeEvidence(
+    root,
+    "data/neural/benchmarks/indicxlit-v1/manifest.json"
+  );
+  copyRelativeEvidence(
+    root,
+    "data/neural/benchmarks/indicxlit-v1/nepali-aksharantar-v1.predictions.jsonl"
+  );
+  const suites = benchmark.suites;
+  const corpusSha256 = benchmark.corpusSha256;
   const benchmarkEvidence = inspectContainedRegularFile(
     root,
     benchmarkManifest
   );
 
-  const candidateRows = suiteDefinitions.map(([id, , input, output]) => ({
-    id,
-    input,
-    candidates: [output]
+  const benchmarkRows = suites.flatMap((suite) =>
+    readJsonLines(join(root, suite.path))
+  );
+  const candidateRows = benchmarkRows.map((row) => ({
+    id: row.id,
+    input: row.input,
+    candidates: [row.acceptable[0]]
   }));
   write(
     predictions,
     `${candidateRows.map((row) => JSON.stringify(row)).join("\n")}\n`
   );
   const predictionEvidence = inspectContainedRegularFile(root, predictions);
-  const referenceRows = suiteDefinitions.map(([id, bucket, input, output]) => ({
-    id,
-    input,
-    benchmarkBucket: bucket,
-    acceptable: [output],
-    candidates: [output]
-  }));
-  write(
-    referencePredictions,
-    `${referenceRows.map((row) => JSON.stringify(row)).join("\n")}\n`
-  );
   const referencePredictionEvidence = inspectContainedRegularFile(
     root,
     referencePredictions
   );
-  writeJson(referenceManifest, {
-    schemaVersion: 1,
-    status: "measured-external-comparison",
-    trainingUse: "forbidden-comparison-only",
-    benchmark: {
-      manifest: portable(root, benchmarkManifest),
-      manifestSha256: benchmarkEvidence.sha256,
-      corpusSha256,
-      rows: 3
-    },
-    predictionArtifact: {
-      path: portable(root, referencePredictions),
-      sha256: referencePredictionEvidence.sha256,
-      bytes: referencePredictionEvidence.bytes,
-      rows: 3
-    }
-  });
-
   write(vocabulary, JSON.stringify({
     schemaVersion: 1,
     tokenization: "unicode-scalar-character"
@@ -191,6 +188,23 @@ function buildFixture(root) {
   const compiledEvidence = inspectContainedDirectoryTree(root, compiled);
   const trainingRunId = "a".repeat(32);
   const exportRunId = "b".repeat(32);
+  const splitSha256 = {
+    train: "c".repeat(64),
+    dev: "d".repeat(64)
+  };
+  const suiteEvidence = suites.map((suite) => ({
+    id: suite.id,
+    path: suite.path,
+    sha256: suite.sha256,
+    rows: suite.rows,
+    benchmarkBucket: suite.benchmarkBucket
+  }));
+  const trainingIsolation = {
+    policy: "official-benchmark-inputs-absent-from-train-and-dev-v1",
+    benchmarkInputSha256: officialBenchmarkInputSha256(benchmarkRows),
+    comparedSplitSha256: splitSha256,
+    overlappingInputCount: 0
+  };
   writeJson(manifest, {
     schemaVersion: 2,
     trainingRunId,
@@ -214,6 +228,23 @@ function buildFixture(root) {
     trainingRunId,
     exportRunId,
     modelId: "lekh-open-vocab-seq2seq-v1",
+    artifactOverrides: {},
+    runInputSnapshot: {
+      dataset: {
+        splits: {
+          train: { sha256: splitSha256.train },
+          dev: { sha256: splitSha256.dev }
+        }
+      },
+      officialBenchmark: {
+        manifest: portable(root, benchmarkManifest),
+        manifestSha256: benchmarkEvidence.sha256,
+        corpusSha256,
+        suites: suiteEvidence,
+        rows: benchmarkRows.length,
+        trainingIsolation
+      }
+    },
     manifest: portable(root, manifest),
     manifestSha256: manifestEvidence.sha256,
     comparisonBenchmark: {
@@ -222,7 +253,20 @@ function buildFixture(root) {
       corpusSha256,
       predictions: portable(root, predictions),
       predictionsSha256: predictionEvidence.sha256,
-      rows: 3
+      rows: benchmarkRows.length,
+      suites: suiteEvidence,
+      trainingIsolation,
+      predictionsBackend: "coreml-compiled-model",
+      predictionArtifactIdentity: {
+        runtimeModelContract: "single-seq2seq-v1",
+        compiledArtifacts: {
+          model: {
+            path: portable(root, compiled),
+            sha256: compiledEvidence.sha256,
+            bytes: compiledEvidence.bytes
+          }
+        }
+      }
     }
   });
   return {
@@ -254,20 +298,31 @@ function run(fixture) {
   });
 }
 
-function benchmarkCorpusSha256(suites) {
+function officialBenchmarkInputSha256(rows) {
   const hash = createHash("sha256");
-  for (const suite of suites) {
-    for (const [value, terminator] of [
-      [suite.id, "\0"],
-      [suite.path, "\0"],
-      [suite.sha256, "\0"],
-      [suite.rows, "\n"]
-    ]) {
-      hash.update(String(value));
-      hash.update(terminator);
-    }
+  for (const row of rows) {
+    hash.update(String(row.id));
+    hash.update("\0");
+    hash.update(
+      String(row.input).normalize("NFC").trim().toLocaleLowerCase("en-US")
+        .replace(/\s+/gu, " ")
+    );
+    hash.update("\n");
   }
   return hash.digest("hex");
+}
+
+function copyRelativeEvidence(root, relativePath) {
+  const target = join(root, relativePath);
+  mkdirSync(dirname(target), { recursive: true });
+  copyFileSync(join(sourceRoot, relativePath), target);
+}
+
+function readJsonLines(path) {
+  return readFileSync(path, "utf8")
+    .split(/\r?\n/u)
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line));
 }
 
 function write(path, contents) {

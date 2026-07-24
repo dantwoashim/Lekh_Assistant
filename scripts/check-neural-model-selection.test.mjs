@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -24,9 +25,15 @@ const checker = join(
   "scripts",
   "check-neural-model-selection.mjs"
 );
+const sourceRoot = process.cwd();
 const DATASET_CONTENT_SHA = "1".repeat(64);
 const GOLD_CORPUS_SHA = "2".repeat(64);
-const BENCHMARK_CORPUS_SHA = "3".repeat(64);
+const BENCHMARK_CORPUS_SHA =
+  "149d44c4e8832b91908c4bccfb67e60abcdf8ed99a1d873dc60ef7d0a130744a";
+const BENCHMARK_MANIFEST_SHA =
+  "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f";
+const REFERENCE_MANIFEST_SHA =
+  "c3bd96c57a322455026df920dab74dc214113bb2a33aa67f6420805b195c52c6";
 
 describe("neural model-selection CLI evidence graph", () => {
   it("verifies two complete candidate graphs and publishes one immutable winner", () => {
@@ -62,6 +69,21 @@ describe("neural model-selection CLI evidence graph", () => {
       const report = readJson(fixture.report);
       assert.ok(report.failures.some((failure) =>
         /bytes do not match the declared SHA-256/u.test(failure)
+      ));
+    });
+  });
+
+  it("refuses a comparison report with forged training-isolation evidence", () => {
+    withFixture((fixture) => {
+      const comparison = readJson(fixture.candidates[0].comparisonPath);
+      comparison.benchmarkIsolation.overlappingInputCount = 1;
+      writeJson(fixture.candidates[0].comparisonPath, comparison);
+
+      const result = runSelection(fixture);
+
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /training-isolation evidence/u.test(failure)
       ));
     });
   });
@@ -108,7 +130,7 @@ function buildSharedEvidence(root) {
     "data",
     "neural",
     "benchmarks",
-    "official",
+    "aksharantar-nepali-test-v1",
     "manifest.json"
   );
   writeJson(datasetManifest, {
@@ -120,11 +142,14 @@ function buildSharedEvidence(root) {
     corpusSha256: GOLD_CORPUS_SHA,
     suites: []
   });
-  writeJson(benchmarkManifest, {
-    schemaVersion: 2,
-    corpusSha256: BENCHMARK_CORPUS_SHA,
-    suites: []
-  });
+  mkdirSync(dirname(benchmarkManifest), { recursive: true });
+  copyFileSync(
+    join(
+      sourceRoot,
+      "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
+    ),
+    benchmarkManifest
+  );
   return {
     datasetManifest,
     datasetEvidence: inspectContainedRegularFile(root, datasetManifest),
@@ -216,6 +241,26 @@ function buildCandidate(root, shared, options) {
     manifestPath,
     vocabPath: vocabularyPath
   });
+  const splitSha256 = {
+    train: "4".repeat(64),
+    dev: "5".repeat(64)
+  };
+  const trainingIsolation = {
+    policy: "official-benchmark-inputs-absent-from-train-and-dev-v1",
+    benchmarkInputSha256: "6".repeat(64),
+    comparedSplitSha256: splitSha256,
+    overlappingInputCount: 0
+  };
+  const predictionArtifactIdentity = {
+    runtimeModelContract: descriptor.runtimeModelContract,
+    compiledArtifacts: {
+      model: {
+        path: portable(root, compiledModel),
+        sha256: compiledEvidence.sha256,
+        bytes: compiledEvidence.bytes
+      }
+    }
+  };
   const exportReport = {
     status: "passed-open-vocab-seq2seq-candidate",
     productionEligible: false,
@@ -224,6 +269,21 @@ function buildCandidate(root, shared, options) {
     trainingRunId,
     exportRunId,
     modelId: manifest.selectedArtifact,
+    artifactOverrides: {},
+    runInputSnapshot: {
+      dataset: {
+        splits: {
+          train: { sha256: splitSha256.train },
+          dev: { sha256: splitSha256.dev }
+        }
+      },
+      officialBenchmark: {
+        trainingIsolation
+      }
+    },
+    comparisonBenchmark: {
+      trainingIsolation
+    },
     manifest: portable(root, manifestPath),
     manifestSha256: manifestEvidence.sha256
   };
@@ -313,13 +373,21 @@ function buildCandidate(root, shared, options) {
     exportRunId,
     candidateManifestSha256: manifestEvidence.sha256,
     artifactIdentity,
-    benchmarkManifest: portable(root, shared.benchmarkManifest),
-    benchmarkManifestSha256: shared.benchmarkEvidence.sha256,
+    benchmarkManifest:
+      "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+    benchmarkManifestSha256: BENCHMARK_MANIFEST_SHA,
     benchmarkCorpusSha256: BENCHMARK_CORPUS_SHA,
+    benchmarkIsolation: trainingIsolation,
     predictions: portable(root, comparisonPredictions),
     predictionsSha256: predictionEvidence.sha256,
+    predictionsBackend: "coreml-compiled-model",
+    predictionArtifactIdentity,
     predictionRows: 3,
     distinctInputCount: 3,
+    reference: {
+      manifest: "data/neural/benchmarks/indicxlit-v1/manifest.json",
+      manifestSha256: REFERENCE_MANIFEST_SHA
+    },
     metrics: {
       overall: metric(3, top1Hits, 3),
       byBucket: {
@@ -352,6 +420,7 @@ function buildCandidate(root, shared, options) {
   });
   return {
     specificationPath,
+    comparisonPath,
     comparisonPredictions,
     exportRunId
   };

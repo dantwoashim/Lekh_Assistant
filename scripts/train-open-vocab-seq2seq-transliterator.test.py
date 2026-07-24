@@ -849,6 +849,12 @@ class TrainerContractTests(unittest.TestCase):
                 export_report["comparisonBenchmark"]["predictionsBackend"],
                 "coreml-compiled-split-attention-models",
             )
+            self.assertEqual(
+                export_report["comparisonBenchmark"][
+                    "predictionArtifactIdentity"
+                ]["runtimeModelContract"],
+                TRAINER.ATTENTION_INCREMENTAL_RUNTIME_CONTRACT,
+            )
             self.assertEqual(export_report["comparisonBenchmark"]["rows"], 4_085)
             self.assertEqual(
                 export_report["comparisonBenchmark"]["trainingIsolation"][
@@ -858,6 +864,9 @@ class TrainerContractTests(unittest.TestCase):
             )
             for role in ("encoder", "decoderStep"):
                 artifact = export_report["compiledModels"][role]
+                prediction_artifact = export_report["comparisonBenchmark"][
+                    "predictionArtifactIdentity"
+                ]["compiledArtifacts"][role]
                 self.assertGreater(artifact["compiledBytes"], 0)
                 self.assertGreater(artifact["mlpackageBytes"], 0)
                 self.assertEqual(len(artifact["compiledSha256"]), 64)
@@ -865,6 +874,14 @@ class TrainerContractTests(unittest.TestCase):
                 self.assertEqual(
                     runtime_manifest["sha256"]["compiledModels"][role],
                     artifact["compiledSha256"],
+                )
+                self.assertEqual(
+                    prediction_artifact,
+                    {
+                        "path": artifact["compiledModel"],
+                        "sha256": artifact["compiledSha256"],
+                        "bytes": artifact["compiledBytes"],
+                    },
                 )
 
             prior_artifacts = TRAINER.attention_artifact_evidence_from_paths(
@@ -1411,6 +1428,21 @@ class TrainerContractTests(unittest.TestCase):
                 TRAINER.sha256_file(
                     TRAINER.official_benchmark_predictions_path(args)
                 ),
+            )
+            self.assertEqual(
+                export_report["comparisonBenchmark"][
+                    "predictionArtifactIdentity"
+                ],
+                {
+                    "runtimeModelContract": "single-seq2seq-v1",
+                    "compiledArtifacts": {
+                        "model": {
+                            "path": export_report["compiledModel"],
+                            "sha256": export_report["compiledModelSha256"],
+                            "bytes": runtime_manifest["modelBytes"],
+                        },
+                    },
+                },
             )
             self.assertEqual(
                 export_report["comparisonBenchmark"]["trainingIsolation"][
