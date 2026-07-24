@@ -6,6 +6,7 @@ import {
   canonicalJsonSha256,
   configuredNeuralTrainingContract,
   inspectTrainingReportBinding,
+  resolveNeuralTrainingLayout,
   sha256Text,
   validateNeuralTrainingConfig
 } from "./neural-training-contract.mjs";
@@ -42,6 +43,69 @@ describe("neural training implementation contract", () => {
       "Context language-model rescoring is disabled and not implemented."
     ]);
     expect(configuredNeuralTrainingContract(config).architecture.attentionDim).toBe(256);
+  });
+
+  it("resolves the complete baseline candidate layout", () => {
+    const layout = resolveNeuralTrainingLayout(
+      currentConfig(),
+      configPath,
+      process.cwd()
+    );
+
+    expect(layout).toMatchObject({
+      modelId: "lekh-open-vocab-seq2seq-v1",
+      kind: "baseline",
+      runtimeModelContract: "single-seq2seq-v1",
+      successfulExportStatus: "passed-open-vocab-seq2seq-candidate",
+      predictionsBackend: "coreml-compiled-model",
+      candidateRootRelativePath:
+        "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1"
+    });
+    expect(layout.artifacts.map((artifact) => artifact.role)).toEqual(["model"]);
+    expect(layout.configuredArtifactInputs.officialBenchmarkManifest).toBe(
+      "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
+    );
+  });
+
+  it("resolves both split-attention runtime artifacts from the naming anchor", () => {
+    const config = JSON.parse(readFileSync(attentionConfigPath, "utf8"));
+    const layout = resolveNeuralTrainingLayout(
+      config,
+      attentionConfigPath,
+      process.cwd()
+    );
+
+    expect(layout).toMatchObject({
+      modelId: "lekh-open-vocab-bigru-attention-v1",
+      kind: "split-attention",
+      runtimeModelContract: "split-attention-incremental-v1",
+      successfulExportStatus: "passed-open-vocab-attention-split-candidate",
+      predictionsBackend: "coreml-compiled-split-attention-models"
+    });
+    expect(layout.artifacts.map((artifact) => [
+      artifact.role,
+      artifact.compiledModel.split("/").at(-1),
+      artifact.mlpackage.split("/").at(-1)
+    ])).toEqual([
+      [
+        "encoder",
+        "LekhNeuralTransliteratorEncoder.mlmodelc",
+        "LekhNeuralTransliteratorEncoder.mlpackage"
+      ],
+      [
+        "decoderStep",
+        "LekhNeuralTransliteratorDecoderStep.mlmodelc",
+        "LekhNeuralTransliteratorDecoderStep.mlpackage"
+      ]
+    ]);
+  });
+
+  it("rejects a supported model config loaded from a non-canonical path", () => {
+    expect(() => resolveNeuralTrainingLayout(
+      currentConfig(),
+      join(process.cwd(), "data", "neural", "training", "renamed.json"),
+      process.cwd()
+    )).toThrow(/canonical path/u);
   });
 
   it("rejects unimplemented architecture and optimization claims", () => {

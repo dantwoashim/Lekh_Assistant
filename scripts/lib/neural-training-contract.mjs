@@ -1,4 +1,12 @@
 import { createHash } from "node:crypto";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep
+} from "node:path";
 
 const CANONICAL_PUBLIC_SOURCE = "ai4bharat-aksharantar-nepali";
 const BLOCKED_MIRROR_SOURCES = [
@@ -7,7 +15,12 @@ const BLOCKED_MIRROR_SOURCES = [
 ];
 const ARCHITECTURE_PROFILES = Object.freeze({
   "lekh-open-vocab-seq2seq-v1": Object.freeze({
+    configPath: "data/neural/training/open-vocab-seq2seq-v1.config.json",
+    kind: "baseline",
     family: "gru-encoder-decoder-seq2seq",
+    runtimeModelContract: "single-seq2seq-v1",
+    successfulExportStatus: "passed-open-vocab-seq2seq-candidate",
+    predictionsBackend: "coreml-compiled-model",
     attention: "none",
     encoderLayers: 2,
     decoderLayers: 2,
@@ -26,7 +39,12 @@ const ARCHITECTURE_PROFILES = Object.freeze({
     })
   }),
   "lekh-open-vocab-bigru-attention-v1": Object.freeze({
+    configPath: "data/neural/training/open-vocab-bigru-attention-v1.config.json",
+    kind: "split-attention",
     family: "bidirectional-gru-additive-attention-seq2seq",
+    runtimeModelContract: "split-attention-incremental-v1",
+    successfulExportStatus: "passed-open-vocab-attention-split-candidate",
+    predictionsBackend: "coreml-compiled-split-attention-models",
     attention: "bahdanau-additive",
     encoderLayers: 2,
     decoderLayers: 2,
@@ -45,6 +63,197 @@ const ARCHITECTURE_PROFILES = Object.freeze({
     })
   })
 });
+
+const ARTIFACT_NAMES = Object.freeze({
+  checkpoint: "checkpoint.pt",
+  trainingReport: "training-report.json",
+  exportReport: "export-report.json",
+  manifest: "LekhNeuralTransliterator.manifest.json",
+  vocabulary: "LekhNeuralTransliterator.vocab.json",
+  measurements: "coreml-device-measurements.json",
+  goldPredictions: "gold-predictions.jsonl",
+  officialBenchmarkPredictions: "official-benchmark-predictions.jsonl",
+  baselineCompiledModel: "LekhNeuralTransliterator.mlmodelc",
+  baselineMLPackage: "LekhNeuralTransliterator.mlpackage",
+  attentionEncoderCompiledModel: "LekhNeuralTransliteratorEncoder.mlmodelc",
+  attentionEncoderMLPackage: "LekhNeuralTransliteratorEncoder.mlpackage",
+  attentionDecoderCompiledModel: "LekhNeuralTransliteratorDecoderStep.mlmodelc",
+  attentionDecoderMLPackage: "LekhNeuralTransliteratorDecoderStep.mlpackage"
+});
+
+export class NeuralTrainingLayoutError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "NeuralTrainingLayoutError";
+  }
+}
+
+/**
+ * Resolve the immutable candidate layout from one allowlisted executable
+ * training config. The generic compiledModel path in an attention config is a
+ * naming anchor; the runtime artifacts are the encoder and decoder-step
+ * bundles returned in `artifacts`.
+ */
+export function resolveNeuralTrainingLayout(config, configPath, repoRoot = process.cwd()) {
+  if (!isRecord(config)) {
+    throw new NeuralTrainingLayoutError("Training config must be a JSON object.");
+  }
+  const profile = ARCHITECTURE_PROFILES[config.modelId];
+  if (!profile) {
+    throw new NeuralTrainingLayoutError(
+      `Unsupported neural candidate modelId: ${JSON.stringify(config.modelId)}.`
+    );
+  }
+  const root = resolve(repoRoot);
+  const resolvedConfigPath = containedPath(root, configPath, "Training config");
+  const expectedConfigPath = resolve(root, profile.configPath);
+  if (resolvedConfigPath !== expectedConfigPath) {
+    throw new NeuralTrainingLayoutError(
+      `Training config ${portable(root, resolvedConfigPath)} does not match ` +
+      `${config.modelId}'s canonical path ${profile.configPath}.`
+    );
+  }
+
+  const candidateRoot = dirname(
+    containedRecordedPath(root, config.export?.sourceCheckpoint, "export.sourceCheckpoint")
+  );
+  const expectedCandidateRoot = resolve(
+    root,
+    "data",
+    "generated",
+    "neural-open-vocab-model",
+    config.modelId
+  );
+  if (candidateRoot !== expectedCandidateRoot) {
+    throw new NeuralTrainingLayoutError(
+      `Candidate root must be data/generated/neural-open-vocab-model/${config.modelId}.`
+    );
+  }
+
+  const paths = Object.fromEntries(
+    Object.entries({
+      checkpoint: ARTIFACT_NAMES.checkpoint,
+      trainingReport: ARTIFACT_NAMES.trainingReport,
+      exportReport: ARTIFACT_NAMES.exportReport,
+      manifest: ARTIFACT_NAMES.manifest,
+      vocabulary: ARTIFACT_NAMES.vocabulary,
+      measurements: ARTIFACT_NAMES.measurements,
+      goldPredictions: ARTIFACT_NAMES.goldPredictions,
+      officialBenchmarkPredictions: ARTIFACT_NAMES.officialBenchmarkPredictions
+    }).map(([key, name]) => [key, join(candidateRoot, name)])
+  );
+  const expectedConfigBindings = {
+    sourceCheckpoint: paths.checkpoint,
+    intermediateMLPackage: join(candidateRoot, ARTIFACT_NAMES.baselineMLPackage),
+    compiledModel: join(candidateRoot, ARTIFACT_NAMES.baselineCompiledModel),
+    manifest: paths.manifest,
+    vocabMetadata: paths.vocabulary
+  };
+  for (const [field, expected] of Object.entries(expectedConfigBindings)) {
+    const actual = containedRecordedPath(
+      root,
+      config.export?.[field],
+      `export.${field}`
+    );
+    if (actual !== expected) {
+      throw new NeuralTrainingLayoutError(
+        `Config export.${field} must be ${portable(root, expected)}.`
+      );
+    }
+  }
+  for (const [field, expected] of Object.entries({
+    compiledModel: expectedConfigBindings.compiledModel,
+    manifest: expectedConfigBindings.manifest,
+    vocabMetadata: expectedConfigBindings.vocabMetadata
+  })) {
+    const actual = containedRecordedPath(
+      root,
+      config.artifact?.[field],
+      `artifact.${field}`
+    );
+    if (actual !== expected) {
+      throw new NeuralTrainingLayoutError(
+        `Config artifact.${field} must be ${portable(root, expected)}.`
+      );
+    }
+  }
+
+  const artifacts = profile.kind === "baseline"
+    ? [{
+        role: "model",
+        compiledModel: expectedConfigBindings.compiledModel,
+        mlpackage: expectedConfigBindings.intermediateMLPackage
+      }]
+    : [
+        {
+          role: "encoder",
+          compiledModel: join(
+            candidateRoot,
+            ARTIFACT_NAMES.attentionEncoderCompiledModel
+          ),
+          mlpackage: join(
+            candidateRoot,
+            ARTIFACT_NAMES.attentionEncoderMLPackage
+          )
+        },
+        {
+          role: "decoderStep",
+          compiledModel: join(
+            candidateRoot,
+            ARTIFACT_NAMES.attentionDecoderCompiledModel
+          ),
+          mlpackage: join(
+            candidateRoot,
+            ARTIFACT_NAMES.attentionDecoderMLPackage
+          )
+        }
+      ];
+  const datasetManifest = containedRecordedPath(
+    root,
+    config.training?.datasetManifest,
+    "training.datasetManifest"
+  );
+  const goldManifest = containedRecordedPath(
+    root,
+    config.evaluation?.goldManifest,
+    "evaluation.goldManifest"
+  );
+  const officialBenchmarkManifest = containedRecordedPath(
+    root,
+    config.evaluation?.officialBenchmarkManifest,
+    "evaluation.officialBenchmarkManifest"
+  );
+  const configuredArtifactInputs = {
+    trainingConfig: portable(root, resolvedConfigPath),
+    datasetManifest: portable(root, datasetManifest),
+    goldManifest: portable(root, goldManifest),
+    officialBenchmarkManifest: portable(root, officialBenchmarkManifest),
+    outDir: portable(root, candidateRoot),
+    compiledModel: portable(root, expectedConfigBindings.compiledModel),
+    manifest: portable(root, paths.manifest),
+    vocabMetadata: portable(root, paths.vocabulary)
+  };
+
+  return deepFreeze({
+    modelId: config.modelId,
+    kind: profile.kind,
+    architecture: profile.family,
+    runtimeModelContract: profile.runtimeModelContract,
+    successfulExportStatus: profile.successfulExportStatus,
+    predictionsBackend: profile.predictionsBackend,
+    root,
+    configPath: resolvedConfigPath,
+    configRelativePath: portable(root, resolvedConfigPath),
+    candidateRoot,
+    candidateRootRelativePath: portable(root, candidateRoot),
+    datasetManifest,
+    goldManifest,
+    officialBenchmarkManifest,
+    paths,
+    artifacts,
+    configuredArtifactInputs
+  });
+}
 
 export function configuredNeuralTrainingContract(config) {
   return {
@@ -367,6 +576,46 @@ function deepEqual(left, right) {
   const rightKeys = Object.keys(right).sort();
   return leftKeys.length === rightKeys.length &&
     leftKeys.every((key, index) => key === rightKeys[index] && deepEqual(left[key], right[key]));
+}
+
+function containedPath(root, value, label) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new NeuralTrainingLayoutError(`${label} path must be a non-empty string.`);
+  }
+  const path = isAbsolute(value) ? resolve(value) : resolve(root, value);
+  const child = relative(root, path);
+  if (child === "" || child === ".." || child.startsWith(`..${sep}`) ||
+      isAbsolute(child)) {
+    throw new NeuralTrainingLayoutError(`${label} path escapes the repository.`);
+  }
+  return path;
+}
+
+function containedRecordedPath(root, value, label) {
+  if (typeof value !== "string" || value.length === 0 || isAbsolute(value) ||
+      value.includes("\\") || value.split("/").includes("..") ||
+      value.split("/").includes(".")) {
+    throw new NeuralTrainingLayoutError(
+      `${label} must be a canonical repository-relative POSIX path.`
+    );
+  }
+  const path = containedPath(root, value, label);
+  if (portable(root, path) !== value) {
+    throw new NeuralTrainingLayoutError(
+      `${label} must be a canonical repository-relative POSIX path.`
+    );
+  }
+  return path;
+}
+
+function portable(root, path) {
+  return relative(root, resolve(path)).split(sep).join("/");
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
 }
 
 function isRecord(value) {
