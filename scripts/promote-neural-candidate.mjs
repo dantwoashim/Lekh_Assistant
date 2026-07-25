@@ -40,6 +40,10 @@ import {
 import {
   validateNeuralSelectionReport
 } from "./lib/neural-model-selection.mjs";
+import {
+  computeNeuralProductionPromotionIdFromIdentity,
+  NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION
+} from "./lib/neural-production-promotion-receipt.mjs";
 
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
@@ -301,7 +305,8 @@ export function promoteNeuralCandidate(options) {
       ])
     )
   };
-  const promotionId = sha256CanonicalJson(promotionIdentity);
+  const promotionId =
+    computeNeuralProductionPromotionIdFromIdentity(promotionIdentity);
   const parent = dirname(productionDir);
   assertSafeExistingDirectory(repoRoot, parent, "Production artifact parent");
   if (existsSync(productionDir)) {
@@ -339,7 +344,7 @@ export function promoteNeuralCandidate(options) {
     });
 
     promotionReport = {
-      schemaVersion: 1,
+      schemaVersion: NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION,
       status: "passed-neural-candidate-promotion",
       generatedAt: now(),
       promotionId,
@@ -381,8 +386,12 @@ export function promoteNeuralCandidate(options) {
         vocabulary: evidenceRecord(repoRoot, vocabularyEvidence)
       },
       artifactSetSha256: artifactDescriptor.artifactSetSha256,
-      artifacts: stagedArtifacts.map((artifact) => ({
+      artifacts: stagedArtifacts
+        .filter((artifact) => artifact.id !== "vocabulary")
+        .map((artifact) => ({
         id: artifact.id,
+        role: artifact.role,
+        artifactKind: artifact.artifactKind,
         kind: artifact.kind,
         source: portableRelative(repoRoot, artifact.source),
         destination: portableRelative(
@@ -751,6 +760,8 @@ function verifyBaselineArtifacts({
 
   const artifacts = [{
     id: "compiledModel",
+    role: "model",
+    artifactKind: "compiledModel",
     kind: "directory",
     source: compiledPath,
     destinationName: BASELINE_COMPILED_NAME,
@@ -784,6 +795,8 @@ function verifyBaselineArtifacts({
     }
     artifacts.push({
       id: "mlpackage",
+      role: "model",
+      artifactKind: "mlpackage",
       kind: "directory",
       source: packagePath,
       destinationName: BASELINE_PACKAGE_NAME,
@@ -1577,10 +1590,6 @@ function goldCorpusSha256(suites) {
     }
   }
   return hash.digest("hex");
-}
-
-function sha256CanonicalJson(value) {
-  return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }
 
 function canonicalJson(value) {

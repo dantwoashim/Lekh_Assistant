@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
@@ -27,6 +28,9 @@ import {
   buildNeuralSelectionReport
 } from "./lib/neural-model-selection.mjs";
 import {
+  verifyNeuralProductionPromotionReceipt
+} from "./lib/neural-production-promotion-receipt.mjs";
+import {
   NeuralCandidatePromotionError,
   promoteNeuralCandidate
 } from "./promote-neural-candidate.mjs";
@@ -35,6 +39,11 @@ const TRAINING_RUN_ID = "0123456789abcdef0123456789abcdef";
 const EXPORT_RUN_ID = "fedcba9876543210fedcba9876543210";
 const FIXED_TIME = "2026-07-24T00:00:00.000Z";
 const sourceRoot = process.cwd();
+const phase9Checker = join(
+  sourceRoot,
+  "scripts",
+  "check-neural-production-promotion.mjs"
+);
 const OFFICIAL_BENCHMARK_MANIFEST_SHA256 =
   "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f";
 const OFFICIAL_BENCHMARK_CORPUS_SHA256 =
@@ -63,6 +72,39 @@ describe("evidence-bound neural candidate promotion", () => {
 
       const manifest = readJson(result.manifest);
       const report = readJson(result.report);
+      const verification = verifyNeuralProductionPromotionReceipt({
+        repoRoot: fixture.root,
+        productionDirectory: result.productionDir
+      });
+      assert.equal(report.schemaVersion, 2);
+      assert.equal(verification.promotionId, result.promotionId);
+      assert.deepEqual(
+        report.artifacts.map((artifact) => artifact.id),
+        ["compiledModel", "mlpackage"]
+      );
+      assert.equal(
+        report.artifacts.some((artifact) => artifact.id === "vocabulary"),
+        false
+      );
+      const phase9Report = join(fixture.root, "reports", "phase9.json");
+      const phase9 = spawnSync(
+        process.execPath,
+        [
+          phase9Checker,
+          "--production",
+          "--report",
+          phase9Report
+        ],
+        {
+          cwd: fixture.root,
+          encoding: "utf8"
+        }
+      );
+      assert.equal(phase9.status, 0, phase9.stderr || phase9.stdout);
+      assert.equal(
+        readJson(phase9Report).status,
+        "passed-production-phase9-promotion"
+      );
       assert.equal(
         productionManifestValidator(manifest),
         true,
@@ -285,6 +327,20 @@ describe("evidence-bound neural candidate promotion", () => {
       assert.equal(result.artifactLayout, "split-attention");
 
       const manifest = readJson(result.manifest);
+      const verification = verifyNeuralProductionPromotionReceipt({
+        repoRoot: fixture.root,
+        productionDirectory: result.productionDir
+      });
+      assert.equal(verification.runtimeModelContract, "split-attention-incremental-v1");
+      assert.deepEqual(
+        verification.artifacts.map((artifact) => artifact.id),
+        [
+          "encoder.compiledModel",
+          "encoder.mlpackage",
+          "decoderStep.compiledModel",
+          "decoderStep.mlpackage"
+        ]
+      );
       assert.equal(
         productionManifestValidator(manifest),
         true,
@@ -322,6 +378,32 @@ describe("evidence-bound neural candidate promotion", () => {
       assert.deepEqual(promotionDebris(fixture), []);
     });
   });
+
+  it("rejects a rehashed production manifest whose metrics no longer come from retained evaluation evidence", () => {
+    withFixture("baseline", (fixture) => {
+      const result = promote(fixture);
+      const manifest = readJson(result.manifest);
+      manifest.metrics.tailTop1Accuracy = 0.9;
+      writeJson(result.manifest, manifest);
+
+      const manifestEvidence = inspectContainedRegularFile(
+        fixture.root,
+        result.manifest
+      );
+      const receipt = readJson(result.report);
+      receipt.productionManifest.sha256 = manifestEvidence.sha256;
+      receipt.productionManifest.bytes = manifestEvidence.bytes;
+      writeJson(result.report, receipt);
+
+      assert.throws(
+        () => verifyNeuralProductionPromotionReceipt({
+          repoRoot: fixture.root,
+          productionDirectory: result.productionDir
+        }),
+        /exact deterministic promotion/u
+      );
+    });
+  });
 });
 
 function withFixture(kind, callback) {
@@ -330,8 +412,13 @@ function withFixture(kind, callback) {
   mkdirSync(join(rootAlias, "data", "generated", "candidate"), { recursive: true });
   const root = realpathSync(rootAlias);
   mkdirSync(join(root, "data", "neural", "gold"), { recursive: true });
+  mkdirSync(join(root, "data", "neural", "schema"), { recursive: true });
   mkdirSync(join(root, "reports"), { recursive: true });
   mkdirSync(join(root, "models", "macos"), { recursive: true });
+  copyFileSync(
+    join(sourceRoot, "data/neural/schema/lekh-neural-manifest.schema.json"),
+    join(root, "data/neural/schema/lekh-neural-manifest.schema.json")
+  );
   try {
     callback(buildFixture(root, kind));
   } finally {
