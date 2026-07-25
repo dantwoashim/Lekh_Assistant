@@ -1,258 +1,434 @@
-# Lekh Assistant
+<p align="center">
+  <img src="public/icons/lekh-icon.svg" alt="Lekh Assistant icon" width="112" />
+</p>
 
-Lekh Assistant is a local-first Nepali typing assistant for macOS and Windows.
-It lets you type Nepali in ordinary desktop apps instead of copying text from a
-website.
+<h1 align="center">Lekh Assistant</h1>
 
-The v1.0 product uses the deterministic engine:
+<p align="center">
+  <strong>Write Nepali without breaking your flow.</strong><br />
+  <sub>आफ्नो लय नतोडी नेपाली लेख्नुहोस्।</sub>
+</p>
 
-- Romanized Nepali typing is the primary mode.
-- Suggestions appear while you type and are committed only when you choose one.
-- Traditional typing is available on macOS as a clearly labeled Beta.
-- Windows v1.0 provides Romanized typing.
-- Dictionary data and conservative proofread rules run locally.
-- Password and other secure fields fail closed.
-- Experimental neural/Core ML typing is off and is not packaged in v1.0.
+<p align="center">
+  A private, native typing assistant for macOS and Windows.<br />
+  Romanized input becomes deliberate Devanagari suggestions—inside the app where you are already writing.
+</p>
 
-## Download
+<p align="center"><strong>No browser tab. No copy-and-paste loop. No account required.</strong></p>
 
-Use the assets on the
-[GitHub Releases page](https://github.com/dantwoashim/Lekh_Assistant/releases).
+<p align="center">
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/Lekh-Keyboard-Test-Installer.zip">
+    <img src="https://img.shields.io/badge/Download-macOS_13%2B-0D6B5B?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Download Lekh Assistant for macOS 13 or newer" />
+  </a>
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe">
+    <img src="https://img.shields.io/badge/Download-Windows_11_x64-174EA6?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download Lekh Assistant for Windows 11 x64" />
+  </a>
+</p>
 
-| Computer | Download | Supported release target |
+<p align="center">
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/tag/v1.0.0">v1.0.0 release</a>
+  ·
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/SHA256SUMS.txt">verify downloads</a>
+  ·
+  <a href="KNOWN_LIMITATIONS.md">known limitations</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/actions/workflows/ci.yml">
+    <img src="https://github.com/dantwoashim/Lekh_Assistant/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" />
+  </a>
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/tag/v1.0.0">
+    <img src="https://img.shields.io/github/v/release/dantwoashim/Lekh_Assistant?color=0D6B5B" alt="Latest release" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-273833" alt="MIT license" />
+  </a>
+</p>
+
+![Romanized input becomes a local suggestion that the user explicitly commits](docs/assets/readme/lekh-typing-flow.svg)
+
+Most transliteration tools make Nepali a detour: open a website, type, copy,
+paste, and repeat. Lekh makes Nepali part of the operating system. Select the
+keyboard once, type naturally in Roman letters, and stay with the thought
+instead of managing the tool.
+
+Lekh is built around a simple promise: **the software may assist your writing,
+but it must never take authority over it.**
+
+- **Stay in the app.** Lekh installs as a native input method, not a web editor.
+- **See before committing.** Suggestions remain suggestions until you choose.
+- **Keep your writing private.** The v1 typing path works locally, without text
+  telemetry, an account, or a network dependency.
+- **Preserve the text that should stay Latin.** URLs, email addresses, common
+  identifiers, file names, and numbers are guarded from forced conversion.
+- **Leave safely.** Switch to another keyboard at any time, or quit the
+  companion explicitly.
+
+> [!IMPORTANT]
+> **v1.0 is an unsigned release.** The macOS package is ad-hoc signed but not
+> Apple-notarized; the Windows package has no publisher certificate. Gatekeeper
+> or SmartScreen warnings are therefore expected. Download only from the
+> official release links above and compare the file with the published
+> [SHA-256 checksums](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/SHA256SUMS.txt).
+> Lekh never asks you to disable operating-system security globally.
+
+## What you get
+
+| Capability | v1.0 behavior |
+|---|---|
+| Romanized Nepali | Type familiar Latin spellings such as `namaste`; choose from ranked Devanagari candidates such as `नमस्ते`. |
+| System integration | Native InputMethodKit input method on macOS; native Text Services Framework text service on Windows. |
+| Candidate control | Inline and popup candidates on macOS; numbered candidates with keyboard navigation on Windows. Nothing commits merely because it appears. |
+| Local language tools | Bundled dictionary-backed ranking, local explicit-choice memory, and conservative active-token proofread suggestions. |
+| Traditional typing | Traditional → Nepali and Traditional → Romanized on macOS, clearly labeled **Beta**. |
+| Privacy boundary | No text telemetry in the v1 typing path. Secure or unknown contexts fail closed and clear composition state. |
+| Offline behavior | Typing, suggestions, dictionary ranking, and proofread rules do not require a server or account. |
+
+### Platform support
+
+| Platform | Release target | What ships |
 |---|---|---|
-| Apple Silicon or Intel Mac | Lekh-Keyboard-Test-Installer.zip | macOS 13 or newer |
-| Windows PC | Lekh-Keyboard-Companion-<version>-Setup-x64.exe | Windows 11 x64 |
+| macOS | macOS 13 or newer | One universal installer for Apple Silicon and Intel Macs |
+| Windows | Windows 11 x64 | x64 installer with the native text service and local companion |
 
-Both packages are unsigned. This project does not have a paid Apple Developer
-ID or Windows code-signing certificate, so your computer will show an
-unknown-developer or unknown-publisher warning. The warnings and limitations
-are explained below; no signing or notarization claim is made.
+Windows ARM64 compiles and passes native tests in CI, but v1.0 does not ship an
+ARM64 installer because that install lifecycle has not passed the same
+verification as x64.
 
-## Install on macOS
+## Install
 
-1. Download Lekh-Keyboard-Test-Installer.zip.
-2. In Finder, double-click the ZIP once. A folder named
-   Lekh Keyboard Test Installer appears beside it.
-3. Open that folder. Do not rename, remove, or rearrange its contents.
-4. Control-click or right-click `Lekh Keyboard Test Installer.app`, choose Open, then click Open again.
-5. Read the installer result and click OK.
-6. Save open work, then log out of your Mac and log back in. macOS can cache
-   newly installed input methods, especially unsigned ones.
-7. Open System Settings → Keyboard.
-8. Beside Text Input, click Edit….
-9. Click the + button at the lower-left.
-10. Select Nepali in the left column, select Lekh Keyboard in the right column,
-    then click Add.
-11. In the menu bar, click the current input-source icon and choose Lekh
-    Keyboard.
+End users do **not** need Node.js, npm, or a developer toolchain.
 
-### If macOS blocks the installer
+### macOS
 
-The supported order is:
+1. [Download `Lekh-Keyboard-Test-Installer.zip`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/Lekh-Keyboard-Test-Installer.zip).
+2. In Finder, double-click the ZIP once. Keep the extracted **Lekh Keyboard
+   Test Installer** folder intact.
+3. Open that folder. Control-click or right-click
+   **Lekh Keyboard Test Installer.app**, choose **Open**, then click **Open**
+   again.
+4. Wait for the success message and click **OK**.
+5. Save your work, log out of your Mac, and log back in. macOS can cache a
+   newly installed unsigned input method.
+6. Open **System Settings → Keyboard**. Beside **Text Input**, click
+   **Edit…**, then click **+**.
+7. Select **Nepali** on the left, select **Lekh Keyboard** on the right, and
+   click **Add**.
+8. Choose **Lekh Keyboard** from the input-source menu in the menu bar.
 
-1. Try the Finder right-click → Open flow above.
-2. If the app is still blocked, open System Settings → Privacy & Security,
-   scroll to the Security section, and click Open Anyway for Lekh Keyboard Test
-   Installer.
-3. Only if both paths fail, open Terminal and run this command against the
-   installer app itself:
+<details>
+<summary><strong>If macOS blocks the installer</strong></summary>
 
-    xattr -dr com.apple.quarantine "/path/to/Lekh Keyboard Test Installer.app"
+Use these options in order:
 
-Drag the installer app into Terminal to insert its exact path. Never run that
-command on Downloads, your home folder, or an entire drive. Then repeat the
-right-click → Open step.
+1. Repeat the Finder **right-click → Open** flow. Do not start with a normal
+   double-click.
+2. Open **System Settings → Privacy & Security**, scroll to **Security**, and
+   choose **Open Anyway** for Lekh Keyboard Test Installer.
+3. Only if both supported UI paths fail, open Terminal and run this command
+   against the installer app itself:
 
-### If Lekh is not listed under Input Sources
+   ```bash
+   xattr -dr com.apple.quarantine "/path/to/Lekh Keyboard Test Installer.app"
+   ```
+
+   You can drag the installer app into Terminal to insert its exact path.
+   Never run this command on Downloads, your home folder, an entire drive, or
+   any directory broader than this one installer app. Then repeat
+   **right-click → Open**.
+
+</details>
+
+<details>
+<summary><strong>If Lekh is missing from Input Sources</strong></summary>
 
 1. Confirm that the installer reported success.
-2. Log out and back in; do not only close System Settings.
-3. Return to System Settings → Keyboard → Text Input → Edit… → + → Nepali.
-4. If it is still absent, run the installer again from the complete extracted
-   folder and repeat the logout/login step.
+2. Log out and back in; closing System Settings is not enough.
+3. Return to **System Settings → Keyboard → Text Input → Edit… → + → Nepali**.
+4. If Lekh is still absent, rerun the installer from the complete extracted
+   folder, then repeat the logout/login step.
 
-## Install on Windows
+</details>
 
-1. Download the x64 Setup.exe asset.
-2. Double-click it.
-3. If Windows shows “Windows protected your PC,” click More info, verify that
-   the file name is the Lekh installer you downloaded, then click Run anyway.
-4. When User Account Control asks whether to allow changes, click Yes.
-5. In Lekh Keyboard Companion Setup, keep the default install folder unless you
-   have a reason to change it. Click Install.
-6. Wait for the installer to finish. It registers the Lekh text service and
-   starts the local background companion.
-7. Press Windows key + Space.
-8. Choose Lekh Keyboard Nepali.
+### Windows
 
-If Lekh is not in the Windows key + Space list, sign out of Windows and sign
-back in once. If it remains absent, uninstall Lekh Keyboard Companion, restart
-Windows, and install the same Setup.exe again.
+1. [Download `Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe).
+2. Double-click the installer.
+3. If Windows says **Windows protected your PC**, click **More info**, confirm
+   that the file name is the Lekh installer, and click **Run anyway**.
+4. Approve the **User Account Control** prompt. Administrator approval is
+   required because the installer registers a machine-wide Windows text
+   service.
+5. Keep the default install folder, click **Install**, and wait for setup to
+   finish.
+6. Press **Windows key + Space** and choose **Lekh Keyboard Nepali**.
 
-The Windows installer requires administrator approval because it registers a
-machine-wide Text Services Framework component. The x64 install/start,
-registration, background-service, uninstall, and cleanup lifecycle is exercised
-on a Windows CI runner.
+If Lekh is not listed, sign out of Windows and sign back in once. If it remains
+absent, uninstall Lekh Keyboard Companion, restart Windows, and install the
+same release file again.
 
-## Type Nepali
+<details>
+<summary><strong>Verify a download before opening it</strong></summary>
 
-### Romanized mode
+Download the official
+[`SHA256SUMS.txt`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/SHA256SUMS.txt)
+file, then compare the installer hash.
 
-1. Select Lekh as your current input source.
-2. Type the Nepali word using Latin letters. For example, type namaste.
+On macOS:
+
+```bash
+shasum -a 256 ~/Downloads/Lekh-Keyboard-Test-Installer.zip
+```
+
+On Windows PowerShell:
+
+```powershell
+Get-FileHash "$HOME\Downloads\Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe" -Algorithm SHA256
+```
+
+</details>
+
+## Type with Lekh
+
+### Romanized → Nepali
+
+1. Select Lekh as the current input source.
+2. Type a Nepali word with Roman letters—for example, `namaste`.
 3. Review the Devanagari candidates.
-4. Choose the intended candidate. Lekh does not silently replace text with an
-   unchosen suggestion.
-
-Common protected Latin text—such as PDF, NID, email addresses, URLs, file
-names, and numbers—is preserved instead of being forced into Devanagari.
+4. Choose `नमस्ते`. If you do not choose a suggestion, Lekh does not silently
+   commit it.
 
 ### macOS controls
 
 | Action | Control |
 |---|---|
-| Choose Romanized Nepali | Click the ले menu → Romanized → Nepali |
-| Open the mode chooser | Control + Option + Space |
-| Accept the gray inline completion | Tab or Right Arrow |
-| Open/move through candidates | Down Arrow, then Up/Down |
-| Commit the highlighted candidate | Return |
-| Choose a visible shortcut | Option + 1, 2, or 3 |
-| Keep/cancel to raw text | Escape |
-| Turn Lekh off | Click the ले menu → Switch to ABC, or choose another input source |
+| Choose Romanized Nepali | Click the **ले** menu → **Romanized → Nepali** |
+| Open the mode chooser | **Control + Option + Space** |
+| Accept the gray inline completion | **Tab** or **Right Arrow** |
+| Open or move through candidates | **Down Arrow**, then **Up/Down** |
+| Commit the highlighted candidate | **Return** |
+| Choose a visible shortcut | **Option + 1**, **2**, or **3** |
+| Keep or cancel to raw text | **Escape** |
+| Turn Lekh off | Click the **ले** menu → **Switch to ABC**, or choose another input source |
 
-Traditional → Nepali (Beta) and Traditional → Romanized (Beta) are available
-from the same ले menu. Their physical layout has not been validated by an
-experienced Traditional typist, so Romanized → Nepali is the recommended v1.0
-mode.
+The same **ले** menu contains **Traditional → Nepali (Beta)** and
+**Traditional → Romanized (Beta)**. Their complete physical layout has not
+been validated by an experienced Traditional typist, so Romanized → Nepali is
+the recommended v1.0 mode.
 
 ### Windows controls
 
 | Action | Control |
 |---|---|
-| Turn Lekh on or switch keyboards | Windows key + Space |
-| Move through candidates | Up/Down Arrow |
-| Choose a numbered candidate | 1–8 |
-| Commit the selected candidate | Space or Enter |
-| Turn Lekh off | Windows key + Space, then choose another keyboard |
+| Turn Lekh on or switch keyboards | **Windows key + Space** |
+| Move through candidates | **Up/Down Arrow** |
+| Choose a numbered candidate | **1–8** |
+| Commit the selected candidate | **Space** or **Enter** |
+| Turn Lekh off | **Windows key + Space**, then choose another keyboard |
 
-To stop the Windows background companion completely, open Lekh Keyboard
-Companion from the Start menu and choose File → Exit Lekh Keyboard Companion.
-Typing then fails open to unchanged Latin input until you reopen the companion.
+To stop the Windows background process completely, open **Lekh Keyboard
+Companion** from the Start menu and choose **File → Exit Lekh Keyboard
+Companion**. Typing then fails open to unchanged Latin input until you reopen
+the companion.
 
 ## Suggestions, dictionary, and proofread
 
-- Suggestions come from bundled deterministic rules, word/phrase data, and
-  local explicit-choice memory.
-- Dictionary data improves candidate ranking and local lookup. v1.0 does not
-  present itself as an authoritative dictionary with certified definitions.
-- Proofread appears as conservative Fix candidates for supported active Nepali
-  tokens. It is not a document-wide grammar checker.
-- Nothing is committed merely because it appears in the candidate window.
+Lekh v1.0 deliberately favors predictable assistance over aggressive
+automation.
+
+- Candidate ranking combines deterministic transliteration, bundled word and
+  phrase data, and choices you explicitly accepted on this device.
+- Personal learning stores candidate choices, not surrounding sentences.
+- The bundled dictionary supports ranking and local lookup, but is not
+  presented as an authoritative dictionary with professionally certified
+  definitions for every entry.
+- Proofread can offer a **Fix** candidate for supported active Nepali tokens.
+  It is not a document-wide spelling or grammar checker.
+- A missing hint is not a claim that the text is correct. Every correction
+  remains an explicit choice.
+
+## Trust is an architecture decision
+
+Lekh does not treat privacy and text safety as marketing settings bolted onto
+the end. They shape the commit path itself:
+
+```mermaid
+flowchart LR
+    A["Keys in the current app"] --> B{"Safe, known typing context?"}
+    B -- "No or unknown" --> C["Clear composition<br/>Leave host text unchanged"]
+    B -- "Yes" --> D["Local deterministic engine"]
+    D --> E["Ranked candidates"]
+    E --> F{"Did the user choose?"}
+    F -- "No" --> G["No commit"]
+    F -- "Yes" --> H["Commit selected Devanagari<br/>to the owning context"]
+```
+
+- **Native host boundaries:** macOS uses InputMethodKit; Windows uses Text
+  Services Framework. The browser demo is not represented as the system
+  keyboard.
+- **Secure-field behavior:** password and unknown contexts clear local
+  composition and refuse transformation.
+- **Bounded authority:** candidate commits are tied to the active session and
+  owning text context.
+- **Local IPC:** the native input service and companion communicate through
+  versioned local contracts; text is not sent to a web service.
+- **Reversible preference:** explicit choices may improve local ranking, and
+  the user can reset or remove Lekh-owned data.
+
+Read the [security policy](SECURITY.md) for reporting a vulnerability.
+
+## Engineering evidence, not slogans
+
+The v1.0 release is backed by reproducible automation and narrowly worded
+claims:
+
+- CI builds and tests macOS on Apple Silicon and Intel, plus Windows on x64 and
+  ARM64.
+- The deterministic v1 release suite recorded **47 test files / 452 tests**.
+- TypeScript and Swift passed all **31 shared behavior-contract cases** with
+  byte-identical output.
+- Windows CI commits a selected Devanagari candidate through a real TSF thread
+  manager, document manager, context, edit session, and in-memory text store.
+- Windows x64 CI installs silently, verifies COM/TSF registration and local
+  service startup, uninstalls, and verifies cleanup.
+- The macOS package simulation verifies quarantine detection, the preferred
+  Finder approval path, universal architecture, and package integrity.
+- The final bounded adversarial review recorded **zero open P0 issues**. It
+  does not replace the limitations below or claim universal host-app testing.
+
+Explore the evidence:
+
+- [Current CI workflow](https://github.com/dantwoashim/Lekh_Assistant/actions/workflows/ci.yml)
+- [v1.0 state of build](STATE_OF_BUILD.md)
+- [Final v1.0 adversarial review](ADVERSARIAL_REVIEW_FINAL_V1.md)
+- [macOS unsigned-install walkthrough](C2_MACOS_UNSIGNED_INSTALL_WALKTHROUGH.md)
+- [Traditional / Preeti corpus result](C3_TRADITIONAL_PREETI_CORPUS_RESULTS.md)
+- [Known limitations](KNOWN_LIMITATIONS.md)
+
+## Experimental neural research
+
+The repository contains an active local Core ML transliteration research track.
+It is **not the v1.0 product**, is **not production-ready**, is off by default,
+and is absent from the published v1.0 packages. The deterministic engine remains
+the shipping path.
+
+Current research evaluates candidate architectures and an evidence-bound
+promotion pipeline. No model will be described as Neural Engine-backed merely
+because Core ML was asked to make the Neural Engine available; actual placement
+and final packaged performance still require proof.
+
+See the
+[latest neural production-readiness checkpoint](docs/neural/NEURAL_PRODUCTION_READINESS_CHECKPOINT_2026-07-25.md)
+for measured results, resolved findings, and remaining blockers.
+
+## Known limitations
+
+Honest limits are part of the product contract:
+
+- The macOS package is not Apple-notarized, and the Windows package is
+  unsigned.
+- Physical Windows behavior in Notepad, browsers, and Microsoft Word has not
+  been claimed as visually verified; the native commit path and candidate state
+  machine use automated CI proxies.
+- The shipped Windows installer is x64 only.
+- Traditional typing is Beta and lacks a verified physical-layout corpus and
+  experienced-typist sign-off.
+- The Preeti converter has extensive locked-fixture regression coverage but no
+  consented real-document validation set.
+- Proofread is conservative active-token assistance, not full grammar
+  correction.
+- v1.0 has no automatic update service.
+
+The complete release-honesty record is in
+[KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
 
 ## Uninstall
 
 ### macOS
 
-Open the original extracted installer folder, right-click Lekh Keyboard
-Uninstaller.app, choose Open, and confirm removal. Switch to ABC first if Lekh
-is active. The uninstaller removes the input method and Lekh-owned local data,
-including learned words, packs, backups, caches, and logs.
+Switch to ABC first. Open the original extracted installer folder, right-click
+**Lekh Keyboard Uninstaller.app**, choose **Open**, and confirm removal. The
+uninstaller removes the input method and Lekh-owned local data, including
+learned words, packs, backups, caches, and logs.
 
 ### Windows
 
-Open Settings → Apps → Installed apps, find Lekh Keyboard Companion, open its
-… menu, and choose Uninstall. Approve the User Account Control prompt. The
-uninstaller stops the companion/broker, removes startup registration, unregisters
-the text service, and removes the installed files.
-
-## Privacy and safe behavior
-
-Typing, suggestions, dictionary queries, and proofread processing stay on the
-computer. The v1.0 typing path has no text telemetry and does not require an
-account or network connection.
-
-Lekh refuses to transform secure fields. If the host context, service, or IPC
-state cannot be trusted, it clears local composition state and leaves host text
-unchanged. Personal learning records explicit candidate choices locally; it
-does not store surrounding sentences.
-
-## Known limitations
-
-- macOS and Windows packages are unsigned.
-- Windows GUI behavior has automated native/logic coverage but no claimed
-  physical Notepad, browser, or Word visual inspection.
-- The Windows release installer is x64; ARM64 source builds and tests, but no
-  ARM64 installer is currently shipped.
-- Traditional typing is Beta and has no verified physical-layout corpus.
-- Preeti results are fixture-based; there are no consented real-document or
-  user-submitted validation rows.
-- Proofread is conservative and is not full grammar correction.
-- v1.0 has no auto-update service.
-
-See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) for the complete release-honesty
-record.
+Open **Settings → Apps → Installed apps**, find **Lekh Keyboard Companion**,
+open its **…** menu, and choose **Uninstall**. Approve the User Account Control
+prompt. The uninstaller stops the companion and broker, removes startup
+registration, unregisters the text service, and removes installed files.
 
 ---
 
-## Developers
+## Build from source
 
-End users do not need Node.js or a terminal. The rest of this README is for
-contributors building from source.
+Everything below is for contributors. End users should use the release
+installers above.
 
 ### Prerequisites
 
 - Node.js 24
 - npm 11
-- macOS: Xcode Command Line Tools and the macOS SDK
+- macOS: Xcode Command Line Tools and a compatible macOS SDK
 - Windows: Visual Studio Build Tools, CMake, and the Windows SDK
 
-Install dependencies:
-
-    npm ci
+```bash
+git clone https://github.com/dantwoashim/Lekh_Assistant.git
+cd Lekh_Assistant
+npm ci
+npm run v1:check
+```
 
 ### Primary v1 command surface
 
-These eight commands are the only documented top-level v1 entry points.
-Lower-level maintenance scripts remain in package.json for maintainers and
-historical workflows.
+These eight commands are the documented top-level v1 entry points. Lower-level
+maintenance and research scripts remain in `package.json` for maintainers.
 
 | Command | Purpose | Host |
 |---|---|---|
-| npm run v1:dev | Start the local development surface | macOS / Windows |
-| npm run v1:build | Build the web/companion UI | macOS / Windows |
-| npm run v1:test | Run the deterministic v1 test suite | macOS / Windows |
-| npm run v1:check | Run format, types, tests, build, IPC, and commit-policy checks | macOS / Windows |
-| npm run v1:build:macos | Compile the native macOS input method with neural typing off | macOS |
-| npm run v1:build:windows | Compile the Windows TSF service | Windows |
-| npm run v1:package:macos | Build and verify the unsigned universal installer ZIP | macOS |
-| npm run v1:package:windows | Build the unsigned x64 Windows installer | Windows |
+| `npm run v1:dev` | Start the local development surface | macOS / Windows |
+| `npm run v1:build` | Build the web and companion UI | macOS / Windows |
+| `npm run v1:test` | Run the deterministic v1 test suite | macOS / Windows |
+| `npm run v1:check` | Run format, types, tests, build, IPC, and commit-policy checks | macOS / Windows |
+| `npm run v1:build:macos` | Compile the native macOS input method with neural typing off | macOS |
+| `npm run v1:build:windows` | Compile the native Windows TSF service | Windows |
+| `npm run v1:package:macos` | Build and verify the unsigned universal installer ZIP | macOS |
+| `npm run v1:package:windows` | Build the unsigned x64 Windows installer | Windows |
 
 ### Repository map
 
-    src/                         Deterministic engine and focused UI
-    native/macos-imk/skeleton/   macOS InputMethodKit implementation
-    native/windows-tsf/skeleton/ Windows Text Services Framework implementation
-    native/daemon/               Local deterministic daemon
-    native/shared/               IPC and local storage contracts
-    scripts/                     Build, package, and verification automation
-    data/                        Bundled deterministic language data
-    docs/                        Architecture, safety, and historical records
+```text
+src/                         Deterministic engine and focused UI
+native/macos-imk/skeleton/   macOS InputMethodKit implementation
+native/windows-tsf/skeleton/ Windows Text Services Framework implementation
+native/daemon/               Local deterministic daemon
+native/shared/               IPC and local-storage contracts
+scripts/                     Build, packaging, and verification automation
+data/                        Bundled deterministic language data
+docs/                        Architecture, safety, research, and release records
+```
 
-Architecture truth: Windows: TSF text service. macOS: InputMethodKit input method.
-The Electron/browser demo is **not** the keyboard app. The companion app is **not** the keyboard app.
-Preeti to Unicode is a side utility, not the main system-wide typing path.
+Architecture truth matters:
 
-### Current evidence
+- The macOS keyboard is the InputMethodKit input method.
+- The Windows keyboard is the TSF text service.
+- The companion configures and supports the keyboard; it is not the keyboard.
+- The Electron/browser surface is a development and demonstration surface; it
+  is not the system keyboard.
+- Preeti-to-Unicode conversion is a side utility, not the main typing path.
 
-- [State of build](STATE_OF_BUILD.md)
-- [Known limitations](KNOWN_LIMITATIONS.md)
-- [Traditional / Preeti corpus result](C3_TRADITIONAL_PREETI_CORPUS_RESULTS.md)
-- [Mid-mission adversarial review](ADVERSARIAL_REVIEW_MID_V1.md)
-- [Contributing](CONTRIBUTING.md)
+### Contribute
+
+Before opening a change, read:
+
+- [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Third-party notices](docs/THIRD_PARTY_NOTICES.md)
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Lekh Assistant is available under the [MIT License](LICENSE).
+
+<p align="center">
+  <strong>Your words. Your device. Your choice.</strong>
+</p>
