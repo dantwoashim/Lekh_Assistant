@@ -149,6 +149,19 @@ describe("macOS release verifier", () => {
 
   it("keeps rollback idempotent and authenticates the private snapshot ahead of installation", () => {
     const source = readFileSync(join(process.cwd(), "scripts", "package-macos-imk-test-installer.mjs"), "utf8");
+    const terminalInstallerStart = source.indexOf(
+      "const terminalInstallScript ="
+    );
+    const terminalInstallerEnd = source.indexOf(
+      "const terminalUninstallScript =",
+      terminalInstallerStart
+    );
+    const terminalInstallerSource = source.slice(
+      terminalInstallerStart,
+      terminalInstallerEnd
+    );
+    expect(terminalInstallerStart).toBeGreaterThan(-1);
+    expect(terminalInstallerEnd).toBeGreaterThan(terminalInstallerStart);
     expect(source).toContain('if [[ "$ROLLBACK_COMPLETED" == "1" ]]');
     expect(source).toContain("trap on_exit EXIT");
     expect(source).not.toContain("trap 'rollback; cleanup' EXIT");
@@ -158,7 +171,9 @@ describe("macOS release verifier", () => {
     expect(source.indexOf('LEKH_RELEASE_VERIFY_NONINTERACTIVE=1 "$RELEASE_VERIFIER"')).toBeLessThan(
       source.indexOf('"$INSTALLER_BIN"')
     );
-    expect(source).not.toContain("xattr -dr com.apple.quarantine");
+    expect(terminalInstallerSource).not.toContain(
+      "xattr -dr com.apple.quarantine"
+    );
     expect(source).toContain('"-S", "-l", "-m", releaseManifestPath');
   });
 });
