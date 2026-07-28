@@ -29,10 +29,12 @@ developer's own Mac.
 
 As of 2026-07-28, this Mac has Apple Silicon and macOS 26.2, but only Xcode
 Command Line Tools are active. `xcrun xctrace list templates` fails because
-the full Xcode Instruments toolchain is absent. The machine also has about
-22 GiB free, which is not a safe margin for installing and expanding current
-Xcode. Consequently, no valid runtime-placement evidence exists yet, and the
-production promotion gate must remain closed.
+the full Xcode Instruments toolchain is absent. Apple's current system
+requirements list Xcode 26.6 as supporting macOS Tahoe 26.2 through 26.x, so
+the installed OS is compatible. The machine has only about 20 GiB free, which
+is not a safe margin for installing and expanding current Xcode. Consequently,
+no valid runtime-placement evidence exists yet, and the production promotion
+gate must remain closed.
 
 This limitation is tooling and disk capacity, not the missing $99 Developer
 Program membership.

@@ -118,6 +118,7 @@ Primary references:
 - [Apple target conversion formats](https://apple.github.io/coremltools/docs-guides/source/target-conversion-formats.html)
 - [PyTorch releases](https://github.com/pytorch/pytorch/releases)
 - [Optimize your Core ML usage (WWDC22)](https://developer.apple.com/videos/play/wwdc2022/10027/)
+- [Xcode system requirements](https://developer.apple.com/xcode/system-requirements)
 - [Xcode command-line tool reference](https://developer.apple.com/documentation/xcode/xcode-command-line-tool-reference)
 - [Apple Developer membership comparison](https://developer.apple.com/support/compare-memberships/)
 
@@ -243,9 +244,10 @@ not a failure introduced by this checkpoint.
   train/dev/test.
 
 Full Xcode is free and does not require the $99 Apple Developer Program.
-However, the present disk margin is unsafe for installing and expanding the
-current Xcode distribution. This is the blocker for an honest runtime-placement
-trace, not Developer ID authentication.
+Apple's current requirements list Xcode 26.6 as compatible with this Mac's
+macOS 26.2. However, the present disk margin is unsafe for installing and
+expanding it. This is the blocker for an honest runtime-placement trace, not
+the OS version or Developer ID authentication.
 
 ## Remaining production blockers
 
