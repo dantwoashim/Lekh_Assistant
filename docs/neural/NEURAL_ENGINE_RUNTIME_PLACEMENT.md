@@ -77,7 +77,12 @@ Program membership.
      and byte counts;
    - the Apple Silicon hardware, macOS version, Xcode version, and capture
      instruments;
-   - at least 5 warm-up and 30 measured full-candidate requests;
+   - the exact closed workload emitted by the capture report: the ordered
+     tokens `prashasan`, `nagarikta`, `mantralaya`, `sambidhan`, and
+     `paryatan`, with exactly 5 warm-up and 40 measured full-candidate
+     requests;
+   - the workload identity SHA-256 published by the capture report (the
+     validator independently recomputes and enforces the same identity);
    - process-scoped Core ML prediction intervals;
    - correlated Neural Engine hardware activity;
    - a nonzero prediction count and observed Neural Engine compute for every

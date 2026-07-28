@@ -1,6 +1,38 @@
+import { createHash } from "node:crypto";
+
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const GENERATED_AT_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u;
+export const NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT = deepFreeze({
+  schemaVersion: 1,
+  measurementKind: "full-candidate-generation",
+  orderedTokens: [
+    "prashasan",
+    "nagarikta",
+    "mantralaya",
+    "sambidhan",
+    "paryatan"
+  ],
+  warmupPasses: 1,
+  measuredPasses: 8
+});
+const PLACEMENT_INPUT_CORPUS_SHA256 = createHash("sha256")
+  .update(
+    `${JSON.stringify(NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT)}\n`,
+    "utf8"
+  )
+  .digest("hex");
+export const NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY = Object.freeze({
+  measurementKind:
+    NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.measurementKind,
+  inputCorpusSha256: PLACEMENT_INPUT_CORPUS_SHA256,
+  warmupIterations:
+    NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.orderedTokens.length *
+    NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.warmupPasses,
+  measuredIterations:
+    NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.orderedTokens.length *
+    NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.measuredPasses
+});
 const TOP_LEVEL_KEYS = Object.freeze([
   "architecture",
   "artifactIdentity",
@@ -125,13 +157,10 @@ export function validateNeuralRuntimePlacementEvidence(
   }
   if (
     !exactKeys(evidence.workload, WORKLOAD_KEYS) ||
-    evidence.workload.measurementKind !==
-      "full-candidate-generation" ||
-    !validSha256(evidence.workload.inputCorpusSha256) ||
-    !Number.isSafeInteger(evidence.workload.warmupIterations) ||
-    evidence.workload.warmupIterations < 5 ||
-    !Number.isSafeInteger(evidence.workload.measuredIterations) ||
-    evidence.workload.measuredIterations < 30
+    !deepEqual(
+      evidence.workload,
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
+    )
   ) {
     addIssue("neural-runtime-placement.workload-invalid");
   }
@@ -159,6 +188,68 @@ export function validateNeuralRuntimePlacementEvidence(
       neuralEngineClaimAllowed: issues.length === 0
     });
   }
+}
+
+/**
+ * Bind a placement-capture benchmark report to the same closed workload that
+ * runtime trace evidence must identify.
+ */
+export function validateNeuralPlacementCaptureReport(report) {
+  const issues = [];
+  const addIssue = (code) => {
+    if (!issues.includes(code)) issues.push(code);
+  };
+  const contract = NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT;
+  const identity = NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY;
+  if (
+    !isRecord(report) ||
+    report.proofMode !== "placement-capture" ||
+    report.placementCapture !== true ||
+    report.benchmarkPasses !==
+      contract.warmupPasses + contract.measuredPasses ||
+    report.warmupPasses !== contract.warmupPasses ||
+    report.measuredPasses !== contract.measuredPasses ||
+    report.warmupRequests !== identity.warmupIterations ||
+    report.steadyStateSamples !== identity.measuredIterations ||
+    !deepEqual(report.workloadTokens, contract.orderedTokens) ||
+    !deepEqual(report.runtimePlacementWorkload, identity)
+  ) {
+    addIssue("neural-placement-capture.workload-invalid");
+  }
+  const expectedTokens = [...contract.orderedTokens].sort(compareText);
+  if (
+    !isRecord(report.byTokenMs) ||
+    !deepEqual(
+      Object.keys(report.byTokenMs).sort(compareText),
+      expectedTokens
+    ) ||
+    Object.values(report.byTokenMs).some(
+      (samples) =>
+        !Array.isArray(samples) ||
+        samples.length !== contract.measuredPasses ||
+        samples.some(
+          (sample) =>
+            typeof sample !== "number" ||
+            !Number.isFinite(sample) ||
+            sample < 0
+        )
+    )
+  ) {
+    addIssue("neural-placement-capture.samples-invalid");
+  }
+  if (
+    !isRecord(report.predictions) ||
+    !deepEqual(
+      Object.keys(report.predictions).sort(compareText),
+      expectedTokens
+    )
+  ) {
+    addIssue("neural-placement-capture.predictions-invalid");
+  }
+  return Object.freeze({
+    valid: issues.length === 0,
+    issueCodes: Object.freeze([...issues].sort(compareText))
+  });
 }
 
 function validateArtifactIdentity(value, descriptor, addIssue) {
@@ -303,4 +394,12 @@ function deepEqual(left, right) {
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
 }

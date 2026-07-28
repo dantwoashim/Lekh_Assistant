@@ -13,6 +13,9 @@ import {
 } from "./lib/neural-artifact-descriptor.mjs";
 import { validateNeuralDeviceMeasurements } from "./lib/neural-device-measurements.mjs";
 import {
+  NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT,
+  NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY,
+  validateNeuralPlacementCaptureReport,
   validateNeuralRuntimePlacementEvidence
 } from "./lib/neural-runtime-placement-evidence.mjs";
 
@@ -281,6 +284,25 @@ parsed.proofMode = production
     : placementCapture
       ? "placement-capture"
       : "experimental";
+if (placementCapture) {
+  parsed.runtimePlacementWorkload = {
+    ...NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
+  };
+  const captureValidation = validateNeuralPlacementCaptureReport(parsed);
+  if (!captureValidation.valid) {
+    console.error(
+      "Native placement workload drifted from its closed contract: " +
+      captureValidation.issueCodes.join(", ")
+    );
+    process.exit(1);
+  }
+  parsed.runtimePlacementWorkloadContract = {
+    ...NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT,
+    orderedTokens: [
+      ...NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.orderedTokens
+    ]
+  };
+}
 if (promotionEvidence) parsed.status = "passed-candidate-promotion-evidence";
 writeFileSync(stagedReport, `${JSON.stringify(parsed, null, 2)}\n`);
 renameSync(stagedReport, report);

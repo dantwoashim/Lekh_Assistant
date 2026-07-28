@@ -19,6 +19,9 @@ import {
 import {
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
+import {
+  NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
+} from "./lib/neural-runtime-placement-evidence.mjs";
 
 const checker = join(
   process.cwd(),
@@ -523,10 +526,7 @@ function runtimePlacementEvidence(descriptor) {
       runtimeRoles
     },
     workload: {
-      measurementKind: "full-candidate-generation",
-      inputCorpusSha256: "9".repeat(64),
-      warmupIterations: 10,
-      measuredIterations: 40
+      ...NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
     },
     correlation: {
       processScoped: true,

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT,
+  NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY,
+  validateNeuralPlacementCaptureReport,
   validateNeuralRuntimePlacementEvidence
 } from "./neural-runtime-placement-evidence.mjs";
 
@@ -75,9 +78,16 @@ describe("observed Neural Engine runtime placement evidence", () => {
       "neural-runtime-placement.prediction-count-mismatch"
     ],
     [
-      "too-small workload",
+      "workload schedule drift",
       (value) => {
-        value.workload.measuredIterations = 1;
+        value.workload.measuredIterations -= 1;
+      },
+      "neural-runtime-placement.workload-invalid"
+    ],
+    [
+      "substituted workload corpus",
+      (value) => {
+        value.workload.inputCorpusSha256 = "f".repeat(64);
       },
       "neural-runtime-placement.workload-invalid"
     ],
@@ -131,6 +141,52 @@ describe("observed Neural Engine runtime placement evidence", () => {
       }
     ).valid).toBe(true);
   });
+
+  it("accepts a capture report for the exact native probe schedule", () => {
+    expect(validateNeuralPlacementCaptureReport(captureReport())).toEqual({
+      valid: true,
+      issueCodes: []
+    });
+  });
+
+  for (const [label, mutate, issue] of [
+    [
+      "reordered tokens",
+      (value) => {
+        value.workloadTokens.reverse();
+      },
+      "neural-placement-capture.workload-invalid"
+    ],
+    [
+      "missing measured request",
+      (value) => {
+        value.steadyStateSamples -= 1;
+      },
+      "neural-placement-capture.workload-invalid"
+    ],
+    [
+      "short per-token sample stream",
+      (value) => {
+        value.byTokenMs.prashasan.pop();
+      },
+      "neural-placement-capture.samples-invalid"
+    ],
+    [
+      "missing prediction token",
+      (value) => {
+        delete value.predictions.paryatan;
+      },
+      "neural-placement-capture.predictions-invalid"
+    ]
+  ]) {
+    it(`rejects placement capture with ${label}`, () => {
+      const value = captureReport();
+      mutate(value);
+      const result = validateNeuralPlacementCaptureReport(value);
+      expect(result.valid).toBe(false);
+      expect(result.issueCodes).toContain(issue);
+    });
+  }
 });
 
 function splitDescriptor() {
@@ -200,10 +256,7 @@ function evidence(descriptor) {
       runtimeRoles
     },
     workload: {
-      measurementKind: "full-candidate-generation",
-      inputCorpusSha256: "8".repeat(64),
-      warmupIterations: 10,
-      measuredIterations: 40
+      ...NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
     },
     correlation: {
       processScoped: true,
@@ -217,5 +270,45 @@ function evidence(descriptor) {
       neuralEngineComputeEventCount: coreMLPredictionCount,
       roleExecutions
     }
+  };
+}
+
+function captureReport() {
+  const samples = Object.fromEntries(
+    NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.orderedTokens.map(
+      (token) => [
+        token,
+        Array(
+          NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.measuredPasses
+        ).fill(1)
+      ]
+    )
+  );
+  return {
+    proofMode: "placement-capture",
+    placementCapture: true,
+    benchmarkPasses:
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.warmupPasses +
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.measuredPasses,
+    warmupPasses:
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.warmupPasses,
+    measuredPasses:
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.measuredPasses,
+    warmupRequests:
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY.warmupIterations,
+    steadyStateSamples:
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY.measuredIterations,
+    workloadTokens: [
+      ...NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.orderedTokens
+    ],
+    runtimePlacementWorkload: {
+      ...NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
+    },
+    byTokenMs: samples,
+    predictions: Object.fromEntries(
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.orderedTokens.map(
+        (token) => [token, ["नेपाली"]]
+      )
+    )
   };
 }

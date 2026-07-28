@@ -28,6 +28,9 @@ import {
   buildNeuralSelectionReport
 } from "./lib/neural-model-selection.mjs";
 import {
+  NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
+} from "./lib/neural-runtime-placement-evidence.mjs";
+import {
   verifyNeuralProductionPromotionReceipt
 } from "./lib/neural-production-promotion-receipt.mjs";
 import {
@@ -1191,10 +1194,7 @@ function runtimePlacementEvidence(descriptor) {
       runtimeRoles
     },
     workload: {
-      measurementKind: "full-candidate-generation",
-      inputCorpusSha256: "9".repeat(64),
-      warmupIterations: 10,
-      measuredIterations: 40
+      ...NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
     },
     correlation: {
       processScoped: true,

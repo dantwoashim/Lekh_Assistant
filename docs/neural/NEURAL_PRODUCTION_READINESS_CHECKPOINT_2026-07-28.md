@@ -74,6 +74,16 @@ hardware activity. The model selector, promoter, live receipt verifier,
 runtime-conformance gate, packaged benchmark, and final readiness gate all
 revalidate that identity.
 
+The workload binding is now executable rather than descriptive. The native
+probe and JavaScript validator share one closed schedule: the ordered tokens
+`prashasan`, `nagarikta`, `mantralaya`, `sambidhan`, and `paryatan`, one
+five-request warm-up pass, and eight measured passes (40 requests). The
+canonical schedule SHA-256 is
+`a7748ab8af3e7dd3fd555e82d9d509e9f5780279bb4c8bc43b1dc812ee8473ea`.
+A trace summary with a substituted corpus, reordered tokens, missing request,
+or shortened per-token sample stream now fails before it can authorize a
+Neural Engine claim.
+
 The capture procedure and allowed claim language are documented in
 [NEURAL_ENGINE_RUNTIME_PLACEMENT.md](NEURAL_ENGINE_RUNTIME_PLACEMENT.md).
 
@@ -136,7 +146,7 @@ byte-identical and passed:
 
 ```text
 npm exec -- vitest run scripts/**/*neural*.test.mjs scripts/*neural*.test.mjs
-Result: 26 files passed; 181 tests passed.
+Result: 26 files passed; 190 tests passed.
 
 PYTHONPATH=.tmp/coremltools9-overlay \
   .tmp/neural-seq2seq-venv/bin/python \
@@ -184,7 +194,7 @@ not a failure introduced by this checkpoint.
 - macOS: 26.2.
 - Active developer directory: Command Line Tools only.
 - Full Xcode/Instruments: absent.
-- Free disk during this checkpoint: approximately 22 GiB.
+- Free disk during this checkpoint: approximately 20 GiB.
 - Canonical neural environment: Python 3.11.15, PyTorch 2.7.0, NumPy 1.26.4,
   Core ML Tools 9.0.
 - Canonical open-vocabulary dataset: present; approximately 597 MiB across
