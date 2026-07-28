@@ -84,6 +84,13 @@ npm run neural:open-vocab:train -- \
   --config data/neural/training/open-vocab-bigru-attention-v1.config.json
 ```
 
+The trainer atomically snapshots model, optimizer, data-loader, and Torch RNG
+state after every completed epoch. Re-running the same command resumes only
+when the trainer, config, dataset, gold suites, official benchmark, runtime,
+vocabularies, and sampled rows still match exactly. Use
+`--restart-training` only when intentionally discarding an incompatible or
+corrupt recovery; it cannot be combined with `--skip-train`.
+
 Each successful run produces one immutable candidate root containing the
 checkpoint, training report, Core ML packages, compiled runtime artifacts,
 vocabulary, candidate manifest, export report, locked-gold predictions, and

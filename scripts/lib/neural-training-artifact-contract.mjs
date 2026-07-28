@@ -435,7 +435,11 @@ function validateTrainerSource(source, failures) {
     "predictionArtifactIdentity",
     "effectiveArtifactInputsCanonicalJson",
     "effectiveArtifactInputsSha256",
-    "artifactOverrides"
+    "artifactOverrides",
+    "save_training_recovery(",
+    "trainingGeneratorState",
+    'torch.load(handle, map_location="cpu", weights_only=True)',
+    "clear_training_recovery(args)"
   ]) {
     if (!source.includes(required)) {
       failures.push(
@@ -582,6 +586,7 @@ function validateTrainingReport(context) {
       "Production Phase 4 requires a fresh training run with Core ML export enabled."
     );
   }
+  validateTrainingRecoveryReport(report.trainingRecovery, failures);
   validateRunInputSnapshot({
     root,
     snapshot: report.runInputSnapshot,
@@ -593,6 +598,43 @@ function validateTrainingReport(context) {
     official,
     failures
   });
+}
+
+function validateTrainingRecoveryReport(recovery, failures) {
+  if (!recovery || typeof recovery !== "object" ||
+      Array.isArray(recovery) ||
+      recovery.epochRecoveryEnabled !== true ||
+      typeof recovery.resumed !== "boolean" ||
+      !Number.isSafeInteger(recovery.resumeCount) ||
+      recovery.resumeCount < 0 ||
+      !Array.isArray(recovery.exportRunIds) ||
+      recovery.exportRunIds.length < 1 ||
+      recovery.exportRunIds.some((value) =>
+        !RUN_ID_PATTERN.test(String(value ?? ""))
+      ) ||
+      new Set(recovery.exportRunIds).size !==
+        recovery.exportRunIds.length) {
+    failures.push(
+      "Training report does not contain valid atomic epoch-recovery evidence."
+    );
+    return;
+  }
+  if (recovery.resumed) {
+    if (!Number.isSafeInteger(recovery.resumedFromEpoch) ||
+        recovery.resumedFromEpoch < 1 ||
+        recovery.resumeCount < 1 ||
+        recovery.exportRunIds.length < 2) {
+      failures.push(
+        "Resumed training report has incomplete epoch-recovery lineage."
+      );
+    }
+  } else if (recovery.resumedFromEpoch !== null ||
+      recovery.resumeCount !== 0 ||
+      recovery.exportRunIds.length !== 1) {
+    failures.push(
+      "Uninterrupted training report has inconsistent recovery lineage."
+    );
+  }
 }
 
 function validateCandidateManifest(context) {
@@ -706,6 +748,13 @@ function validateExportReport(context) {
     "Export report exportRunId differs from the candidate manifest.",
     failures
   );
+  if (!trainingReport?.trainingRecovery?.exportRunIds?.includes(
+    report.exportRunId
+  )) {
+    failures.push(
+      "Export report run is absent from the training recovery lineage."
+    );
+  }
   requireEqual(
     report.productionEligible,
     false,

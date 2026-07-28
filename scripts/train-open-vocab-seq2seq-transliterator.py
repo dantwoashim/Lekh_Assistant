@@ -80,6 +80,11 @@ MAX_COMPILED_MODEL_BYTES = 16 * 1024 * 1024
 MAX_COMPILED_MODEL_FILES = 10_000
 COREML_PARITY_RTOL = 5e-3
 COREML_PARITY_ATOL = 5e-3
+TRAINING_RECOVERY_SCHEMA_VERSION = 1
+TRAINING_RECOVERY_STATE_PATTERN = re.compile(
+    r"^\.training-recovery\.[a-f0-9]{32}\.[1-9][0-9]*\.pt$"
+)
+MAX_TRAINING_RECOVERY_BYTES = 512 * 1024 * 1024
 
 
 def checkpoint_path(args: argparse.Namespace) -> Path:
@@ -88,6 +93,22 @@ def checkpoint_path(args: argparse.Namespace) -> Path:
 
 def training_report_path(args: argparse.Namespace) -> Path:
     return args.out_dir / "training-report.json"
+
+
+def training_recovery_metadata_path(args: argparse.Namespace) -> Path:
+    return args.out_dir / ".training-recovery.json"
+
+
+def training_recovery_state_path(
+    args: argparse.Namespace,
+    export_run_id: str,
+    completed_epoch: int,
+) -> Path:
+    if not is_run_identifier(export_run_id) or completed_epoch < 1:
+        raise ValueError("Training recovery state requires a valid run id and epoch.")
+    return args.out_dir / (
+        f".training-recovery.{export_run_id}.{completed_epoch}.pt"
+    )
 
 
 def export_report_path(args: argparse.Namespace) -> Path:
@@ -209,6 +230,14 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
     add_configurable_argument(parser, "--seed", int, training_run["seed"], "LEKH_NEURAL_SEED", environment)
     parser.add_argument("--skip-train", action="store_true")
     parser.add_argument("--skip-coreml", action="store_true")
+    parser.add_argument(
+        "--restart-training",
+        action="store_true",
+        help=(
+            "Discard a bound incomplete epoch recovery and begin training "
+            "again from epoch zero."
+        ),
+    )
     args = parser.parse_args(argv)
     args.training_config = config
     args.model_id = str(config["modelId"])
@@ -248,6 +277,8 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
         args.effective_artifact_inputs,
     )
     args.execution_modes = {"skipTrain": bool(args.skip_train), "skipCoreML": bool(args.skip_coreml)}
+    if args.skip_train and args.restart_training:
+        raise SystemExit("--skip-train and --restart-training are mutually exclusive.")
     args.training_run_id = None
     args.export_run_id = uuid.uuid4().hex
     return args
@@ -2223,8 +2254,452 @@ def checkpoint_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def training_recovery_identity(
+    args: argparse.Namespace,
+    run_input_snapshot: dict[str, Any],
+    input_vocab: dict[str, int],
+    output_vocab: dict[str, int],
+    train_rows: list[dict[str, Any]],
+    dev_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": TRAINING_RECOVERY_SCHEMA_VERSION,
+        "modelId": args.model_id,
+        "trainingContractSha256": args.training_contract_sha256,
+        "effectiveTrainingConfigSha256":
+            args.effective_training_config_sha256,
+        "effectiveArtifactInputsSha256":
+            args.effective_artifact_inputs_sha256,
+        "runtimeConfig": checkpoint_runtime_config(args),
+        "runInputSnapshot": run_input_snapshot,
+        "inputVocabSha256": sha256_json(input_vocab),
+        "outputVocabSha256": sha256_json(output_vocab),
+        "sampledRowDigests": {
+            "train": sampled_rows_sha256(train_rows),
+            "dev": sampled_rows_sha256(dev_rows),
+        },
+    }
+
+
+def training_recovery_state_files(args: argparse.Namespace) -> list[Path]:
+    if not args.out_dir.exists():
+        return []
+    files: list[Path] = []
+    for path in args.out_dir.iterdir():
+        if not TRAINING_RECOVERY_STATE_PATTERN.fullmatch(path.name):
+            continue
+        metadata = path.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise SystemExit(
+                f"Refusing unsafe training recovery state: {path}"
+            )
+        if path.resolve().parent != args.out_dir.resolve():
+            raise SystemExit(
+                f"Training recovery state escaped the candidate root: {path}"
+            )
+        files.append(path)
+    return sorted(files)
+
+
+def clear_training_recovery(args: argparse.Namespace) -> None:
+    metadata_path = training_recovery_metadata_path(args)
+    if metadata_path.is_symlink():
+        raise SystemExit(
+            f"Refusing symbolic-link training recovery metadata: {metadata_path}"
+        )
+    if metadata_path.exists():
+        if not metadata_path.is_file():
+            raise SystemExit(
+                f"Training recovery metadata is not a regular file: {metadata_path}"
+            )
+        metadata_path.unlink()
+    for path in training_recovery_state_files(args):
+        path.unlink()
+
+
+def save_training_recovery(
+    args: argparse.Namespace,
+    *,
+    identity: dict[str, Any],
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    training_generator: torch.Generator,
+    completed_epoch: int,
+    losses: list[float],
+    epoch_metrics: list[dict[str, Any]],
+    best_state: dict[str, torch.Tensor],
+    best_dev_loss: float,
+    best_epoch: int,
+    epochs_without_improvement: int,
+    stopped_early: bool,
+    training_duration_seconds: float,
+    resume_count: int,
+    export_run_ids: list[str],
+) -> Path:
+    if completed_epoch < 1 or len(epoch_metrics) != completed_epoch:
+        raise ValueError("Training recovery epoch history is inconsistent.")
+    if len(losses) != completed_epoch or not math.isfinite(best_dev_loss):
+        raise ValueError("Training recovery loss history is inconsistent.")
+    assert_run_input_snapshot_unchanged(args)
+    state_path = training_recovery_state_path(
+        args,
+        args.export_run_id,
+        completed_epoch,
+    )
+    if state_path.exists() or state_path.is_symlink():
+        raise SystemExit(
+            f"Training recovery generation unexpectedly exists: {state_path}"
+        )
+    state_staging = staging_sibling(state_path, "staging")
+    payload = {
+        "schemaVersion": TRAINING_RECOVERY_SCHEMA_VERSION,
+        "modelId": args.model_id,
+        "trainingRunId": args.training_run_id,
+        "createdByExportRunId": args.export_run_id,
+        "identity": identity,
+        "identitySha256": sha256_json(identity),
+        "completedEpoch": completed_epoch,
+        "modelState": {
+            name: value.detach().cpu().clone()
+            for name, value in model.state_dict().items()
+        },
+        "optimizerState": optimizer.state_dict(),
+        "trainingGeneratorState":
+            training_generator.get_state().detach().cpu().clone(),
+        "torchRngState": torch.get_rng_state().detach().cpu().clone(),
+        "losses": list(losses),
+        "epochMetrics": copy.deepcopy(epoch_metrics),
+        "bestState": {
+            name: value.detach().cpu().clone()
+            for name, value in best_state.items()
+        },
+        "bestDevWeightedTokenCrossEntropy": best_dev_loss,
+        "bestEpoch": best_epoch,
+        "epochsWithoutImprovement": epochs_without_improvement,
+        "stoppedEarly": stopped_early,
+        "trainingDurationSeconds": training_duration_seconds,
+        "resumeCount": resume_count,
+        "exportRunIds": list(export_run_ids),
+    }
+    try:
+        with state_staging.open("xb") as handle:
+            torch.save(payload, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if state_staging.stat().st_size > MAX_TRAINING_RECOVERY_BYTES:
+            raise SystemExit(
+                "Training recovery state exceeds the 512 MiB safety limit."
+            )
+        os.replace(state_staging, state_path)
+    finally:
+        state_staging.unlink(missing_ok=True)
+
+    state_sha256 = sha256_file(state_path)
+    metadata = {
+        "schemaVersion": TRAINING_RECOVERY_SCHEMA_VERSION,
+        "status": "recoverable-incomplete-training",
+        "updatedAt": iso_now(),
+        "stateFile": state_path.name,
+        "stateSha256": state_sha256,
+        "stateBytes": state_path.stat().st_size,
+        "modelId": args.model_id,
+        "trainingRunId": args.training_run_id,
+        "createdByExportRunId": args.export_run_id,
+        "completedEpoch": completed_epoch,
+        "identitySha256": payload["identitySha256"],
+    }
+    write_json(training_recovery_metadata_path(args), metadata)
+    for obsolete in training_recovery_state_files(args):
+        if obsolete != state_path:
+            obsolete.unlink()
+    return state_path
+
+
+def load_training_recovery(
+    args: argparse.Namespace,
+    *,
+    identity: dict[str, Any],
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    training_generator: torch.Generator,
+) -> dict[str, Any] | None:
+    metadata_path = training_recovery_metadata_path(args)
+    states = training_recovery_state_files(args)
+    preloaded_recovery: dict[str, Any] | None = None
+    recovered_orphan_pointer = False
+    if not metadata_path.exists():
+        if len(states) > 1:
+            raise SystemExit(
+                "Multiple orphaned training recovery states exist without an "
+                "atomic metadata pointer; pass --restart-training to discard them."
+            )
+        if not states:
+            return None
+        state_path = states[0]
+        preloaded_recovery = load_training_recovery_payload(state_path)
+        metadata = {
+            "schemaVersion": TRAINING_RECOVERY_SCHEMA_VERSION,
+            "status": "recoverable-incomplete-training",
+            "updatedAt": iso_now(),
+            "stateFile": state_path.name,
+            "stateSha256": sha256_file(state_path),
+            "stateBytes": state_path.stat().st_size,
+            "modelId": preloaded_recovery.get("modelId"),
+            "trainingRunId": preloaded_recovery.get("trainingRunId"),
+            "createdByExportRunId":
+                preloaded_recovery.get("createdByExportRunId"),
+            "completedEpoch": preloaded_recovery.get("completedEpoch"),
+            "identitySha256": preloaded_recovery.get("identitySha256"),
+        }
+        recovered_orphan_pointer = True
+    else:
+        metadata = read_json(metadata_path)
+    required_metadata = {
+        "schemaVersion",
+        "status",
+        "updatedAt",
+        "stateFile",
+        "stateSha256",
+        "stateBytes",
+        "modelId",
+        "trainingRunId",
+        "createdByExportRunId",
+        "completedEpoch",
+        "identitySha256",
+    }
+    if set(metadata) != required_metadata:
+        raise SystemExit(
+            "Training recovery metadata has an unsupported closed schema; "
+            "pass --restart-training to discard it."
+        )
+    state_name = metadata.get("stateFile")
+    if not isinstance(state_name, str) or not (
+        TRAINING_RECOVERY_STATE_PATTERN.fullmatch(state_name)
+    ):
+        raise SystemExit("Training recovery metadata names an unsafe state file.")
+    state_path = args.out_dir / state_name
+    if state_path not in states:
+        raise SystemExit("Training recovery metadata points to a missing state.")
+    state_bytes = state_path.stat().st_size
+    if (
+        metadata.get("schemaVersion") != TRAINING_RECOVERY_SCHEMA_VERSION
+        or metadata.get("status") != "recoverable-incomplete-training"
+        or metadata.get("modelId") != args.model_id
+        or metadata.get("stateBytes") != state_bytes
+        or state_bytes < 1
+        or state_bytes > MAX_TRAINING_RECOVERY_BYTES
+        or metadata.get("stateSha256") != sha256_file(state_path)
+        or metadata.get("identitySha256") != sha256_json(identity)
+    ):
+        raise SystemExit(
+            "Training recovery metadata is stale or corrupt; pass "
+            "--restart-training to discard it."
+        )
+    recovery = (
+        preloaded_recovery
+        if preloaded_recovery is not None
+        else load_training_recovery_payload(state_path)
+    )
+    if not isinstance(recovery, dict):
+        raise SystemExit("Training recovery payload must be an object.")
+    required_recovery = {
+        "schemaVersion",
+        "modelId",
+        "trainingRunId",
+        "createdByExportRunId",
+        "identity",
+        "identitySha256",
+        "completedEpoch",
+        "modelState",
+        "optimizerState",
+        "trainingGeneratorState",
+        "torchRngState",
+        "losses",
+        "epochMetrics",
+        "bestState",
+        "bestDevWeightedTokenCrossEntropy",
+        "bestEpoch",
+        "epochsWithoutImprovement",
+        "stoppedEarly",
+        "trainingDurationSeconds",
+        "resumeCount",
+        "exportRunIds",
+    }
+    if set(recovery) != required_recovery:
+        raise SystemExit(
+            "Training recovery payload has an unsupported closed schema."
+        )
+    if (
+        recovery.get("schemaVersion") != TRAINING_RECOVERY_SCHEMA_VERSION
+        or recovery.get("modelId") != args.model_id
+        or not is_run_identifier(recovery.get("trainingRunId"))
+        or not is_run_identifier(recovery.get("createdByExportRunId"))
+        or recovery.get("identity") != identity
+        or recovery.get("identitySha256") != sha256_json(identity)
+        or recovery.get("identitySha256") != metadata["identitySha256"]
+        or recovery.get("trainingRunId") != metadata["trainingRunId"]
+        or recovery.get("createdByExportRunId")
+            != metadata["createdByExportRunId"]
+        or recovery.get("completedEpoch") != metadata["completedEpoch"]
+        or type(recovery.get("completedEpoch")) is not int
+        or recovery["completedEpoch"] < 1
+        or state_path.name != training_recovery_state_path(
+            args,
+            recovery.get("createdByExportRunId"),
+            recovery.get("completedEpoch"),
+        ).name
+    ):
+        raise SystemExit(
+            "Training recovery payload identity is stale or corrupt; pass "
+            "--restart-training to discard it."
+        )
+    completed_epoch = recovery["completedEpoch"]
+    if (
+        type(completed_epoch) is not int
+        or not 1 <= completed_epoch <= args.epochs
+        or not isinstance(recovery.get("losses"), list)
+        or len(recovery["losses"]) != completed_epoch
+        or any(
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(float(value))
+            for value in recovery["losses"]
+        )
+        or not isinstance(recovery.get("epochMetrics"), list)
+        or len(recovery["epochMetrics"]) != completed_epoch
+        or type(recovery.get("bestEpoch")) is not int
+        or not 1 <= recovery["bestEpoch"] <= completed_epoch
+        or not math.isfinite(
+            float(recovery.get("bestDevWeightedTokenCrossEntropy", math.inf))
+        )
+        or type(recovery.get("epochsWithoutImprovement")) is not int
+        or recovery["epochsWithoutImprovement"] < 0
+        or not isinstance(recovery.get("trainingDurationSeconds"), (int, float))
+        or not math.isfinite(float(recovery["trainingDurationSeconds"]))
+        or recovery["trainingDurationSeconds"] < 0
+        or type(recovery.get("resumeCount")) is not int
+        or recovery["resumeCount"] < 0
+        or not isinstance(recovery.get("exportRunIds"), list)
+        or not all(
+            is_run_identifier(value) for value in recovery["exportRunIds"]
+        )
+        or len(set(recovery["exportRunIds"]))
+            != len(recovery["exportRunIds"])
+        or len(recovery["exportRunIds"]) != recovery["resumeCount"] + 1
+        or recovery["exportRunIds"][-1]
+            != recovery["createdByExportRunId"]
+        or not isinstance(recovery.get("stoppedEarly"), bool)
+        or not valid_recovery_epoch_metrics(recovery)
+    ):
+        raise SystemExit("Training recovery progress metadata is invalid.")
+    try:
+        model.load_state_dict(recovery["modelState"])
+        optimizer.load_state_dict(recovery["optimizerState"])
+        training_generator.set_state(recovery["trainingGeneratorState"])
+        torch.set_rng_state(recovery["torchRngState"])
+    except (KeyError, RuntimeError, TypeError, ValueError) as error:
+        raise SystemExit(
+            "Training recovery tensor or optimizer state is incompatible."
+        ) from error
+    best_state = recovery.get("bestState")
+    if not isinstance(best_state, dict) or set(best_state) != set(
+        model.state_dict()
+    ):
+        raise SystemExit("Training recovery best-state inventory is invalid.")
+    args.training_run_id = recovery["trainingRunId"]
+    if recovered_orphan_pointer:
+        write_json(metadata_path, metadata)
+        print(
+            json.dumps(
+                {
+                    "status": "recovered-orphaned-training-pointer",
+                    "trainingRunId": args.training_run_id,
+                    "completedEpoch": completed_epoch,
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+    for obsolete in states:
+        if obsolete != state_path:
+            obsolete.unlink()
+    print(
+        json.dumps(
+            {
+                "status": "resumed-training-recovery",
+                "trainingRunId": args.training_run_id,
+                "completedEpoch": completed_epoch,
+                "resumeCount": recovery["resumeCount"] + 1,
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
+    return recovery
+
+
+def load_training_recovery_payload(state_path: Path) -> dict[str, Any]:
+    state_bytes = state_path.stat().st_size
+    if not 1 <= state_bytes <= MAX_TRAINING_RECOVERY_BYTES:
+        raise SystemExit(
+            "Training recovery state is empty or exceeds the 512 MiB safety limit."
+        )
+    try:
+        with open_regular_binary(state_path, "training recovery state") as handle:
+            recovery = torch.load(handle, map_location="cpu", weights_only=True)
+    except Exception as error:
+        raise SystemExit(
+            "Training recovery failed safe tensor-only loading."
+        ) from error
+    if not isinstance(recovery, dict):
+        raise SystemExit("Training recovery payload must be an object.")
+    return recovery
+
+
+def valid_recovery_epoch_metrics(recovery: dict[str, Any]) -> bool:
+    metrics = recovery["epochMetrics"]
+    required = {
+        "epoch",
+        "trainWeightedTokenCrossEntropy",
+        "devWeightedTokenCrossEntropy",
+        "best",
+    }
+    for index, metric in enumerate(metrics):
+        if not isinstance(metric, dict) or set(metric) != required:
+            return False
+        if type(metric["epoch"]) is not int or metric["epoch"] != index + 1:
+            return False
+        if not isinstance(metric["best"], bool):
+            return False
+        for name in (
+            "trainWeightedTokenCrossEntropy",
+            "devWeightedTokenCrossEntropy",
+        ):
+            value = metric[name]
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(float(value))
+            ):
+                return False
+        if float(recovery["losses"][index]) != float(
+            metric["trainWeightedTokenCrossEntropy"]
+        ):
+            return False
+    best_epoch = recovery["bestEpoch"]
+    best_loss = float(recovery["bestDevWeightedTokenCrossEntropy"])
+    return (
+        metrics[best_epoch - 1]["best"] is True
+        and float(
+            metrics[best_epoch - 1]["devWeightedTokenCrossEntropy"]
+        ) == best_loss
+    )
+
+
 def train_model(args: argparse.Namespace) -> dict[str, Any]:
     run_input_snapshot = ensure_run_input_snapshot(args)
+    if args.restart_training:
+        clear_training_recovery(args)
     if args.training_run_id is None:
         args.training_run_id = uuid.uuid4().hex
     if not is_run_identifier(args.training_run_id):
@@ -2273,15 +2748,64 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
     )
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
     loss_fn = nn.CrossEntropyLoss(ignore_index=0, reduction="none", label_smoothing=args.label_smoothing)
-    losses: list[float] = []
-    epoch_metrics: list[dict[str, Any]] = []
-    best_state: dict[str, torch.Tensor] | None = None
-    best_dev_loss = math.inf
-    best_epoch = 0
-    epochs_without_improvement = 0
-    stopped_early = False
-    started = time.perf_counter()
-    for epoch in range(args.epochs):
+    train_sample_sha256 = sampled_rows_sha256(train_rows)
+    dev_sample_sha256 = sampled_rows_sha256(dev_rows)
+    recovery_identity = training_recovery_identity(
+        args,
+        run_input_snapshot,
+        input_vocab,
+        output_vocab,
+        train_rows,
+        dev_rows,
+    )
+    recovery = load_training_recovery(
+        args,
+        identity=recovery_identity,
+        model=model,
+        optimizer=optimizer,
+        training_generator=training_generator,
+    )
+    if recovery:
+        losses = [float(value) for value in recovery["losses"]]
+        epoch_metrics = copy.deepcopy(recovery["epochMetrics"])
+        best_state: dict[str, torch.Tensor] | None = {
+            name: value.detach().cpu().clone()
+            for name, value in recovery["bestState"].items()
+        }
+        best_dev_loss = float(
+            recovery["bestDevWeightedTokenCrossEntropy"]
+        )
+        best_epoch = int(recovery["bestEpoch"])
+        epochs_without_improvement = int(
+            recovery["epochsWithoutImprovement"]
+        )
+        stopped_early = bool(recovery["stoppedEarly"])
+        first_epoch = int(recovery["completedEpoch"])
+        prior_training_duration_seconds = float(
+            recovery["trainingDurationSeconds"]
+        )
+        resume_count = int(recovery["resumeCount"]) + 1
+        export_run_ids = list(recovery["exportRunIds"])
+        if args.export_run_id not in export_run_ids:
+            export_run_ids.append(args.export_run_id)
+        resumed_from_epoch: int | None = first_epoch
+    else:
+        losses = []
+        epoch_metrics = []
+        best_state = None
+        best_dev_loss = math.inf
+        best_epoch = 0
+        epochs_without_improvement = 0
+        stopped_early = False
+        first_epoch = 0
+        prior_training_duration_seconds = 0.0
+        resume_count = 0
+        export_run_ids = [args.export_run_id]
+        resumed_from_epoch = None
+    segment_started = time.perf_counter()
+    for epoch in range(first_epoch, args.epochs):
+        if stopped_early:
+            break
         model.train()
         epoch_numerator = 0.0
         epoch_denominator = 0.0
@@ -2311,6 +2835,13 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
             epochs_without_improvement = 0
         else:
             epochs_without_improvement += 1
+        should_stop = (
+            args.early_stopping_enabled
+            and epochs_without_improvement
+                >= args.early_stopping_patience
+        )
+        if should_stop:
+            stopped_early = True
         epoch_result = {
             "epoch": epoch + 1,
             "trainWeightedTokenCrossEntropy": train_loss,
@@ -2319,8 +2850,36 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         }
         epoch_metrics.append(epoch_result)
         print(json.dumps(epoch_result, ensure_ascii=False), flush=True)
-        if args.early_stopping_enabled and epochs_without_improvement >= args.early_stopping_patience:
-            stopped_early = True
+        if best_state is None:
+            raise SystemExit(
+                "Training epoch completed without a finite best dev checkpoint."
+            )
+        recovery_path = save_training_recovery(
+            args,
+            identity=recovery_identity,
+            model=model,
+            optimizer=optimizer,
+            training_generator=training_generator,
+            completed_epoch=epoch + 1,
+            losses=losses,
+            epoch_metrics=epoch_metrics,
+            best_state=best_state,
+            best_dev_loss=best_dev_loss,
+            best_epoch=best_epoch,
+            epochs_without_improvement=epochs_without_improvement,
+            stopped_early=stopped_early,
+            training_duration_seconds=(
+                prior_training_duration_seconds
+                + time.perf_counter()
+                - segment_started
+            ),
+            resume_count=resume_count,
+            export_run_ids=export_run_ids,
+        )
+        epoch_hook = getattr(args, "training_epoch_hook", None)
+        if epoch_hook is not None:
+            epoch_hook(epoch_result, recovery_path)
+        if should_stop:
             break
 
     if best_state is None:
@@ -2329,11 +2888,21 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         model.load_state_dict(best_state)
 
     evaluation = evaluate_model(model, dev_rows, input_vocab, output_vocab, args, device)
+    training_duration_seconds = (
+        prior_training_duration_seconds
+        + time.perf_counter()
+        - segment_started
+    )
     assert_run_input_snapshot_unchanged(args)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_vocab_metadata(input_vocab, output_vocab, args, dataset_manifest)
-    train_sample_sha256 = sampled_rows_sha256(train_rows)
-    dev_sample_sha256 = sampled_rows_sha256(dev_rows)
+    recovery_summary = {
+        "epochRecoveryEnabled": True,
+        "resumed": recovery is not None,
+        "resumedFromEpoch": resumed_from_epoch,
+        "resumeCount": resume_count,
+        "exportRunIds": export_run_ids,
+    }
     checkpoint = {
         "modelId": args.model_id,
         "trainingRunId": args.training_run_id,
@@ -2373,6 +2942,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "bestEpoch": best_epoch,
         "bestDevWeightedTokenCrossEntropy": best_dev_loss,
         "stoppedEarly": stopped_early,
+        "trainingRecovery": recovery_summary,
         "sampledRowDigests": {"train": train_sample_sha256, "dev": dev_sample_sha256},
         "evaluation": evaluation,
     }
@@ -2396,7 +2966,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "trainingRunId": args.training_run_id,
         "trainingComplete": True,
         "trainingExecutionModes": args.execution_modes,
-        "durationMs": round((time.perf_counter() - started) * 1000),
+        "durationMs": round(training_duration_seconds * 1000),
         "device": str(device),
         "trainingConfig": rel(args.config),
         "trainingContractSha256": args.training_contract_sha256,
@@ -2441,6 +3011,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "bestEpoch": best_epoch,
         "bestDevWeightedTokenCrossEntropy": best_dev_loss,
         "stoppedEarly": stopped_early,
+        "trainingRecovery": recovery_summary,
         "earlyStopping": {
             "enabled": args.early_stopping_enabled,
             "metric": args.early_stopping_metric,
@@ -2459,6 +3030,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
     }
     assert_run_input_snapshot_unchanged(args)
     write_json(training_report_path(args), report)
+    clear_training_recovery(args)
     return {"model": model.cpu(), "checkpoint": checkpoint, "report": report}
 
 

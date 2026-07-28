@@ -65,6 +65,11 @@ class TrainerContractTests(unittest.TestCase):
         self.assertNotIn("trainingRun.maximumEpochs", same_value.training_overrides)
         with self.assertRaisesRegex(SystemExit, "approved repository artifact directory"):
             TRAINER.parse_args(["--compiled-model", "/tmp/untrusted-model.mlmodelc"], {})
+        with self.assertRaisesRegex(SystemExit, "mutually exclusive"):
+            TRAINER.parse_args(
+                ["--skip-train", "--restart-training"],
+                {},
+            )
 
     def test_publication_lock_rejects_overlapping_runs_and_records_completion(self) -> None:
         temporary_root = TRAINER.ROOT / ".tmp"
@@ -1256,6 +1261,20 @@ class TrainerContractTests(unittest.TestCase):
             self.assertEqual(report["trainerSha256"], checkpoint["trainerSha256"])
             self.assertEqual(report["runInputSnapshot"], checkpoint["runInputSnapshot"])
             self.assertEqual(report["vocabMetadataSha256"], checkpoint["vocabMetadataSha256"])
+            self.assertEqual(
+                report["trainingRecovery"],
+                {
+                    "epochRecoveryEnabled": True,
+                    "resumed": False,
+                    "resumedFromEpoch": None,
+                    "resumeCount": 0,
+                    "exportRunIds": [args.export_run_id],
+                },
+            )
+            self.assertFalse(
+                TRAINER.training_recovery_metadata_path(args).exists()
+            )
+            self.assertEqual(TRAINER.training_recovery_state_files(args), [])
             reloaded = TRAINER.load_checkpoint(args)
             self.assertEqual(reloaded["report"]["checkpointSha256"], report["checkpointSha256"])
             vocab = json.loads((out_dir / "model.vocab.json").read_text(encoding="utf-8"))
@@ -1298,6 +1317,7 @@ class TrainerContractTests(unittest.TestCase):
                     {"status": "passed"},
                     {},
                 )
+
             args.export_run_id = original_export_run_id
             candidate_manifest = TRAINER.write_manifest(
                 args,
@@ -1351,6 +1371,186 @@ class TrainerContractTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "safe tensor-only loading"):
                 TRAINER.load_checkpoint(args)
             self.assertFalse(unsafe_marker.exists())
+
+    def test_epoch_recovery_resumes_to_the_exact_uninterrupted_weights(
+        self,
+    ) -> None:
+        temporary_root = TRAINER.ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="lekh-trainer-resume-test-",
+            dir=temporary_root,
+        ) as directory:
+            root = Path(directory)
+            split_paths = {
+                "train": root / "train.jsonl",
+                "dev": root / "dev.jsonl",
+                "test": root / "test.jsonl",
+            }
+            write_rows(
+                split_paths["train"],
+                [
+                    row("train-1", "ka", "क"),
+                    row("train-2", "kha", "ख"),
+                    row("train-3", "ga", "ग"),
+                    row("train-4", "gha", "घ"),
+                ],
+            )
+            write_rows(
+                split_paths["dev"],
+                [
+                    row("dev-1", "na", "न"),
+                    row("dev-2", "ma", "म"),
+                ],
+            )
+            write_rows(split_paths["test"], [row("test-1", "pa", "प")])
+            split_evidence = {
+                split: TRAINER.inspect_jsonl_artifact(path)
+                for split, path in split_paths.items()
+            }
+            dataset_manifest = root / "manifest.json"
+            dataset_manifest.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 2,
+                        "datasetContentSha256": "b" * 64,
+                        "splitFiles": {
+                            split: str(path)
+                            for split, path in split_paths.items()
+                        },
+                        "sha256": {
+                            split: evidence["sha256"]
+                            for split, evidence in split_evidence.items()
+                        },
+                        "counts": {
+                            split: evidence["rows"]
+                            for split, evidence in split_evidence.items()
+                        },
+                        "bytes": {
+                            split: evidence["bytes"]
+                            for split, evidence in split_evidence.items()
+                        },
+                        "totalRows": 7,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def arguments(out_dir: Path) -> object:
+                return TRAINER.parse_args(
+                    [
+                        "--dataset-manifest",
+                        str(dataset_manifest),
+                        "--out-dir",
+                        str(out_dir),
+                        "--compiled-model",
+                        str(out_dir / "model.mlmodelc"),
+                        "--manifest",
+                        str(out_dir / "model.manifest.json"),
+                        "--vocab-metadata",
+                        str(out_dir / "model.vocab.json"),
+                        "--max-train-rows",
+                        "4",
+                        "--max-dev-rows",
+                        "2",
+                        "--epochs",
+                        "2",
+                        "--batch-size",
+                        "2",
+                        "--embedding-dim",
+                        "4",
+                        "--hidden-dim",
+                        "8",
+                        "--layers",
+                        "1",
+                        "--dropout",
+                        "0.1",
+                        "--max-input-len",
+                        "8",
+                        "--max-output-len",
+                        "8",
+                        "--label-smoothing",
+                        "0.05",
+                        "--early-stopping-patience",
+                        "2",
+                        "--skip-coreml",
+                    ],
+                    {},
+                )
+
+            resumed_out = root / "resumed"
+            interrupted_args = arguments(resumed_out)
+
+            def interrupt_after_first_epoch(
+                epoch_result: dict[str, object],
+                _recovery_path: Path,
+            ) -> None:
+                if epoch_result["epoch"] == 1:
+                    raise RuntimeError("injected epoch-boundary interruption")
+
+            interrupted_args.training_epoch_hook = (
+                interrupt_after_first_epoch
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "injected epoch-boundary interruption",
+            ):
+                TRAINER.train_model(interrupted_args)
+            TRAINER.cleanup_run_input_snapshot(interrupted_args)
+            self.assertTrue(
+                TRAINER.training_recovery_metadata_path(
+                    interrupted_args
+                ).is_file()
+            )
+            self.assertEqual(
+                len(TRAINER.training_recovery_state_files(interrupted_args)),
+                1,
+            )
+            TRAINER.training_recovery_metadata_path(
+                interrupted_args
+            ).unlink()
+
+            resumed_args = arguments(resumed_out)
+            resumed = TRAINER.train_model(resumed_args)
+            TRAINER.cleanup_run_input_snapshot(resumed_args)
+            self.assertTrue(resumed["report"]["trainingRecovery"]["resumed"])
+            self.assertEqual(
+                resumed["report"]["trainingRecovery"]["resumedFromEpoch"],
+                1,
+            )
+            self.assertEqual(
+                resumed["report"]["trainingRecovery"]["resumeCount"],
+                1,
+            )
+            self.assertFalse(
+                TRAINER.training_recovery_metadata_path(resumed_args).exists()
+            )
+            self.assertEqual(
+                TRAINER.training_recovery_state_files(resumed_args),
+                [],
+            )
+
+            uninterrupted_args = arguments(root / "uninterrupted")
+            uninterrupted = TRAINER.train_model(uninterrupted_args)
+            TRAINER.cleanup_run_input_snapshot(uninterrupted_args)
+            self.assertEqual(
+                resumed["checkpoint"]["epochMetrics"],
+                uninterrupted["checkpoint"]["epochMetrics"],
+            )
+            self.assertEqual(
+                resumed["checkpoint"]["bestEpoch"],
+                uninterrupted["checkpoint"]["bestEpoch"],
+            )
+            for name, expected in uninterrupted["checkpoint"][
+                "stateDict"
+            ].items():
+                self.assertTrue(
+                    torch.equal(
+                        resumed["checkpoint"]["stateDict"][name],
+                        expected,
+                    ),
+                    name,
+                )
 
     @unittest.skipUnless(platform.system() == "Darwin" and TRAINER.ct is not None, "Core ML export requires macOS and coremltools")
     def test_complete_candidate_pipeline_binds_exact_compiled_predictions_and_run_ids(self) -> None:
