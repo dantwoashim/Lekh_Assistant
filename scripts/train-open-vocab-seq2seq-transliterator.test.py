@@ -39,7 +39,18 @@ class UnsafeCheckpointPayload:
 class TrainerContractTests(unittest.TestCase):
     def test_config_defaults_and_override_precedence_are_bound(self) -> None:
         defaults = TRAINER.parse_args([], {})
-        self.assertEqual(TRAINER.device_for_training(), torch.device("cpu"))
+        self.assertEqual(
+            TRAINER.device_for_training(defaults),
+            torch.device("cpu"),
+        )
+        self.assertEqual(
+            defaults.execution_modes,
+            {
+                "skipTrain": False,
+                "skipCoreML": False,
+                "trainingDevice": "cpu",
+            },
+        )
         self.assertEqual(defaults.hidden_dim, 256)
         self.assertEqual(defaults.epochs, 8)
         self.assertEqual(defaults.training_overrides, {})
@@ -69,6 +80,62 @@ class TrainerContractTests(unittest.TestCase):
             TRAINER.parse_args(
                 ["--skip-train", "--restart-training"],
                 {},
+            )
+
+    def test_split_host_execution_preserves_immutable_input_identity(
+        self,
+    ) -> None:
+        training_snapshot = {
+            "schemaVersion": 1,
+            "trainer": {"sha256": "a" * 64},
+            "dataset": {"contentSha256": "b" * 64},
+            "runtime": {
+                "platform": "Linux",
+                "trainingDevice": "cuda",
+            },
+        }
+        export_snapshot = {
+            **training_snapshot,
+            "runtime": {
+                "platform": "macOS",
+                "trainingDevice": "cpu",
+            },
+        }
+        self.assertTrue(
+            TRAINER.run_input_snapshots_share_immutable_inputs(
+                training_snapshot,
+                export_snapshot,
+            )
+        )
+        changed = {
+            **export_snapshot,
+            "dataset": {"contentSha256": "c" * 64},
+        }
+        self.assertFalse(
+            TRAINER.run_input_snapshots_share_immutable_inputs(
+                training_snapshot,
+                changed,
+            )
+        )
+        self.assertEqual(
+            TRAINER.execution_topology(
+                {
+                    "skipTrain": False,
+                    "skipCoreML": True,
+                    "trainingDevice": "cuda",
+                },
+                {
+                    "skipTrain": True,
+                    "skipCoreML": False,
+                    "trainingDevice": "cpu",
+                },
+            ),
+            "split-host-train-then-macos-export-v1",
+        )
+        with self.assertRaisesRegex(SystemExit, "approved"):
+            TRAINER.execution_topology(
+                {"skipTrain": True, "skipCoreML": True},
+                {"skipTrain": True, "skipCoreML": True},
             )
 
     def test_publication_lock_rejects_overlapping_runs_and_records_completion(self) -> None:
@@ -810,6 +877,8 @@ class TrainerContractTests(unittest.TestCase):
             training_report = {
                 "trainingRunId": args.training_run_id,
                 "checkpointSha256": TRAINER.sha256_file(TRAINER.checkpoint_path(args)),
+                "trainingExecutionModes": args.execution_modes,
+                "runInputSnapshot": run_input_snapshot,
             }
             TRAINER.training_report_path(args).write_text(
                 json.dumps(training_report),
@@ -1275,6 +1344,12 @@ class TrainerContractTests(unittest.TestCase):
                 TRAINER.training_recovery_metadata_path(args).exists()
             )
             self.assertEqual(TRAINER.training_recovery_state_files(args), [])
+            args.run_input_snapshot = json.loads(
+                json.dumps(checkpoint["runInputSnapshot"])
+            )
+            args.run_input_snapshot["runtime"]["platform"] = (
+                "macOS-export-host-fixture"
+            )
             reloaded = TRAINER.load_checkpoint(args)
             self.assertEqual(reloaded["report"]["checkpointSha256"], report["checkpointSha256"])
             vocab = json.loads((out_dir / "model.vocab.json").read_text(encoding="utf-8"))

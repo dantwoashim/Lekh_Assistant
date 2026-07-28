@@ -80,7 +80,7 @@ MAX_COMPILED_MODEL_BYTES = 16 * 1024 * 1024
 MAX_COMPILED_MODEL_FILES = 10_000
 COREML_PARITY_RTOL = 5e-3
 COREML_PARITY_ATOL = 5e-3
-TRAINING_RECOVERY_SCHEMA_VERSION = 1
+TRAINING_RECOVERY_SCHEMA_VERSION = 2
 TRAINING_RECOVERY_STATE_PATTERN = re.compile(
     r"^\.training-recovery\.[a-f0-9]{32}\.[1-9][0-9]*\.pt$"
 )
@@ -231,6 +231,15 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
     parser.add_argument("--skip-train", action="store_true")
     parser.add_argument("--skip-coreml", action="store_true")
     parser.add_argument(
+        "--training-device",
+        choices=("cpu", "cuda"),
+        default="cpu",
+        help=(
+            "Execution device for the training phase. Core ML export remains "
+            "a separate macOS operation."
+        ),
+    )
+    parser.add_argument(
         "--restart-training",
         action="store_true",
         help=(
@@ -276,7 +285,11 @@ def parse_args(argv: list[str] | None = None, environment: dict[str, str] | None
         args.configured_artifact_inputs,
         args.effective_artifact_inputs,
     )
-    args.execution_modes = {"skipTrain": bool(args.skip_train), "skipCoreML": bool(args.skip_coreml)}
+    args.execution_modes = {
+        "skipTrain": bool(args.skip_train),
+        "skipCoreML": bool(args.skip_coreml),
+        "trainingDevice": str(args.training_device),
+    }
     if args.skip_train and args.restart_training:
         raise SystemExit("--skip-train and --restart-training are mutually exclusive.")
     args.training_run_id = None
@@ -1446,6 +1459,27 @@ def capture_run_input_snapshot(
             "torchThreads": torch.get_num_threads(),
             "torchInteropThreads": torch.get_num_interop_threads(),
             "deterministicAlgorithms": torch.are_deterministic_algorithms_enabled(),
+            "trainingDevice": str(
+                getattr(args, "resolved_training_device", "cpu")
+            ),
+            "cuda": {
+                "available": bool(torch.cuda.is_available()),
+                "runtimeVersion": str(torch.version.cuda)
+                    if torch.version.cuda is not None else None,
+                "cudnnVersion": torch.backends.cudnn.version()
+                    if torch.cuda.is_available() else None,
+                "deviceCount": torch.cuda.device_count()
+                    if torch.cuda.is_available() else 0,
+                "deviceNames": [
+                    torch.cuda.get_device_name(index)
+                    for index in range(torch.cuda.device_count())
+                ] if torch.cuda.is_available() else [],
+                "cublasWorkspaceConfig":
+                    os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+                "cudnnBenchmark": bool(torch.backends.cudnn.benchmark),
+                "cudnnDeterministic":
+                    bool(torch.backends.cudnn.deterministic),
+            },
         },
     }
     if snapshot["trainingConfig"]["sha256"] != args.training_contract_sha256:
@@ -1456,12 +1490,48 @@ def capture_run_input_snapshot(
 
 
 def ensure_run_input_snapshot(args: argparse.Namespace) -> dict[str, Any]:
-    torch.use_deterministic_algorithms(True)
+    configure_deterministic_runtime(args)
     snapshot = getattr(args, "run_input_snapshot", None)
     if snapshot is None:
         snapshot = capture_run_input_snapshot(args, freeze_dataset=True)
         args.run_input_snapshot = snapshot
     return snapshot
+
+
+def configure_deterministic_runtime(args: argparse.Namespace) -> None:
+    requested = str(getattr(args, "training_device", "cpu"))
+    if requested == "cuda":
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:2")
+        if not torch.cuda.is_available():
+            raise SystemExit(
+                "--training-device cuda requires an available CUDA device."
+            )
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        if hasattr(torch.backends.cuda.matmul, "allow_tf32"):
+            torch.backends.cuda.matmul.allow_tf32 = False
+        if hasattr(torch.backends.cudnn, "allow_tf32"):
+            torch.backends.cudnn.allow_tf32 = False
+    torch.use_deterministic_algorithms(True)
+    args.resolved_training_device = requested
+
+
+def immutable_run_input_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        raise SystemExit("Run-input snapshot must be an object.")
+    immutable = copy.deepcopy(snapshot)
+    immutable.pop("runtime", None)
+    return immutable
+
+
+def run_input_snapshots_share_immutable_inputs(
+    training_snapshot: dict[str, Any],
+    export_snapshot: dict[str, Any],
+) -> bool:
+    return (
+        immutable_run_input_snapshot(training_snapshot)
+        == immutable_run_input_snapshot(export_snapshot)
+    )
 
 
 def assert_run_input_snapshot_unchanged(args: argparse.Namespace) -> None:
@@ -2186,11 +2256,16 @@ def convert_attention_incremental_coreml_for_testing(
     }
 
 
-def device_for_training() -> torch.device:
+def device_for_training(args: argparse.Namespace) -> torch.device:
     # PyTorch's MPS GRU backend has crashed process-wide for this two-layer
-    # sequence model on supported Apple Silicon hosts. Training is an offline
-    # publication step, so prefer deterministic, portable CPU execution. The
-    # exported Core ML model still uses Core ML compute units at inference time.
+    # sequence model on supported Apple Silicon hosts, so MPS is deliberately
+    # not an option. CUDA is allowed for an explicitly requested remote
+    # training phase; Core ML export and device proof still run on macOS.
+    requested = str(getattr(args, "resolved_training_device", "cpu"))
+    if requested == "cuda" and torch.cuda.is_available():
+        return torch.device("cuda")
+    if requested != "cpu":
+        raise SystemExit(f"Unavailable neural training device: {requested}.")
     return torch.device("cpu")
 
 
@@ -2367,6 +2442,10 @@ def save_training_recovery(
         "trainingGeneratorState":
             training_generator.get_state().detach().cpu().clone(),
         "torchRngState": torch.get_rng_state().detach().cpu().clone(),
+        "cudaRngStates": [
+            value.detach().cpu().clone()
+            for value in torch.cuda.get_rng_state_all()
+        ] if args.resolved_training_device == "cuda" else [],
         "losses": list(losses),
         "epochMetrics": copy.deepcopy(epoch_metrics),
         "bestState": {
@@ -2514,6 +2593,7 @@ def load_training_recovery(
         "optimizerState",
         "trainingGeneratorState",
         "torchRngState",
+        "cudaRngStates",
         "losses",
         "epochMetrics",
         "bestState",
@@ -2589,6 +2669,7 @@ def load_training_recovery(
         or recovery["exportRunIds"][-1]
             != recovery["createdByExportRunId"]
         or not isinstance(recovery.get("stoppedEarly"), bool)
+        or not valid_recovery_cuda_rng_states(args, recovery)
         or not valid_recovery_epoch_metrics(recovery)
     ):
         raise SystemExit("Training recovery progress metadata is invalid.")
@@ -2597,6 +2678,8 @@ def load_training_recovery(
         optimizer.load_state_dict(recovery["optimizerState"])
         training_generator.set_state(recovery["trainingGeneratorState"])
         torch.set_rng_state(recovery["torchRngState"])
+        if args.resolved_training_device == "cuda":
+            torch.cuda.set_rng_state_all(recovery["cudaRngStates"])
     except (KeyError, RuntimeError, TypeError, ValueError) as error:
         raise SystemExit(
             "Training recovery tensor or optimizer state is incompatible."
@@ -2696,6 +2779,24 @@ def valid_recovery_epoch_metrics(recovery: dict[str, Any]) -> bool:
     )
 
 
+def valid_recovery_cuda_rng_states(
+    args: argparse.Namespace,
+    recovery: dict[str, Any],
+) -> bool:
+    states = recovery.get("cudaRngStates")
+    if not isinstance(states, list) or not all(
+        isinstance(value, torch.Tensor)
+        and value.device.type == "cpu"
+        and value.dtype == torch.uint8
+        and value.ndim == 1
+        for value in states
+    ):
+        return False
+    if args.resolved_training_device == "cuda":
+        return len(states) == torch.cuda.device_count()
+    return len(states) == 0
+
+
 def train_model(args: argparse.Namespace) -> dict[str, Any]:
     run_input_snapshot = ensure_run_input_snapshot(args)
     if args.restart_training:
@@ -2728,7 +2829,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         len(output_vocab),
         checkpoint_runtime_config(args),
     )
-    device = device_for_training()
+    device = device_for_training(args)
     model.to(device)
 
     training_generator = torch.Generator()
@@ -3100,8 +3201,14 @@ def load_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit("Checkpoint effective artifact input digest is invalid.")
     if checkpoint["artifactOverrides"] != args.artifact_overrides:
         raise SystemExit("Checkpoint artifact overrides do not match this invocation.")
-    if checkpoint["runInputSnapshot"] != run_input_snapshot:
-        raise SystemExit("Checkpoint run-input snapshot does not match the current trainer/config/data/gold evidence.")
+    if not run_input_snapshots_share_immutable_inputs(
+        checkpoint["runInputSnapshot"],
+        run_input_snapshot,
+    ):
+        raise SystemExit(
+            "Checkpoint immutable trainer/config/data/gold evidence does not "
+            "match the current export invocation."
+        )
     if checkpoint["trainerSha256"] != sha256_file(Path(__file__)):
         raise SystemExit("Checkpoint trainerSha256 does not match the current trainer implementation.")
     if not args.vocab_metadata.is_file():
@@ -5085,8 +5192,14 @@ def tokens_by_id(vocab: dict[str, int]) -> list[str]:
 
 
 def write_manifest(args: argparse.Namespace, checkpoint: dict[str, Any], training_report: dict[str, Any], coreml: dict[str, Any], benchmark: dict[str, Any]) -> dict[str, Any]:
-    if checkpoint.get("runInputSnapshot") != ensure_run_input_snapshot(args):
-        raise SystemExit("Refusing to publish a runtime manifest from mixed run-input evidence.")
+    if not run_input_snapshots_share_immutable_inputs(
+        checkpoint.get("runInputSnapshot"),
+        ensure_run_input_snapshot(args),
+    ):
+        raise SystemExit(
+            "Refusing to publish a runtime manifest from mixed immutable "
+            "trainer/config/data/gold evidence."
+        )
     if coreml.get("status") != "passed":
         raise SystemExit("Refusing to write a runtime manifest without a successful Core ML export.")
     if not is_run_identifier(args.training_run_id) or not is_run_identifier(args.export_run_id):
@@ -5393,6 +5506,30 @@ def iso_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def execution_topology(
+    training_modes: dict[str, Any],
+    export_modes: dict[str, Any],
+) -> str:
+    training_pair = (
+        training_modes.get("skipTrain"),
+        training_modes.get("skipCoreML"),
+    )
+    export_pair = (
+        export_modes.get("skipTrain"),
+        export_modes.get("skipCoreML"),
+    )
+    if training_pair == (False, False) and export_pair == (False, False):
+        return "single-host-train-and-export-v1"
+    if training_pair == (False, True) and export_pair == (False, True):
+        return "training-only-no-coreml-v1"
+    if training_pair == (False, True) and export_pair == (True, False):
+        return "split-host-train-then-macos-export-v1"
+    raise SystemExit(
+        "Training and export execution modes do not form an approved "
+        "single-host or split-host publication topology."
+    )
+
+
 def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     ensure_run_input_snapshot(args)
     if args.skip_train:
@@ -5402,6 +5539,10 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     model: nn.Module = loaded["model"]
     checkpoint: dict[str, Any] = loaded["checkpoint"]
     training_report: dict[str, Any] = loaded["report"]
+    topology = execution_topology(
+        training_report.get("trainingExecutionModes", {}),
+        args.execution_modes,
+    )
     if args.training_run_id == args.export_run_id:
         raise SystemExit("Training and export publication identities must be distinct.")
     assert_run_input_snapshot_unchanged(args)
@@ -5547,11 +5688,20 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         "trainingRunId": args.training_run_id,
         "exportRunId": args.export_run_id,
         "executionModes": args.execution_modes,
+        "executionTopology": topology,
+        "trainingExecutionModes":
+            training_report["trainingExecutionModes"],
         "trainingContractSha256": args.training_contract_sha256,
         "effectiveTrainingConfigSha256": args.effective_training_config_sha256,
         "effectiveArtifactInputsSha256": args.effective_artifact_inputs_sha256,
         "artifactOverrides": args.artifact_overrides,
         "runInputSnapshot": ensure_run_input_snapshot(args),
+        "trainingRunInputSnapshotSha256": sha256_json(
+            training_report["runInputSnapshot"]
+        ),
+        "exportRunInputSnapshotSha256": sha256_json(
+            ensure_run_input_snapshot(args)
+        ),
         "runtimeArtifactContractIssues": runtime_contract_issues,
         "checkpoint": rel(checkpoint_path(args)),
         "checkpointSha256": checkpoint_sha256,

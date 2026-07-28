@@ -36,6 +36,7 @@ import {
   validateNeuralDatasetManifest
 } from "./neural-dataset-manifest.mjs";
 import {
+  canonicalJsonSha256,
   configuredNeuralTrainingContract,
   inspectTrainingReportBinding,
   resolveNeuralTrainingLayout,
@@ -438,6 +439,11 @@ function validateTrainerSource(source, failures) {
     "artifactOverrides",
     "save_training_recovery(",
     "trainingGeneratorState",
+    "cudaRngStates",
+    "--training-device",
+    "CUBLAS_WORKSPACE_CONFIG",
+    "run_input_snapshots_share_immutable_inputs",
+    "split-host-train-then-macos-export-v1",
     'torch.load(handle, map_location="cpu", weights_only=True)',
     "clear_training_recovery(args)"
   ]) {
@@ -581,9 +587,15 @@ function validateTrainingReport(context) {
   });
   if (production &&
       (report.trainingExecutionModes?.skipTrain !== false ||
-       report.trainingExecutionModes?.skipCoreML !== false)) {
+       ![false, true].includes(
+         report.trainingExecutionModes?.skipCoreML
+       ) ||
+       !["cpu", "cuda"].includes(
+         report.trainingExecutionModes?.trainingDevice
+       ))) {
     failures.push(
-      "Production Phase 4 requires a fresh training run with Core ML export enabled."
+      "Production Phase 4 requires fresh CPU/CUDA training with an explicit " +
+      "Core ML handoff mode."
     );
   }
   validateTrainingRecoveryReport(report.trainingRecovery, failures);
@@ -635,6 +647,168 @@ function validateTrainingRecoveryReport(recovery, failures) {
       "Uninterrupted training report has inconsistent recovery lineage."
     );
   }
+}
+
+function validateExecutionTopology({
+  report,
+  trainingReport,
+  production,
+  failures
+}) {
+  const trainingModes = trainingReport?.trainingExecutionModes;
+  const exportModes = report.executionModes;
+  requireDeepEqual(
+    report.trainingExecutionModes,
+    trainingModes,
+    "Export report training execution modes are stale.",
+    failures
+  );
+  const trainingPair = [
+    trainingModes?.skipTrain,
+    trainingModes?.skipCoreML
+  ];
+  const exportPair = [
+    exportModes?.skipTrain,
+    exportModes?.skipCoreML
+  ];
+  const trainingDevice = trainingModes?.trainingDevice;
+  const exportDevice = exportModes?.trainingDevice;
+  const singleHost =
+    JSON.stringify(trainingPair) === JSON.stringify([false, false]) &&
+    JSON.stringify(exportPair) === JSON.stringify([false, false]) &&
+    trainingDevice === "cpu" &&
+    exportDevice === "cpu";
+  const splitHost =
+    JSON.stringify(trainingPair) === JSON.stringify([false, true]) &&
+    JSON.stringify(exportPair) === JSON.stringify([true, false]) &&
+    ["cpu", "cuda"].includes(trainingDevice) &&
+    exportDevice === "cpu";
+  const expectedTopology = singleHost
+    ? "single-host-train-and-export-v1"
+    : splitHost
+      ? "split-host-train-then-macos-export-v1"
+      : null;
+  requireEqual(
+    report.executionTopology,
+    expectedTopology,
+    "Export report execution topology is invalid.",
+    failures
+  );
+  if (production && expectedTopology === null) {
+    failures.push(
+      "Production export requires an approved single-host or split-host topology."
+    );
+  }
+  if (production && splitHost && trainingDevice !== "cuda") {
+    failures.push(
+      "Production split-host training must use the pinned CUDA path."
+    );
+  }
+  validateRuntimeExecutionEvidence({
+    snapshot: trainingReport?.runInputSnapshot,
+    expectedDevice: trainingDevice,
+    role: "training",
+    requireMacOS: singleHost,
+    production,
+    failures
+  });
+  validateRuntimeExecutionEvidence({
+    snapshot: report.runInputSnapshot,
+    expectedDevice: exportDevice,
+    role: "Core ML export",
+    requireMacOS: true,
+    production,
+    failures
+  });
+  const lineage = trainingReport?.trainingRecovery?.exportRunIds;
+  if (singleHost && !lineage?.includes(report.exportRunId)) {
+    failures.push(
+      "Single-host export run is absent from the training recovery lineage."
+    );
+  }
+  if (splitHost && lineage?.includes(report.exportRunId)) {
+    failures.push(
+      "Split-host macOS export must use an identity distinct from every " +
+      "training attempt."
+    );
+  }
+}
+
+function validateRuntimeExecutionEvidence({
+  snapshot,
+  expectedDevice,
+  role,
+  requireMacOS,
+  production,
+  failures
+}) {
+  const runtime = snapshot?.runtime;
+  if (!isRecord(runtime)) {
+    failures.push(`${role} run snapshot lacks runtime evidence.`);
+    return;
+  }
+  requireEqual(
+    runtime.trainingDevice,
+    expectedDevice,
+    `${role} runtime device differs from its execution mode.`,
+    failures
+  );
+  requireEqual(
+    runtime.deterministicAlgorithms,
+    true,
+    `${role} did not enable deterministic PyTorch algorithms.`,
+    failures
+  );
+  if (requireMacOS &&
+      !String(runtime.platform ?? "").startsWith("macOS-")) {
+    failures.push(`${role} runtime is not macOS.`);
+  }
+  if (!production) return;
+  for (const [actual, expected, message] of [
+    [runtime.numpy, "1.26.4", `${role} NumPy version is not pinned.`],
+    [runtime.torch, "2.7.0", `${role} PyTorch version is not pinned.`],
+    [runtime.coremltools, "9.0", `${role} Core ML Tools version is not pinned.`]
+  ]) {
+    requireEqual(actual, expected, message, failures);
+  }
+  if (!/^3\.11\.\d+$/u.test(String(runtime.python ?? ""))) {
+    failures.push(`${role} Python runtime is outside the pinned 3.11 line.`);
+  }
+  if (!Number.isSafeInteger(runtime.torchThreads) ||
+      runtime.torchThreads < 1 ||
+      !Number.isSafeInteger(runtime.torchInteropThreads) ||
+      runtime.torchInteropThreads < 1) {
+    failures.push(`${role} thread topology is invalid.`);
+  }
+  if (expectedDevice !== "cuda") return;
+  const cuda = runtime.cuda;
+  if (!isRecord(cuda) ||
+      cuda.available !== true ||
+      !Number.isSafeInteger(cuda.deviceCount) ||
+      cuda.deviceCount < 1 ||
+      !Array.isArray(cuda.deviceNames) ||
+      cuda.deviceNames.length !== cuda.deviceCount ||
+      cuda.deviceNames.some((value) =>
+        typeof value !== "string" || value.length < 1
+      ) ||
+      typeof cuda.runtimeVersion !== "string" ||
+      cuda.runtimeVersion.length < 1 ||
+      !Number.isSafeInteger(cuda.cudnnVersion) ||
+      cuda.cudnnVersion < 1 ||
+      cuda.cublasWorkspaceConfig !== ":4096:2" ||
+      cuda.cudnnBenchmark !== false ||
+      cuda.cudnnDeterministic !== true) {
+    failures.push(
+      `${role} CUDA determinism/runtime evidence is incomplete or invalid.`
+    );
+  }
+}
+
+function immutableRunInputSnapshot(snapshot) {
+  if (!isRecord(snapshot)) return snapshot;
+  const copy = structuredClone(snapshot);
+  delete copy.runtime;
+  return copy;
 }
 
 function validateCandidateManifest(context) {
@@ -748,13 +922,7 @@ function validateExportReport(context) {
     "Export report exportRunId differs from the candidate manifest.",
     failures
   );
-  if (!trainingReport?.trainingRecovery?.exportRunIds?.includes(
-    report.exportRunId
-  )) {
-    failures.push(
-      "Export report run is absent from the training recovery lineage."
-    );
-  }
+  validateExecutionTopology({ report, trainingReport, production, failures });
   requireEqual(
     report.productionEligible,
     false,
@@ -785,13 +953,6 @@ function validateExportReport(context) {
     "Export report artifact overrides differ from the training report.",
     failures
   );
-  if (production &&
-      (report.executionModes?.skipTrain !== false ||
-       report.executionModes?.skipCoreML !== false)) {
-    failures.push(
-      "Production Phase 4 export must come from fresh training with Core ML enabled."
-    );
-  }
   requireEqual(
     report.checkpoint,
     portable(root, layout.paths.checkpoint),
@@ -905,14 +1066,43 @@ function validateExportReport(context) {
     failures
   );
   requireDeepEqual(
-    report.runInputSnapshot,
-    trainingReport?.runInputSnapshot,
-    "Export and training reports bind different run-input snapshots.",
+    immutableRunInputSnapshot(report.runInputSnapshot),
+    immutableRunInputSnapshot(trainingReport?.runInputSnapshot),
+    "Export and training reports bind different immutable input snapshots.",
+    failures
+  );
+  requireEqual(
+    report.trainingRunInputSnapshotSha256,
+    trainingReport?.runInputSnapshot
+      ? canonicalJsonSha256(trainingReport.runInputSnapshot)
+      : null,
+    "Export report training snapshot digest is stale.",
+    failures
+  );
+  requireEqual(
+    report.exportRunInputSnapshotSha256,
+    report.runInputSnapshot
+      ? canonicalJsonSha256(report.runInputSnapshot)
+      : null,
+    "Export report export snapshot digest is stale.",
     failures
   );
   validateRunInputSnapshot({
     root,
     snapshot: report.runInputSnapshot,
+    layout,
+    configEvidence,
+    trainerEvidence: {
+      sha256: trainingReport?.trainerSha256
+    },
+    dataset,
+    gold,
+    official,
+    failures
+  });
+  validateRunInputSnapshot({
+    root,
+    snapshot: trainingReport?.runInputSnapshot,
     layout,
     configEvidence,
     trainerEvidence: {
