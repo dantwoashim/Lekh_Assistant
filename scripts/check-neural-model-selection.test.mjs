@@ -87,6 +87,25 @@ describe("neural model-selection CLI evidence graph", () => {
       ));
     });
   });
+
+  it("refuses compute-plan preference without observed runtime placement", () => {
+    withFixture((fixture) => {
+      const benchmarkPath = join(
+        fixture.root,
+        "reports",
+        "baseline-benchmark.json"
+      );
+      const benchmark = readJson(benchmarkPath);
+      delete benchmark.computePlacement.runtimePlacement;
+      writeJson(benchmarkPath, benchmark);
+
+      const result = runSelection(fixture);
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /Neural Engine benchmark/u.test(failure)
+      ));
+    });
+  });
 });
 
 function withFixture(callback) {
@@ -329,8 +348,11 @@ function buildCandidate(root, shared, options) {
     failures: [],
     artifactIdentity,
     computePlacement: {
+      neuralEngineCompatibilityIndicated: true,
+      neuralEngineRuntimeObserved: true,
       neuralEngineClaimAllowed: true,
-      architectures: ["arm64"]
+      architectures: ["arm64"],
+      runtimePlacement: runtimePlacementEvidence(descriptor)
     },
     performance: {
       p99Ms: options.label === "attention" ? 20 : 10
@@ -454,6 +476,71 @@ function metric(rows, top1Hits, top3Hits) {
 
 function round(value) {
   return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function runtimePlacementEvidence(descriptor) {
+  const runtimeRoles = {};
+  const roleExecutions = {};
+  for (const artifact of descriptor.artifacts) {
+    runtimeRoles[artifact.role] = {
+      bundleName: artifact.bundleName,
+      compiledBytes: artifact.compiledBytes,
+      compiledSha256: artifact.compiledSha256
+    };
+    roleExecutions[artifact.role] = {
+      bundleName: artifact.bundleName,
+      compiledSha256: artifact.compiledSha256,
+      neuralEngineComputeObserved: true,
+      predictionCount: 40
+    };
+  }
+  const coreMLPredictionCount = Object.values(roleExecutions)
+    .reduce((total, role) => total + role.predictionCount, 0);
+  return {
+    schemaVersion: 1,
+    recordType: "lekh-neural-runtime-placement-evidence",
+    status: "passed",
+    evidenceKind: "instruments-coreml-neural-engine-runtime-trace",
+    generatedAt: "2026-07-28T00:00:00Z",
+    architecture: "arm64",
+    macOS: "26.0",
+    hardware: {
+      chip: "Apple M-series",
+      modelIdentifier: "MacFixture1,1"
+    },
+    capture: {
+      tool: "Instruments",
+      xcodeVersion: "26.0",
+      coreMLInstrument: true,
+      neuralEngineInstrument: true,
+      traceSha256: "7".repeat(64),
+      traceExportSha256: "8".repeat(64)
+    },
+    artifactIdentity: {
+      manifestSha256: descriptor.manifestSha256,
+      vocabSha256: descriptor.vocabSha256,
+      artifactSetSha256: descriptor.artifactSetSha256,
+      runtimeRoles
+    },
+    workload: {
+      measurementKind: "full-candidate-generation",
+      inputCorpusSha256: "9".repeat(64),
+      warmupIterations: 10,
+      measuredIterations: 40
+    },
+    correlation: {
+      processScoped: true,
+      predictionIntervalsCorrelated: true,
+      rolePathsResolved: true,
+      coreMLComputeLane: true,
+      neuralEngineHardwareTrack: true
+    },
+    observations: {
+      coreMLPredictionCount,
+      neuralEngineComputeEventCount: coreMLPredictionCount,
+      roleExecutions
+    }
+  };
 }
 
 function write(path, contents) {

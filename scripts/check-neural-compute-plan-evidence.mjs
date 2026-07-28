@@ -31,8 +31,8 @@ const validation = validateNeuralComputePlanEvidence(evidence, {
   production
 });
 const status = validation.valid
-  ? validation.neuralEngineClaimAllowed
-    ? "passed-neural-engine-compute-plan"
+  ? validation.neuralEngineCompatibilityIndicated
+    ? "passed-neural-engine-compatible-compute-plan"
     : validation.deterministicFallbackProven
       ? "passed-intel-neural-fallback-compute-plan"
       : validation.environmentCapabilityLimited
@@ -50,7 +50,9 @@ const report = {
   evidence: relative(root, evidencePath),
   manifest: relative(root, manifestPath),
   expectedArchitecture,
-  neuralEngineClaimAllowed: validation.neuralEngineClaimAllowed,
+  neuralEngineCompatibilityIndicated:
+    validation.neuralEngineCompatibilityIndicated,
+  neuralEngineClaimAllowed: false,
   deterministicFallbackProven: validation.deterministicFallbackProven,
   environmentCapabilityLimited: validation.environmentCapabilityLimited,
   issueCodes: validation.issueCodes,

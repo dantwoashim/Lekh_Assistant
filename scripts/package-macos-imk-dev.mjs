@@ -18,6 +18,7 @@ import { homedir } from "node:os";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { TextDecoder } from "node:util";
 import {
   classifyMacOSCodeSigning,
   macOSSourceStatusArguments
@@ -25,6 +26,16 @@ import {
 import {
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
+import {
+  buildFinalPackagedNeuralEvidence,
+  verifyFinalPackagedNeuralEvidence
+} from "./lib/neural-final-package-evidence.mjs";
+import {
+  assertNeuralPackageModePolicy
+} from "./lib/neural-package-mode-policy.mjs";
+import {
+  verifyNeuralProductionPromotionReceipt
+} from "./lib/neural-production-promotion-receipt.mjs";
 import { readProductionReleasePolicy } from "./lib/macos-production-release-attestation.mjs";
 
 const root = process.cwd();
@@ -80,6 +91,26 @@ const neuralVocabBundlePath = join(
   "Contents",
   "Resources",
   "LekhNeuralTransliterator.vocab.json"
+);
+const neuralResourcesDirectory = join(
+  appBundle,
+  "Contents",
+  "Resources"
+);
+const neuralPromotionReceiptName =
+  "neural-candidate-promotion-report.json";
+const neuralPromotionReceiptSourcePath = join(
+  neuralArtifactRoot,
+  neuralPromotionReceiptName
+);
+const neuralPromotionReceiptBundlePath = join(
+  neuralResourcesDirectory,
+  neuralPromotionReceiptName
+);
+const neuralPackageEvidenceName = "LekhNeuralPackageEvidence.v1.json";
+const neuralPackageEvidenceBundlePath = join(
+  neuralResourcesDirectory,
+  neuralPackageEvidenceName
 );
 const universalExecutable = join(buildWorkDir, `${executableName}.universal`);
 const atomicInstallSwap = join(skeletonDir, "atomic-install-swap.swift");
@@ -148,6 +179,50 @@ function run(step, command, args, options = {}) {
     finish("failed", { step, command, args, stdout: result.stdout, stderr: result.stderr }, result.status ?? 1);
   }
   return result;
+}
+
+function readStrictJson(path, label) {
+  try {
+    return JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(path))
+    );
+  } catch (error) {
+    throw new Error(
+      `${label} must be strict UTF-8 JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error }
+    );
+  }
+}
+
+function verifyPackagedNeuralResources(
+  resourcesDirectory,
+  expectedEvidence
+) {
+  const evidence = readStrictJson(
+    join(resourcesDirectory, neuralPackageEvidenceName),
+    "Packaged neural evidence"
+  );
+  const observed = verifyFinalPackagedNeuralEvidence({
+    resourcesDirectory,
+    promotionReceiptPath: evidence.productionEligible
+      ? join(resourcesDirectory, neuralPromotionReceiptName)
+      : undefined,
+    promotionReceiptRoot: evidence.productionEligible
+      ? resourcesDirectory
+      : undefined,
+    evidence
+  });
+  if (
+    expectedEvidence !== undefined &&
+    JSON.stringify(observed) !== JSON.stringify(expectedEvidence)
+  ) {
+    throw new Error(
+      "Signed neural resources differ from the source-verified evidence."
+    );
+  }
+  return observed;
 }
 
 function walkPaths(path) {
@@ -420,13 +495,10 @@ let neuralModelPackaged = false;
 let packagedNeuralArtifacts = [];
 let packagedNeuralModelBytes = 0;
 let neuralArtifactSetSha256 = null;
+let neuralPackagePolicy = null;
+let neuralPromotionVerification = null;
+let finalPackagedNeuralEvidence = null;
 if (neuralPackagingRequested) {
-  if (!["experimental", "candidate-promotion", "production"].includes(neuralPackageMode)) {
-    finish("failed", {
-      step: "neural-packaging",
-      reason: `Unsupported LEKH_NEURAL_PACKAGE_MODE=${neuralPackageMode}.`
-    }, 1);
-  }
   let sourceDescriptor;
   try {
     sourceDescriptor = resolveNeuralArtifactDescriptor({
@@ -434,38 +506,39 @@ if (neuralPackagingRequested) {
       manifestPath: neuralManifestSourcePath,
       vocabPath: neuralVocabSourcePath
     });
+    if (neuralPackageMode === "production") {
+      neuralPromotionVerification =
+        verifyNeuralProductionPromotionReceipt({
+          repoRoot: root,
+          productionDirectory: neuralArtifactRoot
+        });
+    }
+    neuralPackagePolicy = assertNeuralPackageModePolicy({
+      repoRoot: root,
+      artifactRoot: neuralArtifactRoot,
+      descriptor: sourceDescriptor,
+      mode: neuralPackageMode,
+      experimentalEnabled: experimentalNeuralTypingRequested,
+      promotionReport: neuralPromotionVerification
+        ? {
+            schemaVersion: 2,
+            suite: "neural-production-promotion",
+            phase: 9,
+            production: true,
+            status: "passed-production-phase9-promotion",
+            productionDirectory: neuralArtifactRoot,
+            verification: neuralPromotionVerification,
+            failures: []
+          }
+        : undefined
+    });
   } catch (error) {
     finish("failed", {
-      step: "neural-packaging",
+      step: "neural-source-verification",
       reason: error instanceof Error ? error.message : String(error),
-      artifactRoot: neuralArtifactRoot
-    }, 1);
-  }
-  if (neuralPackageMode === "production" &&
-      sourceDescriptor.manifest.productionEligible !== true) {
-    finish("failed", {
-      step: "neural-packaging",
-      reason: "Production packaging requires productionEligible=true."
-    }, 1);
-  }
-  if (neuralPackageMode === "candidate-promotion" &&
-      sourceDescriptor.manifest.productionEligible !== false) {
-    finish("failed", {
-      step: "neural-packaging",
-      reason: "Candidate-promotion packaging requires productionEligible=false."
-    }, 1);
-  }
-  if (neuralPackageMode === "production" && experimentalNeuralTypingRequested) {
-    finish("failed", {
-      step: "neural-packaging",
-      reason: "A promoted production model must not use the experimental typing flag."
-    }, 1);
-  }
-  if (neuralPackageMode === "candidate-promotion" &&
-      !experimentalNeuralTypingRequested) {
-    finish("failed", {
-      step: "neural-packaging",
-      reason: "Candidate-promotion packaging requires the explicit experimental typing flag."
+      artifactRoot: neuralArtifactRoot,
+      neuralPackageMode,
+      experimentalNeuralTypingRequested
     }, 1);
   }
 
@@ -485,6 +558,12 @@ if (neuralPackagingRequested) {
     });
   }
   copyFileSync(neuralVocabSourcePath, neuralVocabBundlePath);
+  if (neuralPackageMode === "production") {
+    copyFileSync(
+      neuralPromotionReceiptSourcePath,
+      neuralPromotionReceiptBundlePath
+    );
+  }
   // Publish the manifest last so no intermediate bundle state advertises an
   // incomplete role inventory, even inside the private build directory.
   copyFileSync(neuralManifestSourcePath, neuralManifestBundlePath);
@@ -497,6 +576,21 @@ if (neuralPackagingRequested) {
       vocabPath: neuralVocabBundlePath,
       artifactDirectory: join(appBundle, "Contents", "Resources"),
       verifyExportArtifacts: false
+    });
+    const finalEvidenceOptions = {
+      resourcesDirectory: neuralResourcesDirectory,
+      promotionReceiptPath: neuralPackageMode === "production"
+        ? neuralPromotionReceiptBundlePath
+        : undefined,
+      promotionReceiptRoot: neuralPackageMode === "production"
+        ? neuralResourcesDirectory
+        : undefined
+    };
+    finalPackagedNeuralEvidence =
+      buildFinalPackagedNeuralEvidence(finalEvidenceOptions);
+    verifyFinalPackagedNeuralEvidence({
+      ...finalEvidenceOptions,
+      evidence: finalPackagedNeuralEvidence
     });
   } catch (error) {
     finish("failed", {
@@ -512,12 +606,35 @@ if (neuralPackagingRequested) {
       reason: "Packaged neural bytes differ from the exact selected artifact set."
     }, 1);
   }
-  packagedNeuralArtifacts = packagedDescriptor.artifacts.map((artifact) => ({
-    role: artifact.role,
-    bundleName: artifact.bundleName,
-    bytes: artifact.compiledBytes,
-    sha256: artifact.compiledSha256
-  }));
+  if (
+    neuralPackageMode === "production" &&
+    (
+      finalPackagedNeuralEvidence.promotion?.promotionId !==
+        neuralPackagePolicy.promotionId ||
+      finalPackagedNeuralEvidence.promotion?.receiptSha256 !==
+        neuralPackagePolicy.promotionReceiptSha256
+    )
+  ) {
+    finish("failed", {
+      step: "neural-packaging-verification",
+      reason:
+        "Final packaged neural evidence does not match the live Phase 9 " +
+        "promotion identity."
+    }, 1);
+  }
+  writeFileSync(
+    neuralPackageEvidenceBundlePath,
+    `${JSON.stringify(finalPackagedNeuralEvidence, null, 2)}\n`,
+    { encoding: "utf8", mode: 0o644 }
+  );
+  packagedNeuralArtifacts = finalPackagedNeuralEvidence.artifacts.map(
+    (artifact) => ({
+      role: artifact.role,
+      bundleName: artifact.bundleName,
+      bytes: artifact.compiledBytes,
+      sha256: artifact.compiledSha256
+    })
+  );
   packagedNeuralModelBytes = packagedDescriptor.totalCompiledBytes;
   neuralArtifactSetSha256 = packagedDescriptor.artifactSetSha256;
   neuralModelPackaged = true;
@@ -573,6 +690,19 @@ signArgs.push(appBundle);
 stripCodeSignBlockedXattrs(appBundle);
 run("codesign", "codesign", signArgs);
 run("codesign-verify", "codesign", ["--verify", "--deep", "--strict", appBundle]);
+if (neuralModelPackaged) {
+  try {
+    verifyPackagedNeuralResources(
+      neuralResourcesDirectory,
+      finalPackagedNeuralEvidence
+    );
+  } catch (error) {
+    finish("failed", {
+      step: "signed-neural-resource-verification",
+      reason: error instanceof Error ? error.message : String(error)
+    }, 1);
+  }
+}
 
 const lipoInfo = run("lipo-archs", "lipo", ["-archs", join(appBundle, "Contents", "MacOS", executableName)]).stdout.trim();
 const fileInfo = run("file-info", "file", [join(appBundle, "Contents", "MacOS", executableName)]).stdout.trim();
@@ -697,7 +827,23 @@ const publishedSignature = spawnSync(
   ["--verify", "--deep", "--strict", publishedAppBundle],
   { cwd: root, env: toolchainEnv, encoding: "utf8", stdio: "pipe" }
 );
-if (publishedSignature.status !== 0) {
+let publishedNeuralEvidence = null;
+let publishedNeuralVerificationFailure = null;
+if (publishedSignature.status === 0 && neuralModelPackaged) {
+  try {
+    publishedNeuralEvidence = verifyPackagedNeuralResources(
+      join(publishedAppBundle, "Contents", "Resources"),
+      finalPackagedNeuralEvidence
+    );
+  } catch (error) {
+    publishedNeuralVerificationFailure =
+      error instanceof Error ? error.message : String(error);
+  }
+}
+if (
+  publishedSignature.status !== 0 ||
+  publishedNeuralVerificationFailure !== null
+) {
   if (replacingPublishedBundle && existsSync(appBundle)) {
     spawnSync("swift", [atomicInstallSwap, appBundle, publishedAppBundle], {
       cwd: root,
@@ -709,11 +855,15 @@ if (publishedSignature.status !== 0) {
     rmSync(publishedAppBundle, { recursive: true, force: true });
   }
   finish("failed", {
-    step: "published-codesign-verify",
-    reason: "The atomically published bundle failed verification and the prior artifact was restored when available.",
+    step: publishedSignature.status !== 0
+      ? "published-codesign-verify"
+      : "published-neural-resource-verification",
+    reason: publishedNeuralVerificationFailure ??
+      "The atomically published bundle failed code-signature verification; " +
+      "the prior artifact was restored when available.",
     stdout: publishedSignature.stdout,
     stderr: publishedSignature.stderr
-  }, publishedSignature.status ?? 1);
+  }, publishedSignature.status || 1);
 }
 // After a successful RENAME_SWAP the old published artifact lives at the
 // private staging path. Remove it only after the new public path verifies.
@@ -742,6 +892,13 @@ const publishedBuildProvenancePath = join(publishedResources, "LekhBuildProvenan
 const publishedBuildProvenanceSha256 = createHash("sha256")
   .update(readFileSync(publishedBuildProvenancePath))
   .digest("hex");
+const publishedNeuralEvidenceSha256 = neuralModelPackaged
+  ? createHash("sha256")
+      .update(
+        readFileSync(join(publishedResources, neuralPackageEvidenceName))
+      )
+      .digest("hex")
+  : null;
 
 const publishedStatus = publishedSigningEvidence.classification === "developer-id-ready"
   ? "passed-developer-id-ready"
@@ -771,6 +928,10 @@ finish(publishedStatus, {
   packagedNeuralModelBytes,
   packagedNeuralArtifacts,
   neuralArtifactSetSha256,
+  neuralPackagePolicy,
+  neuralPromotionVerification,
+  finalPackagedNeuralEvidence: publishedNeuralEvidence,
+  finalPackagedNeuralEvidenceSha256: publishedNeuralEvidenceSha256,
   deterministicP99Nanoseconds,
   runtimeBinaryBytes: statSync(join(publishedResources, "runtime-suggestions.lkb")).size,
   frequencyReport: "reports/nepali-frequency-model-report.json",

@@ -282,6 +282,21 @@ describe("evidence-bound neural candidate promotion", () => {
     });
   });
 
+  it("rejects compute-plan preference without observed runtime placement", () => {
+    withFixture("baseline", (fixture) => {
+      delete fixture.benchmark.computePlacement.runtimePlacement;
+      writeJson(fixture.paths.benchmark, fixture.benchmark);
+
+      assert.throws(
+        () => promote(fixture),
+        (error) =>
+          error instanceof NeuralCandidatePromotionError &&
+          /observed Neural Engine execution/u.test(error.message)
+      );
+      assert.equal(existsProduction(fixture), false);
+    });
+  });
+
   it("restores the prior production directory after failures on either side of the swap", () => {
     withFixture("baseline", (fixture) => {
       write(join(fixture.paths.production, "previous.txt"), "previous-release");
@@ -731,7 +746,10 @@ function buildFixture(root, kind) {
     },
     computePlacement: {
       architectures: ["arm64"],
-      neuralEngineClaimAllowed: true
+      neuralEngineCompatibilityIndicated: true,
+      neuralEngineRuntimeObserved: true,
+      neuralEngineClaimAllowed: true,
+      runtimePlacement: runtimePlacementEvidence(artifactDescriptor)
     },
     failures: []
   };
@@ -1123,6 +1141,73 @@ function computePlanEvidence(artifact) {
       unknown: 0
     },
     usageUnavailableCount: 10
+  };
+}
+
+function runtimePlacementEvidence(descriptor) {
+  const runtimeRoles = {};
+  const roleExecutions = {};
+  for (const artifact of descriptor.artifacts) {
+    runtimeRoles[artifact.role] = {
+      bundleName: artifact.bundleName,
+      compiledBytes: artifact.compiledBytes,
+      compiledSha256: artifact.compiledSha256
+    };
+    roleExecutions[artifact.role] = {
+      bundleName: artifact.bundleName,
+      compiledSha256: artifact.compiledSha256,
+      neuralEngineComputeObserved: true,
+      predictionCount: descriptor.artifacts.length === 1
+        ? 40
+        : artifact.role === "encoder" ? 40 : 1_200
+    };
+  }
+  const coreMLPredictionCount = Object.values(roleExecutions)
+    .reduce((total, role) => total + role.predictionCount, 0);
+  return {
+    schemaVersion: 1,
+    recordType: "lekh-neural-runtime-placement-evidence",
+    status: "passed",
+    evidenceKind: "instruments-coreml-neural-engine-runtime-trace",
+    generatedAt: FIXED_TIME,
+    architecture: "arm64",
+    macOS: "26.0",
+    hardware: {
+      chip: "Apple M-series",
+      modelIdentifier: "MacFixture1,1"
+    },
+    capture: {
+      tool: "Instruments",
+      xcodeVersion: "26.0",
+      coreMLInstrument: true,
+      neuralEngineInstrument: true,
+      traceSha256: "7".repeat(64),
+      traceExportSha256: "8".repeat(64)
+    },
+    artifactIdentity: {
+      manifestSha256: descriptor.manifestSha256,
+      vocabSha256: descriptor.vocabSha256,
+      artifactSetSha256: descriptor.artifactSetSha256,
+      runtimeRoles
+    },
+    workload: {
+      measurementKind: "full-candidate-generation",
+      inputCorpusSha256: "9".repeat(64),
+      warmupIterations: 10,
+      measuredIterations: 40
+    },
+    correlation: {
+      processScoped: true,
+      predictionIntervalsCorrelated: true,
+      rolePathsResolved: true,
+      coreMLComputeLane: true,
+      neuralEngineHardwareTrack: true
+    },
+    observations: {
+      coreMLPredictionCount,
+      neuralEngineComputeEventCount: coreMLPredictionCount,
+      roleExecutions
+    }
   };
 }
 

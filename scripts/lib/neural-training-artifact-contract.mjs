@@ -18,6 +18,7 @@ import {
   resolve,
   sep
 } from "node:path";
+import { TextDecoder } from "node:util";
 import {
   inspectContainedDirectoryTree,
   inspectContainedRegularFile
@@ -40,6 +41,12 @@ import {
   resolveNeuralTrainingLayout,
   validateNeuralTrainingConfig
 } from "./neural-training-contract.mjs";
+import {
+  validateNeuralSplitTensorContract
+} from "./neural-tensor-contract.mjs";
+import {
+  validateNeuralVocabularyContract
+} from "./neural-vocabulary-contract.mjs";
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
@@ -260,6 +267,36 @@ export function verifyNeuralTrainingCandidate(options = {}) {
     "Candidate runtime manifest",
     failures
   );
+  const vocabulary = parseJsonEvidence(
+    evidence.vocabulary,
+    "Candidate vocabulary",
+    failures
+  );
+  const vocabularyValidation = vocabulary
+    ? validateNeuralVocabularyContract({
+        vocabulary,
+        config,
+        datasetManifest: dataset?.manifest,
+        datasetManifestSha256: dataset?.manifestEvidence?.sha256,
+        manifest
+      })
+    : null;
+  if (vocabularyValidation) {
+    failures.push(...vocabularyValidation.failures);
+  }
+  const tensorContractValidation =
+    canonicalLayout.kind === "split-attention" &&
+    manifest &&
+    vocabulary
+      ? validateNeuralSplitTensorContract({
+          config,
+          vocabulary,
+          tensorContract: manifest.tensorContract
+        })
+      : null;
+  if (tensorContractValidation) {
+    failures.push(...tensorContractValidation.failures);
+  }
 
   let descriptor = null;
   if (manifest && evidence.vocabulary) {
@@ -339,6 +376,8 @@ export function verifyNeuralTrainingCandidate(options = {}) {
     exportRunId: exportReport?.exportRunId ?? null,
     candidateManifestProductionEligible:
       manifest?.productionEligible ?? null,
+    vocabularyContractStatus: vocabularyValidation?.status ?? null,
+    tensorContractStatus: tensorContractValidation?.status ?? null,
     evidence: evidenceSummary(root, evidence),
     inputEvidence: {
       datasetManifestSha256: dataset?.manifestEvidence?.sha256 ?? null,
@@ -1882,8 +1921,10 @@ function inspectDirectory(root, path, label, failures) {
 
 function parseJsonEvidence(evidence, label, failures) {
   if (!evidence?.contents) return null;
+  const text = decodeUtf8Evidence(evidence.contents, label, failures);
+  if (text === null) return null;
   try {
-    const value = JSON.parse(evidence.contents.toString("utf8"));
+    const value = JSON.parse(text);
     if (!isRecord(value)) throw new TypeError("root must be an object");
     return value;
   } catch (error) {
@@ -1894,11 +1935,10 @@ function parseJsonEvidence(evidence, label, failures) {
 
 function parseJsonLinesEvidence(evidence, label, failures) {
   if (!evidence?.contents) return null;
+  const text = decodeUtf8Evidence(evidence.contents, label, failures);
+  if (text === null) return null;
   const rows = [];
-  for (const [index, line] of evidence.contents
-    .toString("utf8")
-    .split(/\r?\n/u)
-    .entries()) {
+  for (const [index, line] of text.split(/\r?\n/u).entries()) {
     if (line.length === 0) continue;
     try {
       const row = JSON.parse(line);
@@ -1911,6 +1951,17 @@ function parseJsonLinesEvidence(evidence, label, failures) {
     }
   }
   return rows;
+}
+
+function decodeUtf8Evidence(contents, label, failures) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(contents);
+  } catch (error) {
+    failures.push(
+      `${label} is not valid UTF-8: ${errorMessage(error)}`
+    );
+    return null;
+  }
 }
 
 function canonicalRecordedPath(root, value, label, failures) {

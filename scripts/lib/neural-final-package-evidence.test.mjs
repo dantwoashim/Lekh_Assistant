@@ -239,6 +239,40 @@ describe("final packaged neural evidence", () => {
       }
     );
   });
+
+  it("rejects obsolete receipt schemas and malformed UTF-8", () => {
+    withFixture(
+      "split",
+      ({ resourcesDirectory, promotionReceiptPath, promotionReceiptRoot }) => {
+        const receipt = JSON.parse(readFileSync(promotionReceiptPath, "utf8"));
+        receipt.schemaVersion = 1;
+        writeFileSync(
+          promotionReceiptPath,
+          `${JSON.stringify(receipt, null, 2)}\n`
+        );
+        expect(() => buildFinalPackagedNeuralEvidence({
+          resourcesDirectory,
+          promotionReceiptPath,
+          promotionReceiptRoot
+        })).toThrow(/not bound to the exact packaged manifest/u);
+      }
+    );
+
+    withFixture(
+      "split",
+      ({ resourcesDirectory, promotionReceiptPath, promotionReceiptRoot }) => {
+        writeFileSync(
+          promotionReceiptPath,
+          Buffer.from([0x7b, 0x22, 0x78, 0x22, 0x3a, 0xff, 0x7d])
+        );
+        expect(() => buildFinalPackagedNeuralEvidence({
+          resourcesDirectory,
+          promotionReceiptPath,
+          promotionReceiptRoot
+        })).toThrow(/not strict UTF-8 JSON/u);
+      }
+    );
+  });
 });
 
 function withFixture(kind, callback, options = {}) {
@@ -351,7 +385,7 @@ function withFixture(kind, callback, options = {}) {
     writeFileSync(
       promotionReceiptPath,
       `${JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         status: "passed-neural-candidate-promotion",
         generatedAt: "2026-07-24T00:00:00.000Z",
         promotionId: PROMOTION_ID,

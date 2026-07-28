@@ -112,7 +112,8 @@ describe("neural packaged-device measurements", () => {
       production: true
     });
     expect(result.valid).toBe(true);
-    expect(result.neuralEngineClaimAllowed).toBe(true);
+    expect(result.neuralEngineCompatibilityIndicated).toBe(true);
+    expect(result.neuralEngineClaimAllowed).toBe(false);
 
     delete splitDevice.computePlans.encoder;
     const incomplete = validateNeuralDeviceMeasurements([splitDevice], {
@@ -125,14 +126,15 @@ describe("neural packaged-device measurements", () => {
     );
   });
 
-  it("requires Neural Engine placement on arm64 and accepts optional Intel fallback evidence", () => {
+  it("requires Neural Engine compatibility on arm64 and accepts optional Intel fallback evidence", () => {
     const result = validateNeuralDeviceMeasurements([
       measurement("arm64", true),
       measurement("x86_64", false)
     ], { manifest, now, production: true });
 
     expect(result.valid).toBe(true);
-    expect(result.neuralEngineClaimAllowed).toBe(true);
+    expect(result.neuralEngineCompatibilityIndicated).toBe(true);
+    expect(result.neuralEngineClaimAllowed).toBe(false);
     expect(result.intelFallbackProven).toBe(true);
   });
 
@@ -141,6 +143,7 @@ describe("neural packaged-device measurements", () => {
       measurement("arm64", false)
     ], { manifest, now, production: false });
     expect(development.valid).toBe(true);
+    expect(development.neuralEngineCompatibilityIndicated).toBe(false);
     expect(development.neuralEngineClaimAllowed).toBe(false);
     expect(development.warnings).toHaveLength(1);
 
@@ -150,7 +153,7 @@ describe("neural packaged-device measurements", () => {
     ], { manifest, now, production: true });
     expect(production.valid).toBe(false);
     expect(production.issueCodes).toEqual(expect.arrayContaining([
-      "neural-device-measurements.neural-engine-plan-unproven",
+      "neural-device-measurements.neural-engine-compatibility-unproven",
       "neural-compute-plan.neural-engine-not-preferred:Mac-arm64"
     ]));
   });

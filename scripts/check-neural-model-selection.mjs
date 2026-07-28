@@ -13,6 +13,9 @@ import {
   NeuralModelSelectionError,
   buildNeuralSelectionReport
 } from "./lib/neural-model-selection.mjs";
+import {
+  validateNeuralRuntimePlacementEvidence
+} from "./lib/neural-runtime-placement-evidence.mjs";
 
 const ROOT = realpathSync(process.cwd());
 const startedAt = performance.now();
@@ -449,12 +452,17 @@ function validateBenchmarkReport({
   benchmark,
   descriptor
 }) {
+  const runtimePlacement = validateNeuralRuntimePlacementEvidence(
+    benchmark.computePlacement?.runtimePlacement,
+    { artifactDescriptor: descriptor }
+  );
   if (benchmark.status !== "passed-candidate-promotion-evidence" ||
       benchmark.proofMode !== "candidate-promotion" ||
       benchmark.singleForwardBenchmarkIsConsumerLatency !== false ||
       !Array.isArray(benchmark.failures) ||
       benchmark.failures.length !== 0 ||
       benchmark.computePlacement?.neuralEngineClaimAllowed !== true ||
+      runtimePlacement.neuralEngineClaimAllowed !== true ||
       !benchmark.computePlacement?.architectures?.includes("arm64")) {
     fail(
       `Candidate ${label} has not passed the packaged Apple Silicon Neural ` +

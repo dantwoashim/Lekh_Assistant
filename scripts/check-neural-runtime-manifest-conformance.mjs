@@ -10,6 +10,9 @@ import {
 import {
   validateNeuralRuntimeManifestVersion
 } from "./lib/neural-runtime-manifest-version.mjs";
+import {
+  validateNeuralRuntimePlacementEvidence
+} from "./lib/neural-runtime-placement-evidence.mjs";
 
 const root = process.cwd();
 const args = parseArgs(process.argv.slice(2));
@@ -343,6 +346,10 @@ function verifyEndToEndEvidence() {
     "Latency evidence must cover full candidate generation."
   );
   if (production) {
+    const placement = validateNeuralRuntimePlacementEvidence(
+      e2e.computePlacement?.runtimePlacement,
+      { artifactDescriptor: descriptor }
+    );
     require(
       e2e.status === "passed-production" &&
         e2e.proofMode === "production",
@@ -350,6 +357,7 @@ function verifyEndToEndEvidence() {
     );
     require(
       e2e.computePlacement?.neuralEngineClaimAllowed === true &&
+        placement.neuralEngineClaimAllowed === true &&
         e2e.computePlacement?.artifactSetSha256 ===
           descriptor.artifactSetSha256,
       "Production evidence must prove Neural Engine placement for this artifact set."

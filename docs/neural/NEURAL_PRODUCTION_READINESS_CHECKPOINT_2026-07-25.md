@@ -1,5 +1,9 @@
 # Neural Production Readiness Checkpoint — 2026-07-25
 
+> Superseded by the
+> [2026-07-28 checkpoint](NEURAL_PRODUCTION_READINESS_CHECKPOINT_2026-07-28.md).
+> This file is retained as an immutable historical record.
+
 This checkpoint records the current implementation, research conclusions,
 verified evidence, and unresolved findings for the Lekh neural transliterator.
 It is intentionally honest: the neural model is **not yet production-ready**.

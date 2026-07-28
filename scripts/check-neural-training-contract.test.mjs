@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
-  symlinkSync
+  symlinkSync,
+  writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,6 +63,77 @@ describe("Phase 4 architecture-neutral candidate gate", () => {
         "split-attention-incremental-v1"
       );
       assert.equal(evidence.candidateManifestProductionEligible, null);
+    });
+  });
+
+  for (const configPath of [baselineConfig, attentionConfig]) {
+    it(`accepts a semantically valid vocabulary for ${configPath}`, () => {
+      withWorkspace(({ candidate, report }) => {
+        writeCandidateVocabulary(candidate, configPath);
+        const command = run(
+          "--config",
+          configPath,
+          "--candidate-root",
+          candidate,
+          "--report",
+          report
+        );
+        assert.equal(command.status, 0, command.stderr || command.stdout);
+        const evidence = readJson(report);
+        assert.equal(
+          evidence.vocabularyContractStatus,
+          "passed-neural-vocabulary-contract"
+        );
+      });
+    });
+  }
+
+  it("rejects a present vocabulary with a forged inverse token map", () => {
+    withWorkspace(({ candidate, report }) => {
+      writeCandidateVocabulary(candidate, baselineConfig, (vocabulary) => {
+        vocabulary.output.idsByToken["न"] = 99;
+      });
+      const command = run(
+        "--config",
+        baselineConfig,
+        "--candidate-root",
+        candidate,
+        "--report",
+        report
+      );
+      assert.equal(command.status, 1, command.stderr || command.stdout);
+      assert.match(
+        readJson(report).failures.join("\n"),
+        /idsByToken is not the contiguous inverse/u
+      );
+    });
+  });
+
+  it("rejects malformed UTF-8 before parsing candidate JSON", () => {
+    withWorkspace(({ candidate, report }) => {
+      mkdirSync(candidate, { recursive: true });
+      const malformed = Buffer.concat([
+        Buffer.from('{"schemaVersion":1,"modelId":"', "utf8"),
+        Buffer.from([0xC3, 0x28]),
+        Buffer.from('"}\n', "utf8")
+      ]);
+      writeFileSync(
+        join(candidate, "LekhNeuralTransliterator.vocab.json"),
+        malformed
+      );
+      const command = run(
+        "--config",
+        baselineConfig,
+        "--candidate-root",
+        candidate,
+        "--report",
+        report
+      );
+      assert.equal(command.status, 1, command.stderr || command.stdout);
+      assert.match(
+        readJson(report).failures.join("\n"),
+        /Candidate vocabulary is not valid UTF-8/u
+      );
     });
   });
 
@@ -175,4 +248,68 @@ function run(...args) {
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function writeCandidateVocabulary(candidate, configPath, mutate = () => {}) {
+  const config = readJson(join(root, configPath));
+  const datasetPath = join(root, config.training.datasetManifest);
+  const datasetBytes = readFileSync(datasetPath);
+  const dataset = JSON.parse(datasetBytes.toString("utf8"));
+  const inputTokens = ["<pad>", "<s>", "</s>", "<unk>", "a", "b"];
+  const outputTokens = ["<pad>", "<s>", "</s>", "<unk>", "न", "े"];
+  const vocabulary = {
+    schemaVersion: 1,
+    modelId: config.modelId,
+    generatedAt: "2026-07-28T00:00:00Z",
+    tokenization: "unicode-scalar-character",
+    input: vocabularySide(
+      inputTokens,
+      config.decoder.maxInputGraphemes
+    ),
+    output: vocabularySide(
+      outputTokens,
+      config.decoder.maxOutputGraphemes
+    ),
+    decoder: {
+      type: config.decoder.type,
+      beamWidth: config.decoder.beamWidth,
+      maxSteps: config.decoder.maxOutputGraphemes - 1,
+      outputSequenceValidation: "devanagari-word-sequence-v1",
+      rejectWhitespaceCandidates: true,
+      rejectLatinCandidates: true
+    },
+    dataset: {
+      manifest: config.training.datasetManifest,
+      manifestSha256: createHash("sha256")
+        .update(datasetBytes)
+        .digest("hex"),
+      splitSha256: structuredClone(dataset.sha256)
+    },
+    nativeRuntimePolicy: {
+      asyncOnly: true,
+      neverInvokeInSecureFields: true,
+      failOpenRawTypingOnError: true,
+      neuralTailOnly: true
+    }
+  };
+  mutate(vocabulary);
+  mkdirSync(candidate, { recursive: true });
+  writeFileSync(
+    join(candidate, "LekhNeuralTransliterator.vocab.json"),
+    `${JSON.stringify(vocabulary, null, 2)}\n`
+  );
+}
+
+function vocabularySide(tokensById, maxLength) {
+  return {
+    maxLength,
+    tokensById,
+    idsByToken: Object.fromEntries(
+      tokensById.map((token, id) => [token, id])
+    ),
+    padId: 0,
+    sosId: 1,
+    eosId: 2,
+    unkId: 3
+  };
 }

@@ -54,10 +54,11 @@ function validate(value, production = false) {
 }
 
 describe("neural compute-plan evidence", () => {
-  it("permits a Neural Engine claim only when the plan actually prefers it", () => {
+  it("reports compatibility without turning anticipation into a runtime claim", () => {
     const result = validate(evidence("arm64"), true);
     expect(result.valid).toBe(true);
-    expect(result.neuralEngineClaimAllowed).toBe(true);
+    expect(result.neuralEngineCompatibilityIndicated).toBe(true);
+    expect(result.neuralEngineClaimAllowed).toBe(false);
     expect(result.deterministicFallbackProven).toBe(false);
   });
 
@@ -70,6 +71,7 @@ describe("neural compute-plan evidence", () => {
 
     const development = validate(value);
     expect(development.valid).toBe(true);
+    expect(development.neuralEngineCompatibilityIndicated).toBe(false);
     expect(development.neuralEngineClaimAllowed).toBe(false);
     expect(development.warnings).toHaveLength(1);
 

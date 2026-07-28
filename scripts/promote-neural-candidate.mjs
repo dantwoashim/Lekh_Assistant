@@ -41,6 +41,9 @@ import {
   validateNeuralSelectionReport
 } from "./lib/neural-model-selection.mjs";
 import {
+  validateNeuralRuntimePlacementEvidence
+} from "./lib/neural-runtime-placement-evidence.mjs";
+import {
   computeNeuralProductionPromotionIdFromIdentity,
   NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION
 } from "./lib/neural-production-promotion-receipt.mjs";
@@ -921,12 +924,22 @@ function verifyPackagedBenchmarkEvidence({
       !benchmarkReport.computePlacement.architectures.includes("arm64")) {
     fail("Candidate benchmark must prove Neural Engine placement on Apple Silicon.");
   }
+  const runtimePlacement = validateNeuralRuntimePlacementEvidence(
+    benchmarkReport.computePlacement?.runtimePlacement,
+    { artifactDescriptor }
+  );
+  if (!runtimePlacement.neuralEngineClaimAllowed) {
+    fail(
+      "Candidate benchmark requires observed Neural Engine execution from " +
+      "a correlated Core ML Instruments trace for the exact artifact set."
+    );
+  }
   const deviceValidation = validateNeuralDeviceMeasurements(devices, {
     artifactDescriptor,
     production: true
   });
   if (!deviceValidation.valid ||
-      deviceValidation.neuralEngineClaimAllowed !== true) {
+      deviceValidation.neuralEngineCompatibilityIndicated !== true) {
     fail(
       `Candidate benchmark device evidence is invalid: ` +
       `${deviceValidation.issueCodes.join(", ")}.`

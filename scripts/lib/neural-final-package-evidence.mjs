@@ -1,10 +1,14 @@
 import { basename, dirname, join, resolve } from "node:path";
+import { TextDecoder } from "node:util";
 import {
   inspectContainedRegularFile
 } from "./neural-artifact-filesystem.mjs";
 import {
   resolveNeuralArtifactDescriptor
 } from "./neural-artifact-descriptor.mjs";
+import {
+  NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION
+} from "./neural-production-promotion-receipt.mjs";
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
@@ -187,16 +191,25 @@ function resolvePromotionEvidence(options, descriptor) {
   );
   let receipt;
   try {
-    receipt = JSON.parse(receiptEvidence.contents.toString("utf8"));
+    receipt = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(
+        receiptEvidence.contents
+      )
+    );
   } catch (error) {
-    fail(`Neural promotion receipt is invalid JSON: ${errorMessage(error)}`);
+    fail(
+      "Neural promotion receipt is not strict UTF-8 JSON: " +
+      errorMessage(error)
+    );
   }
   requireRecord(receipt, "Neural promotion receipt");
   const promotionId = requireSha256(
     receipt.promotionId,
     "Neural promotion receipt promotionId"
   );
-  if (receipt.schemaVersion !== 1 ||
+  if (
+      receipt.schemaVersion !==
+        NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION ||
       receipt.status !== "passed-neural-candidate-promotion" ||
       receipt.candidateImmutable !== true ||
       receipt.trainingRunId !== descriptor.manifest.trainingRunId ||

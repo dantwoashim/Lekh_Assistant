@@ -48,7 +48,7 @@ export function validateNeuralDeviceMeasurements(devices, context) {
   const production = context.production === true;
   const architectures = new Set();
   const identities = new Set();
-  let neuralEngineClaimAllowed = false;
+  let neuralEngineCompatibilityIndicated = false;
   let intelFallbackProven = false;
 
   if (!Array.isArray(devices) || devices.length === 0 || devices.length > 32) {
@@ -154,9 +154,9 @@ export function validateNeuralDeviceMeasurements(devices, context) {
       if (roleValidations.length !== artifacts.length) continue;
       if (device.architecture === "arm64" &&
           roleValidations.every((validation) =>
-            validation.neuralEngineClaimAllowed
+            validation.neuralEngineCompatibilityIndicated
           )) {
-        neuralEngineClaimAllowed = true;
+        neuralEngineCompatibilityIndicated = true;
       }
       if (device.architecture === "x86_64" &&
           roleValidations.every((validation) =>
@@ -184,8 +184,11 @@ export function validateNeuralDeviceMeasurements(devices, context) {
       issues.push(...computeValidation.issueCodes.map((issue) => `${issue}:${label}`));
     }
     warnings.push(...computeValidation.warnings.map((warning) => `${label}: ${warning}`));
-    if (device.architecture === "arm64" && computeValidation.neuralEngineClaimAllowed) {
-      neuralEngineClaimAllowed = true;
+    if (
+      device.architecture === "arm64" &&
+      computeValidation.neuralEngineCompatibilityIndicated
+    ) {
+      neuralEngineCompatibilityIndicated = true;
     }
     if (device.architecture === "x86_64" && computeValidation.deterministicFallbackProven) {
       intelFallbackProven = true;
@@ -196,8 +199,10 @@ export function validateNeuralDeviceMeasurements(devices, context) {
     if (!architectures.has("arm64")) {
       issues.push("neural-device-measurements.architecture-missing:arm64");
     }
-    if (!neuralEngineClaimAllowed) {
-      issues.push("neural-device-measurements.neural-engine-plan-unproven");
+    if (!neuralEngineCompatibilityIndicated) {
+      issues.push(
+        "neural-device-measurements.neural-engine-compatibility-unproven"
+      );
     }
   }
 
@@ -209,7 +214,8 @@ export function validateNeuralDeviceMeasurements(devices, context) {
       issueCodes: Object.freeze([...new Set(issues)].sort()),
       warnings: Object.freeze([...warnings]),
       architectures: Object.freeze([...architectures].sort()),
-      neuralEngineClaimAllowed,
+      neuralEngineCompatibilityIndicated,
+      neuralEngineClaimAllowed: false,
       intelFallbackProven,
       production
     });

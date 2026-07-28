@@ -318,7 +318,7 @@ because Core ML was asked to make the Neural Engine available; actual placement
 and final packaged performance still require proof.
 
 See the
-[latest neural production-readiness checkpoint](docs/neural/NEURAL_PRODUCTION_READINESS_CHECKPOINT_2026-07-25.md)
+[latest neural production-readiness checkpoint](docs/neural/NEURAL_PRODUCTION_READINESS_CHECKPOINT_2026-07-28.md)
 for measured results, resolved findings, and remaining blockers.
 
 ## Known limitations

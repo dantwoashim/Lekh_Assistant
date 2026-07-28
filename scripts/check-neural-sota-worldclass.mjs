@@ -18,6 +18,9 @@ import {
 import {
   validateNeuralSelectionReport
 } from "./lib/neural-model-selection.mjs";
+import {
+  validateNeuralRuntimePlacementEvidence
+} from "./lib/neural-runtime-placement-evidence.mjs";
 
 const ROOT = realpathSync(process.cwd());
 const startedAt = performance.now();
@@ -339,6 +342,10 @@ function verifyProductionReadiness() {
 
 function verifyProductionE2E(reportValue, descriptor, manifest) {
   const identity = reportValue.artifactIdentity;
+  const placement = validateNeuralRuntimePlacementEvidence(
+    reportValue.computePlacement?.runtimePlacement,
+    { artifactDescriptor: descriptor }
+  );
   if (reportValue.status !== "passed-production" ||
       reportValue.proofMode !== "production" ||
       reportValue.singleForwardBenchmarkIsConsumerLatency !== false ||
@@ -348,6 +355,7 @@ function verifyProductionE2E(reportValue, descriptor, manifest) {
       identity?.vocabSha256 !== descriptor.vocabSha256 ||
       identity?.artifactSetSha256 !== descriptor.artifactSetSha256 ||
       reportValue.computePlacement?.neuralEngineClaimAllowed !== true ||
+      placement.neuralEngineClaimAllowed !== true ||
       reportValue.computePlacement?.artifactSetSha256 !==
         descriptor.artifactSetSha256 ||
       !Number.isFinite(reportValue.performance?.p99Ms) ||

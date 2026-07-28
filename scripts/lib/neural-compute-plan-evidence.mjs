@@ -127,7 +127,7 @@ export function validateNeuralComputePlanEvidence(evidence, context) {
     issues.push("neural-compute-plan.neural-summary-invalid");
   }
 
-  let neuralEngineClaimAllowed = false;
+  let neuralEngineCompatibilityIndicated = false;
   let deterministicFallbackProven = false;
   if (evidence.architecture === "arm64") {
     if (!neuralAvailable) {
@@ -149,7 +149,7 @@ export function validateNeuralComputePlanEvidence(evidence, context) {
       if (production) issues.push("neural-compute-plan.neural-engine-not-preferred");
       else warnings.push("Core ML supports Neural Engine execution for some operations but currently prefers another device.");
     } else {
-      neuralEngineClaimAllowed = true;
+      neuralEngineCompatibilityIndicated = true;
     }
   } else if (evidence.architecture === "x86_64") {
     const preferredFallback = (evidence.preferredComputeDeviceCounts?.cpu ?? 0) +
@@ -161,14 +161,20 @@ export function validateNeuralComputePlanEvidence(evidence, context) {
     }
   }
 
-  return result(neuralEngineClaimAllowed, deterministicFallbackProven, environmentCapabilityLimited);
+  return result(
+    neuralEngineCompatibilityIndicated,
+    deterministicFallbackProven,
+    environmentCapabilityLimited
+  );
 
-  function result(neuralClaim, fallbackProven, capabilityLimited) {
+  function result(neuralCompatibility, fallbackProven, capabilityLimited) {
     return Object.freeze({
       valid: issues.length === 0,
       issueCodes: Object.freeze([...new Set(issues)].sort()),
       warnings: Object.freeze([...warnings]),
-      neuralEngineClaimAllowed: neuralClaim,
+      neuralEngineCompatibilityIndicated: neuralCompatibility,
+      // MLComputePlan is anticipated device usage, never runtime proof.
+      neuralEngineClaimAllowed: false,
       deterministicFallbackProven: fallbackProven,
       environmentCapabilityLimited: capabilityLimited,
       production

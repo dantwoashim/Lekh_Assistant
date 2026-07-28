@@ -4,6 +4,7 @@ import { existsSync, lstatSync, renameSync, unlinkSync, writeFileSync } from "no
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
+import { TextDecoder } from "node:util";
 import {
   inspectContainedRegularFile
 } from "./lib/neural-artifact-filesystem.mjs";
@@ -11,6 +12,9 @@ import {
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
 import { validateNeuralDeviceMeasurements } from "./lib/neural-device-measurements.mjs";
+import {
+  validateNeuralRuntimePlacementEvidence
+} from "./lib/neural-runtime-placement-evidence.mjs";
 
 const root = process.cwd();
 const args = new Map();
@@ -36,8 +40,12 @@ const bundle = resolve(args.get("bundle") ?? process.env.LEKH_NEURAL_BENCH_BUNDL
 ));
 const production = args.has("production");
 const promotionEvidence = args.has("promotion-evidence");
-if (production && promotionEvidence) {
-  console.error("--production and --promotion-evidence are mutually exclusive.");
+const placementCapture = args.has("placement-capture");
+if ([production, promotionEvidence, placementCapture].filter(Boolean).length > 1) {
+  console.error(
+    "--production, --promotion-evidence, and --placement-capture are " +
+    "mutually exclusive."
+  );
   process.exit(2);
 }
 const runNonce = randomUUID();
@@ -48,6 +56,8 @@ const report = resolve(args.get("report") ?? join(
     ? "neural-native-service-e2e-production-report.json"
     : promotionEvidence
       ? "neural-native-service-e2e-candidate-promotion-report.json"
+      : placementCapture
+        ? "neural-native-service-e2e-placement-capture-report.json"
       : "neural-native-service-e2e-report.json"
 ));
 assertContainedOutput(root, report);
@@ -92,6 +102,7 @@ const result = spawnSync(
       LEKH_NEURAL_BENCH_BUNDLE: bundle,
       LEKH_NEURAL_BENCH_REPORT: stagedReport,
       LEKH_NEURAL_BENCH_PRODUCTION: production ? "1" : "0",
+      LEKH_NEURAL_PLACEMENT_CAPTURE: placementCapture ? "1" : "0",
       LEKH_NEURAL_BENCH_NONCE: runNonce
     },
     encoding: "utf8",
@@ -159,6 +170,55 @@ if (artifactDescriptor.runtimeModelContract === "single-seq2seq-v1") {
     ])
   );
 }
+let runtimePlacementEvidence = null;
+let runtimePlacementEvidenceSha256 = null;
+if (production || promotionEvidence) {
+  const placementPath = args.get("runtime-placement-evidence");
+  if (!placementPath) {
+    console.error(
+      "Production and candidate-promotion benchmarks require " +
+      "--runtime-placement-evidence from a live Core ML + Neural Engine " +
+      "Instruments trace."
+    );
+    process.exit(2);
+  }
+  try {
+    const placementFile = inspectContainedRegularFile(
+      root,
+      resolve(root, placementPath),
+      {
+        label: "Observed neural runtime-placement evidence",
+        includeContents: true,
+        maxBytes: 4 * 1024 * 1024
+      }
+    );
+    runtimePlacementEvidence = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(
+        placementFile.contents
+      )
+    );
+    runtimePlacementEvidenceSha256 = placementFile.sha256;
+  } catch (error) {
+    console.error(
+      "Runtime-placement evidence is not safe strict UTF-8 JSON: " +
+      `${error instanceof Error ? error.message : String(error)}`
+    );
+    process.exit(1);
+  }
+  const placementValidation = validateNeuralRuntimePlacementEvidence(
+    runtimePlacementEvidence,
+    {
+      artifactDescriptor
+    }
+  );
+  if (!placementValidation.valid) {
+    console.error(
+      "Observed Neural Engine runtime placement is invalid: " +
+      placementValidation.issueCodes.join(", ")
+    );
+    process.exit(1);
+  }
+}
 const expectedStatus = production ? "passed-production" : "passed-experimental";
 if (parsed.status !== expectedStatus ||
     parsed.performance?.p95Ms >= parsed.targetP95Ms ||
@@ -204,14 +264,23 @@ if (production || promotionEvidence) {
   }
   parsed.computePlacement = {
     architectures: validation.architectures,
-    neuralEngineClaimAllowed: validation.neuralEngineClaimAllowed,
+    neuralEngineCompatibilityIndicated:
+      validation.neuralEngineCompatibilityIndicated,
+    neuralEngineRuntimeObserved: true,
+    neuralEngineClaimAllowed: true,
     runtimeRoles: artifactDescriptor.artifacts.map((artifact) => artifact.role),
-    artifactSetSha256: artifactDescriptor.artifactSetSha256
+    artifactSetSha256: artifactDescriptor.artifactSetSha256,
+    runtimePlacementEvidenceSha256,
+    runtimePlacement: runtimePlacementEvidence
   };
 }
 parsed.proofMode = production
   ? "production"
-  : promotionEvidence ? "candidate-promotion" : "experimental";
+  : promotionEvidence
+    ? "candidate-promotion"
+    : placementCapture
+      ? "placement-capture"
+      : "experimental";
 if (promotionEvidence) parsed.status = "passed-candidate-promotion-evidence";
 writeFileSync(stagedReport, `${JSON.stringify(parsed, null, 2)}\n`);
 renameSync(stagedReport, report);

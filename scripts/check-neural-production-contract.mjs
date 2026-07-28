@@ -18,6 +18,8 @@ const requiredFiles = [
   "scripts/check-neural-training-contract.mjs",
   "scripts/evaluate-neural-open-vocab-model.mjs",
   "scripts/benchmark-neural-coreml-device.mjs",
+  "scripts/check-neural-runtime-placement-evidence.mjs",
+  "scripts/lib/neural-runtime-placement-evidence.mjs",
   "scripts/check-neural-native-integration.mjs",
   "scripts/prepare-neural-training-run.mjs",
   "scripts/check-neural-production-promotion.mjs",
@@ -40,6 +42,16 @@ requireText(specText, "lekh-open-vocab-seq2seq-v1", "spec must define the baseli
 requireText(specText, "lekh-open-vocab-bigru-attention-v1", "spec must define the split-attention artifact id");
 requireText(specText, "models/macos/LekhNeuralTransliterator.production", "spec must name the atomic production directory");
 requireText(specText, "artifactSetSha256", "spec must define the runtime artifact-set identity");
+requireText(
+  specText,
+  "`MLComputePlan` is anticipated device usage",
+  "spec must not treat a compute plan as observed Neural Engine execution"
+);
+requireText(
+  specText,
+  "NEURAL_ENGINE_RUNTIME_PLACEMENT.md",
+  "spec must define the observed runtime-placement gate"
+);
 requireText(specText, "no network inference", "spec must forbid network inference");
 requireText(specText, "no inference in secure fields", "spec must forbid secure-field inference");
 requireText(specText, "autoCommitEligible", "spec must define candidate acceptance safety");

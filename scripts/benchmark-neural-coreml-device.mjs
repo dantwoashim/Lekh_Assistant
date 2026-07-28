@@ -6,6 +6,9 @@ import {
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
 import { validateNeuralDeviceMeasurements } from "./lib/neural-device-measurements.mjs";
+import {
+  validateNeuralRuntimePlacementEvidence
+} from "./lib/neural-runtime-placement-evidence.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -74,6 +77,16 @@ if (deviceValidation) {
   failures.push(...deviceValidation.issueCodes);
   warnings.push(...deviceValidation.warnings);
 }
+const runtimePlacementValidation = descriptor &&
+  measurementReport?.computePlacement?.runtimePlacement
+  ? validateNeuralRuntimePlacementEvidence(
+      measurementReport.computePlacement.runtimePlacement,
+      { artifactDescriptor: descriptor }
+    )
+  : null;
+if (runtimePlacementValidation && !runtimePlacementValidation.valid) {
+  failures.push(...runtimePlacementValidation.issueCodes);
+}
 
 if (production) {
   if (!descriptor) failures.push("Production benchmark requires a complete verified runtime artifact set.");
@@ -87,6 +100,12 @@ if (production) {
     measurementReport?.artifactIdentity?.artifactSetSha256 !== descriptor.artifactSetSha256
   )) {
     failures.push("Production benchmark report is stale for the current runtime artifact set.");
+  }
+  if (!runtimePlacementValidation?.neuralEngineClaimAllowed) {
+    failures.push(
+      "Production benchmark requires observed Neural Engine execution from " +
+      "a correlated Core ML Instruments trace."
+    );
   }
   if (summary.p99Ms === null || summary.p99Ms >= 50) failures.push(`Production full-candidate p99 must be <50 ms; got ${summary.p99Ms}.`);
 }
@@ -113,7 +132,15 @@ finish(status, failures.length === 0 ? 0 : 1, {
   performance: summary,
   computePlacement: deviceValidation ? {
     architectures: deviceValidation.architectures,
-    neuralEngineClaimAllowed: deviceValidation.neuralEngineClaimAllowed,
+    neuralEngineCompatibilityIndicated:
+      deviceValidation.neuralEngineCompatibilityIndicated,
+    neuralEngineRuntimeObserved:
+      runtimePlacementValidation?.neuralEngineClaimAllowed === true,
+    neuralEngineClaimAllowed:
+      runtimePlacementValidation?.neuralEngineClaimAllowed === true,
+    runtimePlacementEvidenceSha256:
+      measurementReport?.computePlacement
+        ?.runtimePlacementEvidenceSha256 ?? null,
     intelFallbackProven: deviceValidation.intelFallbackProven
   } : null,
   failures,

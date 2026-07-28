@@ -25,6 +25,9 @@ import {
 import {
   validateNeuralSelectionReport
 } from "./neural-model-selection.mjs";
+import {
+  validateNeuralRuntimePlacementEvidence
+} from "./neural-runtime-placement-evidence.mjs";
 
 export const NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 2;
 
@@ -525,6 +528,21 @@ function validateRetainedEvidenceGraph({
       !Array.isArray(benchmark.failures) ||
       benchmark.failures.length !== 0) {
     fail("Retained packaged benchmark evidence is stale or incomplete.");
+  }
+  const runtimePlacement = validateNeuralRuntimePlacementEvidence(
+    benchmark.computePlacement?.runtimePlacement,
+    {
+      artifactDescriptor: {
+        ...descriptor,
+        manifestSha256: receipt.inputs.candidateManifest.sha256
+      }
+    }
+  );
+  if (!runtimePlacement.neuralEngineClaimAllowed) {
+    fail(
+      "Retained packaged benchmark lacks observed Neural Engine runtime " +
+      "placement for the exact promoted artifact set."
+    );
   }
 
   if (comparison.status !== "passed-official-benchmark-evaluation" ||

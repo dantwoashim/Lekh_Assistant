@@ -317,6 +317,16 @@ private func benchmarkNeuralServiceIfRequested() {
     require(false, "Packaged neural benchmark requires a fresh run nonce")
     return
   }
+  let placementCapture =
+    ProcessInfo.processInfo.environment["LEKH_NEURAL_PLACEMENT_CAPTURE"] == "1"
+  if placementCapture {
+    print(
+      "neural-placement-capture-ready pid=\(ProcessInfo.processInfo.processIdentifier) " +
+        "attach Instruments now; inference starts in 20 seconds"
+    )
+    fflush(stdout)
+    Thread.sleep(forTimeInterval: 20)
+  }
   let initializationStarted = DispatchTime.now().uptimeNanoseconds
   let service = LekhNeuralCandidateService(bundle: bundle)
   let initializationMilliseconds = Double(
@@ -353,10 +363,11 @@ private func benchmarkNeuralServiceIfRequested() {
   }
 
   let tokens = ["prashasan", "nagarikta", "mantralaya", "sambidhan", "paryatan"]
+  let benchmarkIterations = placementCapture ? 9 : 3
   var samples: [UInt64] = []
   var steadyStateByToken: [String: [Double]] = [:]
   var observed: [String: [String]] = [:]
-  for iteration in 0..<3 {
+  for iteration in 0..<benchmarkIterations {
     for token in tokens {
       let started = DispatchTime.now().uptimeNanoseconds
       var completed = false

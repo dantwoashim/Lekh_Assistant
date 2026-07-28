@@ -108,6 +108,13 @@ Training input snapshots bind:
 - runtime versions;
 - training and export run identities.
 
+Canonical publication uses the exact fail-closed toolchain checked by
+`scripts/check-neural-open-vocab-toolchain.py`: Python 3.11, PyTorch 2.7.0,
+NumPy 1.26.4, and Core ML Tools 9.0. A stale virtual environment is not
+accepted, and `requirements/neural-open-vocab.lock` pins the complete runtime
+dependency closure. Final training remains on CPU because seeded PyTorch 2.7
+MPS runs were not bitwise reproducible on the current Apple Silicon host.
+
 Vocabulary construction uses train rows only. Normalized inputs may not cross
 train/dev/test. Candidate artifacts are written only under their immutable
 `data/generated/neural-open-vocab-model/<modelId>` root; promotion alone may
@@ -171,11 +178,20 @@ Required production evidence:
 - Core ML configuration uses `.all`;
 - each runtime role has a fresh compute-plan record;
 - every Apple Silicon runtime role has supported and preferred Neural Engine
-  operations;
+  operations as compatibility evidence;
+- a live Instruments capture contains both the Core ML Instrument and Neural
+  Engine Instrument;
+- the Core ML compute lane is process-scoped and correlated with Neural Engine
+  hardware activity inside the exact prediction intervals;
+- every runtime role is resolved to the exact compiled SHA-256 and has observed
+  Neural Engine compute, not merely anticipated support;
 - the report binds `artifactSetSha256`.
 
 Intel fallback evidence is useful but optional. It cannot support a Neural
-Engine claim.
+Engine claim. `MLComputePlan` is anticipated device usage and cannot support
+that claim by itself. The authoritative runtime contract is implemented in
+`scripts/lib/neural-runtime-placement-evidence.mjs`; capture instructions are
+in `docs/neural/NEURAL_ENGINE_RUNTIME_PLACEMENT.md`.
 
 ## Immutable qualification and promotion
 
@@ -185,7 +201,10 @@ Promotion is deliberately two-stage:
 2. Package that exact candidate with
    `LEKH_NEURAL_PACKAGE_MODE=candidate-promotion`.
 3. Run `node scripts/benchmark-neural-native-service.mjs
-   --promotion-evidence`; the report must be
+   --placement-capture` under Instruments, normalize and validate the trace,
+   then run `node scripts/benchmark-neural-native-service.mjs
+   --promotion-evidence --runtime-placement-evidence <evidence.json>`; the
+   report must be
    `passed-candidate-promotion-evidence`.
 4. Evaluate the exact exported predictions with
    `node scripts/evaluate-neural-open-vocab-model.mjs --production`.
