@@ -91,6 +91,17 @@ vocabularies, and sampled rows still match exactly. Use
 `--restart-training` only when intentionally discarding an incompatible or
 corrupt recovery; it cannot be combined with `--skip-train`.
 
+For multi-hour production runs on macOS, use the shell-free detached launcher:
+
+```sh
+npm run neural:open-vocab:train:detached -- \
+  --config data/neural/training/open-vocab-bigru-attention-v1.config.json
+```
+
+It verifies the pinned Python toolchain, runs under `caffeinate`, writes a
+private log and status record under `.tmp/neural-training/`, and survives the
+launching terminal or automation session. It refuses a live candidate lock.
+
 Each successful run produces one immutable candidate root containing the
 checkpoint, training report, Core ML packages, compiled runtime artifacts,
 vocabulary, candidate manifest, export report, locked-gold predictions, and
