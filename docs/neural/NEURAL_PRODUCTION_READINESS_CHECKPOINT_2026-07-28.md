@@ -125,6 +125,48 @@ Core AI, introduced at WWDC26, is not a drop-in reason to raise Lekh's macOS 13
 deployment floor. The current ML Program design remains the compatible
 production path for supported Lekh Macs.
 
+### Accuracy research and bounded fallback
+
+The frozen AI4Bharat IndicXlit reference has already been measured on Lekh's
+exact 4,085-row official benchmark. Without unigram rescoring it reaches
+0.668543 overall top-1, 0.832313 overall top-3, 0.804015 native-frequency
+top-1, 0.551020 Indian-name top-1, and 0.490820 foreign-name top-1. Lekh's
+production comparison gate allows only the documented near-parity margins; it
+will not be weakened to make a candidate pass.
+
+The [Aksharantar paper](https://aclanthology.org/2023.findings-emnlp.4.pdf)
+explains why the current attention run is a challenger, not a guaranteed
+winner. IndicXlit is an approximately 11-million-parameter, six-layer
+character Transformer trained multilingual on about 24.8 million pairs. Its
+reported unigram reranking improves average transliteration accuracy by about
+12%, while helping names much less. The paper also identifies vowels, similar
+consonants, and contextual ambiguity as the dominant error classes. The
+[sequence-level knowledge-distillation paper](https://aclanthology.org/D16-1139/)
+shows a research-backed route for transferring sequence behavior to a smaller
+student if direct supervised training misses the reference floor. Apple's
+[Neural Engine Transformer guidance](https://machinelearning.apple.com/research/neural-engine-transformers)
+provides the relevant fixed-shape implementation constraints if a compact
+Transformer challenger becomes necessary.
+
+The fallback decision is therefore measurement-driven:
+
+1. Finish and evaluate the in-flight attention model without changing its
+   frozen inputs.
+2. Train the distinct canonical GRU baseline and run exact deterministic
+   selection.
+3. If acceptable outputs are already in the beam but ordered incorrectly,
+   prototype a digest-bound unigram reranker and require Python/Swift ranking
+   parity before any new candidate run.
+4. If acceptable outputs are absent from the beam, retain the same locked
+   benchmark isolation and screen, in order, the complete 2.397-million-row
+   Nepali training source, sequence-level teacher distillation, and a compact
+   fixed-shape Transformer.
+5. Promote only a candidate that passes the existing gold, official,
+   full-service latency, safety, placement, and artifact-identity gates.
+
+No fallback may consume the official benchmark as training data or turn a
+comparison-only teacher into a shipping dependency.
+
 ### Canonical dataset reconstruction
 
 The production read-only reconstruction gate initially rejected the local
