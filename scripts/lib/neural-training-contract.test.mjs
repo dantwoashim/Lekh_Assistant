@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  canonicalNeuralTrainingConfigPath,
   canonicalJsonText,
   canonicalJsonSha256,
   configuredNeuralTrainingContract,
@@ -43,6 +44,24 @@ describe("neural training implementation contract", () => {
       "Context language-model rescoring is disabled and not implemented."
     ]);
     expect(configuredNeuralTrainingContract(config).architecture.attentionDim).toBe(256);
+  });
+
+  it("maps every allowlisted candidate id to its canonical config", () => {
+    expect(
+      canonicalNeuralTrainingConfigPath(
+        "lekh-open-vocab-seq2seq-v1",
+        process.cwd()
+      )
+    ).toBe(configPath);
+    expect(
+      canonicalNeuralTrainingConfigPath(
+        "lekh-open-vocab-bigru-attention-v1",
+        process.cwd()
+      )
+    ).toBe(attentionConfigPath);
+    expect(() =>
+      canonicalNeuralTrainingConfigPath("unregistered-model", process.cwd())
+    ).toThrow(/Unsupported neural candidate modelId/u);
   });
 
   it("resolves the complete baseline candidate layout", () => {

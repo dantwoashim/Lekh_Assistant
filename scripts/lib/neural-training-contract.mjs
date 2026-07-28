@@ -88,6 +88,19 @@ export class NeuralTrainingLayoutError extends Error {
   }
 }
 
+export function canonicalNeuralTrainingConfigPath(
+  modelId,
+  repoRoot = process.cwd()
+) {
+  const profile = ARCHITECTURE_PROFILES[modelId];
+  if (!profile) {
+    throw new NeuralTrainingLayoutError(
+      `Unsupported neural candidate modelId: ${JSON.stringify(modelId)}.`
+    );
+  }
+  return resolve(repoRoot, profile.configPath);
+}
+
 /**
  * Resolve the immutable candidate layout from one allowlisted executable
  * training config. The generic compiledModel path in an attention config is a

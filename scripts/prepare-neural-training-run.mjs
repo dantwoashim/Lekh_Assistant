@@ -1,30 +1,83 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
 import { validateNeuralDatasetManifest } from "./lib/neural-dataset-manifest.mjs";
+import {
+  resolveNeuralTrainingLayout,
+  validateNeuralTrainingConfig
+} from "./lib/neural-training-contract.mjs";
 
-const root = process.cwd();
+const root = resolve(process.cwd());
 const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
-const production = args.has("production");
-const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-training-run-readiness-production-report.json" : "neural-training-run-readiness-report.json");
-const configPath = join(root, "data", "neural", "training", "open-vocab-seq2seq-v1.config.json");
-const datasetManifestPath = join(root, "data", "generated", "neural-open-vocab", "manifest.json");
-const datasetReportPath = join(root, "reports", "neural-open-vocab-dataset-report.json");
-const trainingReportPath = join(root, "data", "generated", "neural-open-vocab-model", "lekh-open-vocab-seq2seq-v1", "training-report.json");
-const checkpointPath = join(root, "data", "generated", "neural-open-vocab-model", "lekh-open-vocab-seq2seq-v1", "checkpoint.pt");
+const production = args.flags.has("production");
+const reportPath = safeReportPath(
+  args.values.get("report") ??
+    join(
+      "reports",
+      production
+        ? "neural-training-run-readiness-production-report.json"
+        : "neural-training-run-readiness-report.json"
+    )
+);
+const configPath = resolve(
+  root,
+  args.values.get("config") ??
+    "data/neural/training/open-vocab-seq2seq-v1.config.json"
+);
+const datasetReportPath = join(
+  root,
+  "reports",
+  production
+    ? "neural-open-vocab-dataset-production-report.json"
+    : "neural-open-vocab-dataset-report.json"
+);
 const failures = [];
 const warnings = [];
 const modelBlockers = [];
 
 const config = readJson(configPath, "training config");
+let layout = null;
+if (config) {
+  const validation = validateNeuralTrainingConfig(config);
+  failures.push(...validation.failures);
+  warnings.push(...validation.warnings);
+  try {
+    layout = resolveNeuralTrainingLayout(config, configPath, root);
+  } catch (error) {
+    failures.push(
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+if (layout && args.values.has("candidate-root")) {
+  const requestedCandidateRoot = resolve(
+    root,
+    args.values.get("candidate-root")
+  );
+  if (requestedCandidateRoot !== layout.candidateRoot) {
+    failures.push(
+      `Candidate root must be ${layout.candidateRootRelativePath} for ` +
+      `${layout.modelId}.`
+    );
+  }
+}
+const datasetManifestPath =
+  layout?.datasetManifest ??
+  join(root, "data", "generated", "neural-open-vocab", "manifest.json");
+const candidateRoot = layout?.candidateRoot ?? null;
+const trainingReportPath =
+  layout?.paths.trainingReport ??
+  join(root, "data", "generated", "neural-open-vocab-model", "unknown", "training-report.json");
+const checkpointPath =
+  layout?.paths.checkpoint ??
+  join(root, "data", "generated", "neural-open-vocab-model", "unknown", "checkpoint.pt");
 const datasetManifest = readJson(datasetManifestPath, "dataset manifest");
 const datasetReport = readJson(datasetReportPath, "dataset report");
 const trainingReport = existsSync(trainingReportPath) ? readJson(trainingReportPath, "training report") : null;
 
-if (config?.modelId !== "lekh-open-vocab-seq2seq-v1") failures.push("Training config modelId must be lekh-open-vocab-seq2seq-v1.");
 const datasetValidation = datasetManifest
   ? validateNeuralDatasetManifest(datasetManifest)
   : { valid: false, issueCodes: ["neural-dataset-manifest.missing"] };
@@ -51,7 +104,11 @@ if (datasetManifestPath && existsSync(datasetManifestPath)) {
   }
 }
 if (!trainingReport) {
-  if (production) failures.push("Production Phase 8 requires data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/training-report.json.");
+  if (production) {
+    failures.push(
+      `Production Phase 8 requires ${portable(trainingReportPath)}.`
+    );
+  }
   else warnings.push("No training run report exists yet; Phase 8 readiness is complete but model training has not been executed.");
 }
 if (!existsSync(checkpointPath)) {
@@ -59,7 +116,11 @@ if (!existsSync(checkpointPath)) {
   else warnings.push("No checkpoint.pt exists yet; no production model can be exported.");
 }
 if (trainingReport) {
-  if (trainingReport.modelId !== "lekh-open-vocab-seq2seq-v1") failures.push("Training report modelId must be lekh-open-vocab-seq2seq-v1.");
+  if (trainingReport.modelId !== layout?.modelId) {
+    failures.push(
+      `Training report modelId must be ${layout?.modelId ?? "the configured modelId"}.`
+    );
+  }
   if (trainingReport.trainingComplete !== true && production) failures.push("Production Phase 8 requires trainingComplete=true.");
   const splitCompatibility = Object.fromEntries(["train", "dev", "test"].map((split) => [
     split,
@@ -95,7 +156,9 @@ const status = failures.length === 0
 finish(status, failures.length === 0 ? 0 : 1, {
   phase: 8,
   production,
+  modelId: layout?.modelId ?? config?.modelId ?? null,
   config: relative(root, configPath),
+  candidateRoot: candidateRoot ? relative(root, candidateRoot) : null,
   datasetManifest: relative(root, datasetManifestPath),
   datasetReport: relative(root, datasetReportPath),
   trainingReport: existsSync(trainingReportPath) ? relative(root, trainingReportPath) : null,
@@ -105,22 +168,42 @@ finish(status, failures.length === 0 ? 0 : 1, {
   actualSplitEvidence,
   retrainRequired: modelBlockers.length > 0,
   modelBlockers,
-  proposedCommand: ".tmp/neural-training-venv/bin/python scripts/train-open-vocab-seq2seq-transliterator.py --config data/neural/training/open-vocab-seq2seq-v1.config.json",
+  proposedCommand:
+    `.tmp/neural-seq2seq-venv/bin/python ` +
+    `scripts/train-open-vocab-seq2seq-transliterator.py ` +
+    `--config ${relative(root, configPath)}`,
   failures,
   warnings
 });
 
 function parseArgs(argv) {
-  const map = new Map();
+  const flags = new Set();
+  const values = new Map();
+  const flagOptions = new Set(["production"]);
+  const valueOptions = new Set(["candidate-root", "config", "report"]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (!arg.startsWith("--")) continue;
+    if (!arg.startsWith("--") || arg === "--") {
+      throw new TypeError(`Unexpected positional argument: ${arg}`);
+    }
     const key = arg.slice(2);
-    const value = argv[index + 1]?.startsWith("--") ? "1" : argv[index + 1] ?? "1";
-    map.set(key, value);
-    if (value !== "1") index += 1;
+    if (flagOptions.has(key)) {
+      if (flags.has(key)) throw new TypeError(`Duplicate option: --${key}`);
+      flags.add(key);
+      continue;
+    }
+    if (!valueOptions.has(key)) {
+      throw new TypeError(`Unknown option: --${key}`);
+    }
+    if (values.has(key)) throw new TypeError(`Duplicate option: --${key}`);
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) {
+      throw new TypeError(`Missing value for --${key}`);
+    }
+    values.set(key, value);
+    index += 1;
   }
-  return map;
+  return { flags, values };
 }
 
 function readJson(path, label) {
@@ -171,6 +254,44 @@ function blockModel(message) {
   modelBlockers.push(message);
   if (production) failures.push(message);
   else warnings.push(message);
+}
+
+function portable(path) {
+  return relative(root, path).split("\\").join("/");
+}
+
+function safeReportPath(value) {
+  const path = isAbsolute(value) ? resolve(value) : resolve(root, value);
+  const allowedRoots = [
+    resolve(root, "reports"),
+    resolve(root, ".tmp")
+  ];
+  if (!path.endsWith(".json") ||
+      !allowedRoots.some((allowedRoot) => strictlyWithin(allowedRoot, path))) {
+    throw new TypeError(
+      "Training-readiness report must be a JSON file under reports/ or .tmp/."
+    );
+  }
+  let current = root;
+  for (const component of relative(root, path).split(sep).filter(Boolean)) {
+    current = join(current, component);
+    if (!existsSync(current)) break;
+    if (lstatSync(current).isSymbolicLink()) {
+      throw new TypeError(
+        `Training-readiness report path contains a symbolic link: ` +
+        `${portable(current)}.`
+      );
+    }
+  }
+  return path;
+}
+
+function strictlyWithin(parent, child) {
+  const candidate = relative(parent, child);
+  return candidate !== "" &&
+    candidate !== ".." &&
+    !candidate.startsWith(`..${sep}`) &&
+    !isAbsolute(candidate);
 }
 
 function finish(status, exitCode, details) {

@@ -22,6 +22,7 @@ const requiredFiles = [
   "scripts/lib/neural-runtime-placement-evidence.mjs",
   "scripts/check-neural-native-integration.mjs",
   "scripts/prepare-neural-training-run.mjs",
+  "scripts/check-neural-production-readiness.mjs",
   "scripts/check-neural-production-promotion.mjs",
   "scripts/promote-neural-candidate.mjs",
   "scripts/check-neural-sota-worldclass.mjs"
@@ -67,6 +68,16 @@ requireText(specText, "node scripts/check-neural-native-integration.mjs --produc
 requireText(specText, "node scripts/prepare-neural-training-run.mjs --production", "spec must define the Phase 8 production proof command");
 requireText(specText, "node scripts/check-neural-production-promotion.mjs --production", "spec must define the Phase 9 production proof command");
 requireText(specText, "node scripts/check-neural-sota-worldclass.mjs --production", "spec must define the Phase 10 production proof command");
+requireText(
+  specText,
+  "npm run check:neural-phase0-10:production",
+  "spec must define the receipt-derived final production re-verification command"
+);
+requireText(
+  specText,
+  "--runtime-placement-evidence",
+  "production re-verification must require observed Neural Engine placement evidence"
+);
 
 for (const suite of [
   "romanized-nepali-token-gold.v1.jsonl",

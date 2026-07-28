@@ -290,23 +290,49 @@ npm run check:neural-open-vocab-data:production
 Individual production checks:
 
 ```sh
-node scripts/check-neural-training-contract.mjs --production
+node scripts/check-neural-training-contract.mjs --production \
+  --config <winner-config> --candidate-root <winner-root>
 node scripts/evaluate-neural-open-vocab-model.mjs --production --predictions <candidate>/gold-predictions.jsonl
 node scripts/evaluate-neural-official-benchmark.mjs --predictions <candidate>/official-benchmark-predictions.jsonl --report <candidate-report>.json
 node scripts/check-neural-model-selection.mjs --production --candidate-spec <baseline.json> --candidate-spec <challenger.json>
 node scripts/benchmark-neural-coreml-device.mjs --production --measurements reports/neural-native-service-e2e-production-report.json
 node scripts/check-neural-native-integration.mjs --production
-node scripts/prepare-neural-training-run.mjs --production
+node scripts/prepare-neural-training-run.mjs --production \
+  --config <winner-config> --candidate-root <winner-root>
 node scripts/check-neural-production-promotion.mjs --production
 node scripts/check-neural-sota-worldclass.mjs --production
 ```
 
-Aggregates:
+Development aggregates:
 
 ```sh
 npm run check:neural-phase3-6
 npm run check:neural-phase3-9
 npm run check:neural-phase0-10
+```
+
+Final production re-verification runs against the exact winner retained by the
+atomic promotion receipt. It derives the winner config, candidate root,
+predictions, export report, selection report, and both candidate
+specifications from that verified receipt; it never silently falls back to the
+baseline model. Observed Neural Engine placement evidence for the exact
+packaged workload is mandatory:
+
+```sh
+npm run check:neural-phase0-10:production -- \
+  --runtime-placement-evidence \
+  reports/neural-runtime-placement-evidence.json
+```
+
+The bounded production aliases use the same receipt-derived context:
+
+```sh
+npm run check:neural-phase3-6:production -- \
+  --runtime-placement-evidence \
+  reports/neural-runtime-placement-evidence.json
+npm run check:neural-phase3-9:production -- \
+  --runtime-placement-evidence \
+  reports/neural-runtime-placement-evidence.json
 ```
 
 Passing a development aggregate proves only that the harness and available

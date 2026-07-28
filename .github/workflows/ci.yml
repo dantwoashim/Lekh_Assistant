@@ -50,6 +50,7 @@ jobs:
       - name: Verify scalar neural contracts
         run: |
           npx vitest run \
+            scripts/check-neural-production-readiness.test.mjs \
             scripts/lib/devanagari-word-sequence.test.mjs \
             scripts/lib/neural-training-contract.test.mjs \
             --pool=forks \

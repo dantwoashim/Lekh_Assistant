@@ -1,250 +1,208 @@
 # Neural Transliteration Model Plan
 
-## Decision
+Status: active production execution guide.
 
-Do not ship a downloaded general model as the keyboard's neural transliterator.
+The normative contract is
+[`docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md`](neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md).
+If this guide and the normative contract ever differ, the normative contract
+and executable validators win.
 
-The production artifact must follow the frozen Phase 0 open-vocabulary contract in `docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md`. It must be a small Nepali-specific Core ML sequence model:
+## Product decision
 
-- artifact: `models/macos/LekhNeuralTransliterator.mlmodelc`
-- manifest: `models/macos/LekhNeuralTransliterator.manifest.json`
-- selected artifact id: `lekh-open-vocab-seq2seq-v1`
-- runtime: Core ML only
-- parameter budget: 1M-5M
-- compiled size budget: 16 MB maximum
-- hot-path budget: p99 <= 3 ms for neural inference
-- placement: tail reranker only, after deterministic FST, dictionary, binary lexicon, and user lexicon
-- privacy: local-only inference; no network inference; no raw text telemetry
+Lekh does not ship a downloaded general-purpose transliteration model. It
+trains and exports a compact, Nepali-specific, open-vocabulary Core ML model.
+The neural path is a local-only tail candidate source:
 
-The current repo has a rejected closed-vocabulary baseline under `models/rejected/closed-vocabulary-baseline/` and production readiness gates. That baseline is useful only as research evidence. Public launch requires an open-vocabulary seq2seq model, real on-device latency measurement, and human-gold evaluation.
+1. deterministic FST;
+2. dictionary and binary lexicon;
+3. user lexicon;
+4. neural tail candidates.
 
-## Student Model Build
+The deterministic path remains usable when the model is absent or rejected.
+Neural output is never auto-committed, never runs in secure fields, and never
+leaves the Mac.
 
-Build the current compiled Core ML student:
+## Qualified candidate families
 
-```bash
-npm run neural:student:setup
-npm run neural:student:build
+No candidate is called the winner until the immutable selection report says
+so.
+
+| Candidate | Architecture | Runtime contract |
+| --- | --- | --- |
+| `lekh-open-vocab-seq2seq-v1` | GRU encoder-decoder baseline | `single-seq2seq-v1` |
+| `lekh-open-vocab-bigru-attention-v1` | bidirectional GRU with additive attention | `split-attention-incremental-v1` |
+
+Both candidates must satisfy the same frozen product envelope:
+
+- 1–5 million parameters;
+- no more than 16,777,216 compiled runtime bytes;
+- Unicode-scalar input/output tokenization;
+- bounded beam search;
+- full candidate-generation p99 below 50 ms;
+- exact safety-suite coverage;
+- local Core ML execution;
+- observed Neural Engine placement for the exact packaged workload before any
+  Neural Engine claim.
+
+The rejected hashed closed-vocabulary research baseline under
+`models/rejected/closed-vocabulary-baseline/` is not a production candidate.
+
+## Data and evaluation
+
+The executable configs bind:
+
+- the canonical generated dataset manifest at
+  `data/generated/neural-open-vocab/manifest.json`;
+- at least one million cleaned rows from
+  `ai4bharat-aksharantar-nepali`;
+- connected input/target split isolation with held-out precedence;
+- the locked repository gold manifest;
+- the locked Aksharantar Nepali official benchmark;
+- zero training contribution from the blocked same-lineage mirrors.
+
+IndicXlit may be downloaded and measured as a teacher/reference. Its weights
+are never packaged. Official benchmark rows are evaluation-only and must not
+enter training, development, distillation, vocabulary construction, or
+reranking.
+
+## Candidate build
+
+Create and verify the pinned environment:
+
+```sh
+npm run neural:open-vocab:setup
+npm run neural:open-vocab:verify-toolchain
 ```
 
-Outputs for the rejected research baseline:
+Train either allowlisted candidate:
 
-- `models/rejected/closed-vocabulary-baseline/LekhNeuralTransliterator.mlmodelc`
-- `models/rejected/closed-vocabulary-baseline/LekhNeuralTransliterator.rejected.manifest.json`
-- `data/generated/coreml-student/LekhNeuralTransliterator.mlmodel`
-- `reports/coreml-student-transliterator-report.json`
+```sh
+npm run neural:open-vocab:train -- \
+  --config data/neural/training/open-vocab-seq2seq-v1.config.json
 
-Current student architecture:
-
-- model family: hashed character n-gram centroid classifier
-- input: `features`, a 384-dimensional FNV-1a hashed Romanized n-gram vector
-- outputs: `candidate` and `classProbability`
-- class count: 8,192 Devanagari labels
-- parameter count: 3,153,920
-- role: neural tail candidate source after deterministic FST, dictionary, binary lexicon, and user lexicon
-
-This baseline is intentionally compact and local. It is not the final 1-5M parameter production model; that remains a separate open-vocabulary distillation/training milestone using the downloaded teacher model and a human-rated held-out set.
-
-## Teacher Model Download
-
-The public AI4Bharat IndicXlit Roman-to-Indic checkpoint can be downloaded locally as a teacher/regression oracle:
-
-```bash
-npm run neural:teacher:download
+npm run neural:open-vocab:train -- \
+  --config data/neural/training/open-vocab-bigru-attention-v1.config.json
 ```
 
-This writes the archive, extracted files, and manifest under ignored local paths:
+Each successful run produces one immutable candidate root containing the
+checkpoint, training report, Core ML packages, compiled runtime artifacts,
+vocabulary, candidate manifest, export report, locked-gold predictions, and
+official-benchmark predictions. Training, export, and prediction evidence share
+one run identity graph.
 
-- `data/generated/neural-teacher-models/ai4bharat-indicxlit/v1.0/`
-- `reports/neural-teacher-download-report.json`
+## Candidate qualification and selection
 
-The downloader records byte count, SHA256, and source metadata. These files are intentionally not committed and must never be copied into `models/macos` or a release bundle. The production keyboard still requires a small signed Core ML student model.
+For each candidate:
 
-## Upstream Selection
+```sh
+node scripts/check-neural-training-contract.mjs --production \
+  --config <candidate-config> \
+  --candidate-root <candidate-root>
 
-| Source | Role | Decision | Why |
-| --- | --- | --- | --- |
-| `syubraj/roman2nepali-transliteration` | primary training pairs | selected after local import/provenance review | MIT-labeled Hugging Face dataset, 2.4M Romanized/Nepali rows, train/validation split |
-| `Saugatkafley/Nepali-Roman-Transliteration` | source cross-check | selected for provenance/dedup review | MIT-labeled source dataset behind the syubraj mirror |
-| `ai4bharat/Aksharantar` | benchmark and augmentation | selected pending license review | large Indic transliteration benchmark including Nepali |
-| `AI4Bharat/IndicXlit` | teacher and regression oracle | teacher-only, not shipping | strong public transliteration model, but about 11M params and not a compiled Core ML app artifact |
-| `nirajan111/nepali-transliteration` | comparison only | rejected for shipping | mT5-sized model, page reports 400 MB; too large for an IME hot path |
-| `Dakshina` | methodology reference | not selected for Nepali direct training | excellent South Asian romanization reference, but published language list does not include Nepali |
+node scripts/evaluate-neural-open-vocab-model.mjs --production \
+  --predictions <candidate-root>/gold-predictions.jsonl
 
-Run the source gate:
-
-```bash
-npm run neural:source:syubraj
-npm run check:neural-contract
-npm run check:neural-gold
-npm run check:neural-open-vocab-data
-npm run check:neural-model-selection
+node scripts/evaluate-neural-official-benchmark.mjs \
+  --predictions <candidate-root>/official-benchmark-predictions.jsonl \
+  --report <candidate-official-report>.json
 ```
 
-Run the full neural readiness gate:
+Package the unpromoted candidate and capture full-service performance:
 
-```bash
-npm run neural:student:build
-npm run neural:dataset
-npm run neural:open-vocab:dataset
+```sh
+LEKH_NEURAL_ARTIFACT_ROOT=<candidate-root> \
+  npm run package:macos:imk:neural:candidate
+
+node scripts/benchmark-neural-native-service.mjs \
+  --promotion-evidence \
+  --runtime-placement-evidence \
+    reports/neural-runtime-placement-evidence.json \
+  --report <candidate-packaged-benchmark>.json
+```
+
+Create one six-field candidate specification per candidate and run the frozen
+selector:
+
+```sh
+node scripts/check-neural-model-selection.mjs --production \
+  --candidate-spec <baseline-specification.json> \
+  --candidate-spec <attention-specification.json>
+```
+
+Selection compares only fully bound evidence on the same dataset, gold corpus,
+official benchmark, and runtime contract. It does not accept manually copied
+metrics.
+
+## Atomic promotion
+
+Promote only the selection winner:
+
+```sh
+npm run neural:promote:candidate -- \
+  --candidate-dir <winner-root> \
+  --evaluation-report <winner-evaluation.json> \
+  --benchmark-report <winner-packaged-benchmark.json> \
+  --selection-report <selection-report.json>
+```
+
+The promoter reopens and rehashes the complete evidence graph, derives the
+production manifest from measured evidence, stages a closed-world directory,
+and atomically replaces
+`models/macos/LekhNeuralTransliterator.production`. Never hand-edit a candidate
+or production manifest to make a gate pass.
+
+Package and measure the promoted artifact:
+
+```sh
+npm run package:macos:imk:neural:production
+
+node scripts/benchmark-neural-native-service.mjs --production \
+  --runtime-placement-evidence \
+    reports/neural-runtime-placement-evidence.json
+```
+
+## Final production proof
+
+The final aggregate derives the selected config, candidate root, prediction
+files, export report, selection report, and both candidate specifications from
+the verified atomic promotion receipt. It cannot silently evaluate the
+baseline when attention won.
+
+```sh
+npm run check:neural-phase0-10:production -- \
+  --runtime-placement-evidence \
+    reports/neural-runtime-placement-evidence.json
+```
+
+This re-verification reruns all executable production gates, continues far
+enough to report every failing gate, and emits
+`reports/neural-production-reverification-report.json`.
+
+Passing development aggregates proves only that the harness is coherent:
+
+```sh
+npm run check:neural-phase3-6
+npm run check:neural-phase3-9
 npm run check:neural-phase0-10
-npm run check:neural-transliteration
 ```
 
-Before any production claim, the gold row-count gate must also pass:
+## Failure strategy
 
-```bash
-npm run check:neural-gold:production
-npm run check:neural-open-vocab-data:production
-```
+Do not lower a locked gate.
 
-These are expected to fail until real reviewed rows and required licensed/public local imports replace the Phase 1 contract seeds and local silver-only dataset.
+1. If the correct answer is already in the beam, evaluate an immutable,
+   digest-bound unigram reranker with identical Python and Swift behavior.
+2. If the correct answer is absent, expand only from the already licensed
+   canonical training source, preserve official-test isolation, and retrain.
+3. If recurrent candidates remain below the reference floor, distill into a
+   compact fixed-shape transformer that still satisfies the Core ML size,
+   latency, safety, and placement contracts.
+4. Re-run the full selection and promotion chain. No partial result receives a
+   production claim.
 
-Phase 3-9 are now executable repo gates:
+## Release truth
 
-```bash
-npm run neural:phase3:distillation
-npm run neural:phase4:training-contract
-npm run neural:phase5:evaluate
-npm run neural:phase5:benchmark
-npm run neural:phase6:native-integration
-npm run neural:phase7:review-intake
-npm run neural:phase8:training-run
-npm run neural:phase9:promotion
-npm run neural:phase10:sota
-```
-
-In dev, Phase 3-10 prove the distillation/training/evaluation/benchmark/native/review/promotion/SOTA guard machinery is complete. They do not claim a production neural model exists. Production remains blocked until the required reviewed data imports, real model predictions, two-device Core ML measurements, trained checkpoint, and verified production manifest are present.
-
-For production:
-
-```bash
-npm run check:neural-phase0-10:production
-node scripts/check-neural-model-selection.mjs --production
-node scripts/check-neural-transliteration-readiness.mjs --production
-```
-
-## Required Manifest
-
-`models/macos/LekhNeuralTransliterator.manifest.json` must validate against `data/neural/schema/lekh-neural-manifest.schema.json` and include at least:
-
-```json
-{
-  "schemaVersion": 1,
-  "selectedArtifact": "lekh-open-vocab-seq2seq-v1",
-  "runtime": "CoreML",
-  "localOnly": true,
-  "neuralTailOnly": true,
-  "productionEligible": true,
-  "architecture": "gru-encoder-decoder-seq2seq",
-  "openVocabulary": true,
-  "tokenization": "unicode-grapheme-character",
-  "decoder": "beam-search",
-  "beamSearch": {
-    "enabled": true,
-    "beamWidth": 4,
-    "maxOutputGraphemes": 32
-  },
-  "languageModelRescorer": {
-    "enabled": true,
-    "source": "runtime-next-context-pack",
-    "weight": 0.12
-  },
-  "contextWindowWords": 2,
-  "parameterCount": 2500000,
-  "modelBytes": 12000000,
-  "trainingSources": [
-    "syubraj-roman2nepali-transliteration",
-    "human-reviewed-lekh-gold-v1",
-    "lekh-chat-conventions-v1",
-    "lekh-name-lexicon-v1"
-  ],
-  "datasetReports": [
-    "reports/neural-open-vocab-dataset-report.json"
-  ],
-  "evaluationReports": [
-    "reports/neural-open-vocab-evaluation.json"
-  ],
-  "benchmarkReports": [
-    "reports/neural-coreml-device-benchmark.json"
-  ],
-  "metrics": {
-    "tailTop1Accuracy": 0.88,
-    "tailTop3Accuracy": 0.96,
-    "chatConventionTop1Accuracy": 0.92,
-    "chatConventionTop3Accuracy": 0.98,
-    "namesTop3Accuracy": 0.9,
-    "protectedFalseConversionRate": 0,
-    "singleTokenPhraseExpansionRate": 0,
-    "secureFieldInferenceCount": 0
-  },
-  "performance": {
-    "p50Ms": 0.8,
-    "p95Ms": 1.7,
-    "p99Ms": 2.6,
-    "targetP99Ms": 3,
-    "measuredOnDevice": true,
-    "devices": [
-      {
-        "name": "Apple Silicon benchmark Mac",
-        "macOS": "26",
-        "architecture": "arm64",
-        "p99Ms": 2.2
-      },
-      {
-        "name": "Intel benchmark Mac",
-        "macOS": "15",
-        "architecture": "x86_64",
-        "p99Ms": 2.9
-      }
-    ]
-  },
-  "requiredCases": {
-    "vato": "बाटो",
-    "bato": "बाटो",
-    "baato": "बाटो",
-    "chha": "छ",
-    "cha": "छ",
-    "xa": "छ",
-    "xaina": "छैन"
-  },
-  "sha256": {
-    "compiledModel": "0000000000000000000000000000000000000000000000000000000000000000",
-    "sourceCheckpoint": "0000000000000000000000000000000000000000000000000000000000000000",
-    "trainingDatasetManifest": "0000000000000000000000000000000000000000000000000000000000000000"
-  },
-  "limitations": [
-    "Neural candidates are tail suggestions only.",
-    "Neural candidates are never auto-committed.",
-    "No inference runs in secure fields."
-  ]
-}
-```
-
-## Training Contract
-
-The student model must be trained and evaluated outside the IMK hot path, then compiled to Core ML.
-
-Minimum training requirements:
-
-- normalize every row to NFC
-- split by stable hash so train/dev/test do not leak duplicates
-- include chat-spelling cases such as `xa`, `xaina`, `xau`, `vato`, `baato`
-- preserve ambiguous outputs as multiple candidates, not a forced single truth
-- evaluate native-origin, foreign-origin, frequent, rare, name, and chat-convention buckets separately
-- reject unsafe/protected tokens before model training
-- keep raw upstream data under ignored `data/generated/` or another non-committed research directory
-
-Minimum release requirements:
-
-- deterministic FST remains correct when the model is absent
-- keyboard package works and does not freeze when the model is missing or fails to load
-- the model is loaded only from the signed bundle or the verified per-user model directory
-- no text leaves the Mac for inference or telemetry
-- production packaging fails unless the compiled model, manifest, metrics, and source gate pass
-- the packaged app has measured native p99 neural-candidate latency on Apple Silicon and Intel hardware
-- top-word and chat-convention accuracy is validated against a human-gold set, not only generated splits
-
-## Why This Is The Right Cut
-
-An input method is latency-sensitive. A huge seq2seq model may look impressive in a notebook, but it can make the keyboard feel broken. The production keyboard should use deterministic rules, binary lexicon ranking, and user memory for the common path, then use a tiny Core ML model for tail spellings that rules and dictionary data miss.
+A compiled model is not production evidence by itself. “Production ready”
+means the selected artifact, retained evidence, packaged native runtime,
+observed placement, latency, quality, safety, promotion receipt, and final
+re-verification all identify the same artifact bytes and all pass.
