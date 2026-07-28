@@ -2,6 +2,9 @@
 
 Status: active production execution guide.
 
+The current platform and reference-model research review is recorded in
+[`docs/neural/COREML_AND_TRANSLITERATION_RESEARCH_REVIEW_2026-07-28.md`](neural/COREML_AND_TRANSLITERATION_RESEARCH_REVIEW_2026-07-28.md).
+
 The normative contract is
 [`docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md`](neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md).
 If this guide and the normative contract ever differ, the normative contract
