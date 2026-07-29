@@ -15,9 +15,9 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import stat
 import sys
-import tempfile
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Iterable
@@ -315,6 +315,11 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         raise RareScalarGenerationError(
             "Prediction and generation-report paths must differ."
         )
+    validate_output_destinations(
+        candidate_dir,
+        output_path,
+        report_path,
+    )
 
     trainer = load_trainer()
     trainer_args = trainer.parse_args(
@@ -528,15 +533,54 @@ def canonical_path(
 
 
 def safe_output_path(value: Path, parent: Path, label: str) -> Path:
-    path = (value if value.is_absolute() else ROOT / value).resolve()
-    ensure_within(parent, path, label)
-    if path.exists() and path.is_symlink():
-        raise RareScalarGenerationError(f"{label} must not be a symlink.")
-    if not path.parent.is_dir() or path.parent.is_symlink():
+    trusted_parent = parent.resolve()
+    raw_path = value if value.is_absolute() else ROOT / value
+    path = Path(os.path.abspath(os.fspath(raw_path)))
+    ensure_within(trusted_parent, path, label)
+    ensure_real_directory_chain(trusted_parent, path.parent, label)
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        metadata = None
+    except OSError as error:
         raise RareScalarGenerationError(
-            f"{label} parent must be a real existing directory."
+            f"{label} destination cannot be inspected."
+        ) from error
+    if metadata is not None and stat.S_ISLNK(metadata.st_mode):
+        raise RareScalarGenerationError(f"{label} must not be a symlink.")
+    if metadata is not None and not stat.S_ISREG(metadata.st_mode):
+        raise RareScalarGenerationError(
+            f"{label} must be absent or a regular file."
         )
     return path
+
+
+def ensure_real_directory_chain(
+    trusted_parent: Path,
+    directory: Path,
+    label: str,
+) -> None:
+    try:
+        relative_directory = directory.relative_to(trusted_parent)
+    except ValueError as error:
+        raise RareScalarGenerationError(
+            f"{label} parent escapes its trusted directory."
+        ) from error
+    current = trusted_parent
+    for component in relative_directory.parts:
+        current /= component
+        try:
+            metadata = current.lstat()
+        except OSError as error:
+            raise RareScalarGenerationError(
+                f"{label} parent must be a real existing directory."
+            ) from error
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(
+            metadata.st_mode
+        ):
+            raise RareScalarGenerationError(
+                f"{label} parent must not contain symlinks."
+            )
 
 
 def ensure_within(parent: Path, child: Path, label: str) -> None:
@@ -548,6 +592,40 @@ def ensure_within(parent: Path, child: Path, label: str) -> None:
         ) from error
 
 
+def validate_output_destinations(
+    candidate_dir: Path,
+    output_path: Path,
+    report_path: Path,
+) -> None:
+    destinations = (
+        (
+            "rare-scalar predictions",
+            output_path,
+            candidate_dir / PREDICTIONS_NAME,
+            candidate_dir / GENERATION_REPORT_NAME,
+        ),
+        (
+            "rare-scalar generation report",
+            report_path,
+            candidate_dir / GENERATION_REPORT_NAME,
+            candidate_dir / PREDICTIONS_NAME,
+        ),
+    )
+    for label, path, canonical, other_canonical in destinations:
+        if path.parent != candidate_dir:
+            raise RareScalarGenerationError(
+                f"{label} must be a direct candidate-directory child."
+            )
+        if path == other_canonical:
+            raise RareScalarGenerationError(
+                f"{label} must not use the other evidence filename."
+            )
+        if path.exists() and path != canonical:
+            raise RareScalarGenerationError(
+                f"{label} must not overwrite an existing candidate file."
+            )
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -557,31 +635,121 @@ def sha256_file(path: Path) -> str:
 
 
 def atomic_write(path: Path, contents: bytes) -> None:
-    file_descriptor, temporary_name = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-    )
-    temporary = Path(temporary_name)
+    directory_flags = os.O_RDONLY
+    directory_flags |= getattr(os, "O_DIRECTORY", 0)
+    directory_flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
+        directory_descriptor = os.open(path.parent, directory_flags)
+    except OSError as error:
+        raise RareScalarGenerationError(
+            "Evidence output parent cannot be opened safely."
+        ) from error
+    temporary_name: str | None = None
+    file_descriptor: int | None = None
+    try:
+        opened_parent = os.fstat(directory_descriptor)
+        current_parent = os.stat(path.parent, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(opened_parent.st_mode)
+            or opened_parent.st_dev != current_parent.st_dev
+            or opened_parent.st_ino != current_parent.st_ino
+        ):
+            raise RareScalarGenerationError(
+                "Evidence output parent changed during publication."
+            )
+        validate_atomic_destination(
+            directory_descriptor,
+            path.name,
+        )
+        for _attempt in range(32):
+            candidate = (
+                f".{path.name}.{secrets.token_hex(16)}.tmp"
+            )
+            try:
+                file_descriptor = os.open(
+                    candidate,
+                    os.O_WRONLY
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                    dir_fd=directory_descriptor,
+                )
+            except FileExistsError:
+                continue
+            temporary_name = candidate
+            break
+        if temporary_name is None:
+            raise RareScalarGenerationError(
+                "Unable to allocate a unique evidence staging file."
+            )
         os.fchmod(file_descriptor, 0o600)
-        with os.fdopen(file_descriptor, "wb") as handle:
+        handle = os.fdopen(file_descriptor, "wb")
+        file_descriptor = None
+        with handle:
             handle.write(contents)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
-        directory_descriptor = os.open(path.parent, os.O_RDONLY)
+        validate_atomic_destination(
+            directory_descriptor,
+            path.name,
+        )
+        os.replace(
+            temporary_name,
+            path.name,
+            src_dir_fd=directory_descriptor,
+            dst_dir_fd=directory_descriptor,
+        )
+        temporary_name = None
+        os.fsync(directory_descriptor)
+    except OSError as error:
+        raise RareScalarGenerationError(
+            "Evidence output could not be published atomically."
+        ) from error
+    finally:
+        if file_descriptor is not None:
+            try:
+                os.close(file_descriptor)
+            except OSError:
+                pass
+        if temporary_name is not None:
+            try:
+                os.unlink(
+                    temporary_name,
+                    dir_fd=directory_descriptor,
+                )
+            except OSError:
+                pass
         try:
-            os.fsync(directory_descriptor)
-        finally:
             os.close(directory_descriptor)
-    except BaseException:
-        try:
-            os.close(file_descriptor)
         except OSError:
             pass
-        temporary.unlink(missing_ok=True)
-        raise
+
+
+def validate_atomic_destination(
+    directory_descriptor: int,
+    name: str,
+) -> None:
+    if not name or name in {".", ".."} or "/" in name:
+        raise RareScalarGenerationError(
+            "Evidence output filename is invalid."
+        )
+    try:
+        metadata = os.stat(
+            name,
+            dir_fd=directory_descriptor,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(metadata.st_mode):
+        raise RareScalarGenerationError(
+            "Evidence output destination must not be a symlink."
+        )
+    if not stat.S_ISREG(metadata.st_mode):
+        raise RareScalarGenerationError(
+            "Evidence output destination must be absent or a regular file."
+        )
 
 
 def portable(path: Path) -> str:
