@@ -52,6 +52,32 @@ class NeuralToolchainContractTests(unittest.TestCase):
         )
         self.assertTrue(any("torch" in item and "missing" in item for item in failures))
 
+    def test_remote_cuda_profile_requires_exact_cu118_wheel(self) -> None:
+        versions = CHECK.distributions_for_profile(
+            CHECK.REMOTE_CUDA_PROFILE
+        )
+        self.assertEqual(
+            versions["torch"],
+            CHECK.REMOTE_TORCH_VERSION,
+        )
+        self.assertEqual(
+            CHECK.validate_toolchain(
+                python_version=CHECK.EXPECTED_PYTHON,
+                package_versions=versions,
+                profile=CHECK.REMOTE_CUDA_PROFILE,
+            ),
+            [],
+        )
+        versions["torch"] = "2.7.0"
+        failures = CHECK.validate_toolchain(
+            python_version=CHECK.EXPECTED_PYTHON,
+            package_versions=versions,
+            profile=CHECK.REMOTE_CUDA_PROFILE,
+        )
+        self.assertTrue(
+            any(CHECK.REMOTE_TORCH_VERSION in item for item in failures)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -164,9 +164,21 @@ profiling, and Neural Engine evidence.
 
 ## Review conclusion
 
-The active full-data attention run should continue unchanged. Its result must be
-evaluated before introducing compression, a larger architecture, distillation,
-or a higher operating-system floor. If it fails quality, the next justified
-iteration is model-quality work against the same locked benchmark; if it fails
-device metrics, the next justified iteration is measured artifact optimization.
-Neither failure may be hidden by weakening the gate.
+The full-data attention contract should continue unchanged, but sustained
+PyTorch training should execute on the pinned remote CUDA profile rather than
+on a thermally constrained Mac. The Mac retains the separate Core ML export,
+parity, packaged benchmark, and runtime-placement phases. This changes the
+training host, not the candidate architecture, dataset, seed, evidence, or
+promotion thresholds.
+
+The resulting candidate must be evaluated before introducing compression, a
+larger architecture, distillation, or a higher operating-system floor. If it
+fails quality, the next justified iteration is model-quality work against the
+same locked benchmark; if it fails device metrics, the next justified
+iteration is measured artifact optimization. Neither failure may be hidden by
+weakening the gate.
+
+The executable workflow and its local validation evidence are recorded in:
+
+- [Remote CUDA training and macOS export](REMOTE_CUDA_TRAINING_AND_MACOS_EXPORT.md)
+- [Remote CUDA pipeline validation, 2026-07-29](REMOTE_CUDA_PIPELINE_VALIDATION_2026-07-29.md)

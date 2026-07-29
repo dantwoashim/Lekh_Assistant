@@ -4,6 +4,8 @@ Status: active production execution guide.
 
 The current platform and reference-model research review is recorded in
 [`docs/neural/COREML_AND_TRANSLITERATION_RESEARCH_REVIEW_2026-07-28.md`](neural/COREML_AND_TRANSLITERATION_RESEARCH_REVIEW_2026-07-28.md).
+The thermally safe production workflow is
+[`docs/neural/REMOTE_CUDA_TRAINING_AND_MACOS_EXPORT.md`](neural/REMOTE_CUDA_TRAINING_AND_MACOS_EXPORT.md).
 
 The normative contract is
 [`docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md`](neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md).
@@ -77,7 +79,7 @@ npm run neural:open-vocab:setup
 npm run neural:open-vocab:verify-toolchain
 ```
 
-Train either allowlisted candidate:
+For tiny local smoke runs, train either allowlisted candidate:
 
 ```sh
 npm run neural:open-vocab:train -- \
@@ -94,7 +96,7 @@ vocabularies, and sampled rows still match exactly. Use
 `--restart-training` only when intentionally discarding an incompatible or
 corrupt recovery; it cannot be combined with `--skip-train`.
 
-For multi-hour production runs on macOS, use the shell-free detached launcher:
+The detached launcher remains available for bounded local diagnostics:
 
 ```sh
 npm run neural:open-vocab:train:detached -- \
@@ -104,6 +106,28 @@ npm run neural:open-vocab:train:detached -- \
 It verifies the pinned Python toolchain, runs under `caffeinate`, writes a
 private log and status record under `.tmp/neural-training/`, and survives the
 launching terminal or automation session. It refuses a live candidate lock.
+
+Do not use sustained local training on a thermally constrained Mac. Build the
+closed remote bundle and run the checksum-pinned Colab notebook instead:
+
+```sh
+npm run neural:remote:test
+npm run neural:remote:bundle
+```
+
+The remote CUDA phase is training-only. Its authenticated result must be
+imported and the Core ML phase executed separately on macOS:
+
+```sh
+npm run neural:remote:import -- \
+  <result.tar.gz> \
+  --bundle-report <bundle-report.json> \
+  --expected-result-sha256 <sha256> \
+  --publish
+
+npm run neural:remote:export -- \
+  --config data/neural/training/open-vocab-bigru-attention-v1.config.json
+```
 
 Each successful run produces one immutable candidate root containing the
 checkpoint, training report, Core ML packages, compiled runtime artifacts,
