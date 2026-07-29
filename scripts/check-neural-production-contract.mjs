@@ -255,7 +255,7 @@ requireText(
 );
 requireText(
   specText,
-  "Promotion independently recomputes the pure rare-scalar evaluation",
+  "Promotion and live receipt verification independently recompute the pure",
   "spec must forbid trusting a precomputed rare-scalar pass status"
 );
 requireText(
@@ -267,6 +267,16 @@ requireText(
   promotionReceiptText,
   "Retained rare-scalar evaluation did not pass its production gate.",
   "promotion receipt verifier must revalidate retained rare-scalar production evidence"
+);
+requireText(
+  promotionReceiptText,
+  "evaluateNeuralRareScalarEvidence({",
+  "promotion receipt verifier must replay the pure rare-scalar evaluator"
+);
+requireText(
+  promotionReceiptText,
+  "Retained rare-scalar evaluation does not match independent ",
+  "promotion receipt verifier must reject retained semantic forgeries"
 );
 requireText(
   ctcTrainerText,

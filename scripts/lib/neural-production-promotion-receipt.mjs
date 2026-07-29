@@ -28,6 +28,9 @@ import {
 import {
   validateNeuralRuntimePlacementEvidence
 } from "./neural-runtime-placement-evidence.mjs";
+import {
+  evaluateNeuralRareScalarEvidence
+} from "./neural-rare-scalar-evaluation.mjs";
 
 export const NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 3;
 
@@ -248,6 +251,7 @@ export function verifyNeuralProductionPromotionReceipt(options = {}) {
   });
 
   const retained = {};
+  const retainedFiles = {};
   const retainedValues = {};
   for (const name of INPUT_KEYS) {
     if (["selectionId", "goldCorpusSha256", "datasetContentSha256"].includes(name)) {
@@ -257,9 +261,16 @@ export function verifyNeuralProductionPromotionReceipt(options = {}) {
       repoRoot,
       receipt.inputs[name],
       `Retained promotion input ${name}`,
-      { json: JSON_INPUTS.has(name) }
+      {
+        includeContents: [
+          "comparisonPredictions",
+          "predictions"
+        ].includes(name),
+        json: JSON_INPUTS.has(name)
+      }
     );
     retained[name] = evidenceSummary(repoRoot, evidence.file);
+    retainedFiles[name] = evidence.file;
     retainedValues[name] = evidence.value;
   }
   for (const name of ["goldCorpusSha256", "datasetContentSha256"]) {
@@ -278,7 +289,9 @@ export function verifyNeuralProductionPromotionReceipt(options = {}) {
     receipt,
     descriptor,
     manifest,
+    retainedFiles,
     retainedValues,
+    retainedRareFiles: retainedRare?.files ?? null,
     retainedRareValues: retainedRare?.values ?? null
   });
   const artifacts = verifyPromotedArtifacts({
@@ -464,6 +477,7 @@ function verifyRetainedRareScalarEvidence({
     "ctcAudit"
   ]);
   const summaries = {};
+  const files = {};
   const values = {};
   for (const name of [
     "report",
@@ -476,12 +490,16 @@ function verifyRetainedRareScalarEvidence({
       repoRoot,
       records[name],
       `Retained rare-scalar ${name}`,
-      { json: jsonNames.has(name) }
+      {
+        includeContents: name === "predictions",
+        json: jsonNames.has(name)
+      }
     );
     summaries[name] = evidenceSummary(repoRoot, evidence.file);
+    files[name] = evidence.file;
     values[name] = evidence.value;
   }
-  return { summaries, values };
+  return { files, summaries, values };
 }
 
 function validateRetainedEvidenceGraph({
@@ -489,7 +507,9 @@ function validateRetainedEvidenceGraph({
   receipt,
   descriptor,
   manifest,
+  retainedFiles,
   retainedValues,
+  retainedRareFiles,
   retainedRareValues
 }) {
   const selection = validateNeuralSelectionReport(retainedValues.selectionReport);
@@ -780,6 +800,54 @@ function validateRetainedEvidenceGraph({
     ) {
       fail("Retained rare-scalar contract is stale.");
     }
+    const goldRows = loadLockedEvaluationRows({
+      repoRoot,
+      manifest: goldManifest,
+      label: "Retained gold"
+    });
+    const officialRows = loadLockedEvaluationRows({
+      repoRoot,
+      manifest: retainedValues.comparisonBenchmarkManifest,
+      label: "Retained official benchmark"
+    });
+    const recomputedRareEvaluation = evaluateNeuralRareScalarEvidence({
+      contract,
+      probePredictions: parsePredictionRows(
+        retainedRareFiles.predictions.contents,
+        "Retained rare-scalar predictions"
+      ),
+      lockedEvaluations: [
+        {
+          label: "gold",
+          rows: goldRows,
+          predictions: parsePredictionRows(
+            retainedFiles.predictions.contents,
+            "Retained gold predictions"
+          )
+        },
+        {
+          label: "official-benchmark",
+          rows: officialRows,
+          predictions: parsePredictionRows(
+            retainedFiles.comparisonPredictions.contents,
+            "Retained official benchmark predictions"
+          )
+        }
+      ]
+    });
+    if (
+      goldRows.length !== rare.gold.rows ||
+      officialRows.length !== rare.officialBenchmark.rows ||
+      canonicalJson(recomputedRareEvaluation) !==
+        canonicalJson(rareEvaluation) ||
+      canonicalJson(recomputedRareEvaluation.warnings) !==
+        canonicalJson(rare.warnings)
+    ) {
+      fail(
+        "Retained rare-scalar evaluation does not match independent " +
+        "recomputation from locked prediction evidence."
+      );
+    }
   } else if (retainedRareValues !== null) {
     fail("Non-CTC promotion retained unexpected rare-scalar evidence.");
   }
@@ -1058,6 +1126,143 @@ function enforceClosedWorldBundle(productionDirectory, receipt) {
   }
 }
 
+function loadLockedEvaluationRows({
+  repoRoot,
+  manifest,
+  label
+}) {
+  if (
+    !Array.isArray(manifest?.suites) ||
+    manifest.suites.length < 1 ||
+    suiteCorpusSha256(manifest.suites) !== manifest.corpusSha256
+  ) {
+    fail(`${label} manifest suite inventory is stale or invalid.`);
+  }
+  const seenSuites = new Set();
+  const seenRows = new Set();
+  const rows = [];
+  for (const suite of manifest.suites) {
+    if (
+      !suite ||
+      typeof suite !== "object" ||
+      typeof suite.id !== "string" ||
+      !suite.id ||
+      seenSuites.has(suite.id) ||
+      typeof suite.path !== "string" ||
+      !suite.path ||
+      isAbsolute(suite.path) ||
+      suite.path.split(/[\\/]/u).includes("..") ||
+      !SHA256_PATTERN.test(String(suite.sha256 ?? "")) ||
+      !Number.isSafeInteger(suite.rows) ||
+      suite.rows < 1
+    ) {
+      fail(`${label} manifest contains an invalid suite record.`);
+    }
+    seenSuites.add(suite.id);
+    const suiteEvidence = inspectContainedRegularFile(
+      repoRoot,
+      safePath(
+        repoRoot,
+        suite.path,
+        `${label} suite ${suite.id}`
+      ),
+      {
+        label: `${label} suite ${suite.id}`,
+        includeContents: true,
+        maxBytes: 64 * 1024 * 1024
+      }
+    );
+    if (suiteEvidence.sha256 !== suite.sha256) {
+      fail(`${label} suite ${suite.id} bytes are stale.`);
+    }
+    const suiteRows = parseJsonLineObjects(
+      suiteEvidence.contents,
+      `${label} suite ${suite.id}`
+    );
+    if (suiteRows.length !== suite.rows) {
+      fail(`${label} suite ${suite.id} row count is stale.`);
+    }
+    for (const row of suiteRows) {
+      if (
+        typeof row.id !== "string" ||
+        !row.id ||
+        seenRows.has(row.id) ||
+        typeof row.input !== "string" ||
+        !row.input
+      ) {
+        fail(`${label} contains an invalid or duplicate row identity.`);
+      }
+      seenRows.add(row.id);
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
+function parsePredictionRows(contents, label) {
+  const rows = parseJsonLineObjects(contents, label);
+  const seen = new Set();
+  for (const [index, row] of rows.entries()) {
+    if (
+      canonicalJson(Object.keys(row).sort()) !==
+        canonicalJson(["candidates", "id", "input"]) ||
+      typeof row.id !== "string" ||
+      !row.id ||
+      seen.has(row.id) ||
+      typeof row.input !== "string" ||
+      !row.input ||
+      !Array.isArray(row.candidates) ||
+      row.candidates.length > 4
+    ) {
+      fail(`${label} row ${index + 1} is invalid.`);
+    }
+    seen.add(row.id);
+  }
+  return rows;
+}
+
+function parseJsonLineObjects(contents, label) {
+  const text = contents.toString("utf8");
+  if (!text.endsWith("\n")) {
+    fail(`${label} must end with a newline.`);
+  }
+  const lines = text.slice(0, -1).split("\n");
+  if (lines.length === 0 || lines.some((line) => !line)) {
+    fail(`${label} contains empty or missing rows.`);
+  }
+  return lines.map((line, index) => {
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch (error) {
+      fail(
+        `${label} row ${index + 1} is invalid JSON: ` +
+        errorMessage(error)
+      );
+    }
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      fail(`${label} row ${index + 1} must be an object.`);
+    }
+    return row;
+  });
+}
+
+function suiteCorpusSha256(suites) {
+  const hash = createHash("sha256");
+  for (const suite of suites) {
+    for (const [value, terminator] of [
+      [suite?.id, "\0"],
+      [suite?.path, "\0"],
+      [suite?.sha256, "\0"],
+      [suite?.rows, "\n"]
+    ]) {
+      hash.update(String(value));
+      hash.update(terminator);
+    }
+  }
+  return hash.digest("hex");
+}
+
 function verifyRetainedEvidence(repoRoot, record, label, options = {}) {
   requireExactKeys(record, ["path", "bytes", "sha256"], `${label} receipt record`);
   if (typeof record.path !== "string" ||
@@ -1071,7 +1276,9 @@ function verifyRetainedEvidence(repoRoot, record, label, options = {}) {
     safePath(repoRoot, record.path, label),
     {
       label,
-      includeContents: Boolean(options.json),
+      includeContents: Boolean(
+        options.includeContents || options.json
+      ),
       maxBytes: label.includes("checkpoint")
         ? 512 * 1024 * 1024
         : label.includes("predictions")

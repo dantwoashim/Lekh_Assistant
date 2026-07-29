@@ -139,9 +139,10 @@ The resulting `rare-scalar-evaluation.json` is a production gate. Sparse
 silver exact matches remain diagnostic warnings; they never inflate reported
 accuracy. Missing rows, unsafe outputs, artifact drift, or any unaccepted
 top-1 `ऱ`/`ॠ` emission on a locked suite fail closed.
-Promotion independently recomputes the pure rare-scalar evaluation from the
-frozen probe contract, exact probe predictions, 47 locked gold rows, and 4,085
-official benchmark rows; a report's precomputed pass status is never trusted.
+Promotion and live receipt verification independently recompute the pure
+rare-scalar evaluation from the frozen probe contract, exact probe predictions,
+47 locked gold rows, and 4,085 official benchmark rows; a report's precomputed
+pass status is never trusted.
 
 The canonical gold inventory is
 `data/neural/gold/manifest.v3.json`. Existing v1/v2 evidence is immutable; v3

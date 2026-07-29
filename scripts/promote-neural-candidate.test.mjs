@@ -34,6 +34,7 @@ import {
   evaluateNeuralRareScalarEvidence
 } from "./lib/neural-rare-scalar-evaluation.mjs";
 import {
+  computeNeuralProductionPromotionId,
   verifyNeuralProductionPromotionReceipt
 } from "./lib/neural-production-promotion-receipt.mjs";
 import {
@@ -512,6 +513,34 @@ describe("evidence-bound neural candidate promotion", () => {
         /does not match independent recomputation/u
       );
       assert.equal(existsProduction(fixture), false);
+    });
+  });
+
+  it("rejects a rehashed retained rare-scalar semantic forgery", () => {
+    withFixture("ctc", (fixture) => {
+      const result = promote(fixture);
+      const rareReport = readJson(fixture.paths.rareScalarEvaluation);
+      rareReport.evaluation.byScalar["ऑ"].top1ExactRows += 1;
+      writeJson(fixture.paths.rareScalarEvaluation, rareReport);
+
+      const rareEvidence = inspectContainedRegularFile(
+        fixture.root,
+        fixture.paths.rareScalarEvaluation
+      );
+      const receipt = readJson(result.report);
+      receipt.rareScalarEvidence.report.bytes = rareEvidence.bytes;
+      receipt.rareScalarEvidence.report.sha256 = rareEvidence.sha256;
+      receipt.promotionId =
+        computeNeuralProductionPromotionId(receipt);
+      writeJson(result.report, receipt);
+
+      assert.throws(
+        () => verifyNeuralProductionPromotionReceipt({
+          repoRoot: fixture.root,
+          productionDirectory: result.productionDir
+        }),
+        /Retained rare-scalar evaluation does not match independent recomputation/u
+      );
     });
   });
 
