@@ -30,6 +30,7 @@ const requiredFiles = [
   "scripts/lib/neural-audit-evidence.mjs",
   "scripts/lib/neural-rare-scalar-contract.mjs",
   "scripts/lib/neural-rare-scalar-evaluation.mjs",
+  "scripts/lib/neural-artifact-filesystem.mjs",
   "scripts/lib/neural-production-promotion-receipt.mjs",
   "scripts/check-neural-audit-evidence.mjs",
   "scripts/analyze-neural-output-tokenization.mjs",
@@ -106,6 +107,9 @@ const packagedBenchmarkText = readText(
 const promoterText = readText("scripts/promote-neural-candidate.mjs");
 const promotionReceiptText = readText(
   "scripts/lib/neural-production-promotion-receipt.mjs"
+);
+const artifactFilesystemText = readText(
+  "scripts/lib/neural-artifact-filesystem.mjs"
 );
 const packageJson = readJson("package.json");
 const schema = readJson("data/neural/schema/lekh-neural-manifest.schema.json");
@@ -277,6 +281,26 @@ requireText(
   promotionReceiptText,
   "Retained rare-scalar evaluation does not match independent ",
   "promotion receipt verifier must reject retained semantic forgeries"
+);
+requireText(
+  artifactFilesystemText,
+  "assertNoSymlinkComponents(location, label, true)",
+  "neural artifact verifier must reject symlinked evidence path components"
+);
+requireText(
+  artifactFilesystemText,
+  "assertPathVersion(",
+  "neural artifact verifier must revalidate path identity after hashing"
+);
+requireText(
+  artifactFilesystemText,
+  "left.ctimeNs === right.ctimeNs",
+  "neural artifact verifier must bind content-change metadata"
+);
+requireText(
+  specText,
+  "revalidates the live pathname against the opened inode version",
+  "spec must define the race-resistant promotion evidence boundary"
 );
 requireText(
   ctcTrainerText,

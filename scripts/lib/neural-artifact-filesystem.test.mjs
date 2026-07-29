@@ -41,6 +41,25 @@ describe("neural artifact filesystem boundary", () => {
     });
   });
 
+  it("rejects a contained symbolic-link parent for regular evidence", () => {
+    withFixture(({ root }) => {
+      const realParent = join(root, "real");
+      const path = join(realParent, "manifest.json");
+      write(path, "{}\n");
+      const alias = join(root, "alias");
+      symlinkSync(realParent, alias);
+      assert.throws(
+        () => inspectContainedRegularFile(
+          root,
+          join(alias, "manifest.json")
+        ),
+        (error) =>
+          error instanceof NeuralArtifactFilesystemError &&
+          /symbolic-link path component/u.test(error.message)
+      );
+    });
+  });
+
   it("rejects direct paths outside the canonical repository root", () => {
     withFixture(({ root, outside }) => {
       const path = join(outside, "manifest.json");
@@ -61,6 +80,25 @@ describe("neural artifact filesystem boundary", () => {
       assert.throws(
         () => inspectContainedDirectoryTree(root, link),
         (error) => error instanceof NeuralArtifactFilesystemError && /must not be a symbolic link/u.test(error.message)
+      );
+    });
+  });
+
+  it("rejects a contained symbolic-link parent for model directories", () => {
+    withFixture(({ root }) => {
+      const realParent = join(root, "real");
+      const model = join(realParent, "model.mlmodelc");
+      write(join(model, "model.espresso.net"), "graph");
+      const alias = join(root, "alias");
+      symlinkSync(realParent, alias);
+      assert.throws(
+        () => inspectContainedDirectoryTree(
+          root,
+          join(alias, "model.mlmodelc")
+        ),
+        (error) =>
+          error instanceof NeuralArtifactFilesystemError &&
+          /symbolic-link path component/u.test(error.message)
       );
     });
   });

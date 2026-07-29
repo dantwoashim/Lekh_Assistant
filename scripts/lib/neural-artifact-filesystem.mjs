@@ -28,6 +28,7 @@ export function inspectContainedRegularFile(repoRoot, artifactPath, options = {}
   const label = options.label ?? "Artifact";
   const maxBytes = boundedInteger(options.maxBytes, DEFAULT_MAX_FILE_BYTES, "maxBytes");
   const location = containedLocation(repoRoot, artifactPath, label);
+  assertNoSymlinkComponents(location, label, false);
   const before = lstat(location.lexicalPath, label);
   if (before.isSymbolicLink()) fail(`${label} must not be a symbolic link: ${location.displayPath}.`);
   if (!before.isFile()) fail(`${label} must be a regular file: ${location.displayPath}.`);
@@ -37,7 +38,16 @@ export function inspectContainedRegularFile(repoRoot, artifactPath, options = {}
   const realPath = realpath(location.lexicalPath, label);
   assertContained(location.realRoot, realPath, `${label} resolves outside the repository root`);
 
-  const opened = readRegularFile(location, before, maxBytes, Boolean(options.includeContents), label);
+  const opened = readRegularFile(
+    {
+      ...location,
+      expectedRealPath: realPath
+    },
+    before,
+    maxBytes,
+    Boolean(options.includeContents),
+    label
+  );
   return Object.freeze({
     path: location.lexicalPath,
     realPath,
@@ -54,6 +64,7 @@ export function inspectContainedDirectoryTree(repoRoot, artifactPath, options = 
   const maxEntries = boundedInteger(options.maxEntries, DEFAULT_MAX_DIRECTORY_ENTRIES, "maxEntries");
   const maxDepth = boundedInteger(options.maxDepth, DEFAULT_MAX_DIRECTORY_DEPTH, "maxDepth");
   const location = containedLocation(repoRoot, artifactPath, label);
+  assertNoSymlinkComponents(location, label, false);
   const rootStat = lstat(location.lexicalPath, label);
   if (rootStat.isSymbolicLink()) fail(`${label} must not be a symbolic link: ${location.displayPath}.`);
   if (!rootStat.isDirectory()) fail(`${label} must be a real directory: ${location.displayPath}.`);
@@ -63,7 +74,7 @@ export function inspectContainedDirectoryTree(repoRoot, artifactPath, options = 
   const files = [];
   let entries = 0;
   let totalBytes = 0;
-  walk(location.lexicalPath, 0);
+  walk(location.lexicalPath, 0, rootStat, realDirectory);
   if (files.length === 0) fail(`${label} contains no regular files.`);
   files.sort((left, right) => left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0);
 
@@ -84,8 +95,22 @@ export function inspectContainedDirectoryTree(repoRoot, artifactPath, options = 
     sha256: hash.digest("hex")
   });
 
-  function walk(directory, depth) {
+  function walk(
+    directory,
+    depth,
+    directoryBefore = lstat(directory, label),
+    expectedRealDirectory = realpath(directory, label)
+  ) {
     if (depth > maxDepth) fail(`${label} exceeds the maximum directory depth of ${maxDepth}.`);
+    const directoryLocation = {
+      ...location,
+      lexicalPath: directory,
+      displayPath: display(repoRoot, directory)
+    };
+    assertNoSymlinkComponents(directoryLocation, label, true);
+    if (!directoryBefore.isDirectory()) {
+      fail(`${label} changed to a non-directory: ${directoryLocation.displayPath}.`);
+    }
     let names;
     try {
       names = readdirSync(directory).sort();
@@ -103,7 +128,7 @@ export function inspectContainedDirectoryTree(repoRoot, artifactPath, options = 
       assertContained(location.realRoot, childRealPath, `${label} descendant resolves outside the repository root`);
       assertContained(realDirectory, childRealPath, `${label} descendant resolves outside the compiled-model directory`);
       if (childStat.isDirectory()) {
-        walk(child, depth + 1);
+        walk(child, depth + 1, childStat, childRealPath);
         continue;
       }
       if (!childStat.isFile()) fail(`${label} contains a non-regular filesystem entry: ${childDisplay}.`);
@@ -111,9 +136,11 @@ export function inspectContainedDirectoryTree(repoRoot, artifactPath, options = 
         fail(`${label} exceeds the ${maxBytes}-byte verification limit.`);
       }
       const childLocation = {
+        lexicalRoot: location.lexicalRoot,
         lexicalPath: child,
         realRoot: location.realRoot,
-        displayPath: childDisplay
+        displayPath: childDisplay,
+        expectedRealPath: childRealPath
       };
       const opened = readRegularFile(childLocation, childStat, maxBytes - totalBytes, true, label);
       totalBytes += opened.bytes;
@@ -127,6 +154,13 @@ export function inspectContainedDirectoryTree(repoRoot, artifactPath, options = 
         sha256Bytes: opened.contents
       });
     }
+    assertPathVersion(
+      directoryLocation,
+      directoryBefore,
+      expectedRealDirectory,
+      label,
+      "directory"
+    );
   }
 }
 
@@ -143,8 +177,8 @@ function readRegularFile(location, before, maxBytes, includeContents, label) {
   try {
     const opened = fstatSync(descriptor, { bigint: true });
     if (!opened.isFile()) fail(`${label} changed to a non-regular file while being verified: ${location.displayPath}.`);
-    if (opened.dev !== before.dev || opened.ino !== before.ino) {
-      fail(`${label} changed identity while being verified: ${location.displayPath}.`);
+    if (!sameVersion(opened, before)) {
+      fail(`${label} changed before it could be verified: ${location.displayPath}.`);
     }
     const buffer = Buffer.allocUnsafe(READ_BUFFER_BYTES);
     while (true) {
@@ -157,10 +191,16 @@ function readRegularFile(location, before, maxBytes, includeContents, label) {
       if (chunks) chunks.push(Buffer.from(chunk));
     }
     const after = fstatSync(descriptor, { bigint: true });
-    if (after.dev !== opened.dev || after.ino !== opened.ino ||
-        after.size !== opened.size || after.mtimeNs !== opened.mtimeNs || BigInt(bytes) !== opened.size) {
+    if (!sameVersion(after, opened) || BigInt(bytes) !== opened.size) {
       fail(`${label} changed while being verified: ${location.displayPath}.`);
     }
+    assertPathVersion(
+      location,
+      opened,
+      location.expectedRealPath,
+      label,
+      "file"
+    );
   } finally {
     closeSync(descriptor);
   }
@@ -181,6 +221,79 @@ function containedLocation(repoRoot, artifactPath, label) {
     realRoot: realpath(lexicalRoot, "Repository root"),
     displayPath: display(lexicalRoot, lexicalPath)
   };
+}
+
+function assertPathVersion(
+  location,
+  expected,
+  expectedRealPath,
+  label,
+  kind
+) {
+  assertNoSymlinkComponents(location, label, true);
+  const current = lstat(location.lexicalPath, label);
+  const typeMatches = kind === "directory"
+    ? current.isDirectory()
+    : current.isFile();
+  if (!typeMatches || !sameVersion(current, expected)) {
+    fail(
+      `${label} pathname changed while being verified: ` +
+      `${location.displayPath}.`
+    );
+  }
+  const currentRealPath = realpath(location.lexicalPath, label);
+  assertContained(
+    location.realRoot,
+    currentRealPath,
+    `${label} resolves outside the repository root`
+  );
+  if (currentRealPath !== expectedRealPath) {
+    fail(
+      `${label} pathname resolved to a different artifact while being ` +
+      `verified: ${location.displayPath}.`
+    );
+  }
+}
+
+function assertNoSymlinkComponents(
+  location,
+  label,
+  includeLeaf
+) {
+  const rootStat = lstat(location.lexicalRoot, "Repository root");
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+    fail("Repository root must be a real directory.");
+  }
+  const child = relative(location.lexicalRoot, location.lexicalPath);
+  const parts = child.split(sep).filter(Boolean);
+  const count = includeLeaf ? parts.length : Math.max(0, parts.length - 1);
+  let current = location.lexicalRoot;
+  for (const component of parts.slice(0, count)) {
+    current = resolve(current, component);
+    const metadata = lstat(current, label);
+    if (metadata.isSymbolicLink()) {
+      fail(
+        `${label} contains a symbolic-link path component: ` +
+        `${display(location.lexicalRoot, current)}.`
+      );
+    }
+    if (!metadata.isDirectory() && current !== location.lexicalPath) {
+      fail(
+        `${label} contains a non-directory parent component: ` +
+        `${display(location.lexicalRoot, current)}.`
+      );
+    }
+  }
+}
+
+function sameVersion(left, right) {
+  return left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.mode === right.mode &&
+    left.nlink === right.nlink &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs;
 }
 
 function assertContained(parent, candidate, prefix) {

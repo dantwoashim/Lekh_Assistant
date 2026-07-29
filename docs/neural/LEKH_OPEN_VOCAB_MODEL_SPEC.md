@@ -283,6 +283,9 @@ Promotion is deliberately two-stage:
 
 Candidate files are never edited in place. A failure before or after the atomic
 swap restores the previous production directory and removes staging debris.
+Every promotion/receipt evidence read rejects symbolic links in every path
+component and revalidates the live pathname against the opened inode version
+after hashing.
 The promotion receipt binds the candidate specification, selection receipt and
 selection ID, official benchmark manifest and predictions, candidate manifest,
 checkpoint, export report, gold predictions and corpus, dataset, evaluation,
