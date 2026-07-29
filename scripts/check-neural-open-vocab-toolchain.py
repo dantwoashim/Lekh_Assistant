@@ -31,10 +31,25 @@ EXPECTED_DISTRIBUTIONS = {
     "protobuf": "7.35.1",
     "pyaml": "26.7.0",
     "PyYAML": "6.0.3",
+    "setuptools": "83.0.0",
     "sympy": "1.14.0",
     "torch": "2.7.0",
     "tqdm": "4.68.4",
     "typing_extensions": "4.16.0",
+}
+REMOTE_CUDA_DISTRIBUTIONS = {
+    "nvidia-cublas-cu11": "11.11.3.6",
+    "nvidia-cuda-cupti-cu11": "11.8.87",
+    "nvidia-cuda-nvrtc-cu11": "11.8.89",
+    "nvidia-cuda-runtime-cu11": "11.8.89",
+    "nvidia-cudnn-cu11": "9.1.0.70",
+    "nvidia-cufft-cu11": "10.9.0.58",
+    "nvidia-curand-cu11": "10.3.0.86",
+    "nvidia-cusolver-cu11": "11.4.1.48",
+    "nvidia-cusparse-cu11": "11.7.5.86",
+    "nvidia-nccl-cu11": "2.21.5",
+    "nvidia-nvtx-cu11": "11.8.86",
+    "triton": "3.3.0",
 }
 RUNTIME_MODULES = ("coremltools", "numpy", "torch")
 
@@ -68,6 +83,7 @@ def distributions_for_profile(profile: str) -> dict[str, str]:
         return expected
     if profile == REMOTE_CUDA_PROFILE:
         expected["torch"] = REMOTE_TORCH_VERSION
+        expected.update(REMOTE_CUDA_DISTRIBUTIONS)
         return expected
     raise ValueError(f"Unsupported neural toolchain profile: {profile}")
 

@@ -32,11 +32,14 @@ the two newest recovery generations are retained.
 | Remote training | 3.11.15 | 2.7.0+cu118 | CUDA 11.8 |
 | macOS export | 3.11.x | 2.7.0 | Core ML |
 
-The remote notebook installs the official PyTorch CUDA 11.8 wheel from
-`download.pytorch.org`, then installs the remaining exact versions from
-`requirements/neural-open-vocab.lock`. The remote runner fails closed if the
-Python patch, CUDA runtime, PyTorch local version tag, architecture, or
-deterministic-runtime flags drift.
+The remote notebook installs the exact non-PyTorch packages from
+`requirements/neural-open-vocab.lock`, then installs the complete CUDA closure
+from `requirements/neural-open-vocab-cu118.lock` using the official PyTorch
+CUDA 11.8 index. The CUDA lock pins PyTorch, Triton, and all eleven NVIDIA
+runtime distributions required by that wheel. The notebook runs `pip check`;
+the remote verifier then rejects any Python patch, package version, CUDA
+runtime, PyTorch local version tag, architecture, or deterministic-runtime
+drift.
 
 PyTorch publishes CUDA 11.8 as an official 2.7.0 wheel target:
 [PyTorch previous versions](https://pytorch.org/get-started/previous-versions/).
@@ -58,7 +61,7 @@ npm run neural:remote:bundle -- \
 The builder emits three write-once files:
 
 - `*.tar.gz`: exact trainer, verifier, config, dataset, gold suites, benchmark,
-  and dependency lock;
+  base dependency lock, and CUDA dependency lock;
 - `*-Colab.ipynb`: bundle-specific notebook with the archive name, byte count,
   SHA-256, and bundle identity embedded;
 - `*.bundle-report.json`: trusted local sidecar used when importing the result.
@@ -81,6 +84,13 @@ The Drive mount gives that Colab runtime access to the selected Drive. The
 workflow writes under `MyDrive/Lekh-Neural-Training`; it does not intentionally
 read unrelated Drive content. The bundle contains the repository training
 dataset and evaluation suites, so choose the Google account deliberately.
+
+The training subprocess runs with `-B`, `PYTHONDONTWRITEBYTECODE=1`,
+`PYTHONHASHSEED=42`, and `CUBLAS_WORKSPACE_CONFIG=:4096:8`. This prevents Python
+imports from mutating the authenticated extraction and preserves the
+deterministic CUDA contract. Linux warnings that Core ML proxy modules are
+unavailable are expected during the training-only phase; Core ML conversion
+occurs later on macOS.
 
 ## 3. Verify and stage the remote result
 
@@ -131,7 +141,8 @@ not Neural Engine placement proof.
 ## Failure and recovery rules
 
 - Wrong archive or modified bytes: upload verification stops before extraction.
-- Missing GPU or wrong CUDA wheel: toolchain verification stops before training.
+- Missing GPU, incomplete CUDA dependency closure, or wrong CUDA wheel:
+  toolchain verification stops before training.
 - Runtime disconnect: rerun the notebook; the newest valid Drive epoch is
   restored.
 - Different GPU/runtime fingerprint: resume fails closed; use a compatible

@@ -41,6 +41,7 @@ from pathlib import Path
 import hashlib
 import importlib.util
 import json
+import sys
 
 {constants_source}
 VERIFIER_MODULE_SOURCE = {verifier_module_source!r}
@@ -52,13 +53,21 @@ def file_sha256(path):
             digest.update(chunk)
     return digest.hexdigest()
 
-uploaded = files.upload()
-if EXPECTED_ARCHIVE_NAME not in uploaded:
-    raise RuntimeError(
-        f"Upload exactly {{EXPECTED_ARCHIVE_NAME}}; observed {{sorted(uploaded)}}"
-    )
 archive = Path("/content") / EXPECTED_ARCHIVE_NAME
-archive.write_bytes(uploaded[EXPECTED_ARCHIVE_NAME])
+if archive.is_symlink():
+    raise RuntimeError("Existing archive path must not be a symbolic link.")
+if archive.exists():
+    if not archive.is_file():
+        raise RuntimeError("Existing archive path is not a regular file.")
+    print(f"Reusing existing session archive: {{archive.name}}")
+else:
+    uploaded = files.upload()
+    if EXPECTED_ARCHIVE_NAME not in uploaded:
+        raise RuntimeError(
+            f"Upload exactly {{EXPECTED_ARCHIVE_NAME}}; "
+            f"observed {{sorted(uploaded)}}"
+        )
+    archive.write_bytes(uploaded[EXPECTED_ARCHIVE_NAME])
 if archive.stat().st_size != EXPECTED_ARCHIVE_BYTES:
     raise RuntimeError("Uploaded archive byte count is wrong.")
 observed_sha256 = file_sha256(archive)
@@ -74,7 +83,12 @@ spec = importlib.util.spec_from_file_location(
     module_path,
 )
 remote_artifacts = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(remote_artifacts)
+sys.modules[spec.name] = remote_artifacts
+try:
+    spec.loader.exec_module(remote_artifacts)
+except Exception:
+    sys.modules.pop(spec.name, None)
+    raise
 
 bundle_root = Path("/content/lekh-neural-remote")
 if bundle_root.exists():
@@ -172,6 +186,9 @@ if not venv.exists():
 
 python = venv / "bin/python"
 lock_path = bundle_root / "requirements/neural-open-vocab.lock"
+cuda_lock_path = (
+    bundle_root / "requirements/neural-open-vocab-cu118.lock"
+)
 locked_requirements = [
     line.strip()
     for line in lock_path.read_text(encoding="utf-8").splitlines()
@@ -189,6 +206,19 @@ non_torch_requirements = [
     value for value in locked_requirements
     if not value.startswith("torch==")
 ]
+cuda_requirements = [
+    line.strip()
+    for line in cuda_lock_path.read_text(encoding="utf-8").splitlines()
+    if line.strip() and not line.lstrip().startswith("#")
+]
+cuda_torch_requirements = [
+    value for value in cuda_requirements
+    if value.startswith("torch==")
+]
+if cuda_torch_requirements != [REMOTE_TORCH]:
+    raise RuntimeError(
+        f"Unexpected CUDA torch lock: {{cuda_torch_requirements}}"
+    )
 subprocess.run(
     [
         uv,
@@ -197,9 +227,7 @@ subprocess.run(
         "--python",
         str(python),
         "--no-deps",
-        "--index-url",
-        PYTORCH_INDEX,
-        REMOTE_TORCH,
+        *non_torch_requirements,
     ],
     check=True,
 )
@@ -210,8 +238,15 @@ subprocess.run(
         "install",
         "--python",
         str(python),
-        *non_torch_requirements,
+        "--no-deps",
+        "--index-url",
+        PYTORCH_INDEX,
+        *cuda_requirements,
     ],
+    check=True,
+)
+subprocess.run(
+    [str(python), "-m", "pip", "check"],
     check=True,
 )
 python_version = subprocess.run(
@@ -277,11 +312,13 @@ import os
 import subprocess
 
 training_environment = os.environ.copy()
-training_environment["CUBLAS_WORKSPACE_CONFIG"] = ":4096:2"
+training_environment["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 training_environment["PYTHONHASHSEED"] = "42"
+training_environment["PYTHONDONTWRITEBYTECODE"] = "1"
 subprocess.run(
     [
         str(python),
+        "-B",
         str(bundle_root / "scripts/run-neural-remote-training.py"),
         "--config",
         EXPECTED_CONFIG,
@@ -351,7 +388,11 @@ files.download(str(result_archive))
             markdown_cell(
                 "## 1. Upload and authenticate the exact local bundle\n\n"
                 f"Expected bundle: `{archive_name}`  \n"
-                f"SHA-256: `{bundle_report['archiveSha256']}`"
+                f"SHA-256: `{bundle_report['archiveSha256']}`\n\n"
+                "Either run the next cell and use **Choose Files**, or upload "
+                "the exact archive through Colab's **Files** pane first. The "
+                "cell reuses `/content/<archive-name>` only after checking "
+                "its byte count and SHA-256."
             ),
             code_cell(verify_cell),
             markdown_cell(

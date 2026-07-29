@@ -17,6 +17,11 @@ from pathlib import Path
 from typing import Any
 
 
+# The extracted bundle is a closed, authenticated tree. Importing a bundled
+# module must never mutate that tree by creating __pycache__ files before the
+# inventory verifier runs.
+sys.dont_write_bytecode = True
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -324,7 +329,12 @@ def import_trainer() -> Any:
     if specification is None or specification.loader is None:
         raise NeuralRemoteArtifactError("Unable to load the neural trainer.")
     trainer = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(trainer)
+    sys.modules[specification.name] = trainer
+    try:
+        specification.loader.exec_module(trainer)
+    except Exception:
+        sys.modules.pop(specification.name, None)
+        raise
     return trainer
 
 
@@ -792,7 +802,7 @@ def validate_completed_training_report(
         or runtime.get("machine") != "x86_64"
         or cuda.get("available") is not True
         or cuda.get("runtimeVersion") != REMOTE_CUDA_VERSION
-        or cuda.get("cublasWorkspaceConfig") != ":4096:2"
+        or cuda.get("cublasWorkspaceConfig") != ":4096:8"
         or cuda.get("cudnnBenchmark") is not False
         or cuda.get("cudnnDeterministic") is not True
         or not is_sha256(bundle_id)

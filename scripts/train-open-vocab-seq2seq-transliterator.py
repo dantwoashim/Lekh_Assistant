@@ -1501,7 +1501,7 @@ def ensure_run_input_snapshot(args: argparse.Namespace) -> dict[str, Any]:
 def configure_deterministic_runtime(args: argparse.Namespace) -> None:
     requested = str(getattr(args, "training_device", "cpu"))
     if requested == "cuda":
-        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:2")
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
         if not torch.cuda.is_available():
             raise SystemExit(
                 "--training-device cuda requires an available CUDA device."

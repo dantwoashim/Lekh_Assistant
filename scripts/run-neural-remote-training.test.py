@@ -45,6 +45,9 @@ class FakeTrainer:
 
 
 class RemoteRunnerRecoveryTests(unittest.TestCase):
+    def test_bundle_imports_cannot_write_bytecode(self) -> None:
+        self.assertTrue(RUNNER.sys.dont_write_bytecode)
+
     def test_completed_report_requires_exact_remote_cuda_profile(
         self,
     ) -> None:
@@ -69,7 +72,7 @@ class RemoteRunnerRecoveryTests(unittest.TestCase):
                     "cuda": {
                         "available": True,
                         "runtimeVersion": RUNNER.REMOTE_CUDA_VERSION,
-                        "cublasWorkspaceConfig": ":4096:2",
+                        "cublasWorkspaceConfig": ":4096:8",
                         "cudnnBenchmark": False,
                         "cudnnDeterministic": True,
                     },

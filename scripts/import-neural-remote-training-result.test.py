@@ -37,6 +37,31 @@ class FakeTrainer:
 
 
 class RemoteResultImporterTests(unittest.TestCase):
+    def test_remote_package_inventory_is_exact_and_duplicate_safe(self) -> None:
+        expected = IMPORTER.expected_remote_package_versions()
+        self.assertEqual(expected["torch"], IMPORTER.REMOTE_TORCH_VERSION)
+        self.assertEqual(expected["triton"], "3.3.0")
+        self.assertEqual(expected["nvidia-cudnn-cu11"], "9.1.0.70")
+        self.assertEqual(
+            IMPORTER.normalize_observed_package_versions(
+                {
+                    "Torch": IMPORTER.REMOTE_TORCH_VERSION,
+                    "nvidia_cudnn_cu11": "9.1.0.70",
+                }
+            ),
+            {
+                "torch": IMPORTER.REMOTE_TORCH_VERSION,
+                "nvidia-cudnn-cu11": "9.1.0.70",
+            },
+        )
+        with self.assertRaisesRegex(
+            IMPORTER.NeuralRemoteArtifactError,
+            "canonical duplicates",
+        ):
+            IMPORTER.normalize_observed_package_versions(
+                {"Jinja2": "3.1.6", "jinja2": "3.1.6"}
+            )
+
     def test_result_roles_are_unique_exact_and_closed(self) -> None:
         expected = {
             "checkpoint": "candidate/checkpoint.pt",

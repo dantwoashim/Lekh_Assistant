@@ -80,6 +80,10 @@ BUNDLE_RUNTIME_FILES = (
         "requirements/neural-open-vocab.lock",
         "python-requirements",
     ),
+    (
+        "requirements/neural-open-vocab-cu118.lock",
+        "cuda-python-requirements",
+    ),
 )
 
 
@@ -389,7 +393,7 @@ def collect_training_bundle(
             "skipTrain": False,
             "skipCoreML": True,
             "deterministicAlgorithms": True,
-            "cublasWorkspaceConfig": ":4096:2",
+            "cublasWorkspaceConfig": ":4096:8",
         },
     }
     return manifest_base, sorted(

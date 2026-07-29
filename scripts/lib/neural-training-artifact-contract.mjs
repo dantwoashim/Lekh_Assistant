@@ -795,7 +795,7 @@ function validateRuntimeExecutionEvidence({
       cuda.runtimeVersion.length < 1 ||
       !Number.isSafeInteger(cuda.cudnnVersion) ||
       cuda.cudnnVersion < 1 ||
-      cuda.cublasWorkspaceConfig !== ":4096:2" ||
+      cuda.cublasWorkspaceConfig !== ":4096:8" ||
       cuda.cudnnBenchmark !== false ||
       cuda.cudnnDeterministic !== true) {
     failures.push(

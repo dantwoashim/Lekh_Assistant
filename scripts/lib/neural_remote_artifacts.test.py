@@ -347,10 +347,14 @@ class NeuralRemoteArtifactTests(unittest.TestCase):
         )
         paths = {item.archive_path for item in files}
         self.assertEqual(manifest["modelId"], "lekh-open-vocab-bigru-attention-v1")
-        self.assertEqual(len(files), 23)
+        self.assertEqual(len(files), 24)
         self.assertIn("data/generated/neural-open-vocab/train.jsonl", paths)
         self.assertIn("scripts/run-neural-remote-training.py", paths)
         self.assertIn("requirements/neural-open-vocab.lock", paths)
+        self.assertIn(
+            "requirements/neural-open-vocab-cu118.lock",
+            paths,
+        )
 
 
 def write_malicious_archive(

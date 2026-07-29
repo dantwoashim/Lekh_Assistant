@@ -7,6 +7,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import stat
 import sys
 import uuid
@@ -42,6 +43,87 @@ REMOTE_TOOLCHAIN_PROFILE = "linux-cuda-cu118"
 REMOTE_PYTHON_VERSION = "3.11.15"
 REMOTE_TORCH_VERSION = "2.7.0+cu118"
 REMOTE_CUDA_VERSION = "11.8"
+REQUIREMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def normalize_distribution_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def read_exact_requirement_versions(path: Path) -> dict[str, str]:
+    versions: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, separator, version = line.partition("==")
+        if (
+            not separator
+            or not REQUIREMENT_NAME.fullmatch(name)
+            or not version
+            or "==" in version
+        ):
+            raise NeuralRemoteArtifactError(
+                f"Remote dependency lock is not exact: {path}"
+            )
+        normalized = normalize_distribution_name(name)
+        if normalized in versions:
+            raise NeuralRemoteArtifactError(
+                f"Remote dependency lock repeats {normalized}: {path}"
+            )
+        versions[normalized] = version
+    return versions
+
+
+def expected_remote_package_versions() -> dict[str, str]:
+    local = read_exact_requirement_versions(
+        ROOT / "requirements/neural-open-vocab.lock"
+    )
+    cuda = read_exact_requirement_versions(
+        ROOT / "requirements/neural-open-vocab-cu118.lock"
+    )
+    if local.pop("torch", None) != "2.7.0":
+        raise NeuralRemoteArtifactError(
+            "Local neural dependency lock has unexpected torch pin."
+        )
+    if cuda.get("torch") != REMOTE_TORCH_VERSION:
+        raise NeuralRemoteArtifactError(
+            "CUDA neural dependency lock has unexpected torch pin."
+        )
+    overlap = set(local).intersection(cuda)
+    if overlap:
+        raise NeuralRemoteArtifactError(
+            "Local and CUDA dependency locks overlap outside torch: "
+            f"{sorted(overlap)}"
+        )
+    return {**local, **cuda}
+
+
+def normalize_observed_package_versions(
+    packages: Any,
+) -> dict[str, str]:
+    if not isinstance(packages, dict):
+        raise NeuralRemoteArtifactError(
+            "Remote toolchain package inventory is not an object."
+        )
+    normalized: dict[str, str] = {}
+    for name, version in packages.items():
+        if (
+            not isinstance(name, str)
+            or not REQUIREMENT_NAME.fullmatch(name)
+            or not isinstance(version, str)
+            or not version
+        ):
+            raise NeuralRemoteArtifactError(
+                "Remote toolchain package inventory is malformed."
+            )
+        canonical = normalize_distribution_name(name)
+        if canonical in normalized:
+            raise NeuralRemoteArtifactError(
+                "Remote toolchain package inventory has canonical duplicates."
+            )
+        normalized[canonical] = version
+    return normalized
 
 
 def parse_args() -> argparse.Namespace:
@@ -433,6 +515,8 @@ def validate_training_report(
         if isinstance(toolchain, dict)
         else {}
     )
+    observed_packages = normalize_observed_package_versions(packages)
+    expected_packages = expected_remote_package_versions()
     runtime_python = runtime.get("python")
     trainer_sha256 = sha256_file(
         ROOT / "scripts/train-open-vocab-seq2seq-transliterator.py"
@@ -459,6 +543,7 @@ def validate_training_report(
         or toolchain.get("profile") != REMOTE_TOOLCHAIN_PROFILE
         or toolchain.get("python")
             != runtime.get("python")
+        or observed_packages != expected_packages
         or packages.get("torch")
             != runtime.get("torch")
         or packages.get("numpy")
@@ -473,7 +558,7 @@ def validate_training_report(
         or runtime.get("machine") != "x86_64"
         or cuda.get("available") is not True
         or cuda.get("runtimeVersion") != REMOTE_CUDA_VERSION
-        or cuda.get("cublasWorkspaceConfig") != ":4096:2"
+        or cuda.get("cublasWorkspaceConfig") != ":4096:8"
         or cuda.get("cudnnBenchmark") is not False
         or cuda.get("cudnnDeterministic") is not True
         or report.get("trainingContractSha256")
