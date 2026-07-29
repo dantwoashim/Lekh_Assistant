@@ -37,6 +37,53 @@ class FakeTrainer:
 
 
 class RemoteResultImporterTests(unittest.TestCase):
+    def test_runtime_binding_uses_verified_imported_vocabulary(
+        self,
+    ) -> None:
+        class RuntimeBindingTrainer:
+            observed_vocabulary: Path | None = None
+
+            @classmethod
+            def validate_checkpoint_runtime_bindings(
+                cls,
+                args: SimpleNamespace,
+                _checkpoint: dict[str, object],
+                _model: object,
+            ) -> None:
+                cls.observed_vocabulary = args.vocab_metadata
+                if not args.vocab_metadata.is_file():
+                    raise RuntimeError("verified vocabulary was not used")
+
+        temporary_root = ROOT / ".tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="lekh-remote-import-vocabulary-",
+            dir=temporary_root,
+        ) as directory:
+            imported_vocabulary = Path(directory) / "fixture.vocab.json"
+            imported_vocabulary.write_text("{}", encoding="utf-8")
+            canonical_vocabulary = Path(directory) / "missing.vocab.json"
+            args = SimpleNamespace(
+                vocab_metadata=canonical_vocabulary,
+            )
+
+            IMPORTER.validate_checkpoint_runtime_bindings_with_imported_vocabulary(
+                RuntimeBindingTrainer,
+                args,
+                {},
+                object(),
+                imported_vocabulary,
+            )
+
+            self.assertEqual(
+                RuntimeBindingTrainer.observed_vocabulary,
+                imported_vocabulary,
+            )
+            self.assertEqual(
+                args.vocab_metadata,
+                canonical_vocabulary,
+            )
+
     def test_remote_package_inventory_is_exact_and_duplicate_safe(self) -> None:
         expected = IMPORTER.expected_remote_package_versions()
         self.assertEqual(expected["torch"], IMPORTER.REMOTE_TORCH_VERSION)

@@ -9,8 +9,9 @@ import json
 import platform
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,15 @@ from scripts.lib.neural_remote_artifacts import (  # noqa: E402
 DEFAULT_CONFIG = (
     "data/neural/training/open-vocab-bigru-attention-v1.config.json"
 )
+EXPECTED_SPLIT_CONVERSION_CALLS = 2
+COREML_COMPUTE_PRECISION_POLICY = {
+    "schemaVersion": 1,
+    "policyId": "full-fp32-internal-fp16-boundary-v1",
+    "coremltoolsComputePrecision": "FLOAT32",
+    "tensorBoundaryPrecision": "FLOAT16",
+    "neuralEngineEligible": False,
+    "purpose": "locked-parity-baseline",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -66,23 +76,28 @@ def main() -> int:
             ],
             {},
         )
-        with trainer.exclusive_run_lock(trainer_args):
-            training_report = trainer.read_json(
-                trainer.training_report_path(trainer_args)
-            )
-            if training_report.get("trainingExecutionModes") != {
-                "skipTrain": False,
-                "skipCoreML": True,
-                "trainingDevice": "cuda",
-            }:
-                raise RuntimeError(
-                    "Canonical checkpoint is not a completed remote CUDA candidate."
+        with enforce_coreml_compute_precision_policy(trainer) as precision_state:
+            with trainer.exclusive_run_lock(trainer_args):
+                training_report = trainer.read_json(
+                    trainer.training_report_path(trainer_args)
                 )
-            try:
-                trainer.ensure_run_input_snapshot(trainer_args)
-                export_report = trainer.run_pipeline(trainer_args)
-            finally:
-                trainer.cleanup_run_input_snapshot(trainer_args)
+                if training_report.get("trainingExecutionModes") != {
+                    "skipTrain": False,
+                    "skipCoreML": True,
+                    "trainingDevice": "cuda",
+                }:
+                    raise RuntimeError(
+                        "Canonical checkpoint is not a completed remote CUDA candidate."
+                    )
+                try:
+                    trainer.ensure_run_input_snapshot(trainer_args)
+                    export_report = trainer.run_pipeline(trainer_args)
+                finally:
+                    trainer.cleanup_run_input_snapshot(trainer_args)
+        validate_coreml_compute_precision_evidence(
+            export_report,
+            precision_state,
+        )
         if (
             export_report.get("executionTopology")
                 != "split-host-train-then-macos-export-v1"
@@ -105,6 +120,9 @@ def main() -> int:
                         "executionTopology"
                     ],
                     "checkpointSha256": export_report["checkpointSha256"],
+                    "computePrecisionPolicy": export_report[
+                        "coremlExport"
+                    ]["computePrecisionPolicy"],
                     "manifest": export_report["manifest"],
                     "manifestSha256": export_report["manifestSha256"],
                     "measurements": export_report["measurements"],
@@ -176,6 +194,80 @@ def import_trainer() -> Any:
     trainer = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(trainer)
     return trainer
+
+
+@contextmanager
+def enforce_coreml_compute_precision_policy(
+    trainer: Any,
+) -> Iterator[dict[str, int]]:
+    """Apply an explicit export-only precision policy without mutating trainer bytes."""
+    if trainer.ct is None:
+        raise RuntimeError("Core ML conversion is unavailable.")
+    original_convert = trainer.ct.convert
+    original_export_coreml = trainer.export_coreml
+    state = {"conversionCalls": 0}
+
+    def convert_with_locked_precision(
+        *conversion_args: Any,
+        **conversion_kwargs: Any,
+    ) -> Any:
+        if "compute_precision" in conversion_kwargs:
+            raise RuntimeError(
+                "Core ML conversion attempted to override the locked precision policy."
+            )
+        locked_kwargs = dict(conversion_kwargs)
+        locked_kwargs["compute_precision"] = trainer.ct.precision.FLOAT32
+        converted = original_convert(*conversion_args, **locked_kwargs)
+        state["conversionCalls"] += 1
+        return converted
+
+    def export_coreml_with_precision_evidence(
+        *export_args: Any,
+        **export_kwargs: Any,
+    ) -> dict[str, Any]:
+        result = original_export_coreml(*export_args, **export_kwargs)
+        if not isinstance(result, dict):
+            raise RuntimeError("Core ML export returned invalid evidence.")
+        if "computePrecisionPolicy" in result:
+            raise RuntimeError(
+                "Core ML export attempted to replace precision-policy evidence."
+            )
+        return {
+            **result,
+            "computePrecisionPolicy": dict(COREML_COMPUTE_PRECISION_POLICY),
+        }
+
+    trainer.ct.convert = convert_with_locked_precision
+    trainer.export_coreml = export_coreml_with_precision_evidence
+    try:
+        yield state
+    finally:
+        trainer.export_coreml = original_export_coreml
+        trainer.ct.convert = original_convert
+
+
+def validate_coreml_compute_precision_evidence(
+    export_report: dict[str, Any],
+    precision_state: dict[str, int],
+) -> None:
+    coreml_export = export_report.get("coremlExport")
+    if (
+        not isinstance(coreml_export, dict)
+        or coreml_export.get("computePrecisionPolicy")
+            != COREML_COMPUTE_PRECISION_POLICY
+    ):
+        raise RuntimeError(
+            "Core ML export did not record the locked precision policy."
+        )
+    if (
+        coreml_export.get("status") == "passed"
+        and precision_state.get("conversionCalls")
+            != EXPECTED_SPLIT_CONVERSION_CALLS
+    ):
+        raise RuntimeError(
+            "Core ML export did not apply the locked precision policy to "
+            "exactly the encoder and decoder-step conversions."
+        )
 
 
 if __name__ == "__main__":

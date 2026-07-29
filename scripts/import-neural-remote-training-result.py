@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import importlib.util
 import json
 import os
@@ -394,6 +395,7 @@ def validate_extracted_result(
         report,
         trainer=trainer,
         trainer_args=trainer_args,
+        vocabulary_path=vocabulary_path,
     )
     if optional_role in role_paths:
         validate_training_only_export_report(
@@ -580,6 +582,7 @@ def validate_checkpoint(
     *,
     trainer: Any,
     trainer_args: Any,
+    vocabulary_path: Path,
 ) -> None:
     checkpoint_bytes = checkpoint_path.stat().st_size
     if not 1 <= checkpoint_bytes <= MAX_REMOTE_CHECKPOINT_BYTES:
@@ -605,10 +608,7 @@ def validate_checkpoint(
         trainer=trainer,
         trainer_args=trainer_args,
         vocabulary_path=trainer_args.vocab_metadata,
-        imported_vocabulary_path=(
-            checkpoint_path.parent
-            / trainer_args.vocab_metadata.name
-        ),
+        imported_vocabulary_path=vocabulary_path,
     )
     if (
         not isinstance(checkpoint, dict)
@@ -681,10 +681,12 @@ def validate_checkpoint(
             "Remote checkpoint differs from the effective local contract."
         )
     model = trainer.load_model_from_checkpoint_payload(checkpoint)
-    trainer.validate_checkpoint_runtime_bindings(
+    validate_checkpoint_runtime_bindings_with_imported_vocabulary(
+        trainer,
         trainer_args,
         checkpoint,
         model,
+        vocabulary_path,
     )
     parameter_count = sum(
         parameter.numel() for parameter in model.parameters()
@@ -693,6 +695,22 @@ def validate_checkpoint(
         raise NeuralRemoteArtifactError(
             "Remote checkpoint parameter count is stale."
         )
+
+
+def validate_checkpoint_runtime_bindings_with_imported_vocabulary(
+    trainer: Any,
+    trainer_args: Any,
+    checkpoint: dict[str, Any],
+    model: Any,
+    vocabulary_path: Path,
+) -> None:
+    imported_args = copy.copy(trainer_args)
+    imported_args.vocab_metadata = vocabulary_path
+    trainer.validate_checkpoint_runtime_bindings(
+        imported_args,
+        checkpoint,
+        model,
+    )
 
 
 def preflight_checkpoint_payload(
