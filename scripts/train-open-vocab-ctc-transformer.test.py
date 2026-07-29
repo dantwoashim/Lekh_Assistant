@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
+import argparse
+import copy
 import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import torch
@@ -264,6 +267,238 @@ class ProvenanceTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(SystemExit, "runtime contract"):
             TRAINER.load_model_from_checkpoint_payload(payload)
+
+
+class RecoveryAndPublicationTests(unittest.TestCase):
+    def test_epoch_recovery_round_trip_restores_exact_state(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="lekh-ctc-recovery-",
+            dir=ROOT / ".tmp",
+        ) as directory:
+            args = argparse.Namespace(
+                out_dir=Path(directory),
+                export_run_id="a" * 32,
+                training_run_id="b" * 32,
+                model_id=TRAINER.MODEL_ID,
+                resolved_training_device="cpu",
+                epochs=2,
+            )
+            model = torch.nn.Linear(3, 2)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
+            generator = torch.Generator().manual_seed(42)
+            expected = {
+                name: value.detach().clone()
+                for name, value in model.state_dict().items()
+            }
+            metric = {
+                "epoch": 1,
+                "trainWeightedCTCLoss": 2.0,
+                "devWeightedCTCLoss": 1.5,
+                "learningRate": 0.001,
+                "globalStep": 4,
+                "best": True,
+            }
+            with mock.patch.object(
+                TRAINER,
+                "assert_run_input_snapshot_unchanged",
+                return_value=None,
+            ):
+                TRAINER.save_training_recovery(
+                    args,
+                    identity={"schemaVersion": 3, "value": "bound"},
+                    model=model,
+                    optimizer=optimizer,
+                    training_generator=generator,
+                    completed_epoch=1,
+                    global_step=4,
+                    train_losses=[2.0],
+                    epoch_metrics=[metric],
+                    best_state=expected,
+                    best_dev_loss=1.5,
+                    best_epoch=1,
+                    epochs_without_improvement=0,
+                    stopped_early=False,
+                    training_duration_seconds=1.25,
+                    resume_count=0,
+                    export_run_ids=[args.export_run_id],
+                )
+            with torch.no_grad():
+                for parameter in model.parameters():
+                    parameter.zero_()
+            recovery = TRAINER.load_training_recovery(
+                args,
+                identity={"schemaVersion": 3, "value": "bound"},
+                model=model,
+                optimizer=optimizer,
+                training_generator=generator,
+            )
+            self.assertIsNotNone(recovery)
+            self.assertEqual(recovery["globalStep"], 4)
+            for name, value in model.state_dict().items():
+                self.assertTrue(torch.equal(value, expected[name]))
+            TRAINER.clear_training_recovery(args)
+            self.assertEqual(
+                TRAINER.training_recovery_state_files(args),
+                [],
+            )
+
+    def test_tiny_training_publishes_loadable_bound_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="lekh-ctc-train-",
+            dir=ROOT / ".tmp",
+        ) as directory:
+            output = Path(directory) / "candidate"
+            argv = [
+                "--out-dir",
+                str(output),
+                "--compiled-model",
+                str(output / "Candidate.mlmodelc"),
+                "--manifest",
+                str(output / "Candidate.manifest.json"),
+                "--vocab-metadata",
+                str(output / "Candidate.vocab.json"),
+                "--model-dimension",
+                "16",
+                "--attention-heads",
+                "4",
+                "--feed-forward-dimension",
+                "32",
+                "--layers",
+                "1",
+                "--dropout",
+                "0",
+                "--max-input-len",
+                "8",
+                "--output-time-steps",
+                "8",
+                "--beam-width",
+                "4",
+                "--maximum-candidates",
+                "2",
+                "--batch-size",
+                "2",
+                "--epochs",
+                "1",
+                "--warmup-steps",
+                "1",
+                "--early-stopping-patience",
+                "1",
+                "--skip-coreml",
+            ]
+            args = TRAINER.parse_args(argv, {})
+            args.training_config = copy.deepcopy(args.training_config)
+            args.training_config["architecture"][
+                "minimumParameterCount"
+            ] = 1
+            args.training_config["architecture"][
+                "maximumParameterCount"
+            ] = 1_000_000
+            rows = [
+                row("one", "nam", "नाम"),
+                row("two", "ghar", "घर"),
+                row("three", "ram", "राम"),
+                row("four", "har", "हार"),
+            ]
+            input_vocab = TRAINER.build_input_vocab(rows)
+            output_vocab = TRAINER.build_output_vocab(rows)
+            data = {
+                "trainRows": rows,
+                "devRows": copy.deepcopy(rows),
+                "datasetManifest": {"totalRows": 8},
+                "inputVocab": input_vocab,
+                "outputVocab": output_vocab,
+                "augmentation": {
+                    "schemaVersion": 1,
+                    "policy": TRAINER.AUGMENTATION_SOURCE,
+                    "baseRows": len(rows),
+                    "generatedRows": 0,
+                    "combinedRows": len(rows),
+                    "generatedByAlias": {},
+                    "rejected": {},
+                    "blockedInputCount": 0,
+                    "generatedRowsSha256":
+                        TRAINER.sampled_rows_sha256([]),
+                },
+            }
+            snapshot = {
+                "schemaVersion": 1,
+                "trainer": {
+                    "path": TRAINER.rel(TRAINER.Path(TRAINER.__file__)),
+                    "sha256": TRAINER.sha256_file(
+                        TRAINER.Path(TRAINER.__file__)
+                    ),
+                },
+                "trainerDependencies": [],
+                "trainingConfig": {
+                    "path": TRAINER.rel(args.config),
+                    "sha256": args.training_contract_sha256,
+                },
+                "dataset": {
+                    "manifest": TRAINER.rel(args.dataset_manifest),
+                    "manifestSha256": "c" * 64,
+                    "contentSha256": "d" * 64,
+                    "splits": {
+                        split: {
+                            "path": f"{split}.jsonl",
+                            "sha256": character * 64,
+                            "bytes": 1,
+                            "rows": len(rows),
+                        }
+                        for split, character in (
+                            ("train", "e"),
+                            ("dev", "f"),
+                            ("test", "a"),
+                        )
+                    },
+                },
+                "gold": {},
+                "officialBenchmark": {},
+                "runtime": {
+                    "python": "test",
+                    "trainingDevice": "cpu",
+                    "cuda": {"available": False},
+                },
+            }
+            args.run_input_snapshot = snapshot
+            args.resolved_training_device = "cpu"
+            with (
+                mock.patch.object(
+                    TRAINER,
+                    "ensure_run_input_snapshot",
+                    return_value=snapshot,
+                ),
+                mock.patch.object(
+                    TRAINER,
+                    "assert_run_input_snapshot_unchanged",
+                    return_value=None,
+                ),
+                mock.patch.object(
+                    TRAINER,
+                    "prepare_training_data",
+                    return_value=data,
+                ),
+            ):
+                export = TRAINER.run_pipeline(args)
+                trained_report = TRAINER.read_json(
+                    TRAINER.training_report_path(args)
+                )
+                self.assertEqual(
+                    trained_report["status"],
+                    "passed-training-checkpoint",
+                )
+                self.assertEqual(
+                    export["status"],
+                    "passed-training-candidate-coreml-export-skipped",
+                )
+                self.assertTrue(TRAINER.checkpoint_path(args).is_file())
+                self.assertTrue(TRAINER.training_report_path(args).is_file())
+                self.assertTrue(args.vocab_metadata.is_file())
+                args.training_run_id = None
+                loaded = TRAINER.load_checkpoint(args)
+                self.assertEqual(
+                    loaded["checkpoint"]["trainingRunId"],
+                    trained_report["trainingRunId"],
+                )
 
 
 if __name__ == "__main__":
