@@ -102,7 +102,21 @@ be byte-stable:
 
 ```sh
 npm run check:neural-open-vocab-data:production
+npm run neural:open-vocab:audit
+npm run check:neural-audit-evidence
 ```
+
+The audit reads the dataset once and publishes two independently scoped
+reports. `open-vocab-data-quality-v1.json` covers integrity, provenance,
+balance, Unicode structure, and leakage. Its base-plus-mark vocabulary
+diagnostics are conservative historical observations, not active CTC OOV
+claims. `ctc-transformer-v2-alignment-v1.json` is authoritative for the active
+model: it binds the exact dataset/config/evaluation hashes, the 31-scalar input
+content capacity plus EOS, all 32 output time steps, repeated-label blank
+separation, the shared Devanagari validator, train-vocabulary coverage, and
+positive gold/official-benchmark representability. The production contract
+rejects either report when its bound bytes or zero-incompatibility results are
+stale.
 
 The canonical gold inventory is
 `data/neural/gold/manifest.v3.json`. Existing v1/v2 evidence is immutable; v3
@@ -300,6 +314,8 @@ Contract and data:
 npm run check:neural-contract
 npm run check:neural-gold:production
 npm run check:neural-open-vocab-data:production
+npm run neural:open-vocab:audit
+npm run check:neural-audit-evidence
 ```
 
 Individual production checks:

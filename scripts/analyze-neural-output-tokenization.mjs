@@ -37,7 +37,7 @@ const vowelSignCodePoints = new Set([
 const schemes = Object.freeze([
   {
     id: "current-base-plus-combining-marks",
-    definition: "Current trainer behavior: each base scalar plus following Devanagari marks is one token.",
+    definition: "Historical recurrent-trainer behavior: each base scalar plus following Devanagari marks is one token.",
     tokenize: trainerOutputGraphemes
   },
   {
@@ -119,6 +119,17 @@ for (const value of Object.values(finalizedSchemes)) {
 const report = {
   schemaVersion: 1,
   contentIdentity: "lekh-neural-output-tokenization-analysis-v1",
+  status: "historical-design-analysis-superseded",
+  scope: {
+    purpose:
+      "Historical comparison that selected Unicode-scalar tokenization before the Transformer-CTC implementation existed.",
+    architecture:
+      "retired-recurrent-seq2seq-and-split-attention-design-snapshot",
+    productionEvidence: false,
+    datasetSnapshotOnly: true,
+    supersededBy:
+      "data/neural/audits/ctc-transformer-v2-alignment-v1.json"
+  },
   dataset: {
     manifest: relative(datasetManifestPath),
     manifestSha256: sha256(readFileSync(datasetManifestPath)),
@@ -148,17 +159,30 @@ const report = {
   invalidSequenceRisks: Object.fromEntries(Object.entries(invalidSequenceRisks).map(([split, state]) => [split, finalizeRiskState(state)])),
   invalidSequenceRiskMethod: "Conservative structural heuristics, not linguistic adjudication. Legitimate terminal VIRAMA and VIRAMA before a non-consonant are reported as decoder-sensitive contexts, not invalid rows.",
   sourceInspection: {
-    trainer: "scripts/train-open-vocab-seq2seq-transliterator.py:641-650,1041-1072,1173-1200,2180-2182",
-    nativeRuntime: "native/macos-imk/skeleton/LekhNeuralCandidateService.swift:781-930,945-965,1215-1260",
-    observedRuntimeBehavior: [
+    historicalTrainer: "scripts/train-open-vocab-seq2seq-transliterator.py",
+    historicalNativeRuntime:
+      "native/macos-imk/skeleton/LekhNeuralCandidateService.swift",
+    historicalSnapshotBehavior: [
       "The output vocabulary is built from train only; unseen dev/test tokens encode as <unk>.",
       "The native decoder concatenates token strings verbatim.",
       "The native decoder blocks <unk> but does not apply a Unicode-sequence state mask.",
       "The native candidate filter checks NFC and allowed scalars, but not mark/joiner ordering."
-    ]
+    ],
+    currentProductionContract: {
+      modelId: "lekh-open-vocab-ctc-transformer-v2",
+      tokenization: "unicode-scalar-character",
+      decoder: "ctc-prefix-beam-search",
+      outputSequenceValidation: "devanagari-word-sequence-v1",
+      evidence:
+        "data/neural/audits/ctc-transformer-v2-alignment-v1.json"
+    }
   },
   recommendation: {
     choice: "unicode-scalars-with-decoder-sequence-validation",
+    implementationStatus:
+      "implemented-in-transformer-ctc-v2-awaiting-final-trained-artifact-quality-and-device-gates",
+    currentEvidence:
+      "data/neural/audits/ctc-transformer-v2-alignment-v1.json",
     reason: "Scalar tokenization eliminates observed vocabulary OOVs and sharply reduces the Core ML output dimension. A small stateful Unicode validity mask (or equivalent final candidate validator) is required before this is production-safe because combining marks become independently generatable.",
     smallestSafeChange: [
       "Replace output grapheme tokenization with NFC Unicode scalars in training/evaluation metadata.",

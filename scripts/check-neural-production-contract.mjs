@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import Ajv2020 from "ajv/dist/2020.js";
+import { checkNeuralAuditEvidence } from "./check-neural-audit-evidence.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -17,8 +18,16 @@ const requiredFiles = [
   "data/neural/training/open-vocab-seq2seq-v1.config.json",
   "data/neural/training/open-vocab-bigru-attention-v1.config.json",
   "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
+  "data/generated/neural-open-vocab/manifest.json",
+  "data/neural/audits/open-vocab-data-quality-v1.json",
+  "data/neural/audits/ctc-transformer-v2-alignment-v1.json",
+  "data/neural/audits/output-tokenization-analysis-v1.json",
   "scripts/train-open-vocab-ctc-transformer.py",
   "scripts/lib/neural_ctc_transformer.py",
+  "scripts/lib/neural-ctc-alignment-audit.mjs",
+  "scripts/lib/neural-audit-evidence.mjs",
+  "scripts/check-neural-audit-evidence.mjs",
+  "scripts/analyze-neural-output-tokenization.mjs",
   "scripts/lib/neural-artifact-descriptor.mjs",
   "scripts/lib/neural-vocabulary-contract.mjs",
   "scripts/check-neural-training-contract.mjs",
@@ -40,9 +49,23 @@ const requiredFiles = [
 
 const failures = [];
 const warnings = [];
+let auditEvidence = null;
 
 for (const file of requiredFiles) {
   if (!existsSync(join(root, file))) failures.push(`Missing Phase 0 neural contract file: ${file}`);
+}
+
+try {
+  auditEvidence = checkNeuralAuditEvidence();
+  for (const failure of auditEvidence.validation.failures) {
+    failures.push(`Neural audit evidence: ${failure}`);
+  }
+} catch (error) {
+  failures.push(
+    `Neural audit evidence could not be verified: ${
+      error instanceof Error ? error.message : String(error)
+    }`
+  );
 }
 
 const specText = readText("docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md");
@@ -65,6 +88,31 @@ const packagedBenchmarkText = readText(
 );
 const packageJson = readJson("package.json");
 const schema = readJson("data/neural/schema/lekh-neural-manifest.schema.json");
+const historicalTokenizationAnalysis = readJson(
+  "data/neural/audits/output-tokenization-analysis-v1.json"
+);
+
+if (historicalTokenizationAnalysis) {
+  assert(
+    historicalTokenizationAnalysis.status ===
+      "historical-design-analysis-superseded",
+    "Legacy tokenization analysis must be visibly marked historical and superseded"
+  );
+  assert(
+    historicalTokenizationAnalysis.scope?.productionEvidence === false,
+    "Legacy tokenization analysis must not claim current production evidence"
+  );
+  assert(
+    historicalTokenizationAnalysis.scope?.supersededBy ===
+      "data/neural/audits/ctc-transformer-v2-alignment-v1.json",
+    "Legacy tokenization analysis must point to the active CTC alignment audit"
+  );
+  assert(
+    historicalTokenizationAnalysis.recommendation?.currentEvidence ===
+      "data/neural/audits/ctc-transformer-v2-alignment-v1.json",
+    "Implemented tokenization recommendation must bind current CTC evidence"
+  );
+}
 
 requireText(specText, "lekh-open-vocab-seq2seq-v1", "spec must define the baseline artifact id");
 requireText(specText, "lekh-open-vocab-bigru-attention-v1", "spec must define the split-attention artifact id");
@@ -93,6 +141,21 @@ requireText(specText, "no inference in secure fields", "spec must forbid secure-
 requireText(specText, "autoCommitEligible", "spec must define candidate acceptance safety");
 requireText(specText, "generation IDs", "spec must require stale async-result rejection");
 requireText(specText, "npm run check:neural-contract", "spec must define its proof command");
+requireText(
+  specText,
+  "ctc-transformer-v2-alignment-v1.json",
+  "spec must name the authoritative CTC dataset-alignment evidence"
+);
+requireText(
+  specText,
+  "npm run neural:open-vocab:audit",
+  "spec must define the single-pass dataset and CTC audit command"
+);
+requireText(
+  specText,
+  "npm run check:neural-audit-evidence",
+  "spec must define the audit-freshness proof command"
+);
 requireText(specText, "npm run check:neural-phase3-6", "spec must define the aggregate Phase 3-6 proof command");
 requireText(specText, "npm run check:neural-phase3-9", "spec must define the aggregate Phase 3-9 proof command");
 requireText(specText, "npm run check:neural-phase0-10", "spec must define the aggregate Phase 0-10 proof command");
@@ -430,6 +493,7 @@ function finish(status, exitCode) {
     schema: "data/neural/schema/lekh-neural-manifest.schema.json",
     spec: "docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md",
     evaluationProtocol: "data/neural/eval/README.md",
+    auditEvidence: auditEvidence?.evidence ?? null,
     failures,
     warnings
   };

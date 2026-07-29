@@ -1,0 +1,1199 @@
+{
+  "schemaVersion": 1,
+  "contentIdentity": "lekh-neural-ctc-alignment-audit-v1",
+  "model": {
+    "id": "lekh-open-vocab-ctc-transformer-v2",
+    "configPath": "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
+    "configSha256": "2cafefef4d741712ca435291eb38fdc100e12072ccb2c07b0d69746d6392e7cd",
+    "implementationContractVersion": 2,
+    "runtimeModelContract": "single-transformer-ctc-v1",
+    "inputTensorLength": 32,
+    "inputContentCapacity": 31,
+    "inputEOSPositions": 1,
+    "outputTimeSteps": 32,
+    "outputTokenization": "unicode-scalar-character",
+    "alignmentRule": "Unicode scalar count plus one mandatory blank separation for each adjacent repeated scalar.",
+    "outputSequenceValidation": "devanagari-word-sequence-v1"
+  },
+  "dataset": {
+    "id": "lekh-open-vocab-cleaned-v1",
+    "manifestPath": "data/generated/neural-open-vocab/manifest.json",
+    "manifestSha256": "0ebe69836574c52582babe443385bdfcc4aed01fbbeea9d92110a0ce4784e041",
+    "declaredContentSha256": "15909aac528fa0f2fb590e62981b0a0035422aa2673f9de4c7bc47ba2e778599",
+    "declaredRows": 1048532,
+    "declaredCounts": {
+      "train": 871498,
+      "dev": 87371,
+      "test": 89663
+    }
+  },
+  "artifacts": {
+    "splits": {
+      "train": {
+        "path": "data/generated/neural-open-vocab/train.jsonl",
+        "expected": {
+          "bytes": 518262288,
+          "rows": 871498,
+          "sha256": "82290380846b8743651abfa121a17b21833cc0cf6a1f92ef4cec498b5c223167"
+        },
+        "observed": {
+          "bytes": 518262288,
+          "rows": 871498,
+          "sha256": "82290380846b8743651abfa121a17b21833cc0cf6a1f92ef4cec498b5c223167",
+          "invalidJsonRows": 0
+        },
+        "integrityMatches": true
+      },
+      "dev": {
+        "path": "data/generated/neural-open-vocab/dev.jsonl",
+        "expected": {
+          "bytes": 51706595,
+          "rows": 87371,
+          "sha256": "f9d61ee53def5e931cccf8a6fa233f6c41f139bcc1acdf648d264bff4491ae18"
+        },
+        "observed": {
+          "bytes": 51706595,
+          "rows": 87371,
+          "sha256": "f9d61ee53def5e931cccf8a6fa233f6c41f139bcc1acdf648d264bff4491ae18",
+          "invalidJsonRows": 0
+        },
+        "integrityMatches": true
+      },
+      "test": {
+        "path": "data/generated/neural-open-vocab/test.jsonl",
+        "expected": {
+          "bytes": 53071321,
+          "rows": 89663,
+          "sha256": "c1814d4fe776804cd59aa97960130f5d3d48b823a535b176a0e2f6ad116393fa"
+        },
+        "observed": {
+          "bytes": 53071321,
+          "rows": 89663,
+          "sha256": "c1814d4fe776804cd59aa97960130f5d3d48b823a535b176a0e2f6ad116393fa",
+          "invalidJsonRows": 0
+        },
+        "integrityMatches": true
+      }
+    },
+    "evaluationReferences": {
+      "gold-foundation": {
+        "manifestPath": "data/neural/gold/manifest.v3.json",
+        "manifestSha256": "41c9247b8553363b0432342264eba0e9f2ba6ac0d75dea123e94c3d604006c59",
+        "releaseId": "lekh-neural-gold-token-only-v3",
+        "rows": 47,
+        "suites": [
+          {
+            "id": "romanized-token",
+            "path": "data/neural/gold/romanized-nepali-token-gold.v1.jsonl",
+            "expected": {
+              "rows": 11,
+              "sha256": "08d20114d3f6e893f696cbfd4ae424ee5c9c89d538594d27898056a7d34e8532"
+            },
+            "observed": {
+              "bytes": 5259,
+              "rows": 11,
+              "sha256": "08d20114d3f6e893f696cbfd4ae424ee5c9c89d538594d27898056a7d34e8532",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          },
+          {
+            "id": "chat-convention",
+            "path": "data/neural/gold/chat-convention-token-only-gold.v2.jsonl",
+            "expected": {
+              "rows": 7,
+              "sha256": "24485f88cbe8a50a1147f99185a3b93ae352084a6bd105d188225baa6f67eacb"
+            },
+            "observed": {
+              "bytes": 3463,
+              "rows": 7,
+              "sha256": "24485f88cbe8a50a1147f99185a3b93ae352084a6bd105d188225baa6f67eacb",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          },
+          {
+            "id": "names",
+            "path": "data/neural/gold/names-gold.v1.jsonl",
+            "expected": {
+              "rows": 6,
+              "sha256": "ebd2da468871f0fb85dd33f29d7114e78cd5cba155117323736b0487f253db0c"
+            },
+            "observed": {
+              "bytes": 2796,
+              "rows": 6,
+              "sha256": "ebd2da468871f0fb85dd33f29d7114e78cd5cba155117323736b0487f253db0c",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          },
+          {
+            "id": "ambiguity",
+            "path": "data/neural/gold/ambiguity-gold.v1.jsonl",
+            "expected": {
+              "rows": 5,
+              "sha256": "50e64b458693e1a90c8ff2c969ee8a7607cf321f36d41146c9dca0a165ab35e6"
+            },
+            "observed": {
+              "bytes": 2332,
+              "rows": 5,
+              "sha256": "50e64b458693e1a90c8ff2c969ee8a7607cf321f36d41146c9dca0a165ab35e6",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          },
+          {
+            "id": "non-nepali-pass-through",
+            "path": "data/neural/gold/non-nepali-pass-through-gold.v1.jsonl",
+            "expected": {
+              "rows": 6,
+              "sha256": "09042082cf373ef294385859f31754ac82ce239a91f5316dd373130749cc5d0d"
+            },
+            "observed": {
+              "bytes": 2722,
+              "rows": 6,
+              "sha256": "09042082cf373ef294385859f31754ac82ce239a91f5316dd373130749cc5d0d",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          },
+          {
+            "id": "protected-token",
+            "path": "data/neural/gold/protected-token-gold.v1.jsonl",
+            "expected": {
+              "rows": 6,
+              "sha256": "38b3358912b2e07d288f10687829849966f996f1113a7c12b474271dfce9719c"
+            },
+            "observed": {
+              "bytes": 2660,
+              "rows": 6,
+              "sha256": "38b3358912b2e07d288f10687829849966f996f1113a7c12b474271dfce9719c",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          },
+          {
+            "id": "adversarial-safety",
+            "path": "data/neural/gold/adversarial-neural-tail-gold.v1.jsonl",
+            "expected": {
+              "rows": 6,
+              "sha256": "2dd7aefd45886b77787a59d1bbdcafe131d095bd7445e3cd20179dad817260f3"
+            },
+            "observed": {
+              "bytes": 3176,
+              "rows": 6,
+              "sha256": "2dd7aefd45886b77787a59d1bbdcafe131d095bd7445e3cd20179dad817260f3",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          }
+        ]
+      },
+      "aksharantar-official-benchmark": {
+        "manifestPath": "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+        "manifestSha256": "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f",
+        "releaseId": "aksharantar-nepali-official-test-v1",
+        "rows": 4085,
+        "suites": [
+          {
+            "id": "aksharantar-native-frequent",
+            "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/native-frequent.jsonl",
+            "expected": {
+              "rows": 2092,
+              "sha256": "90620f225711febc5b9255983e6a3f682df3fc0973b27accde5b96896d66a071"
+            },
+            "observed": {
+              "bytes": 1105838,
+              "rows": 2092,
+              "sha256": "90620f225711febc5b9255983e6a3f682df3fc0973b27accde5b96896d66a071",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          },
+          {
+            "id": "aksharantar-indian-names",
+            "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/indian-names.jsonl",
+            "expected": {
+              "rows": 1176,
+              "sha256": "70004bac0af45cab25908fbcb6e7d15939099dd7c16e3c41c25ee6ef0ec242b3"
+            },
+            "observed": {
+              "bytes": 584624,
+              "rows": 1176,
+              "sha256": "70004bac0af45cab25908fbcb6e7d15939099dd7c16e3c41c25ee6ef0ec242b3",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          },
+          {
+            "id": "aksharantar-foreign-names",
+            "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/foreign-names.jsonl",
+            "expected": {
+              "rows": 817,
+              "sha256": "3f920b20ca30c9cd6d22ac6fa809c5dea261dbab59e6dda63cd1330c286031b3"
+            },
+            "observed": {
+              "bytes": 406118,
+              "rows": 817,
+              "sha256": "3f920b20ca30c9cd6d22ac6fa809c5dea261dbab59e6dda63cd1330c286031b3",
+              "invalidJsonRows": 0
+            },
+            "integrityMatches": true
+          }
+        ]
+      }
+    }
+  },
+  "trainingVocabulary": {
+    "input": {
+      "distinct": 26,
+      "occurrences": 9455644,
+      "singletons": 0,
+      "tokens": [
+        {
+          "token": "a",
+          "codePoint": "U+0061",
+          "count": 2112889
+        },
+        {
+          "token": "b",
+          "codePoint": "U+0062",
+          "count": 244455
+        },
+        {
+          "token": "c",
+          "codePoint": "U+0063",
+          "count": 153045
+        },
+        {
+          "token": "d",
+          "codePoint": "U+0064",
+          "count": 296305
+        },
+        {
+          "token": "e",
+          "codePoint": "U+0065",
+          "count": 393330
+        },
+        {
+          "token": "f",
+          "codePoint": "U+0066",
+          "count": 43301
+        },
+        {
+          "token": "g",
+          "codePoint": "U+0067",
+          "count": 200279
+        },
+        {
+          "token": "h",
+          "codePoint": "U+0068",
+          "count": 696914
+        },
+        {
+          "token": "i",
+          "codePoint": "U+0069",
+          "count": 765768
+        },
+        {
+          "token": "j",
+          "codePoint": "U+006A",
+          "count": 114450
+        },
+        {
+          "token": "k",
+          "codePoint": "U+006B",
+          "count": 484491
+        },
+        {
+          "token": "l",
+          "codePoint": "U+006C",
+          "count": 349284
+        },
+        {
+          "token": "m",
+          "codePoint": "U+006D",
+          "count": 336191
+        },
+        {
+          "token": "n",
+          "codePoint": "U+006E",
+          "count": 551942
+        },
+        {
+          "token": "o",
+          "codePoint": "U+006F",
+          "count": 310565
+        },
+        {
+          "token": "p",
+          "codePoint": "U+0070",
+          "count": 211720
+        },
+        {
+          "token": "q",
+          "codePoint": "U+0071",
+          "count": 1041
+        },
+        {
+          "token": "r",
+          "codePoint": "U+0072",
+          "count": 582887
+        },
+        {
+          "token": "s",
+          "codePoint": "U+0073",
+          "count": 431655
+        },
+        {
+          "token": "t",
+          "codePoint": "U+0074",
+          "count": 471243
+        },
+        {
+          "token": "u",
+          "codePoint": "U+0075",
+          "count": 356813
+        },
+        {
+          "token": "v",
+          "codePoint": "U+0076",
+          "count": 32641
+        },
+        {
+          "token": "w",
+          "codePoint": "U+0077",
+          "count": 134700
+        },
+        {
+          "token": "x",
+          "codePoint": "U+0078",
+          "count": 3223
+        },
+        {
+          "token": "y",
+          "codePoint": "U+0079",
+          "count": 171346
+        },
+        {
+          "token": "z",
+          "codePoint": "U+007A",
+          "count": 5166
+        }
+      ]
+    },
+    "output": {
+      "distinct": 65,
+      "occurrences": 8421975,
+      "singletons": 2,
+      "tokens": [
+        {
+          "token": "ँ",
+          "codePoint": "U+0901",
+          "count": 54828
+        },
+        {
+          "token": "ं",
+          "codePoint": "U+0902",
+          "count": 37707
+        },
+        {
+          "token": "ः",
+          "codePoint": "U+0903",
+          "count": 4545
+        },
+        {
+          "token": "अ",
+          "codePoint": "U+0905",
+          "count": 42953
+        },
+        {
+          "token": "आ",
+          "codePoint": "U+0906",
+          "count": 20278
+        },
+        {
+          "token": "इ",
+          "codePoint": "U+0907",
+          "count": 44903
+        },
+        {
+          "token": "ई",
+          "codePoint": "U+0908",
+          "count": 47004
+        },
+        {
+          "token": "उ",
+          "codePoint": "U+0909",
+          "count": 47194
+        },
+        {
+          "token": "ऊ",
+          "codePoint": "U+090A",
+          "count": 366
+        },
+        {
+          "token": "ऋ",
+          "codePoint": "U+090B",
+          "count": 561
+        },
+        {
+          "token": "ए",
+          "codePoint": "U+090F",
+          "count": 44333
+        },
+        {
+          "token": "ऐ",
+          "codePoint": "U+0910",
+          "count": 619
+        },
+        {
+          "token": "ऑ",
+          "codePoint": "U+0911",
+          "count": 4
+        },
+        {
+          "token": "ओ",
+          "codePoint": "U+0913",
+          "count": 7944
+        },
+        {
+          "token": "औ",
+          "codePoint": "U+0914",
+          "count": 1175
+        },
+        {
+          "token": "क",
+          "codePoint": "U+0915",
+          "count": 458563
+        },
+        {
+          "token": "ख",
+          "codePoint": "U+0916",
+          "count": 55694
+        },
+        {
+          "token": "ग",
+          "codePoint": "U+0917",
+          "count": 154620
+        },
+        {
+          "token": "घ",
+          "codePoint": "U+0918",
+          "count": 16182
+        },
+        {
+          "token": "ङ",
+          "codePoint": "U+0919",
+          "count": 29182
+        },
+        {
+          "token": "च",
+          "codePoint": "U+091A",
+          "count": 76281
+        },
+        {
+          "token": "छ",
+          "codePoint": "U+091B",
+          "count": 39002
+        },
+        {
+          "token": "ज",
+          "codePoint": "U+091C",
+          "count": 116956
+        },
+        {
+          "token": "झ",
+          "codePoint": "U+091D",
+          "count": 14188
+        },
+        {
+          "token": "ञ",
+          "codePoint": "U+091E",
+          "count": 9055
+        },
+        {
+          "token": "ट",
+          "codePoint": "U+091F",
+          "count": 137192
+        },
+        {
+          "token": "ठ",
+          "codePoint": "U+0920",
+          "count": 12922
+        },
+        {
+          "token": "ड",
+          "codePoint": "U+0921",
+          "count": 66672
+        },
+        {
+          "token": "ढ",
+          "codePoint": "U+0922",
+          "count": 7996
+        },
+        {
+          "token": "ण",
+          "codePoint": "U+0923",
+          "count": 34029
+        },
+        {
+          "token": "त",
+          "codePoint": "U+0924",
+          "count": 265440
+        },
+        {
+          "token": "थ",
+          "codePoint": "U+0925",
+          "count": 50842
+        },
+        {
+          "token": "द",
+          "codePoint": "U+0926",
+          "count": 163238
+        },
+        {
+          "token": "ध",
+          "codePoint": "U+0927",
+          "count": 60218
+        },
+        {
+          "token": "न",
+          "codePoint": "U+0928",
+          "count": 390487
+        },
+        {
+          "token": "प",
+          "codePoint": "U+092A",
+          "count": 208695
+        },
+        {
+          "token": "फ",
+          "codePoint": "U+092B",
+          "count": 45422
+        },
+        {
+          "token": "ब",
+          "codePoint": "U+092C",
+          "count": 169554
+        },
+        {
+          "token": "भ",
+          "codePoint": "U+092D",
+          "count": 72955
+        },
+        {
+          "token": "म",
+          "codePoint": "U+092E",
+          "count": 334816
+        },
+        {
+          "token": "य",
+          "codePoint": "U+092F",
+          "count": 187017
+        },
+        {
+          "token": "र",
+          "codePoint": "U+0930",
+          "count": 569404
+        },
+        {
+          "token": "ऱ",
+          "codePoint": "U+0931",
+          "count": 1
+        },
+        {
+          "token": "ल",
+          "codePoint": "U+0932",
+          "count": 347381
+        },
+        {
+          "token": "ळ",
+          "codePoint": "U+0933",
+          "count": 1
+        },
+        {
+          "token": "व",
+          "codePoint": "U+0935",
+          "count": 170049
+        },
+        {
+          "token": "श",
+          "codePoint": "U+0936",
+          "count": 60507
+        },
+        {
+          "token": "ष",
+          "codePoint": "U+0937",
+          "count": 37054
+        },
+        {
+          "token": "स",
+          "codePoint": "U+0938",
+          "count": 345504
+        },
+        {
+          "token": "ह",
+          "codePoint": "U+0939",
+          "count": 154848
+        },
+        {
+          "token": "़",
+          "codePoint": "U+093C",
+          "count": 204
+        },
+        {
+          "token": "ऽ",
+          "codePoint": "U+093D",
+          "count": 13
+        },
+        {
+          "token": "ा",
+          "codePoint": "U+093E",
+          "count": 873480
+        },
+        {
+          "token": "ि",
+          "codePoint": "U+093F",
+          "count": 428217
+        },
+        {
+          "token": "ी",
+          "codePoint": "U+0940",
+          "count": 181977
+        },
+        {
+          "token": "ु",
+          "codePoint": "U+0941",
+          "count": 217831
+        },
+        {
+          "token": "ू",
+          "codePoint": "U+0942",
+          "count": 61816
+        },
+        {
+          "token": "ृ",
+          "codePoint": "U+0943",
+          "count": 12635
+        },
+        {
+          "token": "े",
+          "codePoint": "U+0947",
+          "count": 323102
+        },
+        {
+          "token": "ै",
+          "codePoint": "U+0948",
+          "count": 73682
+        },
+        {
+          "token": "ॉ",
+          "codePoint": "U+0949",
+          "count": 11
+        },
+        {
+          "token": "ो",
+          "codePoint": "U+094B",
+          "count": 279725
+        },
+        {
+          "token": "ौ",
+          "codePoint": "U+094C",
+          "count": 20250
+        },
+        {
+          "token": "्",
+          "codePoint": "U+094D",
+          "count": 732649
+        },
+        {
+          "token": "ॠ",
+          "codePoint": "U+0960",
+          "count": 2
+        }
+      ]
+    }
+  },
+  "splits": {
+    "train": {
+      "split": "train",
+      "rows": 871498,
+      "candidateRows": 871498,
+      "nonCandidateRows": 0,
+      "invalidJsonRows": 0,
+      "splitMismatchRows": 0,
+      "missingPrimaryTargetRows": 0,
+      "targetVariants": 871498,
+      "inputContentLength": {
+        "rows": 871498,
+        "min": 2,
+        "mean": 10.84987458,
+        "p50": 11,
+        "p90": 15,
+        "p95": 17,
+        "p99": 20,
+        "p999": 23,
+        "max": 28,
+        "tail": {
+          "24": 293,
+          "25": 89,
+          "26": 23,
+          "27": 6,
+          "28": 2
+        }
+      },
+      "primaryTargetScalarLength": {
+        "rows": 871498,
+        "min": 2,
+        "mean": 9.66379154,
+        "p50": 9,
+        "p90": 14,
+        "p95": 15,
+        "p99": 18,
+        "p999": 19,
+        "max": 20,
+        "tail": {}
+      },
+      "primaryTargetRequiredTimeSteps": {
+        "rows": 871498,
+        "min": 2,
+        "mean": 9.69284841,
+        "p50": 9,
+        "p90": 14,
+        "p95": 15,
+        "p99": 18,
+        "p999": 19,
+        "max": 21,
+        "tail": {}
+      },
+      "inputAtContentCapacityRows": 0,
+      "inputInvalidRows": 0,
+      "inputOverCapacityRows": 0,
+      "inputUnseenScalarRows": 0,
+      "primaryInvalidRows": 0,
+      "primaryScalarOverflowRows": 0,
+      "primaryAlignmentOverflowRows": 0,
+      "primaryAtAlignmentCapacityRows": 0,
+      "primaryRepeatedScalarRows": 25055,
+      "primaryRepeatedScalarBoundaries": 25323,
+      "primaryUnseenScalarRows": 0,
+      "invalidTargetVariants": 0,
+      "scalarOverflowTargetVariants": 0,
+      "alignmentOverflowTargetVariants": 0,
+      "unseenScalarTargetVariants": 0,
+      "rowsWithNoRepresentableTarget": 0,
+      "rowsWithPartiallyRepresentableTargets": 0,
+      "unseenInputScalars": {
+        "distinct": 0,
+        "occurrences": 0,
+        "singletons": 0,
+        "tokens": []
+      },
+      "unseenOutputScalars": {
+        "distinct": 0,
+        "occurrences": 0,
+        "singletons": 0,
+        "tokens": []
+      },
+      "examples": {
+        "invalidJson": [],
+        "splitMismatch": [],
+        "invalidInput": [],
+        "inputOverCapacity": [],
+        "unseenInputScalars": [],
+        "invalidPrimaryTarget": [],
+        "primaryScalarOverflow": [],
+        "primaryAlignmentOverflow": [],
+        "unseenPrimaryOutputScalars": [],
+        "invalidTargetVariant": [],
+        "alignmentOverflowTargetVariant": [],
+        "noRepresentableTarget": []
+      }
+    },
+    "dev": {
+      "split": "dev",
+      "rows": 87371,
+      "candidateRows": 87371,
+      "nonCandidateRows": 0,
+      "invalidJsonRows": 0,
+      "splitMismatchRows": 0,
+      "missingPrimaryTargetRows": 0,
+      "targetVariants": 87371,
+      "inputContentLength": {
+        "rows": 87371,
+        "min": 2,
+        "mean": 10.77969807,
+        "p50": 10,
+        "p90": 15,
+        "p95": 17,
+        "p99": 20,
+        "p999": 23,
+        "max": 27,
+        "tail": {
+          "24": 27,
+          "25": 9,
+          "26": 3,
+          "27": 2
+        }
+      },
+      "primaryTargetScalarLength": {
+        "rows": 87371,
+        "min": 2,
+        "mean": 9.59336622,
+        "p50": 9,
+        "p90": 14,
+        "p95": 15,
+        "p99": 18,
+        "p999": 19,
+        "max": 20,
+        "tail": {}
+      },
+      "primaryTargetRequiredTimeSteps": {
+        "rows": 87371,
+        "min": 2,
+        "mean": 9.6221973,
+        "p50": 9,
+        "p90": 14,
+        "p95": 15,
+        "p99": 18,
+        "p999": 19,
+        "max": 20,
+        "tail": {}
+      },
+      "inputAtContentCapacityRows": 0,
+      "inputInvalidRows": 0,
+      "inputOverCapacityRows": 0,
+      "inputUnseenScalarRows": 0,
+      "primaryInvalidRows": 0,
+      "primaryScalarOverflowRows": 0,
+      "primaryAlignmentOverflowRows": 0,
+      "primaryAtAlignmentCapacityRows": 0,
+      "primaryRepeatedScalarRows": 2486,
+      "primaryRepeatedScalarBoundaries": 2519,
+      "primaryUnseenScalarRows": 0,
+      "invalidTargetVariants": 0,
+      "scalarOverflowTargetVariants": 0,
+      "alignmentOverflowTargetVariants": 0,
+      "unseenScalarTargetVariants": 0,
+      "rowsWithNoRepresentableTarget": 0,
+      "rowsWithPartiallyRepresentableTargets": 0,
+      "unseenInputScalars": {
+        "distinct": 0,
+        "occurrences": 0,
+        "singletons": 0,
+        "tokens": []
+      },
+      "unseenOutputScalars": {
+        "distinct": 0,
+        "occurrences": 0,
+        "singletons": 0,
+        "tokens": []
+      },
+      "examples": {
+        "invalidJson": [],
+        "splitMismatch": [],
+        "invalidInput": [],
+        "inputOverCapacity": [],
+        "unseenInputScalars": [],
+        "invalidPrimaryTarget": [],
+        "primaryScalarOverflow": [],
+        "primaryAlignmentOverflow": [],
+        "unseenPrimaryOutputScalars": [],
+        "invalidTargetVariant": [],
+        "alignmentOverflowTargetVariant": [],
+        "noRepresentableTarget": []
+      }
+    },
+    "test": {
+      "split": "test",
+      "rows": 89663,
+      "candidateRows": 89663,
+      "nonCandidateRows": 0,
+      "invalidJsonRows": 0,
+      "splitMismatchRows": 0,
+      "missingPrimaryTargetRows": 0,
+      "targetVariants": 89663,
+      "inputContentLength": {
+        "rows": 89663,
+        "min": 2,
+        "mean": 10.68294614,
+        "p50": 10,
+        "p90": 15,
+        "p95": 17,
+        "p99": 20,
+        "p999": 23,
+        "max": 26,
+        "tail": {
+          "24": 27,
+          "25": 13,
+          "26": 1
+        }
+      },
+      "primaryTargetScalarLength": {
+        "rows": 89663,
+        "min": 1,
+        "mean": 9.51180532,
+        "p50": 9,
+        "p90": 14,
+        "p95": 15,
+        "p99": 18,
+        "p999": 19,
+        "max": 20,
+        "tail": {}
+      },
+      "primaryTargetRequiredTimeSteps": {
+        "rows": 89663,
+        "min": 1,
+        "mean": 9.54023399,
+        "p50": 9,
+        "p90": 14,
+        "p95": 15,
+        "p99": 18,
+        "p999": 19,
+        "max": 21,
+        "tail": {}
+      },
+      "inputAtContentCapacityRows": 0,
+      "inputInvalidRows": 0,
+      "inputOverCapacityRows": 0,
+      "inputUnseenScalarRows": 0,
+      "primaryInvalidRows": 0,
+      "primaryScalarOverflowRows": 0,
+      "primaryAlignmentOverflowRows": 0,
+      "primaryAtAlignmentCapacityRows": 0,
+      "primaryRepeatedScalarRows": 2526,
+      "primaryRepeatedScalarBoundaries": 2549,
+      "primaryUnseenScalarRows": 0,
+      "invalidTargetVariants": 0,
+      "scalarOverflowTargetVariants": 0,
+      "alignmentOverflowTargetVariants": 0,
+      "unseenScalarTargetVariants": 0,
+      "rowsWithNoRepresentableTarget": 0,
+      "rowsWithPartiallyRepresentableTargets": 0,
+      "unseenInputScalars": {
+        "distinct": 0,
+        "occurrences": 0,
+        "singletons": 0,
+        "tokens": []
+      },
+      "unseenOutputScalars": {
+        "distinct": 0,
+        "occurrences": 0,
+        "singletons": 0,
+        "tokens": []
+      },
+      "examples": {
+        "invalidJson": [],
+        "splitMismatch": [],
+        "invalidInput": [],
+        "inputOverCapacity": [],
+        "unseenInputScalars": [],
+        "invalidPrimaryTarget": [],
+        "primaryScalarOverflow": [],
+        "primaryAlignmentOverflow": [],
+        "unseenPrimaryOutputScalars": [],
+        "invalidTargetVariant": [],
+        "alignmentOverflowTargetVariant": [],
+        "noRepresentableTarget": []
+      }
+    }
+  },
+  "evaluation": {
+    "aksharantar-official-benchmark": {
+      "name": "aksharantar-official-benchmark",
+      "rows": 4085,
+      "positiveRows": 4085,
+      "negativeRows": 0,
+      "positiveRowsWithoutTargets": 0,
+      "positiveRowsWithRepresentableTarget": 4085,
+      "positiveRowsWithNoRepresentableTarget": 0,
+      "positiveRowsWithPartiallyRepresentableTargets": 0,
+      "inputUnrepresentableRows": 0,
+      "targetVariants": 4101,
+      "invalidTargetVariants": 0,
+      "scalarOverflowTargetVariants": 0,
+      "alignmentOverflowTargetVariants": 0,
+      "unseenScalarTargetVariants": 0,
+      "inputContentLength": {
+        "rows": 4085,
+        "min": 2,
+        "mean": 8.52778458,
+        "p50": 8,
+        "p90": 14,
+        "p95": 16,
+        "p99": 19,
+        "p999": 21,
+        "max": 26,
+        "tail": {
+          "26": 1
+        }
+      },
+      "targetScalarLength": {
+        "rows": 4101,
+        "min": 2,
+        "mean": 7.60302365,
+        "p50": 7,
+        "p90": 12,
+        "p95": 14,
+        "p99": 17,
+        "p999": 20,
+        "max": 20,
+        "tail": {}
+      },
+      "targetRequiredTimeSteps": {
+        "rows": 4101,
+        "min": 2,
+        "mean": 7.61765423,
+        "p50": 7,
+        "p90": 12,
+        "p95": 14,
+        "p99": 17,
+        "p999": 20,
+        "max": 21,
+        "tail": {}
+      },
+      "unseenOutputScalars": {
+        "distinct": 0,
+        "occurrences": 0,
+        "singletons": 0,
+        "tokens": []
+      },
+      "examples": {
+        "inputUnrepresentable": [],
+        "noRepresentableTarget": []
+      }
+    },
+    "gold-foundation": {
+      "name": "gold-foundation",
+      "rows": 47,
+      "positiveRows": 34,
+      "negativeRows": 13,
+      "positiveRowsWithoutTargets": 0,
+      "positiveRowsWithRepresentableTarget": 34,
+      "positiveRowsWithNoRepresentableTarget": 0,
+      "positiveRowsWithPartiallyRepresentableTargets": 0,
+      "inputUnrepresentableRows": 0,
+      "targetVariants": 43,
+      "invalidTargetVariants": 0,
+      "scalarOverflowTargetVariants": 0,
+      "alignmentOverflowTargetVariants": 0,
+      "unseenScalarTargetVariants": 0,
+      "inputContentLength": {
+        "rows": 47,
+        "min": 2,
+        "mean": 6.34042553,
+        "p50": 5,
+        "p90": 10,
+        "p95": 17,
+        "p99": 23,
+        "p999": 23,
+        "max": 23,
+        "tail": {}
+      },
+      "targetScalarLength": {
+        "rows": 43,
+        "min": 1,
+        "mean": 4.25581395,
+        "p50": 4,
+        "p90": 6,
+        "p95": 8,
+        "p99": 9,
+        "p999": 9,
+        "max": 9,
+        "tail": {}
+      },
+      "targetRequiredTimeSteps": {
+        "rows": 43,
+        "min": 1,
+        "mean": 4.25581395,
+        "p50": 4,
+        "p90": 6,
+        "p95": 8,
+        "p99": 9,
+        "p999": 9,
+        "max": 9,
+        "tail": {}
+      },
+      "unseenOutputScalars": {
+        "distinct": 0,
+        "occurrences": 0,
+        "singletons": 0,
+        "tokens": []
+      },
+      "examples": {
+        "inputUnrepresentable": [],
+        "noRepresentableTarget": []
+      }
+    }
+  },
+  "summary": {
+    "datasetRows": 1048532,
+    "datasetCandidateRows": 1048532,
+    "datasetInputIncompatibleRows": 0,
+    "datasetInvalidTargetVariants": 0,
+    "datasetPrimaryAlignmentOverflowRows": 0,
+    "heldOutPrimaryUnseenOutputRows": 0,
+    "datasetRowsWithNoRepresentableTarget": 0,
+    "evaluationPositiveRows": 4119,
+    "evaluationPositiveRowsWithNoRepresentableTarget": 0
+  },
+  "findings": [
+    {
+      "severity": "warning",
+      "code": "sparse-ctc-output-scalar-tail",
+      "message": "4 train output scalar(s) occur five times or fewer; final candidate review must inspect rare-class predictions.",
+      "evidence": {
+        "maximumOccurrences": 5,
+        "tokens": [
+          {
+            "token": "ऑ",
+            "codePoint": "U+0911",
+            "count": 4
+          },
+          {
+            "token": "ऱ",
+            "codePoint": "U+0931",
+            "count": 1
+          },
+          {
+            "token": "ळ",
+            "codePoint": "U+0933",
+            "count": 1
+          },
+          {
+            "token": "ॠ",
+            "codePoint": "U+0960",
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "severity": "info",
+      "code": "ctc-repeat-separation-measured",
+      "message": "30067 dataset row(s) require at least one CTC blank separation; the reported alignment width includes every such boundary.",
+      "evidence": {
+        "rows": 30067,
+        "boundaries": 30391
+      }
+    },
+    {
+      "severity": "info",
+      "code": "ctc-representation-contract-satisfied",
+      "message": "Every candidate dataset row and positive evaluation row is representable by the exact production CTC tensor, validator, and train vocabulary.",
+      "evidence": {
+        "datasetRows": 1048532,
+        "datasetCandidateRows": 1048532,
+        "datasetInputIncompatibleRows": 0,
+        "datasetInvalidTargetVariants": 0,
+        "datasetPrimaryAlignmentOverflowRows": 0,
+        "heldOutPrimaryUnseenOutputRows": 0,
+        "datasetRowsWithNoRepresentableTarget": 0,
+        "evaluationPositiveRows": 4119,
+        "evaluationPositiveRowsWithNoRepresentableTarget": 0
+      }
+    }
+  ],
+  "status": "passed-ctc-alignment-audit"
+}

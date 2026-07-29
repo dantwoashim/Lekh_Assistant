@@ -2,28 +2,43 @@
 
 import { createHash } from "node:crypto";
 import {
+  closeSync,
   createReadStream,
   existsSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   realpathSync,
+  renameSync,
+  unlinkSync,
   writeFileSync
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  relative,
+  resolve,
+  sep
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringDecoder } from "node:string_decoder";
 import {
   createEvaluationIdentityIndex,
   NeuralDatasetQualityAccumulator
 } from "./lib/neural-dataset-quality-audit.mjs";
+import { NeuralCTCAlignmentAccumulator } from "./lib/neural-ctc-alignment-audit.mjs";
 
 const root = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 const defaults = Object.freeze({
   datasetManifest: "data/generated/neural-open-vocab/manifest.json",
   goldManifest: "data/neural/gold/manifest.v3.json",
   benchmarkManifest: "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
-  report: "data/neural/audits/open-vocab-data-quality-v1.json"
+  report: "data/neural/audits/open-vocab-data-quality-v1.json",
+  ctcConfig: "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
+  ctcReport: "data/neural/audits/ctc-transformer-v2-alignment-v1.json"
 });
 
 export async function auditNeuralOpenVocabularyDataset(options = {}) {
@@ -31,9 +46,13 @@ export async function auditNeuralOpenVocabularyDataset(options = {}) {
     datasetManifest: resolveRepoRegularFile(options.datasetManifest ?? defaults.datasetManifest, "dataset manifest"),
     goldManifest: resolveRepoRegularFile(options.goldManifest ?? defaults.goldManifest, "gold manifest"),
     benchmarkManifest: resolveRepoRegularFile(options.benchmarkManifest ?? defaults.benchmarkManifest, "benchmark manifest"),
-    report: resolveRepoOutputFile(options.report ?? defaults.report)
+    report: resolveRepoOutputFile(options.report ?? defaults.report),
+    ctcConfig: resolveRepoRegularFile(options.ctcConfig ?? defaults.ctcConfig, "CTC training config"),
+    ctcReport: resolveRepoOutputFile(options.ctcReport ?? defaults.ctcReport)
   };
   const datasetManifest = readJson(paths.datasetManifest);
+  const ctcConfigBytes = readFileSync(paths.ctcConfig);
+  const ctcConfig = JSON.parse(ctcConfigBytes.toString("utf8"));
   const evaluation = {
     "gold-foundation": await readEvaluationRelease(paths.goldManifest),
     "aksharantar-official-benchmark": await readEvaluationRelease(paths.benchmarkManifest)
@@ -41,6 +60,10 @@ export async function auditNeuralOpenVocabularyDataset(options = {}) {
   const accumulator = new NeuralDatasetQualityAccumulator({
     evaluationIndexes: Object.entries(evaluation).map(([name, release]) =>
       createEvaluationIdentityIndex(name, release.rows))
+  });
+  const ctcAccumulator = new NeuralCTCAlignmentAccumulator({
+    maxInputLength: Number(ctcConfig.decoder?.maxInputGraphemes),
+    outputTimeSteps: Number(ctcConfig.decoder?.outputTimeSteps)
   });
   const splitArtifacts = {};
   for (const split of ["train", "dev", "test"]) {
@@ -50,6 +73,7 @@ export async function auditNeuralOpenVocabularyDataset(options = {}) {
     }
     splitArtifacts[split] = await streamDatasetSplit({
       accumulator,
+      ctcAccumulator,
       split,
       path: resolveRepoRegularFile(declaredPath, `${split} dataset split`),
       expected: {
@@ -58,8 +82,19 @@ export async function auditNeuralOpenVocabularyDataset(options = {}) {
         sha256: datasetManifest.sha256?.[split]
       }
     });
+    if (split === "train") ctcAccumulator.finishTrainingSplit();
   }
   const manifestBytes = readFileSync(paths.datasetManifest);
+  for (const [name, release] of Object.entries(evaluation)) {
+    ctcAccumulator.addEvaluationRelease(name, release.rows);
+  }
+  const evaluationReferences = Object.fromEntries(Object.entries(evaluation).map(([name, release]) => [name, {
+    manifestPath: relativePath(release.manifestPath),
+    manifestSha256: release.manifestSha256,
+    releaseId: release.manifest.releaseId ?? null,
+    rows: release.rows.length,
+    suites: release.artifacts
+  }]));
   const report = accumulator.finalize({
     dataset: {
       id: datasetManifest.datasetId ?? null,
@@ -71,32 +106,71 @@ export async function auditNeuralOpenVocabularyDataset(options = {}) {
     },
     artifacts: {
       splits: splitArtifacts,
-      evaluationReferences: Object.fromEntries(Object.entries(evaluation).map(([name, release]) => [name, {
-        manifestPath: relativePath(release.manifestPath),
-        manifestSha256: release.manifestSha256,
-        releaseId: release.manifest.releaseId ?? null,
-        rows: release.rows.length,
-        suites: release.artifacts
-      }]))
+      evaluationReferences
+    }
+  });
+  report.scope = {
+    purpose:
+      "Dataset integrity, provenance, balance, Unicode, leakage, and conservative historical representation diagnostics.",
+    activeCTCRepresentationEvidence:
+      relativePath(paths.ctcReport),
+    representationWarning:
+      "Base-plus-mark vocabulary warnings in this general report are not Transformer-CTC OOV findings; the bound CTC alignment report is authoritative for active-model representability."
+  };
+  const ctcReport = ctcAccumulator.finalize({
+    model: {
+      id: ctcConfig.modelId ?? null,
+      configPath: relativePath(paths.ctcConfig),
+      configSha256: sha256(ctcConfigBytes),
+      implementationContractVersion:
+        ctcConfig.implementationContractVersion ?? null,
+      runtimeModelContract:
+        ctcConfig.architecture?.runtimeModelContract ?? null
+    },
+    dataset: {
+      id: datasetManifest.datasetId ?? null,
+      manifestPath: relativePath(paths.datasetManifest),
+      manifestSha256: sha256(manifestBytes),
+      declaredContentSha256:
+        datasetManifest.datasetContentSha256 ?? null,
+      declaredRows: datasetManifest.totalRows ?? null,
+      declaredCounts: datasetManifest.counts ?? null
+    },
+    artifacts: {
+      splits: splitArtifacts,
+      evaluationReferences
     }
   });
   mkdirSync(dirname(paths.report), { recursive: true });
   requireRepoContainment(realpathSync(dirname(paths.report)), "audit report directory");
-  if (existsSync(paths.report)) {
-    const metadata = lstatSync(paths.report);
-    if (metadata.isSymbolicLink() || !metadata.isFile()) {
-      throw new Error(`Refusing non-regular or symbolic-link audit report: ${relativePath(paths.report)}`);
-    }
-  }
-  writeFileSync(paths.report, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  return { report, reportPath: paths.report };
+  mkdirSync(dirname(paths.ctcReport), { recursive: true });
+  requireRepoContainment(realpathSync(dirname(paths.ctcReport)), "CTC audit report directory");
+  writeJsonReport(paths.report, report);
+  writeJsonReport(paths.ctcReport, ctcReport);
+  return {
+    report,
+    reportPath: paths.report,
+    ctcReport,
+    ctcReportPath: paths.ctcReport
+  };
 }
 
-async function streamDatasetSplit({ accumulator, split, path, expected }) {
+async function streamDatasetSplit({
+  accumulator,
+  ctcAccumulator,
+  split,
+  path,
+  expected
+}) {
   const artifact = await streamJsonLines(path, (row, line, error) => {
     const location = `${relativePath(path)}:${line}`;
-    if (error) accumulator.addInvalidJson(split, location, error.message);
-    else accumulator.add(row, split, location);
+    if (error) {
+      accumulator.addInvalidJson(split, location, error.message);
+      ctcAccumulator.addInvalidJson(split, location, error.message);
+    } else {
+      accumulator.add(row, split, location);
+      ctcAccumulator.add(row, split, location);
+    }
   });
   const expectedValues = {
     bytes: Number(expected.bytes),
@@ -203,6 +277,49 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function writeJsonReport(path, value) {
+  if (existsSync(path)) {
+    const metadata = lstatSync(path);
+    if (metadata.isSymbolicLink() || !metadata.isFile()) {
+      throw new Error(
+        `Refusing non-regular or symbolic-link audit report: ${relativePath(path)}`
+      );
+    }
+  }
+  const staging = resolve(
+    dirname(path),
+    `.${basename(path)}.${process.pid}.${process.hrtime.bigint()}.tmp`
+  );
+  let descriptor;
+  try {
+    descriptor = openSync(staging, "wx", 0o644);
+    writeFileSync(
+      descriptor,
+      `${JSON.stringify(value, null, 2)}\n`,
+      "utf8"
+    );
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    renameSync(staging, path);
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try {
+        closeSync(descriptor);
+      } catch {
+        // Preserve the original report-write failure.
+      }
+    }
+    if (existsSync(staging)) {
+      const metadata = lstatSync(staging);
+      if (!metadata.isSymbolicLink() && metadata.isFile()) {
+        unlinkSync(staging);
+      }
+    }
+    throw error;
+  }
+}
+
 export function resolveRepoRegularFile(candidate, label = "input") {
   const lexicalPath = resolve(root, String(candidate));
   requireRepoContainment(lexicalPath, label);
@@ -228,9 +345,21 @@ function resolveRepoOutputFile(candidate) {
 }
 
 function requireRepoContainment(path, label) {
-  if (path !== root && !path.startsWith(`${root}/`)) {
+  if (!isRepoContained(path)) {
     throw new Error(`Refusing ${label} outside repository root: ${path}`);
   }
+}
+
+function isRepoContained(path) {
+  const candidate = relative(root, path);
+  return (
+    candidate === "" ||
+    (
+      candidate !== ".." &&
+      !candidate.startsWith(`..${sep}`) &&
+      !isAbsolute(candidate)
+    )
+  );
 }
 
 function sha256(value) {
@@ -238,8 +367,7 @@ function sha256(value) {
 }
 
 function relativePath(path) {
-  const prefix = `${root}/`;
-  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  return isRepoContained(path) ? relative(root, path) || "." : path;
 }
 
 function parseArgs(argv) {
@@ -251,7 +379,9 @@ function parseArgs(argv) {
       "--dataset-manifest": "datasetManifest",
       "--gold-manifest": "goldManifest",
       "--benchmark-manifest": "benchmarkManifest",
-      "--report": "report"
+      "--report": "report",
+      "--ctc-config": "ctcConfig",
+      "--ctc-report": "ctcReport"
     }[option];
     if (!key) throw new Error(`Unknown option: ${option}`);
     const value = argv[index + 1];
@@ -269,7 +399,9 @@ function usage() {
     `  --dataset-manifest <path>   default: ${defaults.datasetManifest}`,
     `  --gold-manifest <path>      default: ${defaults.goldManifest}`,
     `  --benchmark-manifest <path> default: ${defaults.benchmarkManifest}`,
-    `  --report <path>             default: ${defaults.report}`
+    `  --report <path>             default: ${defaults.report}`,
+    `  --ctc-config <path>         default: ${defaults.ctcConfig}`,
+    `  --ctc-report <path>         default: ${defaults.ctcReport}`
   ].join("\n");
 }
 
@@ -279,14 +411,29 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (options.help) {
       console.log(usage());
     } else {
-      const { report, reportPath } = await auditNeuralOpenVocabularyDataset(options);
+      const {
+        report,
+        reportPath,
+        ctcReport,
+        ctcReportPath
+      } = await auditNeuralOpenVocabularyDataset(options);
       console.log(JSON.stringify({
-        status: report.status,
+        dataQualityStatus: report.status,
+        ctcAlignmentStatus: ctcReport.status,
         rowsAudited: report.rowsAudited,
         findings: report.findings.map(({ severity, code, message }) => ({ severity, code, message })),
-        report: relativePath(reportPath)
+        ctcFindings: ctcReport.findings.map(
+          ({ severity, code, message }) => ({ severity, code, message })
+        ),
+        report: relativePath(reportPath),
+        ctcReport: relativePath(ctcReportPath)
       }, null, 2));
-      if (report.status === "failed-data-quality-audit") process.exitCode = 1;
+      if (
+        report.status === "failed-data-quality-audit" ||
+        ctcReport.status === "failed-ctc-alignment-audit"
+      ) {
+        process.exitCode = 1;
+      }
     }
   } catch (error) {
     console.error(error instanceof Error ? error.stack : String(error));

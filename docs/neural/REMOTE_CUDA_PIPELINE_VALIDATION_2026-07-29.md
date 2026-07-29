@@ -38,7 +38,8 @@ Observed results:
 - historical seq2seq/attention trainer and Core ML tests: 35 passed;
 - shared CTC model and decoder tests: 11 passed;
 - CTC trainer, recovery, and Core ML tests: 16 passed;
-- complete 31-file JavaScript neural regression: 219 passed.
+- CTC dataset/alignment and freshness audit tests: 9 passed;
+- complete 34-file JavaScript neural regression: 228 passed.
 
 The Core ML suite requires access to the macOS system temporary compilation
 directory. Its first sandbox-restricted invocation could not compile there;
