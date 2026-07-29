@@ -197,12 +197,51 @@ class VocabularyAndLossTests(unittest.TestCase):
             dtype=torch.float32,
             requires_grad=True,
         )
-        loss, numerator, denominator = TRAINER.weighted_ctc_loss(
-            logits,
-            targets,
-            target_lengths,
-            weights,
+        original_ctc_loss = torch.nn.functional.ctc_loss
+        observed_devices: dict[str, str] = {}
+
+        def recording_ctc_loss(
+            log_probs: torch.Tensor,
+            observed_targets: torch.Tensor,
+            input_lengths: torch.Tensor,
+            observed_target_lengths: torch.Tensor,
+            **kwargs: object,
+        ) -> torch.Tensor:
+            observed_devices.update({
+                "log_probs": log_probs.device.type,
+                "targets": observed_targets.device.type,
+                "input_lengths": input_lengths.device.type,
+                "target_lengths": observed_target_lengths.device.type,
+            })
+            return original_ctc_loss(
+                log_probs,
+                observed_targets,
+                input_lengths,
+                observed_target_lengths,
+                **kwargs,
+            )
+
+        with mock.patch.object(
+            torch.nn.functional,
+            "ctc_loss",
+            side_effect=recording_ctc_loss,
+        ):
+            loss, numerator, denominator = TRAINER.weighted_ctc_loss(
+                logits,
+                targets,
+                target_lengths,
+                weights,
+            )
+        self.assertEqual(
+            observed_devices,
+            {
+                "log_probs": "cpu",
+                "targets": "cpu",
+                "input_lengths": "cpu",
+                "target_lengths": "cpu",
+            },
         )
+        self.assertEqual(loss.device.type, "cpu")
         self.assertTrue(torch.isfinite(loss))
         self.assertTrue(torch.isfinite(numerator))
         self.assertEqual(float(denominator), 2)

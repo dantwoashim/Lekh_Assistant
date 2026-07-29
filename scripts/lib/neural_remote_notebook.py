@@ -315,9 +315,11 @@ training_environment = os.environ.copy()
 training_environment["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 training_environment["PYTHONHASHSEED"] = "42"
 training_environment["PYTHONDONTWRITEBYTECODE"] = "1"
+training_environment["PYTHONUNBUFFERED"] = "1"
 subprocess.run(
     [
         str(python),
+        "-u",
         "-B",
         str(bundle_root / "scripts/run-neural-remote-training.py"),
         "--config",

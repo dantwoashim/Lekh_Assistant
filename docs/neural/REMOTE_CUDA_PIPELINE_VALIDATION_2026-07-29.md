@@ -166,3 +166,32 @@ This report does not claim:
 
 Those claims require the authenticated result archive, local Core ML export,
 quality reports, packaged device benchmark, and Instruments placement trace.
+
+## Transformer-CTC successor preflight
+
+The successor bundle
+`lekh-open-vocab-ctc-transformer-v2` independently passed archive SHA-256,
+closed-inventory extraction, the exact Python 3.11.15 / PyTorch 2.7.0+cu118
+toolchain check, Drive persistence, and Tesla T4 discovery. Its first full-data
+attempt failed before epoch one when strict deterministic execution reached
+CUDA CTC backward:
+
+```text
+RuntimeError: ctc_loss_backward_gpu does not have a deterministic implementation
+```
+
+This is an upstream capability boundary, not a data or model-shape failure.
+PyTorch explicitly lists differentiating CUDA `CTCLoss` among the operations
+that error under `torch.use_deterministic_algorithms(True)` and notes that CUDA
+CTC may otherwise select a nondeterministic algorithm:
+[deterministic algorithms](https://docs.pytorch.org/docs/2.9/generated/torch.use_deterministic_algorithms.html),
+[CTCLoss](https://docs.pytorch.org/docs/stable/generated/torch.nn.modules.loss.CTCLoss.html).
+
+The training contract now keeps the Transformer forward and parameter updates
+on CUDA but moves the small `[time, batch, class]` log-probability tensor across
+a differentiable device-copy boundary for CPU CTC loss and backward. A live T4
+probe under strict deterministic mode produced a finite loss, finite gradients,
+and a CUDA-resident source gradient. Local trainer, notebook, and remote-runner
+tests also passed. The authenticated bundle must be rebuilt because this policy
+changes both the trainer digest and the training-config digest; modifying the
+already verified extracted tree is intentionally forbidden.

@@ -98,6 +98,7 @@
       "conflictingTrainingTargetPolicy": "reject"
     },
     "loss": "weighted-ctc",
+    "lossComputationDevice": "cpu-for-deterministic-backward",
     "optimizer": {
       "type": "adamw",
       "beta1": 0.9,

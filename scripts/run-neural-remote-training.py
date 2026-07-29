@@ -220,6 +220,8 @@ def main() -> int:
     except (
         NeuralRemoteArtifactError,
         OSError,
+        RuntimeError,
+        ValueError,
         subprocess.SubprocessError,
         SystemExit,
     ) as error:

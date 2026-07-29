@@ -507,8 +507,14 @@ def validate_executable_config(config: dict[str, Any]) -> None:
             != OUTPUT_SEQUENCE_VALIDATION
     ):
         raise SystemExit("CTC decoder contract is invalid.")
-    if training.get("loss") != "weighted-ctc":
-        raise SystemExit("CTC config must declare weighted-ctc loss.")
+    if (
+        training.get("loss") != "weighted-ctc"
+        or training.get("lossComputationDevice")
+            != "cpu-for-deterministic-backward"
+    ):
+        raise SystemExit(
+            "CTC config must declare deterministic CPU weighted-CTC loss."
+        )
     if training.get("scheduler", {}).get("type") != (
         "linear-warmup-inverse-square-root"
     ):
@@ -1269,6 +1275,18 @@ def weighted_ctc_loss(
         or torch.any(weights <= 0)
     ):
         raise ValueError("CTC logits and weights must be finite and positive.")
+    # PyTorch 2.7 has no deterministic CUDA implementation for CTC backward.
+    # Keep the Transformer forward pass on CUDA, but cross the differentiable
+    # device-copy boundary before log-softmax/CTC. Gradients flow back to the
+    # CUDA logits while the loss kernel remains deterministic and fail-closed.
+    # Targets and weights intentionally remain on CPU in the training loop.
+    loss_logits = logits.to(device="cpu", dtype=torch.float32)
+    loss_targets = targets.to(device="cpu", dtype=torch.int64)
+    loss_target_lengths = target_lengths.to(
+        device="cpu",
+        dtype=torch.int64,
+    )
+    loss_weights = weights.to(device="cpu", dtype=torch.float32)
     input_lengths = torch.full(
         (batch,),
         time_steps,
@@ -1276,10 +1294,10 @@ def weighted_ctc_loss(
         device="cpu",
     )
     losses = torch.nn.functional.ctc_loss(
-        torch.log_softmax(logits, dim=-1).transpose(0, 1),
-        targets,
+        torch.log_softmax(loss_logits, dim=-1).transpose(0, 1),
+        loss_targets,
         input_lengths,
-        target_lengths,
+        loss_target_lengths,
         blank=blank_id,
         reduction="none",
         zero_infinity=False,
@@ -1288,9 +1306,8 @@ def weighted_ctc_loss(
         raise SystemExit(
             "CTC loss became non-finite; target alignment is invalid."
         )
-    device_weights = weights.to(losses.device)
-    numerator = (losses * device_weights).sum()
-    denominator = device_weights.sum()
+    numerator = (losses * loss_weights).sum()
+    denominator = loss_weights.sum()
     return numerator / denominator, numerator.detach(), denominator.detach()
 
 
@@ -1957,8 +1974,6 @@ def evaluate_weighted_ctc_loss(
     denominator = 0.0
     for sources, targets, target_lengths, weights in loader:
         sources = sources.to(device)
-        targets = targets.to(device)
-        weights = weights.to(device)
         logits = model(sources)
         _loss, batch_numerator, batch_denominator = weighted_ctc_loss(
             logits,
@@ -2206,8 +2221,6 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
             )
             set_optimizer_learning_rate(optimizer, current_learning_rate)
             sources = sources.to(device)
-            targets = targets.to(device)
-            weights = weights.to(device)
             logits = model(sources)
             loss, batch_numerator, batch_denominator = weighted_ctc_loss(
                 logits,
@@ -2388,6 +2401,7 @@ def train_model(args: argparse.Namespace) -> dict[str, Any]:
         "trainingExecutionModes": args.execution_modes,
         "durationMs": round(duration * 1_000),
         "device": str(device),
+        "lossComputationDevice": "cpu-for-deterministic-backward",
         "trainingConfig": rel(args.config),
         "trainingContractSha256": args.training_contract_sha256,
         "configuredTrainingConfig": args.configured_training_config,
