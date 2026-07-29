@@ -35,13 +35,17 @@ def build_colab_notebook(
         f"{name} = {value!r}" for name, value in constants.items()
     )
 
-    verify_cell = f"""
-from google.colab import files
+    bootstrap_cell = f"""
+from google.colab import drive, files
 from pathlib import Path
 import hashlib
 import importlib.util
 import json
+import os
+import re
+import shutil
 import sys
+import uuid
 
 {constants_source}
 VERIFIER_MODULE_SOURCE = {verifier_module_source!r}
@@ -53,35 +57,111 @@ def file_sha256(path):
             digest.update(chunk)
     return digest.hexdigest()
 
+def verify_expected_archive(path, label):
+    if path.is_symlink():
+        raise RuntimeError(f"{{label}} must not be a symbolic link.")
+    if not path.exists() or not path.is_file():
+        raise RuntimeError(f"{{label}} is not a regular file.")
+    if path.stat().st_size != EXPECTED_ARCHIVE_BYTES:
+        raise RuntimeError(f"{{label}} byte count is wrong.")
+    observed = file_sha256(path)
+    if observed != EXPECTED_ARCHIVE_SHA256:
+        raise RuntimeError(f"{{label}} SHA-256 is wrong.")
+    return observed
+
+def copy_verified(source, target, label):
+    staging = target.with_name(
+        f".{{target.name}}.staging.{{uuid.uuid4().hex}}"
+    )
+    try:
+        if staging.exists() or staging.is_symlink():
+            raise RuntimeError(f"{{label}} staging path unexpectedly exists.")
+        shutil.copyfile(source, staging)
+        verify_expected_archive(staging, f"{{label}} staging copy")
+        os.replace(staging, target)
+        verify_expected_archive(target, label)
+    finally:
+        if staging.exists() and not staging.is_symlink():
+            staging.unlink()
+
+drive.mount("/content/drive")
+persistent_base = Path("/content/drive/MyDrive/Lekh-Neural-Training")
+persistent_base.mkdir(parents=True, exist_ok=True)
+if persistent_base.is_symlink() or not persistent_base.is_dir():
+    raise RuntimeError("Durable training root is not a safe directory.")
+
 archive = Path("/content") / EXPECTED_ARCHIVE_NAME
-if archive.is_symlink():
-    raise RuntimeError("Existing archive path must not be a symbolic link.")
-if archive.exists():
-    if not archive.is_file():
-        raise RuntimeError("Existing archive path is not a regular file.")
-    print(f"Reusing existing session archive: {{archive.name}}")
+drive_archive = persistent_base / EXPECTED_ARCHIVE_NAME
+if archive.exists() or archive.is_symlink():
+    verify_expected_archive(archive, "Existing session archive")
+    archive_source = "verified-session-cache"
+elif drive_archive.exists() or drive_archive.is_symlink():
+    verify_expected_archive(drive_archive, "Durable Drive archive")
+    copy_verified(
+        drive_archive,
+        archive,
+        "Restored session archive",
+    )
+    archive_source = "verified-drive-recovery"
 else:
     uploaded = files.upload()
-    if EXPECTED_ARCHIVE_NAME not in uploaded:
+    if set(uploaded) != {{EXPECTED_ARCHIVE_NAME}}:
         raise RuntimeError(
             f"Upload exactly {{EXPECTED_ARCHIVE_NAME}}; "
             f"observed {{sorted(uploaded)}}"
         )
-    archive.write_bytes(uploaded[EXPECTED_ARCHIVE_NAME])
-if archive.stat().st_size != EXPECTED_ARCHIVE_BYTES:
-    raise RuntimeError("Uploaded archive byte count is wrong.")
-observed_sha256 = file_sha256(archive)
-if observed_sha256 != EXPECTED_ARCHIVE_SHA256:
-    raise RuntimeError("Uploaded archive SHA-256 is wrong.")
+    payload = uploaded[EXPECTED_ARCHIVE_NAME]
+    if len(payload) != EXPECTED_ARCHIVE_BYTES:
+        raise RuntimeError("Uploaded archive byte count is wrong.")
+    staging = archive.with_name(
+        f".{{archive.name}}.staging.{{uuid.uuid4().hex}}"
+    )
+    try:
+        with staging.open("xb") as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        verify_expected_archive(staging, "Uploaded staging archive")
+        os.replace(staging, archive)
+    finally:
+        if staging.exists() and not staging.is_symlink():
+            staging.unlink()
+    verify_expected_archive(archive, "Uploaded archive")
+    archive_source = "verified-browser-upload"
+
+if drive_archive.exists() or drive_archive.is_symlink():
+    verify_expected_archive(drive_archive, "Durable Drive archive")
+else:
+    copy_verified(
+        archive,
+        drive_archive,
+        "Durable Drive archive",
+    )
 
 bootstrap = Path("/content/lekh-neural-bootstrap")
 bootstrap.mkdir(mode=0o700, exist_ok=True)
+if bootstrap.is_symlink() or not bootstrap.is_dir():
+    raise RuntimeError("Verifier bootstrap root is not a safe directory.")
 module_path = bootstrap / "neural_remote_artifacts.py"
-module_path.write_text(VERIFIER_MODULE_SOURCE, encoding="utf-8")
+verifier_payload = VERIFIER_MODULE_SOURCE.encode("utf-8")
+if module_path.exists() or module_path.is_symlink():
+    if (
+        module_path.is_symlink()
+        or not module_path.is_file()
+        or module_path.read_bytes() != verifier_payload
+    ):
+        raise RuntimeError("Existing verifier module differs from this notebook.")
+else:
+    with module_path.open("xb") as output:
+        output.write(verifier_payload)
+        output.flush()
+        os.fsync(output.fileno())
 spec = importlib.util.spec_from_file_location(
     "neural_remote_artifacts",
     module_path,
 )
+if spec is None or spec.loader is None:
+    raise RuntimeError("Unable to load the embedded archive verifier.")
 remote_artifacts = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = remote_artifacts
 try:
@@ -110,37 +190,138 @@ else:
         raise RuntimeError("Verified archive has an unexpected bundleId.")
 
 print(json.dumps({{
-    "status": "passed-upload-and-closed-inventory-verification",
+    "status": "passed-drive-first-closed-inventory-verification",
     "bundleId": EXPECTED_BUNDLE_ID,
     "modelId": EXPECTED_MODEL_ID,
     "archiveSha256": EXPECTED_ARCHIVE_SHA256,
+    "archiveSource": archive_source,
+    "durableArchive": str(drive_archive),
 }}, indent=2))
 """.strip()
 
-    drive_cell = """
-from google.colab import drive
-from pathlib import Path
-import hashlib
-import shutil
+    status_cell = """
+def read_optional_pointer(path, label):
+    if path.is_symlink():
+        raise RuntimeError(f"{label} must not be a symbolic link.")
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise RuntimeError(f"{label} is not a regular file.")
+    if not 1 <= path.stat().st_size <= 64 * 1024:
+        raise RuntimeError(f"{label} is empty or unexpectedly large.")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise RuntimeError(f"{label} must contain one JSON object.")
+    return value
 
-drive.mount("/content/drive")
-persistent_base = Path("/content/drive/MyDrive/Lekh-Neural-Training")
-persistent_base.mkdir(parents=True, exist_ok=True)
-drive_archive = persistent_base / EXPECTED_ARCHIVE_NAME
-if drive_archive.exists():
+remote_root = (
+    persistent_base
+    / "lekh-neural-remote"
+    / EXPECTED_BUNDLE_ID
+    / EXPECTED_MODEL_ID
+)
+recovery_root = (
+    remote_root
+    / "recovery"
+    / EXPECTED_BUNDLE_ID
+    / EXPECTED_MODEL_ID
+)
+result_root = remote_root / "results"
+recovery_pointer = read_optional_pointer(
+    recovery_root / "LATEST.json",
+    "Recovery pointer",
+)
+result_pointer = read_optional_pointer(
+    result_root / "LATEST_RESULT.json",
+    "Result pointer",
+)
+
+status = {
+    "schemaVersion": 1,
+    "bundleId": EXPECTED_BUNDLE_ID,
+    "modelId": EXPECTED_MODEL_ID,
+    "recovery": None,
+    "result": None,
+    "note": (
+        "This is a lightweight status view. The runner authenticates the "
+        "complete recovery generation before resuming."
+    ),
+}
+if recovery_pointer is not None:
+    generation = recovery_pointer.get("generation")
+    recovery_id = recovery_pointer.get("recoveryId")
+    completed_epoch = recovery_pointer.get("completedEpoch")
     if (
-        drive_archive.stat().st_size != EXPECTED_ARCHIVE_BYTES
-        or file_sha256(drive_archive) != EXPECTED_ARCHIVE_SHA256
+        set(recovery_pointer) != {
+            "schemaVersion",
+            "bundleId",
+            "modelId",
+            "generation",
+            "recoveryId",
+            "completedEpoch",
+        }
+        or recovery_pointer.get("schemaVersion") != 1
+        or recovery_pointer.get("bundleId") != EXPECTED_BUNDLE_ID
+        or recovery_pointer.get("modelId") != EXPECTED_MODEL_ID
+        or not isinstance(generation, str)
+        or re.fullmatch(r"epoch-[0-9]{6}-[0-9a-f]{16}", generation) is None
+        or not isinstance(recovery_id, str)
+        or re.fullmatch(r"[0-9a-f]{64}", recovery_id) is None
+        or type(completed_epoch) is not int
+        or completed_epoch < 1
     ):
-        raise RuntimeError("Drive already contains a different archive with this name.")
-else:
-    shutil.copy2(archive, drive_archive)
+        raise RuntimeError("Recovery pointer identity is malformed or stale.")
+    status["recovery"] = {
+        "status": "observed-recoverable-pointer",
+        "completedEpoch": completed_epoch,
+        "generation": generation,
+        "recoveryId": recovery_id,
+    }
+if result_pointer is not None:
+    archive_name = result_pointer.get("archive")
+    archive_sha256 = result_pointer.get("archiveSha256")
+    archive_bytes = result_pointer.get("archiveBytes")
+    training_run_id = result_pointer.get("trainingRunId")
+    result_id = result_pointer.get("resultId")
     if (
-        drive_archive.stat().st_size != EXPECTED_ARCHIVE_BYTES
-        or file_sha256(drive_archive) != EXPECTED_ARCHIVE_SHA256
+        set(result_pointer) != {
+            "schemaVersion",
+            "status",
+            "bundleId",
+            "modelId",
+            "trainingRunId",
+            "resultId",
+            "archive",
+            "archiveSha256",
+            "archiveBytes",
+        }
+        or result_pointer.get("schemaVersion") != 1
+        or result_pointer.get("status") != "complete-neural-remote-result"
+        or result_pointer.get("bundleId") != EXPECTED_BUNDLE_ID
+        or result_pointer.get("modelId") != EXPECTED_MODEL_ID
+        or not isinstance(training_run_id, str)
+        or re.fullmatch(r"[0-9a-f]{32}", training_run_id) is None
+        or not isinstance(result_id, str)
+        or re.fullmatch(r"[0-9a-f]{64}", result_id) is None
+        or not isinstance(archive_name, str)
+        or Path(archive_name).name != archive_name
+        or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]{0,179}[.]tar[.]gz",
+            archive_name,
+        ) is None
+        or not isinstance(archive_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", archive_sha256) is None
+        or type(archive_bytes) is not int
+        or archive_bytes < 1
     ):
-        raise RuntimeError("Drive archive copy failed post-write verification.")
-print(f"Durable recovery root: {persistent_base}")
+        raise RuntimeError("Result pointer identity is malformed or stale.")
+    status["result"] = {
+        "status": "observed-complete-result-pointer",
+        "archive": archive_name,
+        "archiveSha256": archive_sha256,
+        "archiveBytes": archive_bytes,
+    }
+print(json.dumps(status, indent=2))
 """.strip()
 
     setup_cell = f"""
@@ -155,6 +336,32 @@ PINNED_PYTHON = {PYTHON_VERSION!r}
 REMOTE_TORCH = "torch==2.7.0+cu118"
 PYTORCH_INDEX = "https://download.pytorch.org/whl/cu118"
 venv = Path("/content/lekh-neural-venv-py31115")
+
+system_nvidia_smi = shutil.which("nvidia-smi")
+if system_nvidia_smi is None:
+    raise RuntimeError(
+        "No NVIDIA GPU runtime is attached. Use Runtime → Change runtime "
+        "type → GPU, or wait for the free GPU quota to reset."
+    )
+gpu_preflight = subprocess.run(
+    [
+        system_nvidia_smi,
+        "--query-gpu=name",
+        "--format=csv,noheader",
+    ],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+if gpu_preflight.returncode != 0 or not gpu_preflight.stdout.strip():
+    raise RuntimeError(
+        "The NVIDIA GPU runtime is not usable: "
+        f"{{gpu_preflight.stderr.strip()}}"
+    )
+print(json.dumps({{
+    "status": "passed-early-gpu-preflight",
+    "devices": gpu_preflight.stdout.strip().splitlines(),
+}}, indent=2))
 
 subprocess.run(
     [
@@ -336,8 +543,8 @@ subprocess.run(
     result_cell = """
 from google.colab import files
 from pathlib import Path
-import hashlib
 import json
+import re
 
 result_root = (
     persistent_base
@@ -346,10 +553,52 @@ result_root = (
     / EXPECTED_MODEL_ID
     / "results"
 )
-latest = json.loads(
-    (result_root / "LATEST_RESULT.json").read_text(encoding="utf-8")
-)
-result_archive = result_root / latest["archive"]
+latest_path = result_root / "LATEST_RESULT.json"
+if (
+    latest_path.is_symlink()
+    or not latest_path.is_file()
+    or not 1 <= latest_path.stat().st_size <= 64 * 1024
+):
+    raise RuntimeError("Remote result pointer is missing or unsafe.")
+latest = json.loads(latest_path.read_text(encoding="utf-8"))
+if not isinstance(latest, dict):
+    raise RuntimeError("Remote result pointer must contain one JSON object.")
+archive_name = latest.get("archive")
+if (
+    set(latest) != {
+        "schemaVersion",
+        "status",
+        "bundleId",
+        "modelId",
+        "trainingRunId",
+        "resultId",
+        "archive",
+        "archiveSha256",
+        "archiveBytes",
+    }
+    or latest.get("schemaVersion") != 1
+    or latest.get("status") != "complete-neural-remote-result"
+    or latest.get("bundleId") != EXPECTED_BUNDLE_ID
+    or latest.get("modelId") != EXPECTED_MODEL_ID
+    or not isinstance(latest.get("trainingRunId"), str)
+    or re.fullmatch(r"[0-9a-f]{32}", latest["trainingRunId"]) is None
+    or not isinstance(latest.get("resultId"), str)
+    or re.fullmatch(r"[0-9a-f]{64}", latest["resultId"]) is None
+    or not isinstance(archive_name, str)
+    or Path(archive_name).name != archive_name
+    or re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._-]{0,179}[.]tar[.]gz",
+        archive_name,
+    ) is None
+    or not isinstance(latest.get("archiveSha256"), str)
+    or re.fullmatch(r"[0-9a-f]{64}", latest["archiveSha256"]) is None
+    or type(latest.get("archiveBytes")) is not int
+    or latest["archiveBytes"] < 1
+):
+    raise RuntimeError("Remote result pointer identity is malformed or stale.")
+result_archive = result_root / archive_name
+if result_archive.is_symlink() or not result_archive.is_file():
+    raise RuntimeError("Remote result archive is missing or unsafe.")
 if result_archive.stat().st_size != latest["archiveBytes"]:
     raise RuntimeError("Remote result archive byte count is stale.")
 if file_sha256(result_archive) != latest["archiveSha256"]:
@@ -388,23 +637,26 @@ files.download(str(result_archive))
                 "not guaranteed."
             ),
             markdown_cell(
-                "## 1. Upload and authenticate the exact local bundle\n\n"
+                "## 1. Mount Drive and authenticate the exact bundle\n\n"
                 f"Expected bundle: `{archive_name}`  \n"
                 f"SHA-256: `{bundle_report['archiveSha256']}`\n\n"
-                "Either run the next cell and use **Choose Files**, or upload "
-                "the exact archive through Colab's **Files** pane first. The "
-                "cell reuses `/content/<archive-name>` only after checking "
-                "its byte count and SHA-256."
+                "The cell first reuses an exact local runtime copy, then an "
+                "exact durable Drive copy. It asks for a browser upload only "
+                "when neither exists. Every path is checked by byte count and "
+                "SHA-256 before extraction."
             ),
-            code_cell(verify_cell),
+            code_cell(bootstrap_cell),
             markdown_cell(
-                "## 2. Mount Drive for crash-safe epoch recovery\n\n"
-                "The notebook creates `MyDrive/Lekh-Neural-Training`. Do not "
-                "rename or modify its contents while training."
+                "## 2. Inspect durable progress\n\n"
+                "This lightweight cell reports the observed completed epoch "
+                "or final-result pointer without requiring a GPU. It does not "
+                "replace the runner's full authenticated recovery check."
             ),
-            code_cell(drive_cell),
+            code_cell(status_cell),
             markdown_cell(
-                "## 3. Install and verify the pinned Python toolchain"
+                "## 3. Verify GPU and install the pinned Python toolchain\n\n"
+                "The first check fails immediately on a CPU-only runtime, "
+                "before downloading the training toolchain."
             ),
             code_cell(setup_cell),
             markdown_cell(
