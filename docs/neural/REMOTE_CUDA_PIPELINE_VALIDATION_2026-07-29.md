@@ -1,6 +1,7 @@
 # Remote CUDA Pipeline Validation — 2026-07-29
 
-Status: live Colab/Tesla T4 launch verified; full training completion is not
+Status: the full-data CUDA training loop completed and early stopping selected
+epoch 6; authenticated result publication and downstream qualification are not
 yet claimed.
 
 ## Local verification
@@ -83,6 +84,30 @@ The durable archive, process log, epoch recovery generations, and eventual
 result archive live under `MyDrive/Lekh-Neural-Training`. The repository does
 not contain or record the Google account identity.
 
+## Full-data training convergence
+
+The authenticated final bundle trained on 871,498 training rows and evaluated
+weighted token loss on a deterministic 50,000-row development sample. Every
+completed epoch was mirrored to a content-addressed Google Drive recovery
+generation before the next epoch began.
+
+| Epoch | Train weighted token cross-entropy | Dev weighted token cross-entropy | New best |
+| ---: | ---: | ---: | :---: |
+| 1 | 0.6067337539886959 | 0.5436883617562777 | yes |
+| 2 | 0.5331557697183177 | 0.5368210108606992 | yes |
+| 3 | 0.5277216783035201 | 0.5357946361827629 | yes |
+| 4 | 0.5256181777612219 | 0.5309705800881553 | yes |
+| 5 | 0.5249657409127177 | 0.5312725297926045 | no |
+| 6 | 0.5245722266277952 | 0.5300000711148710 | yes |
+| 7 | 0.5243433629436943 | 0.5316954591914761 | no |
+| 8 | 0.5240649510841241 | 0.5305953818535466 | no |
+
+The configured two-epoch patience stopped training after epoch 8 and retained
+epoch 6 as the best held-out-loss state. At the last observation, the remote
+runner was executing its deterministic 800-row CPU beam-search evaluation
+before checkpoint and result-archive publication. These loss values and early
+stopping behavior do not by themselves establish transliteration accuracy.
+
 ## Preflight defects found and resolved
 
 The live exercise caught four defects before a costly full-data epoch was
@@ -133,7 +158,8 @@ Automated tests reject:
 
 This report does not claim:
 
-- that the full 1,000,000-row candidate has completed CUDA training;
+- that the authenticated CUDA result archive has completed publication and
+  local import;
 - that it meets the frozen gold or official benchmark thresholds;
 - that its exported Core ML artifacts meet packaged p99 latency;
 - that the exact packaged workload executed on the Apple Neural Engine.
