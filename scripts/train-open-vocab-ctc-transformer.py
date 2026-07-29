@@ -156,10 +156,33 @@ compile_mlpackage_with_coremltools = (
 compile_mlpackage_with_xcode = LEGACY.compile_mlpackage_with_xcode
 normalize_compiled_model_path = LEGACY.normalize_compiled_model_path
 normalize_input = LEGACY.normalize_input
-execution_topology = LEGACY.execution_topology
 REQUIRED_CASES = LEGACY.REQUIRED_CASES
 
 _legacy_capture_run_input_snapshot = LEGACY.capture_run_input_snapshot
+
+
+def execution_topology(
+    training_modes: dict[str, Any],
+    export_modes: dict[str, Any],
+) -> str:
+    training_pair = (
+        training_modes.get("skipTrain"),
+        training_modes.get("skipCoreML"),
+    )
+    export_pair = (
+        export_modes.get("skipTrain"),
+        export_modes.get("skipCoreML"),
+    )
+    if training_pair == (False, False) and export_pair == (False, False):
+        return "single-host-train-and-export-v1"
+    if training_pair == (False, True) and export_pair == (False, True):
+        return "training-only-no-coreml-v1"
+    if training_pair == (False, True) and export_pair == (True, False):
+        return "split-host-train-then-macos-export-v1"
+    raise SystemExit(
+        "CTC training and export execution modes do not form an approved "
+        "single-host or split-host publication topology."
+    )
 
 
 def parse_args(

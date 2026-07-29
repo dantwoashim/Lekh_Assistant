@@ -420,7 +420,7 @@ function withFixture(kind, callback, options = {}) {
     writeFileSync(
       promotionReceiptPath,
       `${JSON.stringify({
-        schemaVersion: 2,
+        schemaVersion: 3,
         status: "passed-neural-candidate-promotion",
         generatedAt: "2026-07-24T00:00:00.000Z",
         promotionId: PROMOTION_ID,

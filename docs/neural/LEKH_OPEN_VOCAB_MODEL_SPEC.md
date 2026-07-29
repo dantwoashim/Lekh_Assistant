@@ -266,7 +266,9 @@ Promotion is deliberately two-stage:
    `node scripts/check-neural-model-selection.mjs --production
    --candidate-spec <baseline.json> --candidate-spec <challenger.json>`.
 7. Run `npm run neural:promote:candidate --` with the candidate, export,
-   evaluation, benchmark, and `--selection-report` inputs.
+   evaluation, benchmark, and `--selection-report` inputs. Transformer-CTC
+   promotion also requires
+   `--rare-scalar-report <candidate>/rare-scalar-evaluation.json`.
 8. The promoter verifies every live byte again, stages one complete directory,
    writes measured metrics/performance without invention, and atomically swaps
    it into `models/macos/LekhNeuralTransliterator.production`.
@@ -281,6 +283,9 @@ The promotion receipt binds the candidate specification, selection receipt and
 selection ID, official benchmark manifest and predictions, candidate manifest,
 checkpoint, export report, gold predictions and corpus, dataset, evaluation,
 packaged benchmark, vocabulary, artifacts, and resulting production manifest.
+For Transformer-CTC it additionally retains and re-verifies the rare-scalar
+evaluation, prediction-generation attestation, exact probe predictions, frozen
+probe contract, and CTC alignment audit.
 
 No script may temporarily mark a candidate production-eligible to obtain
 benchmark evidence. No status-only report is sufficient.

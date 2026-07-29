@@ -48,6 +48,9 @@ import {
   computeNeuralProductionPromotionIdFromIdentity,
   NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION
 } from "./lib/neural-production-promotion-receipt.mjs";
+import {
+  validateNeuralRareScalarContract
+} from "./lib/neural-rare-scalar-contract.mjs";
 
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
@@ -58,6 +61,8 @@ const BASELINE_PACKAGE_NAME = "LekhNeuralTransliterator.mlpackage";
 const VOCABULARY_NAME = "LekhNeuralTransliterator.vocab.json";
 const PRODUCTION_MANIFEST_NAME = "LekhNeuralTransliterator.manifest.json";
 const PROMOTION_REPORT_NAME = "neural-candidate-promotion-report.json";
+const RARE_SCALAR_STATUS =
+  "passed-neural-rare-scalar-production-gate";
 const CANONICAL_OFFICIAL_BENCHMARK_MANIFEST =
   "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json";
 const CANONICAL_OFFICIAL_BENCHMARK_MANIFEST_SHA256 =
@@ -124,6 +129,13 @@ export function promoteNeuralCandidate(options) {
     options?.selectionReport,
     "selectionReport"
   );
+  const rareScalarReportPath = options?.rareScalarReport === undefined
+    ? null
+    : resolveRequiredPath(
+        repoRoot,
+        options.rareScalarReport,
+        "rareScalarReport"
+      );
   const now = typeof options?.now === "function"
     ? options.now
     : () => new Date().toISOString();
@@ -271,6 +283,20 @@ export function promoteNeuralCandidate(options) {
     goldEvidence,
     trackedInputs
   });
+  const rareScalarEvidence = verifyRareScalarEvidence({
+    repoRoot,
+    candidateRoot,
+    reportPath: rareScalarReportPath,
+    candidateManifest,
+    candidateManifestEvidence: candidateManifestEvidence.file,
+    exportReport,
+    exportEvidence: exportEvidence.file,
+    artifactDescriptor,
+    checkpointEvidence,
+    goldEvidence,
+    selectionResult,
+    trackedInputs
+  });
 
   const metrics = exactRecord(evaluationReport.metrics, "Evaluation report metrics");
   const performance = productionPerformanceFromBenchmark(benchmarkReport);
@@ -278,7 +304,9 @@ export function promoteNeuralCandidate(options) {
   productionManifest.productionEligible = true;
   productionManifest.metrics = structuredClone(metrics);
   productionManifest.performance = structuredClone(performance);
-  productionManifest.evaluationReports = [portableRelative(repoRoot, evaluationReportPath)];
+  productionManifest.evaluationReports = [
+    portableRelative(repoRoot, evaluationReportPath)
+  ];
   productionManifest.benchmarkReports = [portableRelative(repoRoot, benchmarkReportPath)];
   rewriteSplitArtifactPaths(productionManifest, repoRoot, productionDir, artifactSet);
 
@@ -301,6 +329,16 @@ export function promoteNeuralCandidate(options) {
     goldCorpusSha256: goldEvidence.manifest.value.corpusSha256,
     datasetManifestSha256: goldEvidence.dataset.file.sha256,
     datasetContentSha256: goldEvidence.dataset.value.datasetContentSha256,
+    rareScalarReportSha256:
+      rareScalarEvidence?.report.file.sha256 ?? null,
+    rareScalarGenerationReportSha256:
+      rareScalarEvidence?.generationReport.file.sha256 ?? null,
+    rareScalarPredictionsSha256:
+      rareScalarEvidence?.predictions.sha256 ?? null,
+    rareScalarContractSha256:
+      rareScalarEvidence?.contract.file.sha256 ?? null,
+    rareScalarCTCAuditSha256:
+      rareScalarEvidence?.ctcAudit.file.sha256 ?? null,
     vocabularySha256: vocabularyEvidence.sha256,
     artifactSetSha256: artifactDescriptor.artifactSetSha256,
     checkpointSha256: checkpointEvidence.sha256,
@@ -391,6 +429,30 @@ export function promoteNeuralCandidate(options) {
         checkpoint: evidenceRecord(repoRoot, checkpointEvidence),
         vocabulary: evidenceRecord(repoRoot, vocabularyEvidence)
       },
+      rareScalarEvidence: rareScalarEvidence
+        ? {
+            report: evidenceRecord(
+              repoRoot,
+              rareScalarEvidence.report.file
+            ),
+            generationReport: evidenceRecord(
+              repoRoot,
+              rareScalarEvidence.generationReport.file
+            ),
+            predictions: evidenceRecord(
+              repoRoot,
+              rareScalarEvidence.predictions
+            ),
+            contract: evidenceRecord(
+              repoRoot,
+              rareScalarEvidence.contract.file
+            ),
+            ctcAudit: evidenceRecord(
+              repoRoot,
+              rareScalarEvidence.ctcAudit.file
+            )
+          }
+        : null,
       artifactSetSha256: artifactDescriptor.artifactSetSha256,
       artifacts: stagedArtifacts
         .filter((artifact) => artifact.id !== "vocabulary")
@@ -657,6 +719,343 @@ function verifyEvaluationEvidence({
     fail("Evaluation dataset identity does not match the candidate run-input snapshot.");
   }
   return { predictions, manifest: goldManifest, dataset: datasetManifest };
+}
+
+function verifyRareScalarEvidence({
+  repoRoot,
+  candidateRoot,
+  reportPath,
+  candidateManifest,
+  candidateManifestEvidence,
+  exportReport,
+  exportEvidence,
+  artifactDescriptor,
+  checkpointEvidence,
+  goldEvidence,
+  selectionResult,
+  trackedInputs
+}) {
+  const isCTC = candidateManifest.selectedArtifact === CTC_MODEL_ID &&
+    candidateManifest.runtimeModelContract === CTC_RUNTIME_CONTRACT;
+  if (!isCTC) {
+    if (reportPath !== null) {
+      fail("Rare-scalar evidence is only valid for the Transformer-CTC candidate.");
+    }
+    return null;
+  }
+  if (reportPath === null) {
+    fail(
+      "Transformer-CTC promotion requires a passed rare-scalar evaluation report."
+    );
+  }
+  assertWithin(
+    candidateRoot,
+    reportPath,
+    "Rare-scalar evaluation report must remain inside the immutable candidate"
+  );
+  const report = readJsonEvidence(
+    repoRoot,
+    reportPath,
+    "Rare-scalar evaluation report",
+    trackedInputs
+  );
+  const value = report.value;
+  const evaluation = exactRecord(
+    value.evaluation,
+    "Rare-scalar evaluation result"
+  );
+  if (
+    value.schemaVersion !== 1 ||
+    value.status !== RARE_SCALAR_STATUS ||
+    value.productionEligible !== true ||
+    value.modelId !== CTC_MODEL_ID ||
+    value.trainingRunId !== candidateManifest.trainingRunId ||
+    value.exportRunId !== candidateManifest.exportRunId ||
+    !Array.isArray(value.failures) ||
+    value.failures.length !== 0 ||
+    !Array.isArray(value.warnings) ||
+    evaluation.productionGatePassed !== true ||
+    evaluation.status !== "passed-neural-rare-scalar-evaluation" ||
+    !Array.isArray(evaluation.failures) ||
+    evaluation.failures.length !== 0 ||
+    !Array.isArray(evaluation.spuriousNonExemplarTop1) ||
+    evaluation.spuriousNonExemplarTop1.length !== 0
+  ) {
+    fail("Transformer-CTC rare-scalar production evidence did not pass.");
+  }
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.exportReport,
+    expected: exportEvidence,
+    label: "Rare-scalar export report"
+  });
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.datasetManifest,
+    expected: goldEvidence.dataset.file,
+    label: "Rare-scalar dataset manifest"
+  });
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.gold?.manifest,
+    expected: goldEvidence.manifest.file,
+    label: "Rare-scalar gold manifest"
+  });
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.gold?.predictions,
+    expected: goldEvidence.predictions,
+    label: "Rare-scalar gold predictions"
+  });
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.officialBenchmark?.manifest,
+    expected: selectionResult.benchmarkManifest,
+    label: "Rare-scalar official benchmark manifest"
+  });
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.officialBenchmark?.predictions,
+    expected: selectionResult.comparisonPredictions,
+    label: "Rare-scalar official benchmark predictions"
+  });
+  if (
+    value.datasetManifest?.contentSha256 !==
+      goldEvidence.dataset.value.datasetContentSha256 ||
+    value.gold?.corpusSha256 !== goldEvidence.manifest.value.corpusSha256 ||
+    value.gold?.rows !== exportReport.goldRows ||
+    value.officialBenchmark?.corpusSha256 !==
+      exportReport.comparisonBenchmark?.corpusSha256 ||
+    value.officialBenchmark?.rows !==
+      exportReport.comparisonBenchmark?.rows ||
+    evaluation.lockedEvaluationRows !==
+      value.gold.rows + value.officialBenchmark.rows
+  ) {
+    fail("Rare-scalar report locked-corpus identities or row counts are stale.");
+  }
+
+  const generationPath = declaredCandidatePath(
+    repoRoot,
+    candidateRoot,
+    value.generationReport?.path,
+    "Rare-scalar generation report"
+  );
+  const generationReport = readJsonEvidence(
+    repoRoot,
+    generationPath,
+    "Rare-scalar generation report",
+    trackedInputs
+  );
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.generationReport,
+    expected: generationReport.file,
+    label: "Rare-scalar generation report"
+  });
+  const predictionsPath = declaredCandidatePath(
+    repoRoot,
+    candidateRoot,
+    value.probePredictions?.path,
+    "Rare-scalar probe predictions"
+  );
+  const predictions = trackFile(
+    repoRoot,
+    predictionsPath,
+    "Rare-scalar probe predictions",
+    trackedInputs,
+    { includeContents: true, maxBytes: 16 * 1024 * 1024 }
+  );
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.probePredictions,
+    expected: predictions,
+    label: "Rare-scalar probe predictions"
+  });
+
+  const contractPath = resolveDeclaredPath(
+    repoRoot,
+    value.contract?.path,
+    "Rare-scalar contract"
+  );
+  const contract = readJsonEvidence(
+    repoRoot,
+    contractPath,
+    "Rare-scalar contract",
+    trackedInputs
+  );
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.contract,
+    expected: contract.file,
+    label: "Rare-scalar contract"
+  });
+  const ctcAuditPath = resolveDeclaredPath(
+    repoRoot,
+    value.ctcAudit?.path,
+    "Rare-scalar CTC audit"
+  );
+  const ctcAudit = readJsonEvidence(
+    repoRoot,
+    ctcAuditPath,
+    "Rare-scalar CTC audit",
+    trackedInputs
+  );
+  verifyEmbeddedEvidenceRecord({
+    repoRoot,
+    record: value.ctcAudit,
+    expected: ctcAudit.file,
+    label: "Rare-scalar CTC audit"
+  });
+  const contractValidation = validateNeuralRareScalarContract({
+    contract: contract.value,
+    ctcAudit: ctcAudit.value,
+    ctcAuditPath: portableRelative(repoRoot, ctcAudit.file.path),
+    ctcAuditSha256: ctcAudit.file.sha256,
+    datasetManifest: goldEvidence.dataset.value,
+    datasetManifestPath: portableRelative(
+      repoRoot,
+      goldEvidence.dataset.file.path
+    ),
+    datasetManifestSha256: goldEvidence.dataset.file.sha256
+  });
+  if (!contractValidation.ok) {
+    fail(
+      "Rare-scalar contract is stale: " +
+      contractValidation.failures.join("; ")
+    );
+  }
+
+  const predictionRows = parseRareScalarPredictionRows(predictions.contents);
+  const expectedProbes = contract.value.scalars.flatMap((record) =>
+    record.probes.map((probe) => ({
+      id: probe.id,
+      input: probe.input
+    }))
+  );
+  if (
+    canonicalJson(predictionRows.map(({ id, input }) => ({ id, input }))) !==
+      canonicalJson(expectedProbes) ||
+    value.probePredictions?.rows !== predictionRows.length ||
+    evaluation.probeRows !== predictionRows.length
+  ) {
+    fail("Rare-scalar predictions do not exactly cover the frozen probes.");
+  }
+
+  const generation = generationReport.value;
+  const compiled = artifactDescriptor.artifacts[0];
+  if (
+    generation.schemaVersion !== 1 ||
+    generation.status !==
+      "passed-neural-rare-scalar-prediction-generation" ||
+    generation.modelId !== CTC_MODEL_ID ||
+    generation.trainingRunId !== candidateManifest.trainingRunId ||
+    generation.exportRunId !== candidateManifest.exportRunId ||
+    generation.productionEligible !== false ||
+    generation.predictionsBackend !==
+      "coreml-compiled-transformer-ctc" ||
+    generation.predictions?.sha256 !== predictions.sha256 ||
+    generation.predictions?.rows !== predictionRows.length ||
+    resolveDeclaredPath(
+      repoRoot,
+      generation.predictions?.path,
+      "Generated rare-scalar predictions"
+    ) !== predictions.path ||
+    generation.contract?.sha256 !== contract.file.sha256 ||
+    generation.contract?.ctcAuditSha256 !== ctcAudit.file.sha256 ||
+    generation.candidate?.exportReportSha256 !== exportEvidence.sha256 ||
+    generation.candidate?.manifestSha256 !== candidateManifestEvidence.sha256 ||
+    generation.candidate?.checkpointSha256 !== checkpointEvidence.sha256 ||
+    generation.candidate?.vocabularySha256 !==
+      artifactDescriptor.vocabSha256 ||
+    generation.candidate?.compiledModelSha256 !== compiled.compiledSha256 ||
+    generation.candidate?.mlpackageSha256 !== exportReport.mlpackageSha256 ||
+    generation.coremlValidation?.status !== "passed" ||
+    generation.coremlValidation?.runtimeModelContract !==
+      CTC_RUNTIME_CONTRACT ||
+    generation.coremlValidation?.compiledModelSha256 !==
+      compiled.compiledSha256 ||
+    generation.coremlValidation?.mlpackageSha256 !==
+      exportReport.mlpackageSha256
+  ) {
+    fail("Rare-scalar generation report is stale or artifact-substitutable.");
+  }
+  const identity = value.artifactIdentity;
+  if (
+    identity?.manifestSha256 !== candidateManifestEvidence.sha256 ||
+    identity?.vocabSha256 !== artifactDescriptor.vocabSha256 ||
+    identity?.artifactSetSha256 !== artifactDescriptor.artifactSetSha256 ||
+    identity?.compiledModelSha256 !== compiled.compiledSha256 ||
+    identity?.mlpackageSha256 !== exportReport.mlpackageSha256 ||
+    identity?.checkpointSha256 !== checkpointEvidence.sha256
+  ) {
+    fail("Rare-scalar evaluation artifact identity differs from the candidate.");
+  }
+  return {
+    report,
+    generationReport,
+    predictions,
+    contract,
+    ctcAudit
+  };
+}
+
+function verifyEmbeddedEvidenceRecord({
+  repoRoot,
+  record,
+  expected,
+  label
+}) {
+  if (
+    !record ||
+    typeof record !== "object" ||
+    Array.isArray(record) ||
+    resolveDeclaredPath(repoRoot, record.path, label) !== expected.path ||
+    record.sha256 !== expected.sha256 ||
+    record.bytes !== expected.bytes
+  ) {
+    fail(`${label} path, bytes, or SHA-256 is stale.`);
+  }
+}
+
+function parseRareScalarPredictionRows(contents) {
+  const text = contents.toString("utf8");
+  if (!text.endsWith("\n")) {
+    fail("Rare-scalar predictions must end with a newline.");
+  }
+  const lines = text.slice(0, -1).split("\n");
+  if (lines.length === 0 || lines.some((line) => !line)) {
+    fail("Rare-scalar predictions contain empty or missing rows.");
+  }
+  const seen = new Set();
+  return lines.map((line, index) => {
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch (error) {
+      fail(
+        `Rare-scalar prediction row ${index + 1} is invalid JSON: ` +
+        errorMessage(error)
+      );
+    }
+    if (
+      !row ||
+      typeof row !== "object" ||
+      Array.isArray(row) ||
+      canonicalJson(Object.keys(row).sort()) !==
+        canonicalJson(["candidates", "id", "input"]) ||
+      typeof row.id !== "string" ||
+      !row.id ||
+      seen.has(row.id) ||
+      typeof row.input !== "string" ||
+      !row.input ||
+      !Array.isArray(row.candidates) ||
+      row.candidates.length > 4
+    ) {
+      fail(`Rare-scalar prediction row ${index + 1} is invalid.`);
+    }
+    seen.add(row.id);
+    return row;
+  });
 }
 
 function verifyGoldSuites(repoRoot, manifest, trackedInputs) {
@@ -1751,6 +2150,7 @@ function parseCli(argv) {
     "candidate-manifest",
     "export-report",
     "evaluation-report",
+    "rare-scalar-report",
     "benchmark-report",
     "selection-report",
     "vocabulary",
@@ -1764,6 +2164,7 @@ function parseCli(argv) {
     candidateManifest: values.get("candidate-manifest"),
     exportReport: values.get("export-report"),
     evaluationReport: values.get("evaluation-report"),
+    rareScalarReport: values.get("rare-scalar-report"),
     benchmarkReport: values.get("benchmark-report"),
     selectionReport: values.get("selection-report"),
     vocabulary: values.get("vocabulary"),

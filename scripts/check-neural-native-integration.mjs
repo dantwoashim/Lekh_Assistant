@@ -41,7 +41,10 @@ requireContains(engine, "return .passThrough", "Engine must retain fail-open pas
 requireContains(controller, "IsSecureEventInputEnabled()", "Controller must check secure input.");
 requireContains(controller, "requestAsyncNeuralCandidates", "Controller must request neural tail candidates asynchronously after deterministic candidates.");
 requireContains(controller, "processFailOpenKey", "Controller must keep fail-open raw typing path.");
-requireContains(controller, "candidateSelectionExplicit", "Candidate acceptance must remain explicit.");
+requireContains(controller, "public struct LekhCandidateAcceptanceReceipt", "Candidate acceptance must use a snapshot-bound receipt.");
+requireContains(controller, "authorizeCurrentCandidate(", "Candidate acceptance must be authorized explicitly.");
+requireContains(controller, "authorizedSelectedCandidate(for:", "Candidate commit must revalidate its acceptance receipt.");
+requireContains(controller, "revokeCandidateAcceptance()", "Candidate acceptance authority must be revocable.");
 requireContains(neuralService, "DispatchQueue(label: \"com.lekh.inputmethod.neural-candidate-tail\"", "Neural service must run inference off the IMK keystroke hot path.");
 requireContains(neuralService, "case loading", "Neural service must expose a fail-open loading state while the optional artifact is prepared.");
 requireContains(neuralService, "queue.async { [weak self, bundle]", "Neural artifact verification and Core ML loading must run off the IMK controller-construction path.");

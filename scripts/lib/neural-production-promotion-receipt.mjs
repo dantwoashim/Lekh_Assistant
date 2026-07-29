@@ -29,7 +29,7 @@ import {
   validateNeuralRuntimePlacementEvidence
 } from "./neural-runtime-placement-evidence.mjs";
 
-export const NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 2;
+export const NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 3;
 
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
@@ -113,10 +113,12 @@ export class NeuralProductionPromotionReceiptError extends Error {
 /**
  * Reconstruct the canonical identity hashed by the atomic promoter.
  *
- * Schema v2 deliberately keeps the vocabulary in inputs.vocabulary and only
+ * Schema v3 deliberately keeps the vocabulary in inputs.vocabulary and only
  * runtime/export model directories in artifacts. This makes the identity and
  * the receipt inventory identical, while artifactSetSha256 continues to bind
  * just the compiled runtime models and vocabulary through the descriptor.
+ * Transformer-CTC receipts additionally retain the closed sparse-output
+ * contract, predictions, generation attestation, audit, and evaluation.
  */
 export function buildNeuralProductionPromotionIdentity(receipt) {
   requireRecord(receipt, "Neural promotion receipt");
@@ -145,6 +147,16 @@ export function buildNeuralProductionPromotionIdentity(receipt) {
     goldCorpusSha256: receipt.inputs.goldCorpusSha256,
     datasetManifestSha256: receipt.inputs.datasetManifest?.sha256,
     datasetContentSha256: receipt.inputs.datasetContentSha256,
+    rareScalarReportSha256:
+      receipt.rareScalarEvidence?.report?.sha256 ?? null,
+    rareScalarGenerationReportSha256:
+      receipt.rareScalarEvidence?.generationReport?.sha256 ?? null,
+    rareScalarPredictionsSha256:
+      receipt.rareScalarEvidence?.predictions?.sha256 ?? null,
+    rareScalarContractSha256:
+      receipt.rareScalarEvidence?.contract?.sha256 ?? null,
+    rareScalarCTCAuditSha256:
+      receipt.rareScalarEvidence?.ctcAudit?.sha256 ?? null,
     vocabularySha256: receipt.inputs.vocabulary?.sha256,
     artifactSetSha256: receipt.artifactSetSha256,
     checkpointSha256: receipt.inputs.checkpoint?.sha256,
@@ -254,6 +266,11 @@ export function verifyNeuralProductionPromotionReceipt(options = {}) {
     requireSha256(receipt.inputs[name], `Promotion receipt inputs.${name}`);
   }
   requireSha256(receipt.inputs.selectionId, "Promotion receipt inputs.selectionId");
+  const retainedRare = verifyRetainedRareScalarEvidence({
+    repoRoot,
+    receipt,
+    descriptor
+  });
 
   validateRetainedEvidenceGraph({
     repoRoot,
@@ -261,7 +278,8 @@ export function verifyNeuralProductionPromotionReceipt(options = {}) {
     receipt,
     descriptor,
     manifest,
-    retainedValues
+    retainedValues,
+    retainedRareValues: retainedRare?.values ?? null
   });
   const artifacts = verifyPromotedArtifacts({
     repoRoot,
@@ -296,7 +314,10 @@ export function verifyNeuralProductionPromotionReceipt(options = {}) {
     artifactSetSha256: descriptor.artifactSetSha256,
     manifest: evidenceSummary(repoRoot, manifestEvidence.file),
     receipt: evidenceSummary(repoRoot, receiptEvidence.file),
-    retainedInputs: retained,
+    retainedInputs: {
+      ...retained,
+      rareScalarEvidence: retainedRare?.summaries ?? null
+    },
     artifacts: artifacts.map(({ record }) => ({
       id: record.id,
       role: record.role,
@@ -330,6 +351,7 @@ function validateReceiptShape({
       "productionDirectory",
       "artifactLayout",
       "inputs",
+      "rareScalarEvidence",
       "artifactSetSha256",
       "artifacts",
       "productionManifest"
@@ -355,6 +377,25 @@ function validateReceiptShape({
     fail("Neural promotion receipt generatedAt is not an ISO timestamp.");
   }
   requireExactKeys(receipt.inputs, INPUT_KEYS, "Neural promotion receipt inputs");
+  if (descriptor.modelId === "lekh-open-vocab-ctc-transformer-v2") {
+    requireRecord(
+      receipt.rareScalarEvidence,
+      "Transformer-CTC rare-scalar receipt evidence"
+    );
+    requireExactKeys(
+      receipt.rareScalarEvidence,
+      [
+        "report",
+        "generationReport",
+        "predictions",
+        "contract",
+        "ctcAudit"
+      ],
+      "Transformer-CTC rare-scalar receipt evidence"
+    );
+  } else if (receipt.rareScalarEvidence !== null) {
+    fail("Non-CTC promotion receipts must not contain rare-scalar evidence.");
+  }
   requireExactKeys(
     receipt.productionManifest,
     [
@@ -407,12 +448,49 @@ function validateReceiptShape({
   }
 }
 
+function verifyRetainedRareScalarEvidence({
+  repoRoot,
+  receipt,
+  descriptor
+}) {
+  if (descriptor.modelId !== "lekh-open-vocab-ctc-transformer-v2") {
+    return null;
+  }
+  const records = receipt.rareScalarEvidence;
+  const jsonNames = new Set([
+    "report",
+    "generationReport",
+    "contract",
+    "ctcAudit"
+  ]);
+  const summaries = {};
+  const values = {};
+  for (const name of [
+    "report",
+    "generationReport",
+    "predictions",
+    "contract",
+    "ctcAudit"
+  ]) {
+    const evidence = verifyRetainedEvidence(
+      repoRoot,
+      records[name],
+      `Retained rare-scalar ${name}`,
+      { json: jsonNames.has(name) }
+    );
+    summaries[name] = evidenceSummary(repoRoot, evidence.file);
+    values[name] = evidence.value;
+  }
+  return { summaries, values };
+}
+
 function validateRetainedEvidenceGraph({
   repoRoot,
   receipt,
   descriptor,
   manifest,
-  retainedValues
+  retainedValues,
+  retainedRareValues
 }) {
   const selection = validateNeuralSelectionReport(retainedValues.selectionReport);
   const winner = selection.winner;
@@ -579,6 +657,131 @@ function validateRetainedEvidenceGraph({
         safePath(repoRoot, record.path, `receipt ${label}`)) {
       fail(`Retained ${label} path does not match its receipt record.`);
     }
+  }
+
+  if (descriptor.modelId === "lekh-open-vocab-ctc-transformer-v2") {
+    const rare = retainedRareValues?.report;
+    const generation = retainedRareValues?.generationReport;
+    const contract = retainedRareValues?.contract;
+    const records = receipt.rareScalarEvidence;
+    const rareEvaluation = rare?.evaluation;
+    if (
+      rare?.schemaVersion !== 1 ||
+      rare?.status !== "passed-neural-rare-scalar-production-gate" ||
+      rare?.productionEligible !== true ||
+      rare?.modelId !== descriptor.modelId ||
+      rare?.trainingRunId !== receipt.trainingRunId ||
+      rare?.exportRunId !== receipt.exportRunId ||
+      !Array.isArray(rare?.failures) ||
+      rare.failures.length !== 0 ||
+      !Array.isArray(rare?.warnings) ||
+      rareEvaluation?.status !==
+        "passed-neural-rare-scalar-evaluation" ||
+      rareEvaluation?.productionGatePassed !== true ||
+      !Array.isArray(rareEvaluation?.failures) ||
+      rareEvaluation.failures.length !== 0 ||
+      !Array.isArray(rareEvaluation?.spuriousNonExemplarTop1) ||
+      rareEvaluation.spuriousNonExemplarTop1.length !== 0
+    ) {
+      fail("Retained rare-scalar evaluation did not pass its production gate.");
+    }
+    for (const [observed, expected, label] of [
+      [rare.exportReport, receipt.inputs.exportReport, "export report"],
+      [rare.datasetManifest, receipt.inputs.datasetManifest, "dataset manifest"],
+      [rare.gold?.manifest, receipt.inputs.goldManifest, "gold manifest"],
+      [rare.gold?.predictions, receipt.inputs.predictions, "gold predictions"],
+      [
+        rare.officialBenchmark?.manifest,
+        receipt.inputs.comparisonBenchmarkManifest,
+        "official benchmark manifest"
+      ],
+      [
+        rare.officialBenchmark?.predictions,
+        receipt.inputs.comparisonPredictions,
+        "official benchmark predictions"
+      ],
+      [rare.generationReport, records.generationReport, "generation report"],
+      [rare.probePredictions, records.predictions, "probe predictions"],
+      [rare.contract, records.contract, "probe contract"],
+      [rare.ctcAudit, records.ctcAudit, "CTC audit"]
+    ]) {
+      if (
+        observed?.path !== expected?.path ||
+        observed?.bytes !== expected?.bytes ||
+        observed?.sha256 !== expected?.sha256
+      ) {
+        fail(`Retained rare-scalar ${label} evidence is stale.`);
+      }
+    }
+    if (
+      rare.datasetManifest.contentSha256 !==
+        receipt.inputs.datasetContentSha256 ||
+      rare.gold?.corpusSha256 !== receipt.inputs.goldCorpusSha256 ||
+      rare.gold?.rows !== evaluation.goldRows ||
+      rare.officialBenchmark?.corpusSha256 !==
+        comparison.benchmarkCorpusSha256 ||
+      rare.officialBenchmark?.rows !== comparison.predictionRows ||
+      rareEvaluation.lockedEvaluationRows !==
+        rare.gold.rows + rare.officialBenchmark.rows ||
+      rareEvaluation.probeRows !== rare.probePredictions.rows ||
+      rare.artifactIdentity?.manifestSha256 !==
+        receipt.inputs.candidateManifest.sha256 ||
+      rare.artifactIdentity?.vocabSha256 !== descriptor.vocabSha256 ||
+      rare.artifactIdentity?.artifactSetSha256 !==
+        descriptor.artifactSetSha256 ||
+      rare.artifactIdentity?.checkpointSha256 !==
+        receipt.inputs.checkpoint.sha256
+    ) {
+      fail("Retained rare-scalar corpus or artifact identity is stale.");
+    }
+    if (
+      generation?.schemaVersion !== 1 ||
+      generation?.status !==
+        "passed-neural-rare-scalar-prediction-generation" ||
+      generation?.modelId !== descriptor.modelId ||
+      generation?.trainingRunId !== receipt.trainingRunId ||
+      generation?.exportRunId !== receipt.exportRunId ||
+      generation?.productionEligible !== false ||
+      generation?.predictionsBackend !==
+        "coreml-compiled-transformer-ctc" ||
+      generation?.predictions?.path !== records.predictions.path ||
+      generation?.predictions?.sha256 !== records.predictions.sha256 ||
+      generation?.predictions?.rows !== rare.probePredictions.rows ||
+      generation?.contract?.path !== records.contract.path ||
+      generation?.contract?.sha256 !== records.contract.sha256 ||
+      generation?.contract?.ctcAuditSha256 !== records.ctcAudit.sha256 ||
+      generation?.candidate?.exportReportSha256 !==
+        receipt.inputs.exportReport.sha256 ||
+      generation?.candidate?.manifestSha256 !==
+        receipt.inputs.candidateManifest.sha256 ||
+      generation?.candidate?.checkpointSha256 !==
+        receipt.inputs.checkpoint.sha256 ||
+      generation?.candidate?.vocabularySha256 !== descriptor.vocabSha256 ||
+      generation?.coremlValidation?.status !== "passed" ||
+      generation?.coremlValidation?.runtimeModelContract !==
+        descriptor.runtimeModelContract
+    ) {
+      fail("Retained rare-scalar generation attestation is stale.");
+    }
+    if (
+      contract?.schemaVersion !== 1 ||
+      contract?.contentIdentity !==
+        "lekh-neural-ctc-rare-output-scalar-probes-v1" ||
+      contract?.status !== "frozen-dataset-derived-diagnostic" ||
+      contract?.dataset?.manifest !== receipt.inputs.datasetManifest.path ||
+      contract?.dataset?.manifestSha256 !==
+        receipt.inputs.datasetManifest.sha256 ||
+      contract?.dataset?.contentSha256 !==
+        receipt.inputs.datasetContentSha256 ||
+      contract?.ctcAudit?.path !== records.ctcAudit.path ||
+      contract?.ctcAudit?.sha256 !== records.ctcAudit.sha256 ||
+      !Array.isArray(contract?.scalars) ||
+      contract.scalars.length < 1
+    ) {
+      fail("Retained rare-scalar contract is stale.");
+    }
+  } else if (retainedRareValues !== null) {
+    fail("Non-CTC promotion retained unexpected rare-scalar evidence.");
   }
 
   if (goldManifest.corpusSha256 !== receipt.inputs.goldCorpusSha256 ||

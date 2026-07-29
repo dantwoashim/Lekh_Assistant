@@ -79,7 +79,7 @@ describe("evidence-bound neural candidate promotion", () => {
         repoRoot: fixture.root,
         productionDirectory: result.productionDir
       });
-      assert.equal(report.schemaVersion, 2);
+      assert.equal(report.schemaVersion, 3);
       assert.equal(verification.promotionId, result.promotionId);
       assert.deepEqual(
         report.artifacts.map((artifact) => artifact.id),
@@ -345,6 +345,7 @@ describe("evidence-bound neural candidate promotion", () => {
       assert.equal(result.artifactLayout, "split-attention");
 
       const manifest = readJson(result.manifest);
+      const receipt = readJson(result.report);
       const verification = verifyNeuralProductionPromotionReceipt({
         repoRoot: fixture.root,
         productionDirectory: result.productionDir
@@ -403,6 +404,7 @@ describe("evidence-bound neural candidate promotion", () => {
       assert.equal(result.artifactLayout, "single-model");
 
       const manifest = readJson(result.manifest);
+      const receipt = readJson(result.report);
       const verification = verifyNeuralProductionPromotionReceipt({
         repoRoot: fixture.root,
         productionDirectory: result.productionDir
@@ -430,6 +432,14 @@ describe("evidence-bound neural candidate promotion", () => {
       assert.equal(manifest.beamSearch.maxSteps, 32);
       assert.deepEqual(manifest.tensorContract, ctcTensorContract());
       assert.equal(manifest.compiledModels, undefined);
+      assert.equal(receipt.schemaVersion, 3);
+      assert.equal(
+        receipt.rareScalarEvidence.report.sha256,
+        fixture.identities.rareScalarEvaluation.sha256
+      );
+      assert.deepEqual(manifest.evaluationReports, [
+        portable(fixture.root, fixture.paths.evaluation)
+      ]);
       assert.equal(
         inspectContainedDirectoryTree(
           fixture.root,
@@ -458,6 +468,34 @@ describe("evidence-bound neural candidate promotion", () => {
         "passed-production-phase9-promotion"
       );
       assert.deepEqual(promotionDebris(fixture), []);
+    });
+  });
+
+  it("rejects a Transformer-CTC candidate without exact rare-scalar evidence", () => {
+    withFixture("ctc", (fixture) => {
+      assert.throws(
+        () => promote(fixture, { rareScalarReport: undefined }),
+        /requires a passed rare-scalar evaluation report/u
+      );
+      assert.equal(existsProduction(fixture), false);
+    });
+  });
+
+  it("rejects a Transformer-CTC rare-scalar report with a spurious top-1 emission", () => {
+    withFixture("ctc", (fixture) => {
+      const report = readJson(fixture.paths.rareScalarEvaluation);
+      report.evaluation.spuriousNonExemplarTop1.push({
+        scalar: "ॠ",
+        evaluation: "official-benchmark",
+        id: "official-1",
+        top1: "ॠनेपाल"
+      });
+      writeJson(fixture.paths.rareScalarEvaluation, report);
+      assert.throws(
+        () => promote(fixture),
+        /rare-scalar production evidence did not pass/u
+      );
+      assert.equal(existsProduction(fixture), false);
     });
   });
 
@@ -517,6 +555,26 @@ function buildFixture(root, kind) {
     vocabulary: join(candidate, "LekhNeuralTransliterator.vocab.json"),
     checkpoint: join(candidate, "checkpoint.pt"),
     predictions: join(candidate, "gold-predictions.jsonl"),
+    rareScalarPredictions: join(candidate, "rare-scalar-predictions.jsonl"),
+    rareScalarGeneration: join(
+      candidate,
+      "rare-scalar-prediction-report.json"
+    ),
+    rareScalarEvaluation: join(candidate, "rare-scalar-evaluation.json"),
+    rareScalarContract: join(
+      root,
+      "data",
+      "neural",
+      "eval",
+      "ctc-rare-output-scalar-probes-v1.json"
+    ),
+    rareScalarAudit: join(
+      root,
+      "data",
+      "neural",
+      "audits",
+      "ctc-transformer-v2-alignment-v1.json"
+    ),
     evaluation: join(root, "reports", "evaluation.json"),
     benchmark: join(root, "reports", "benchmark.json"),
     candidateSpecification: join(root, "reports", "candidate-specification.json"),
@@ -572,7 +630,13 @@ function buildFixture(root, kind) {
   writeJson(paths.goldManifest, goldManifest);
   const datasetManifest = {
     schemaVersion: 2,
+    datasetId: "fixture-neural-dataset",
     datasetContentSha256: "c".repeat(64),
+    sha256: {
+      train: "4".repeat(64),
+      dev: "5".repeat(64),
+      test: "9".repeat(64)
+    },
     totalRows: 1
   };
   writeJson(paths.datasetManifest, datasetManifest);
@@ -857,6 +921,26 @@ function buildFixture(root, kind) {
     root,
     paths.comparisonBenchmarkManifest
   );
+  exportReport.comparisonBenchmark = {
+    manifest: portable(root, paths.comparisonBenchmarkManifest),
+    manifestSha256: identities.comparisonBenchmarkManifest.sha256,
+    corpusSha256: OFFICIAL_BENCHMARK_CORPUS_SHA256,
+    rows: 1,
+    trainingIsolation,
+    predictions: portable(root, paths.comparisonPredictions),
+    predictionsSha256: identities.comparisonPredictions.sha256,
+    predictionsBackend: kind === "split"
+      ? "coreml-compiled-split-attention-models"
+      : kind === "ctc"
+        ? "coreml-compiled-transformer-ctc"
+        : "coreml-compiled-model",
+    predictionArtifactIdentity
+  };
+  writeJson(paths.exportReport, exportReport);
+  identities.exportReport = inspectContainedRegularFile(
+    root,
+    paths.exportReport
+  );
   const comparison = {
     schemaVersion: 1,
     status: "passed-official-benchmark-evaluation",
@@ -894,6 +978,17 @@ function buildFixture(root, kind) {
   };
   writeJson(paths.comparison, comparison);
   identities.comparison = inspectContainedRegularFile(root, paths.comparison);
+  const rareScalar = kind === "ctc"
+    ? buildRareScalarEvidenceFixture({
+        root,
+        paths,
+        identities,
+        manifest,
+        datasetManifest,
+        goldManifest,
+        artifactDescriptor
+      })
+    : null;
   const candidateSpecification = {
     schemaVersion: 1,
     label: kind,
@@ -995,11 +1090,242 @@ function buildFixture(root, kind) {
     evaluation,
     benchmark,
     comparison,
+    rareScalar,
     selection,
     goldManifest,
     datasetManifest,
     artifactDescriptor
   };
+}
+
+function buildRareScalarEvidenceFixture({
+  root,
+  paths,
+  identities,
+  manifest,
+  datasetManifest,
+  goldManifest,
+  artifactDescriptor
+}) {
+  const scalarRows = [
+    ["ऑ", "U+0911", true, "probe-o", "orbit", "ऑर्बिट"],
+    ["ऱ", "U+0931", false, "probe-rra", "rraa", "ऱ"],
+    ["ळ", "U+0933", true, "probe-lla", "llaa", "ळ"],
+    ["ॠ", "U+0960", false, "probe-rr", "rrig", "ॠ"]
+  ];
+  const sparseOutputScalarProbes = scalarRows.map(
+    ([scalar, codePoint, , id, input, target], index) => ({
+      scalar,
+      codePoint,
+      trainOccurrences: 1,
+      probes: [{
+        id,
+        split: "train",
+        input,
+        target,
+        acceptable: [target],
+        rowHash: String(index + 1).repeat(64),
+        sourceIds: ["fixture-source"],
+        reviewTier: "silver-fixture"
+      }]
+    })
+  );
+  const ctcAudit = {
+    trainingVocabulary: {
+      output: {
+        tokens: sparseOutputScalarProbes.map(
+          ({ scalar, codePoint, trainOccurrences }) => ({
+            token: scalar,
+            codePoint,
+            count: trainOccurrences
+          })
+        )
+      }
+    },
+    sparseOutputScalarProbes: structuredClone(sparseOutputScalarProbes)
+  };
+  writeJson(paths.rareScalarAudit, ctcAudit);
+  identities.rareScalarAudit = inspectContainedRegularFile(
+    root,
+    paths.rareScalarAudit
+  );
+  const contract = {
+    schemaVersion: 1,
+    contentIdentity: "lekh-neural-ctc-rare-output-scalar-probes-v1",
+    status: "frozen-dataset-derived-diagnostic",
+    dataset: {
+      id: datasetManifest.datasetId,
+      manifest: portable(root, paths.datasetManifest),
+      manifestSha256: identities.datasetManifest.sha256,
+      contentSha256: datasetManifest.datasetContentSha256,
+      splitSha256: structuredClone(datasetManifest.sha256)
+    },
+    ctcAudit: {
+      path: portable(root, paths.rareScalarAudit),
+      sha256: identities.rareScalarAudit.sha256
+    },
+    policy: {
+      maximumTrainOccurrences: 5,
+      exactProbeMatches:
+        "diagnostic-only-silver-derived-no-accuracy-claim",
+      nonExemplarSilverScalars:
+        "require-zero-unaccepted-top1-emissions-on-locked-gold-and-official-benchmark"
+    },
+    scalars: scalarRows.map(
+      ([
+        scalar,
+        codePoint,
+        cldrNepaliMainExemplar
+      ], index) => ({
+        scalar,
+        codePoint,
+        trainOccurrences: 1,
+        cldrNepaliMainExemplar,
+        treatment: cldrNepaliMainExemplar
+          ? "supported-sparse-diagnostic"
+          : "non-exemplar-silver-data-risk",
+        probes: structuredClone(sparseOutputScalarProbes[index].probes)
+      })
+    )
+  };
+  writeJson(paths.rareScalarContract, contract);
+  identities.rareScalarContract = inspectContainedRegularFile(
+    root,
+    paths.rareScalarContract
+  );
+
+  const predictionRows = scalarRows.map(
+    ([, , , id, input, target]) => ({
+      id,
+      input,
+      candidates: [target]
+    })
+  );
+  write(
+    paths.rareScalarPredictions,
+    predictionRows.map((row) => JSON.stringify(row)).join("\n") + "\n"
+  );
+  identities.rareScalarPredictions = inspectContainedRegularFile(
+    root,
+    paths.rareScalarPredictions
+  );
+  const compiled = artifactDescriptor.artifacts[0];
+  const generation = {
+    schemaVersion: 1,
+    status: "passed-neural-rare-scalar-prediction-generation",
+    modelId: manifest.selectedArtifact,
+    trainingRunId: TRAINING_RUN_ID,
+    exportRunId: EXPORT_RUN_ID,
+    productionEligible: false,
+    predictionsBackend: "coreml-compiled-transformer-ctc",
+    contract: {
+      path: portable(root, paths.rareScalarContract),
+      sha256: identities.rareScalarContract.sha256,
+      datasetManifestSha256: identities.datasetManifest.sha256,
+      datasetContentSha256: datasetManifest.datasetContentSha256,
+      ctcAuditSha256: identities.rareScalarAudit.sha256
+    },
+    candidate: {
+      exportReport: portable(root, paths.exportReport),
+      exportReportSha256: identities.exportReport.sha256,
+      manifest: portable(root, paths.manifest),
+      manifestSha256: identities.manifest.sha256,
+      checkpoint: portable(root, paths.checkpoint),
+      checkpointSha256: identities.checkpoint.sha256,
+      vocabulary: portable(root, paths.vocabulary),
+      vocabularySha256: identities.vocabulary.sha256,
+      mlpackage: portable(root, paths.mlpackage),
+      mlpackageSha256: identities.mlpackage.sha256,
+      compiledModel: portable(root, paths.compiledModel),
+      compiledModelSha256: identities.compiledModel.sha256
+    },
+    coremlValidation: {
+      status: "passed",
+      runtimeModelContract: "single-transformer-ctc-v1",
+      mlpackageSha256: identities.mlpackage.sha256,
+      compiledModelSha256: identities.compiledModel.sha256,
+      tensorContract: ctcTensorContract(),
+      knownAnswerInputSha256: "a".repeat(64),
+      maximumAbsoluteLogitError: 0,
+      relativeTolerance: 0.005,
+      absoluteTolerance: 0.005
+    },
+    predictions: {
+      path: portable(root, paths.rareScalarPredictions),
+      sha256: identities.rareScalarPredictions.sha256,
+      rows: predictionRows.length
+    }
+  };
+  writeJson(paths.rareScalarGeneration, generation);
+  identities.rareScalarGeneration = inspectContainedRegularFile(
+    root,
+    paths.rareScalarGeneration
+  );
+
+  const report = {
+    schemaVersion: 1,
+    status: "passed-neural-rare-scalar-production-gate",
+    productionEligible: true,
+    modelId: manifest.selectedArtifact,
+    trainingRunId: TRAINING_RUN_ID,
+    exportRunId: EXPORT_RUN_ID,
+    candidateRoot: portable(root, paths.candidate),
+    exportReport: fileEvidence(root, identities.exportReport),
+    contract: fileEvidence(root, identities.rareScalarContract),
+    ctcAudit: fileEvidence(root, identities.rareScalarAudit),
+    datasetManifest: {
+      ...fileEvidence(root, identities.datasetManifest),
+      contentSha256: datasetManifest.datasetContentSha256
+    },
+    generationReport: fileEvidence(root, identities.rareScalarGeneration),
+    probePredictions: {
+      ...fileEvidence(root, identities.rareScalarPredictions),
+      rows: predictionRows.length
+    },
+    gold: {
+      manifest: fileEvidence(root, identities.goldManifest),
+      corpusSha256: goldManifest.corpusSha256,
+      predictions: fileEvidence(root, identities.predictions),
+      rows: 1
+    },
+    officialBenchmark: {
+      manifest: fileEvidence(
+        root,
+        identities.comparisonBenchmarkManifest
+      ),
+      corpusSha256: OFFICIAL_BENCHMARK_CORPUS_SHA256,
+      predictions: fileEvidence(root, identities.comparisonPredictions),
+      rows: 1
+    },
+    artifactIdentity: {
+      manifestSha256: identities.manifest.sha256,
+      vocabSha256: identities.vocabulary.sha256,
+      artifactSetSha256: artifactDescriptor.artifactSetSha256,
+      compiledModelSha256: compiled.compiledSha256,
+      mlpackageSha256: identities.mlpackage.sha256,
+      checkpointSha256: identities.checkpoint.sha256
+    },
+    evaluation: {
+      status: "passed-neural-rare-scalar-evaluation",
+      policy:
+        "silver probes are diagnostic; unaccepted non-CLDR-exemplar sparse scalars are forbidden at top-1 on locked evaluations",
+      probeRows: predictionRows.length,
+      lockedEvaluationRows: 2,
+      byScalar: {},
+      spuriousNonExemplarTop1: [],
+      failures: [],
+      warnings: [],
+      productionGatePassed: true
+    },
+    failures: [],
+    warnings: []
+  };
+  writeJson(paths.rareScalarEvaluation, report);
+  identities.rareScalarEvaluation = inspectContainedRegularFile(
+    root,
+    paths.rareScalarEvaluation
+  );
+  return { contract, ctcAudit, generation, report };
 }
 
 function buildBaselineArtifacts(root, candidate) {
@@ -1137,6 +1463,9 @@ function promote(fixture, overrides = {}) {
     candidateManifest: fixture.paths.manifest,
     exportReport: fixture.paths.exportReport,
     evaluationReport: fixture.paths.evaluation,
+    rareScalarReport: fixture.kind === "ctc"
+      ? fixture.paths.rareScalarEvaluation
+      : undefined,
     benchmarkReport: fixture.paths.benchmark,
     selectionReport: fixture.paths.selection,
     vocabulary: fixture.paths.vocabulary,
@@ -1346,6 +1675,14 @@ function portable(root, path) {
 function evidence(root, value) {
   return {
     path: portable(root, value.path),
+    sha256: value.sha256
+  };
+}
+
+function fileEvidence(root, value) {
+  return {
+    path: portable(root, value.path),
+    bytes: value.bytes,
     sha256: value.sha256
   };
 }

@@ -28,8 +28,12 @@ const requiredFiles = [
   "scripts/lib/neural-ctc-alignment-audit.mjs",
   "scripts/lib/neural-audit-evidence.mjs",
   "scripts/lib/neural-rare-scalar-contract.mjs",
+  "scripts/lib/neural-rare-scalar-evaluation.mjs",
+  "scripts/lib/neural-production-promotion-receipt.mjs",
   "scripts/check-neural-audit-evidence.mjs",
   "scripts/analyze-neural-output-tokenization.mjs",
+  "scripts/generate-neural-rare-scalar-predictions.py",
+  "scripts/evaluate-neural-rare-scalar-evidence.mjs",
   "scripts/lib/neural-artifact-descriptor.mjs",
   "scripts/lib/neural-vocabulary-contract.mjs",
   "scripts/check-neural-training-contract.mjs",
@@ -87,6 +91,10 @@ const nativeBenchmarkText = readText(
 );
 const packagedBenchmarkText = readText(
   "scripts/benchmark-neural-packaged-app.mjs"
+);
+const promoterText = readText("scripts/promote-neural-candidate.mjs");
+const promotionReceiptText = readText(
+  "scripts/lib/neural-production-promotion-receipt.mjs"
 );
 const packageJson = readJson("package.json");
 const schema = readJson("data/neural/schema/lekh-neural-manifest.schema.json");
@@ -175,8 +183,33 @@ requireText(
 );
 requireText(
   specText,
+  "--rare-scalar-report",
+  "Transformer-CTC promotion must require the rare-scalar evaluation report"
+);
+requireText(
+  specText,
   "--runtime-placement-evidence",
   "production re-verification must require observed Neural Engine placement evidence"
+);
+requireText(
+  promoterText,
+  'values.get("rare-scalar-report")',
+  "atomic promoter must accept the rare-scalar production-gate report"
+);
+requireText(
+  promoterText,
+  "Transformer-CTC promotion requires a passed rare-scalar evaluation report.",
+  "atomic promoter must fail closed when Transformer-CTC rare-scalar evidence is absent"
+);
+requireText(
+  promotionReceiptText,
+  "NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 3",
+  "promotion receipt schema must retain the Transformer-CTC rare-scalar evidence graph"
+);
+requireText(
+  promotionReceiptText,
+  "Retained rare-scalar evaluation did not pass its production gate.",
+  "promotion receipt verifier must revalidate retained rare-scalar production evidence"
 );
 requireText(
   ctcTrainerText,
@@ -234,10 +267,13 @@ for (const [text, label] of [
   );
 }
 for (const scriptName of [
+  "neural:phase4:training-contract",
   "neural:open-vocab:evaluate",
   "neural:open-vocab:benchmark",
   "neural:phase5:evaluate",
-  "neural:phase5:benchmark"
+  "neural:phase5:benchmark",
+  "neural:phase6:native-integration",
+  "neural:phase8:training-run"
 ]) {
   assert(
     packageJson?.scripts?.[scriptName]?.includes(
