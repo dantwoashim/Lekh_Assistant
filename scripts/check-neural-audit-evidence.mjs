@@ -12,12 +12,17 @@ import {
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateNeuralAuditEvidence } from "./lib/neural-audit-evidence.mjs";
+import {
+  validateNeuralRareScalarContract
+} from "./lib/neural-rare-scalar-contract.mjs";
 
 const root = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 const paths = Object.freeze({
   datasetManifest: "data/generated/neural-open-vocab/manifest.json",
   qualityAudit: "data/neural/audits/open-vocab-data-quality-v1.json",
   ctcAudit: "data/neural/audits/ctc-transformer-v2-alignment-v1.json",
+  rareScalarContract:
+    "data/neural/eval/ctc-rare-output-scalar-probes-v1.json",
   ctcConfig: "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
   goldManifest: "data/neural/gold/manifest.v3.json",
   benchmarkManifest:
@@ -32,6 +37,10 @@ export function checkNeuralAuditEvidence() {
     "dataset quality audit"
   );
   const ctcAudit = readJsonEvidence(paths.ctcAudit, "CTC alignment audit");
+  const rareScalarContract = readJsonEvidence(
+    paths.rareScalarContract,
+    "rare-scalar probe contract"
+  );
   const ctcConfig = readJsonEvidence(paths.ctcConfig, "CTC training config");
   const evaluationManifests = Object.fromEntries([
     ["gold-foundation", paths.goldManifest],
@@ -48,7 +57,7 @@ export function checkNeuralAuditEvidence() {
       )
     }];
   }));
-  const validation = validateNeuralAuditEvidence({
+  const auditValidation = validateNeuralAuditEvidence({
     datasetManifest: dataset.value,
     datasetManifestPath: paths.datasetManifest,
     datasetManifestSha256: dataset.sha256,
@@ -59,6 +68,23 @@ export function checkNeuralAuditEvidence() {
     ctcConfigSha256: ctcConfig.sha256,
     evaluationManifests
   });
+  const rareScalarValidation = validateNeuralRareScalarContract({
+    contract: rareScalarContract.value,
+    ctcAudit: ctcAudit.value,
+    ctcAuditPath: paths.ctcAudit,
+    ctcAuditSha256: ctcAudit.sha256,
+    datasetManifest: dataset.value,
+    datasetManifestPath: paths.datasetManifest,
+    datasetManifestSha256: dataset.sha256
+  });
+  const failures = [
+    ...auditValidation.failures,
+    ...rareScalarValidation.failures
+  ];
+  const validation = {
+    ok: failures.length === 0,
+    failures
+  };
   return {
     validation,
     evidence: {
@@ -81,7 +107,13 @@ export function checkNeuralAuditEvidence() {
         },
         ctcAlignment: {
           path: paths.ctcAudit,
-          status: ctcAudit.value.status ?? null
+          status: ctcAudit.value.status ?? null,
+          sha256: ctcAudit.sha256
+        },
+        rareScalarContract: {
+          path: paths.rareScalarContract,
+          status: rareScalarContract.value.status ?? null,
+          sha256: rareScalarContract.sha256
         }
       },
       evaluationManifests: Object.fromEntries(

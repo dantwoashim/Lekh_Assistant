@@ -104,6 +104,56 @@ describe("Transformer-CTC dataset alignment audit", () => {
     );
     expect(passingFixture().status).toBe("passed-ctc-alignment-audit");
   });
+
+  it("retains exact split-bound probes for the sparse train scalar tail", () => {
+    const accumulator = new NeuralCTCAlignmentAccumulator({
+      maxInputLength: 8,
+      outputTimeSteps: 8
+    });
+    accumulator.add(
+      datasetRow("train-rare", "orbit", "ऑर्बिट"),
+      "train",
+      "train:1"
+    );
+    accumulator.finishTrainingSplit();
+    accumulator.add(
+      datasetRow("dev-rare", "orbiter", "ऑर्बिटर", "dev"),
+      "dev",
+      "dev:1"
+    );
+    accumulator.add(
+      datasetRow("test-common", "lekha", "लेख", "test"),
+      "test",
+      "test:1"
+    );
+
+    const report = accumulator.finalize(fixtureEvidence({
+      train: 1,
+      dev: 1,
+      test: 1
+    }));
+    expect(report.sparseOutputScalarProbes).toEqual(
+      expect.arrayContaining([{
+        scalar: "ऑ",
+        codePoint: "U+0911",
+        trainOccurrences: 1,
+        probes: [
+          expect.objectContaining({
+            id: "train-rare",
+            split: "train",
+            input: "orbit",
+            target: "ऑर्बिट"
+          }),
+          expect.objectContaining({
+            id: "dev-rare",
+            split: "dev",
+            input: "orbiter",
+            target: "ऑर्बिटर"
+          })
+        ]
+      }])
+    );
+  });
 });
 
 function passingFixture() {

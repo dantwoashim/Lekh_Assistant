@@ -715,6 +715,190 @@
       ]
     }
   },
+  "sparseOutputScalarProbes": [
+    {
+      "scalar": "ऑ",
+      "codePoint": "U+0911",
+      "trainOccurrences": 4,
+      "probes": [
+        {
+          "id": "neural_open_vocab_15a0d41ff79ece7a",
+          "split": "train",
+          "input": "orbiterlai",
+          "target": "ऑर्बिटरलाई",
+          "acceptable": [
+            "ऑर्बिटरलाई"
+          ],
+          "rowHash": "21599cc13885106b2eb6df69ab6c16ee75dd10a90d5e1abeaa588c8fe31de353",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        },
+        {
+          "id": "neural_open_vocab_5ba6c4d6de455353",
+          "split": "train",
+          "input": "australiama",
+          "target": "ऑस्ट्रेलियामा",
+          "acceptable": [
+            "ऑस्ट्रेलियामा"
+          ],
+          "rowHash": "d2ae3674b5e3acd95b513b7a4bbde1ff758ae92ed1a1d31611aaad5c56e3526d",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        },
+        {
+          "id": "neural_open_vocab_5dd447a5c8e3dd14",
+          "split": "train",
+          "input": "organelsko",
+          "target": "ऑर्गेनेल्सको",
+          "acceptable": [
+            "ऑर्गेनेल्सको"
+          ],
+          "rowHash": "2831730ef9503f67ab6d70828f5f42ba1292b18700a7400f6d94e69a204416ee",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        },
+        {
+          "id": "neural_open_vocab_a2beaa54ced17a83",
+          "split": "train",
+          "input": "orbiterbata",
+          "target": "ऑर्बिटरबाट",
+          "acceptable": [
+            "ऑर्बिटरबाट"
+          ],
+          "rowHash": "0cf361e4a812b0a1ac8a10ea76279dd1df9951a4ff5aba9dea449cf43623cb64",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        },
+        {
+          "id": "neural_open_vocab_5c9156ca4af72011",
+          "split": "dev",
+          "input": "orbiterko",
+          "target": "ऑर्बिटरको",
+          "acceptable": [
+            "ऑर्बिटरको"
+          ],
+          "rowHash": "dcf48a2160f66b73c2f9121f02e6e93f02158f1a6d0350558dab68f0d1d30407",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        },
+        {
+          "id": "neural_open_vocab_779bc1a746219a2e",
+          "split": "test",
+          "input": "orbitbata",
+          "target": "ऑर्बिटबाट",
+          "acceptable": [
+            "ऑर्बिटबाट"
+          ],
+          "rowHash": "173ef3434a6e03dabc89e78bd61e177542cc1239f3801923ad013ef76a2d57a4",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        }
+      ]
+    },
+    {
+      "scalar": "ऱ",
+      "codePoint": "U+0931",
+      "trainOccurrences": 1,
+      "probes": [
+        {
+          "id": "neural_open_vocab_e1d4254f92dc9e7d",
+          "split": "train",
+          "input": "dohoryaieka",
+          "target": "दोहोऱ्याइएका",
+          "acceptable": [
+            "दोहोऱ्याइएका"
+          ],
+          "rowHash": "5d2f41c06420430e83284d2cef0afa61d29fbf711ae018a4ab8a15b25f393ffc",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        },
+        {
+          "id": "neural_open_vocab_cd36e18e90b677cd",
+          "split": "dev",
+          "input": "dohoryaeka",
+          "target": "दोहोऱ्याएका",
+          "acceptable": [
+            "दोहोऱ्याएका"
+          ],
+          "rowHash": "9fc991cd841295c8c1d9fd7a3bc6af34eee7c6fb7507e644c52fd3d9dcc41170",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        }
+      ]
+    },
+    {
+      "scalar": "ळ",
+      "codePoint": "U+0933",
+      "trainOccurrences": 1,
+      "probes": [
+        {
+          "id": "neural_open_vocab_e23c74f50dee1371",
+          "split": "train",
+          "input": "pathanasila",
+          "target": "पठनशीळ",
+          "acceptable": [
+            "पठनशीळ"
+          ],
+          "rowHash": "efa7e1cca6fd7c851cf4738c0ad3f19ff14d5f002ebb4d2faa496b70303e3932",
+          "sourceIds": [
+            "dictionary-ne-ranked"
+          ],
+          "reviewTier": "silver-dictionary-derived"
+        }
+      ]
+    },
+    {
+      "scalar": "ॠ",
+      "codePoint": "U+0960",
+      "trainOccurrences": 2,
+      "probes": [
+        {
+          "id": "neural_open_vocab_4736d13f2455193f",
+          "split": "train",
+          "input": "rigwedko",
+          "target": "ॠग्वेदको",
+          "acceptable": [
+            "ॠग्वेदको"
+          ],
+          "rowHash": "c2082d7c207e25f44389dce3a53a218879cbabe334820c07f10771693e8a7982",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        },
+        {
+          "id": "neural_open_vocab_bf10f021eca5ce66",
+          "split": "train",
+          "input": "rigwedma",
+          "target": "ॠग्वेदमा",
+          "acceptable": [
+            "ॠग्वेदमा"
+          ],
+          "rowHash": "e86a39b70a23d9f06895e9285fd7077dd5d408ac54abe5fade035cc7a9f0dc34",
+          "sourceIds": [
+            "ai4bharat-aksharantar-nepali"
+          ],
+          "reviewTier": "silver-public-transliteration"
+        }
+      ]
+    }
+  ],
   "splits": {
     "train": {
       "split": "train",

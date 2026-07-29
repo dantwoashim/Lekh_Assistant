@@ -36,6 +36,9 @@ export class NeuralCTCAlignmentAccumulator {
   );
   #trainInputVocabulary = new Map();
   #trainOutputVocabulary = new Map();
+  #outputScalarProbes = Object.fromEntries(
+    SPLITS.map((split) => [split, new Map()])
+  );
   #evaluationStates = {};
 
   constructor({ maxInputLength = 32, outputTimeSteps = 32 } = {}) {
@@ -172,6 +175,17 @@ export class NeuralCTCAlignmentAccumulator {
         target: primary.normalized,
         unseenScalars: uniqueSorted(primary.unseenScalars)
       });
+    }
+    if (
+      primary.validSequence &&
+      !primary.scalarOverflow &&
+      !primary.alignmentOverflow
+    ) {
+      recordOutputScalarProbes(
+        this.#outputScalarProbes[declaredSplit],
+        primary.scalars,
+        outputScalarProbe(row, declaredSplit, primary.normalized)
+      );
     }
     if (
       declaredSplit === "train" &&
@@ -395,6 +409,7 @@ export class NeuralCTCAlignmentAccumulator {
         0
       )
     };
+    const sparseOutputScalarProbes = this.#sparseOutputScalarProbes();
     const report = {
       schemaVersion: 1,
       contentIdentity: "lekh-neural-ctc-alignment-audit-v1",
@@ -416,6 +431,7 @@ export class NeuralCTCAlignmentAccumulator {
         input: frequencyInventory(this.#trainInputVocabulary),
         output: frequencyInventory(this.#trainOutputVocabulary)
       },
+      sparseOutputScalarProbes,
       splits,
       evaluation,
       summary
@@ -427,6 +443,20 @@ export class NeuralCTCAlignmentAccumulator {
       ? "failed-ctc-alignment-audit"
       : "passed-ctc-alignment-audit";
     return report;
+  }
+
+  #sparseOutputScalarProbes() {
+    return [...this.#trainOutputVocabulary]
+      .filter(([, count]) => count <= 5)
+      .sort(([left], [right]) => compareText(left, right))
+      .map(([scalar, trainOccurrences]) => ({
+        scalar,
+        codePoint: codePointLabel(scalar),
+        trainOccurrences,
+        probes: SPLITS.flatMap(
+          (split) => this.#outputScalarProbes[split].get(scalar) ?? []
+        )
+      }));
   }
 }
 
@@ -904,6 +934,34 @@ function targetExample(row, location, analysis, outputTimeSteps) {
     issueCodes: analysis.issueCodes,
     unseenScalars: uniqueSorted(analysis.unseenScalars)
   };
+}
+
+function outputScalarProbe(row, split, target) {
+  return {
+    id: row?.id ?? null,
+    split,
+    input: row?.input ?? null,
+    target,
+    acceptable: Array.isArray(row?.acceptable)
+      ? row.acceptable
+        .filter((value) => typeof value === "string")
+        .map(normalizeCTCAuditOutput)
+        .filter(Boolean)
+      : [],
+    rowHash: row?.rowHash ?? null,
+    sourceIds: Array.isArray(row?.sourceIds)
+      ? row.sourceIds.filter((value) => typeof value === "string")
+      : [],
+    reviewTier: row?.reviewTier ?? null
+  };
+}
+
+function recordOutputScalarProbes(probes, scalars, probe) {
+  for (const scalar of new Set(scalars)) {
+    const values = probes.get(scalar) ?? [];
+    keepExample(values, probe);
+    probes.set(scalar, values);
+  }
 }
 
 function example(row, location) {

@@ -118,6 +118,28 @@ positive gold/official-benchmark representability. The production contract
 rejects either report when its bound bytes or zero-incompatibility results are
 stale.
 
+The same check binds `ctc-rare-output-scalar-probes-v1.json` to the exact
+sparse train-vocabulary tail and source rows retained by the CTC audit. These
+silver-derived probes measure class reachability but are not accuracy gold.
+`ऱ` and `ॠ`, which are absent from the current Unicode CLDR Nepali main
+exemplar, receive a separate zero-unaccepted-top-1-emission policy on the
+locked gold and official benchmark predictions.
+
+After a candidate is exported, the post-export generator reloads the exact
+checkpoint, re-runs compiled Core ML parity, and decodes only the 11 frozen
+probe inputs. The evaluator then binds those predictions to the candidate's
+existing 47-row gold predictions and 4,085-row official predictions:
+
+```sh
+npm run neural:open-vocab:rare-scalar:generate
+npm run neural:open-vocab:rare-scalar:evaluate
+```
+
+The resulting `rare-scalar-evaluation.json` is a production gate. Sparse
+silver exact matches remain diagnostic warnings; they never inflate reported
+accuracy. Missing rows, unsafe outputs, artifact drift, or any unaccepted
+top-1 `ऱ`/`ॠ` emission on a locked suite fail closed.
+
 The canonical gold inventory is
 `data/neural/gold/manifest.v3.json`. Existing v1/v2 evidence is immutable; v3
 adds the token-only chat suite without rewriting old artifacts.
