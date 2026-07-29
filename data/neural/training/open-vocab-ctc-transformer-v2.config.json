@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 2,
+  "implementationContractVersion": 2,
+  "phase": "production-successor-transformer-ctc",
+  "modelId": "lekh-open-vocab-ctc-transformer-v2",
+  "artifact": {
+    "compiledModel": "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.mlmodelc",
+    "manifest": "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.manifest.json",
+    "vocabMetadata": "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.vocab.json",
+    "runtime": "CoreML",
+    "localOnly": true,
+    "neuralTailOnly": true
+  },
+  "architecture": {
+    "family": "fixed-shape-transformer-ctc",
+    "runtimeModelContract": "single-transformer-ctc-v1",
+    "openVocabulary": true,
+    "tokenization": "unicode-scalar-character",
+    "modelDimension": 256,
+    "attentionHeads": 4,
+    "feedForwardDimension": 1024,
+    "encoderLayers": 6,
+    "dropout": 0.2,
+    "minimumParameterCount": 1000000,
+    "maximumParameterCount": 5000000,
+    "maximumCompiledBytes": 16777216
+  },
+  "decoder": {
+    "type": "ctc-prefix-beam-search",
+    "blankId": 0,
+    "beamWidth": 8,
+    "maxInputGraphemes": 32,
+    "outputTimeSteps": 32,
+    "maximumCandidates": 4,
+    "rejectWhitespaceOutput": true,
+    "rejectLatinOutput": true,
+    "autoCommitEligible": false,
+    "outputSequenceValidation": "devanagari-word-sequence-v1"
+  },
+  "context": {
+    "previousWords": 0,
+    "languageModelRescorer": {
+      "enabled": false,
+      "status": "not-implemented",
+      "source": "none",
+      "weight": 0
+    }
+  },
+  "evaluation": {
+    "goldManifest": "data/neural/gold/manifest.v3.json",
+    "officialBenchmarkManifest": "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+    "officialBenchmarkTrainingUse": "forbidden-evaluation-only"
+  },
+  "training": {
+    "datasetManifest": "data/generated/neural-open-vocab/manifest.json",
+    "requiredSources": [
+      "ai4bharat-aksharantar-nepali"
+    ],
+    "normalization": "NFC",
+    "splitPolicy": "connected-normalized-input-and-target-with-heldout-precedence",
+    "samplingPolicy": {
+      "type": "deterministic-source-stratified-sampling",
+      "version": 2,
+      "sourceQuotaWeight": "square-root-of-source-row-count",
+      "sourceMultipliers": {
+        "dictionary-ne-ranked": 1.5,
+        "manual-ambiguity": 512,
+        "manual-chat-tail": 2048,
+        "manual-name": 128,
+        "manual-x-ksha": 2048,
+        "runtime-names": 4,
+        "runtime-words": 1.5
+      },
+      "pinnedSources": [
+        "manual-ambiguity",
+        "manual-chat-tail",
+        "manual-name",
+        "manual-x-ksha",
+        "runtime-names"
+      ]
+    },
+    "augmentation": {
+      "enabled": true,
+      "policy": "augmentation-chat-alias-v1",
+      "aliases": [
+        {
+          "from": "chh",
+          "to": "x",
+          "weightMultiplier": 0.75
+        },
+        {
+          "from": "bh",
+          "to": "v",
+          "weightMultiplier": 0.5
+        }
+      ],
+      "heldOutCollisionPolicy": "reject",
+      "conflictingTrainingTargetPolicy": "reject"
+    },
+    "loss": "weighted-ctc",
+    "optimizer": {
+      "type": "adamw",
+      "beta1": 0.9,
+      "beta2": 0.98,
+      "epsilon": 1e-9,
+      "weightDecay": 0.0001
+    },
+    "scheduler": {
+      "type": "linear-warmup-inverse-square-root",
+      "warmupSteps": 4000
+    },
+    "admissionSafetyEvaluationSuites": [
+      "protected-token-gold",
+      "non-nepali-pass-through-gold",
+      "adversarial-neural-tail-gold"
+    ]
+  },
+  "trainingRun": {
+    "seed": 42,
+    "maximumTrainRows": 1000000,
+    "maximumDevRows": 50000,
+    "maximumEpochs": 30,
+    "batchSize": 256,
+    "peakLearningRate": 0.001,
+    "gradientClipNorm": 1,
+    "earlyStopping": {
+      "enabled": true,
+      "metric": "dev-weighted-ctc-loss",
+      "patienceEpochs": 4,
+      "minimumDelta": 0.0001,
+      "restoreBestWeights": true
+    }
+  },
+  "export": {
+    "sourceCheckpoint": "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/checkpoint.pt",
+    "intermediateMLPackage": "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.mlpackage",
+    "compiledModel": "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.mlmodelc",
+    "manifest": "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.manifest.json",
+    "vocabMetadata": "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.vocab.json",
+    "reports": {
+      "dataset": "reports/neural-open-vocab-dataset-report.json",
+      "evaluation": "reports/neural-ctc-transformer-evaluation.json",
+      "benchmark": "reports/neural-ctc-transformer-coreml-benchmark.json",
+      "training": "reports/neural-ctc-transformer-training.json"
+    }
+  },
+  "productionGates": {
+    "tailTop1Accuracy": 0.88,
+    "tailTop3Accuracy": 0.96,
+    "chatConventionTop1Accuracy": 0.92,
+    "chatConventionTop3Accuracy": 0.98,
+    "namesTop3Accuracy": 0.9,
+    "protectedFalseConversionRate": 0,
+    "singleTokenPhraseExpansionRate": 0,
+    "secureFieldInferenceCount": 0,
+    "p99Ms": 50,
+    "measurementKind": "full-candidate-generation",
+    "requiredDeviceArchitectures": [
+      "arm64"
+    ]
+  }
+}
