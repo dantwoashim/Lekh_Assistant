@@ -50,16 +50,45 @@ ARCHIVE_POLICIES = {
     },
 }
 
-SUPPORTED_CONFIGS = {
-    "data/neural/training/open-vocab-seq2seq-v1.config.json",
-    "data/neural/training/open-vocab-bigru-attention-v1.config.json",
+SEQ2SEQ_CONFIG = (
+    "data/neural/training/open-vocab-seq2seq-v1.config.json"
+)
+BIGRU_ATTENTION_CONFIG = (
+    "data/neural/training/open-vocab-bigru-attention-v1.config.json"
+)
+CTC_TRANSFORMER_CONFIG = (
+    "data/neural/training/open-vocab-ctc-transformer-v2.config.json"
+)
+SEQ2SEQ_TRAINER = "scripts/train-open-vocab-seq2seq-transliterator.py"
+CTC_TRANSFORMER_TRAINER = (
+    "scripts/train-open-vocab-ctc-transformer.py"
+)
+CTC_TRANSFORMER_SHARED_MODEL = (
+    "scripts/lib/neural_ctc_transformer.py"
+)
+
+TRAINER_BY_CONFIG = {
+    SEQ2SEQ_CONFIG: SEQ2SEQ_TRAINER,
+    BIGRU_ATTENTION_CONFIG: SEQ2SEQ_TRAINER,
+    CTC_TRANSFORMER_CONFIG: CTC_TRANSFORMER_TRAINER,
+}
+SUPPORTED_CONFIGS = frozenset(TRAINER_BY_CONFIG)
+
+TRAINER_RUNTIME_FILES_BY_CONFIG = {
+    SEQ2SEQ_CONFIG: (
+        (SEQ2SEQ_TRAINER, "trainer"),
+    ),
+    BIGRU_ATTENTION_CONFIG: (
+        (SEQ2SEQ_TRAINER, "trainer"),
+    ),
+    CTC_TRANSFORMER_CONFIG: (
+        (CTC_TRANSFORMER_TRAINER, "trainer"),
+        (SEQ2SEQ_TRAINER, "trainer-dependency"),
+        (CTC_TRANSFORMER_SHARED_MODEL, "trainer-dependency"),
+    ),
 }
 
 BUNDLE_RUNTIME_FILES = (
-    (
-        "scripts/train-open-vocab-seq2seq-transliterator.py",
-        "trainer",
-    ),
     (
         "scripts/check-neural-open-vocab-toolchain.py",
         "toolchain-verifier",
@@ -89,6 +118,34 @@ BUNDLE_RUNTIME_FILES = (
 
 class NeuralRemoteArtifactError(RuntimeError):
     """Raised when an archive or its source inventory fails closed."""
+
+
+def trainer_path_for_config(config_relative_path: str) -> str:
+    config_relative = safe_relative_path(
+        config_relative_path,
+        "training config path",
+    )
+    trainer_path = TRAINER_BY_CONFIG.get(config_relative)
+    if trainer_path is None:
+        raise NeuralRemoteArtifactError(
+            f"Unsupported remote training config: {config_relative}"
+        )
+    return trainer_path
+
+
+def trainer_runtime_files_for_config(
+    config_relative_path: str,
+) -> tuple[tuple[str, str], ...]:
+    config_relative = safe_relative_path(
+        config_relative_path,
+        "training config path",
+    )
+    files = TRAINER_RUNTIME_FILES_BY_CONFIG.get(config_relative)
+    if files is None:
+        raise NeuralRemoteArtifactError(
+            f"Unsupported remote training config: {config_relative}"
+        )
+    return files
 
 
 @dataclass(frozen=True)
@@ -273,10 +330,7 @@ def collect_training_bundle(
         config_relative_path,
         "training config path",
     )
-    if config_relative not in SUPPORTED_CONFIGS:
-        raise NeuralRemoteArtifactError(
-            f"Unsupported remote training config: {config_relative}"
-        )
+    trainer_relative = trainer_path_for_config(config_relative)
     config_path = contained_regular_file(root, config_relative)
     config = read_json_object(config_path)
     model_id = config.get("modelId")
@@ -315,7 +369,10 @@ def collect_training_bundle(
             expected_bytes=expected_bytes,
         )
 
-    for relative, role in BUNDLE_RUNTIME_FILES:
+    for relative, role in (
+        *BUNDLE_RUNTIME_FILES,
+        *trainer_runtime_files_for_config(config_relative),
+    ):
         add(relative, role)
     add(config_relative, "training-config")
 
@@ -382,6 +439,7 @@ def collect_training_bundle(
         "schemaVersion": 1,
         "modelId": model_id,
         "trainingConfig": config_relative,
+        "trainerPath": trainer_relative,
         "datasetManifest": dataset_relative,
         "datasetContentSha256": dataset_identity,
         "goldManifest": gold_relative,

@@ -14,13 +14,19 @@ from pathlib import Path
 
 from neural_remote_artifacts import (
     ArchiveFile,
+    BIGRU_ATTENTION_CONFIG,
     BUNDLE_KIND,
+    CTC_TRANSFORMER_CONFIG,
+    CTC_TRANSFORMER_SHARED_MODEL,
+    CTC_TRANSFORMER_TRAINER,
     NeuralRemoteArtifactError,
+    SEQ2SEQ_TRAINER,
     build_closed_archive,
     collect_training_bundle,
     manifest_identity,
     regular_tar_info,
     sha256_file,
+    trainer_path_for_config,
     validate_closed_manifest,
     verify_closed_archive,
     verify_extracted_tree,
@@ -340,13 +346,15 @@ class NeuralRemoteArtifactTests(unittest.TestCase):
     def test_canonical_training_bundle_inventory_is_complete(self) -> None:
         manifest, files = collect_training_bundle(
             ROOT,
-            (
-                "data/neural/training/"
-                "open-vocab-bigru-attention-v1.config.json"
-            ),
+            BIGRU_ATTENTION_CONFIG,
         )
         paths = {item.archive_path for item in files}
         self.assertEqual(manifest["modelId"], "lekh-open-vocab-bigru-attention-v1")
+        self.assertEqual(manifest["trainerPath"], SEQ2SEQ_TRAINER)
+        self.assertEqual(
+            trainer_path_for_config(BIGRU_ATTENTION_CONFIG),
+            SEQ2SEQ_TRAINER,
+        )
         self.assertEqual(len(files), 24)
         self.assertIn("data/generated/neural-open-vocab/train.jsonl", paths)
         self.assertIn("scripts/run-neural-remote-training.py", paths)
@@ -354,6 +362,37 @@ class NeuralRemoteArtifactTests(unittest.TestCase):
         self.assertIn(
             "requirements/neural-open-vocab-cu118.lock",
             paths,
+        )
+
+        ctc_manifest, ctc_files = collect_training_bundle(
+            ROOT,
+            CTC_TRANSFORMER_CONFIG,
+        )
+        ctc_paths = {item.archive_path for item in ctc_files}
+        self.assertEqual(
+            ctc_manifest["modelId"],
+            "lekh-open-vocab-ctc-transformer-v2",
+        )
+        self.assertEqual(
+            ctc_manifest["trainerPath"],
+            CTC_TRANSFORMER_TRAINER,
+        )
+        self.assertEqual(len(ctc_files), 26)
+        self.assertIn(CTC_TRANSFORMER_TRAINER, ctc_paths)
+        self.assertIn(CTC_TRANSFORMER_SHARED_MODEL, ctc_paths)
+        self.assertIn(SEQ2SEQ_TRAINER, ctc_paths)
+        self.assertEqual(
+            {
+                item.role
+                for item in ctc_files
+                if item.archive_path
+                    in {
+                        CTC_TRANSFORMER_TRAINER,
+                        CTC_TRANSFORMER_SHARED_MODEL,
+                        SEQ2SEQ_TRAINER,
+                    }
+            },
+            {"trainer", "trainer-dependency"},
         )
 
 

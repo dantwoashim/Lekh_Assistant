@@ -19,9 +19,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.lib.neural_remote_artifacts import (  # noqa: E402
+    BIGRU_ATTENTION_CONFIG,
+    CTC_TRANSFORMER_CONFIG,
     SUPPORTED_CONFIGS,
     NeuralRemoteArtifactError,
+    contained_regular_file,
     safe_relative_path,
+    trainer_path_for_config,
 )
 
 
@@ -29,6 +33,7 @@ DEFAULT_CONFIG = (
     "data/neural/training/open-vocab-bigru-attention-v1.config.json"
 )
 EXPECTED_SPLIT_CONVERSION_CALLS = 2
+EXPECTED_CTC_CONVERSION_CALLS = 1
 COREML_COMPUTE_PRECISION_POLICY = {
     "schemaVersion": 1,
     "policyId": "full-fp32-internal-fp16-boundary-v1",
@@ -36,6 +41,14 @@ COREML_COMPUTE_PRECISION_POLICY = {
     "tensorBoundaryPrecision": "FLOAT16",
     "neuralEngineEligible": False,
     "purpose": "locked-parity-baseline",
+}
+CTC_COREML_COMPUTE_PRECISION_POLICY = {
+    "schemaVersion": 1,
+    "policyId": "single-ctc-fp16-internal-boundary-v1",
+    "coremltoolsComputePrecision": "FLOAT16",
+    "tensorBoundaryPrecision": "FLOAT16",
+    "neuralEngineEligible": True,
+    "purpose": "ane-eligible-production-candidate",
 }
 
 
@@ -65,7 +78,10 @@ def main() -> int:
                 f"Unsupported remote export config: {config_relative}"
             )
         verify_toolchain()
-        trainer = import_trainer()
+        trainer = import_trainer(config_relative)
+        precision_policy, expected_conversion_calls = (
+            coreml_precision_contract_for_config(config_relative)
+        )
         trainer_args = trainer.parse_args(
             [
                 "--config",
@@ -76,7 +92,10 @@ def main() -> int:
             ],
             {},
         )
-        with enforce_coreml_compute_precision_policy(trainer) as precision_state:
+        with enforce_coreml_compute_precision_policy(
+            trainer,
+            precision_policy=precision_policy,
+        ) as precision_state:
             with trainer.exclusive_run_lock(trainer_args):
                 training_report = trainer.read_json(
                     trainer.training_report_path(trainer_args)
@@ -97,6 +116,8 @@ def main() -> int:
         validate_coreml_compute_precision_evidence(
             export_report,
             precision_state,
+            precision_policy=precision_policy,
+            expected_conversion_calls=expected_conversion_calls,
         )
         if (
             export_report.get("executionTopology")
@@ -183,8 +204,11 @@ def verify_toolchain() -> None:
         )
 
 
-def import_trainer() -> Any:
-    path = ROOT / "scripts/train-open-vocab-seq2seq-transliterator.py"
+def import_trainer(
+    config_relative: str = BIGRU_ATTENTION_CONFIG,
+) -> Any:
+    trainer_relative = trainer_path_for_config(config_relative)
+    path = contained_regular_file(ROOT, trainer_relative)
     specification = importlib.util.spec_from_file_location(
         "lekh_remote_coreml_export_trainer",
         path,
@@ -192,17 +216,53 @@ def import_trainer() -> Any:
     if specification is None or specification.loader is None:
         raise RuntimeError("Unable to load the neural trainer.")
     trainer = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(trainer)
+    sys.modules[specification.name] = trainer
+    try:
+        specification.loader.exec_module(trainer)
+    except Exception:
+        sys.modules.pop(specification.name, None)
+        raise
     return trainer
+
+
+def coreml_precision_contract_for_config(
+    config_relative: str,
+) -> tuple[dict[str, Any], int]:
+    if config_relative == CTC_TRANSFORMER_CONFIG:
+        return (
+            dict(CTC_COREML_COMPUTE_PRECISION_POLICY),
+            EXPECTED_CTC_CONVERSION_CALLS,
+        )
+    if config_relative in SUPPORTED_CONFIGS:
+        return (
+            dict(COREML_COMPUTE_PRECISION_POLICY),
+            EXPECTED_SPLIT_CONVERSION_CALLS,
+        )
+    raise NeuralRemoteArtifactError(
+        f"Unsupported remote export config: {config_relative}"
+    )
 
 
 @contextmanager
 def enforce_coreml_compute_precision_policy(
     trainer: Any,
+    *,
+    precision_policy: dict[str, Any] | None = None,
 ) -> Iterator[dict[str, int]]:
     """Apply an explicit export-only precision policy without mutating trainer bytes."""
+    policy = dict(
+        COREML_COMPUTE_PRECISION_POLICY
+        if precision_policy is None
+        else precision_policy
+    )
     if trainer.ct is None:
         raise RuntimeError("Core ML conversion is unavailable.")
+    precision_name = policy.get("coremltoolsComputePrecision")
+    precision = getattr(trainer.ct.precision, precision_name, None)
+    if precision is None:
+        raise RuntimeError(
+            f"Core ML precision policy is unavailable: {precision_name}"
+        )
     original_convert = trainer.ct.convert
     original_export_coreml = trainer.export_coreml
     state = {"conversionCalls": 0}
@@ -216,7 +276,7 @@ def enforce_coreml_compute_precision_policy(
                 "Core ML conversion attempted to override the locked precision policy."
             )
         locked_kwargs = dict(conversion_kwargs)
-        locked_kwargs["compute_precision"] = trainer.ct.precision.FLOAT32
+        locked_kwargs["compute_precision"] = precision
         converted = original_convert(*conversion_args, **locked_kwargs)
         state["conversionCalls"] += 1
         return converted
@@ -234,7 +294,7 @@ def enforce_coreml_compute_precision_policy(
             )
         return {
             **result,
-            "computePrecisionPolicy": dict(COREML_COMPUTE_PRECISION_POLICY),
+            "computePrecisionPolicy": dict(policy),
         }
 
     trainer.ct.convert = convert_with_locked_precision
@@ -249,12 +309,20 @@ def enforce_coreml_compute_precision_policy(
 def validate_coreml_compute_precision_evidence(
     export_report: dict[str, Any],
     precision_state: dict[str, int],
+    *,
+    precision_policy: dict[str, Any] | None = None,
+    expected_conversion_calls: int = EXPECTED_SPLIT_CONVERSION_CALLS,
 ) -> None:
+    policy = (
+        COREML_COMPUTE_PRECISION_POLICY
+        if precision_policy is None
+        else precision_policy
+    )
     coreml_export = export_report.get("coremlExport")
     if (
         not isinstance(coreml_export, dict)
         or coreml_export.get("computePrecisionPolicy")
-            != COREML_COMPUTE_PRECISION_POLICY
+            != policy
     ):
         raise RuntimeError(
             "Core ML export did not record the locked precision policy."
@@ -262,11 +330,17 @@ def validate_coreml_compute_precision_evidence(
     if (
         coreml_export.get("status") == "passed"
         and precision_state.get("conversionCalls")
-            != EXPECTED_SPLIT_CONVERSION_CALLS
+            != expected_conversion_calls
     ):
+        if expected_conversion_calls == EXPECTED_SPLIT_CONVERSION_CALLS:
+            expectation = "exactly the encoder and decoder-step conversions"
+        else:
+            expectation = (
+                f"exactly {expected_conversion_calls} locked conversion call(s)"
+            )
         raise RuntimeError(
             "Core ML export did not apply the locked precision policy to "
-            "exactly the encoder and decoder-step conversions."
+            f"{expectation}."
         )
 
 

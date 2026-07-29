@@ -32,6 +32,7 @@ from scripts.lib.neural_remote_artifacts import (  # noqa: E402
     safe_filename_component,
     safe_relative_path,
     sha256_file,
+    trainer_path_for_config,
     verify_closed_archive,
     verify_extracted_tree,
 )
@@ -271,11 +272,23 @@ def read_bundle_report(path: Path) -> dict[str, Any]:
         raise NeuralRemoteArtifactError(
             "Trusted local bundle report is invalid."
         )
-    safe_relative_path(
+    config_relative = safe_relative_path(
         report.get("trainingConfig"),
         "bundle report training config",
     )
-    return report
+    expected_trainer = trainer_path_for_config(config_relative)
+    observed_trainer = report.get("trainerPath")
+    if (
+        observed_trainer is not None
+        and observed_trainer != expected_trainer
+    ):
+        raise NeuralRemoteArtifactError(
+            "Trusted bundle report trainer differs from its config."
+        )
+    return {
+        **report,
+        "trainerPath": expected_trainer,
+    }
 
 
 def prepare_staging_root(requested: Path) -> Path:
@@ -324,7 +337,22 @@ def validate_extracted_result(
         manifest.get("trainingConfig"),
         "result training config",
     )
-    trainer = import_trainer()
+    expected_trainer = trainer_path_for_config(config_relative)
+    manifest_trainer = manifest.get("trainerPath")
+    if (
+        bundle_report.get("trainerPath") != expected_trainer
+        or (
+            manifest_trainer is not None
+            and manifest_trainer != expected_trainer
+        )
+    ):
+        raise NeuralRemoteArtifactError(
+            "Remote result trainer differs from its authenticated config."
+        )
+    trainer = import_trainer(
+        expected_trainer,
+        config_relative=config_relative,
+    )
     trainer_args = trainer.parse_args(
         [
             "--config",
@@ -425,10 +453,19 @@ def validate_extracted_result(
     }
 
 
-def import_trainer() -> Any:
+def import_trainer(
+    trainer_relative: str,
+    *,
+    config_relative: str,
+) -> Any:
+    expected = trainer_path_for_config(config_relative)
+    if trainer_relative != expected:
+        raise NeuralRemoteArtifactError(
+            "Trainer path differs from the authenticated result config."
+        )
     path = contained_regular_file(
         ROOT,
-        "scripts/train-open-vocab-seq2seq-transliterator.py",
+        trainer_relative,
     )
     specification = importlib.util.spec_from_file_location(
         "lekh_remote_result_import_trainer",
@@ -437,7 +474,12 @@ def import_trainer() -> Any:
     if specification is None or specification.loader is None:
         raise NeuralRemoteArtifactError("Unable to load the neural trainer.")
     trainer = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(trainer)
+    sys.modules[specification.name] = trainer
+    try:
+        specification.loader.exec_module(trainer)
+    except Exception:
+        sys.modules.pop(specification.name, None)
+        raise
     return trainer
 
 
@@ -520,9 +562,7 @@ def validate_training_report(
     observed_packages = normalize_observed_package_versions(packages)
     expected_packages = expected_remote_package_versions()
     runtime_python = runtime.get("python")
-    trainer_sha256 = sha256_file(
-        ROOT / "scripts/train-open-vocab-seq2seq-transliterator.py"
-    )
+    trainer_sha256 = sha256_file(Path(trainer.__file__).resolve(strict=True))
     if (
         report.get("status") != "passed-training-checkpoint"
         or report.get("trainingComplete") is not True

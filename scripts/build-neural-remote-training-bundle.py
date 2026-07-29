@@ -74,6 +74,7 @@ def main() -> int:
                         "artifactKind": BUNDLE_KIND,
                         "modelId": manifest_base["modelId"],
                         "config": manifest_base["trainingConfig"],
+                        "trainerPath": manifest_base["trainerPath"],
                         "fileCount": len(files),
                         "declaredBytes": sum(
                             item.source.stat().st_size for item in files
@@ -128,6 +129,7 @@ def main() -> int:
         sidecar.update({
             "modelId": report["manifest"]["modelId"],
             "trainingConfig": report["manifest"]["trainingConfig"],
+            "trainerPath": report["manifest"]["trainerPath"],
             "datasetContentSha256": report["manifest"][
                 "datasetContentSha256"
             ],

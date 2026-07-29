@@ -270,6 +270,26 @@ class RemoteResultImporterTests(unittest.TestCase):
             ):
                 IMPORTER.read_bundle_report(alias)
 
+            normalized = IMPORTER.read_bundle_report(report_path)
+            self.assertEqual(
+                normalized["trainerPath"],
+                "scripts/train-open-vocab-seq2seq-transliterator.py",
+            )
+            mismatched = json.loads(report_path.read_text(encoding="utf-8"))
+            mismatched["trainerPath"] = (
+                "scripts/train-open-vocab-ctc-transformer.py"
+            )
+            mismatched_path = root / "mismatched-bundle-report.json"
+            mismatched_path.write_text(
+                json.dumps(mismatched),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                IMPORTER.NeuralRemoteArtifactError,
+                "trainer differs",
+            ):
+                IMPORTER.read_bundle_report(mismatched_path)
+
         self.assertTrue(IMPORTER.valid_run_identifier("f" * 32))
         self.assertFalse(IMPORTER.valid_run_identifier("g" * 32))
         self.assertFalse(IMPORTER.valid_run_identifier("../not-a-run"))

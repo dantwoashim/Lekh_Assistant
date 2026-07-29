@@ -41,6 +41,7 @@ from scripts.lib.neural_remote_artifacts import (  # noqa: E402
     safe_relative_path,
     sha256_bytes,
     sha256_file,
+    trainer_path_for_config,
     verify_extracted_tree,
 )
 
@@ -93,10 +94,12 @@ def main() -> int:
             )
         )
         bundle_id = bundle_manifest.get("bundleId")
+        trainer_relative = trainer_path_for_config(config_relative)
         if (
             bundle_manifest.get("artifactKind") != BUNDLE_KIND
             or not is_sha256(bundle_id)
             or bundle_manifest.get("trainingConfig") != config_relative
+            or bundle_manifest.get("trainerPath") != trainer_relative
         ):
             raise NeuralRemoteArtifactError(
                 "Extracted bundle identity/config binding is invalid."
@@ -125,7 +128,10 @@ def main() -> int:
             model_id,
         )
         toolchain = verify_toolchain()
-        trainer = import_trainer()
+        trainer = import_trainer(
+            trainer_relative,
+            config_relative=config_relative,
+        )
         training_argv = [
             "--config",
             str(ROOT / config_relative),
@@ -317,10 +323,19 @@ def verify_toolchain() -> dict[str, Any]:
     return report
 
 
-def import_trainer() -> Any:
+def import_trainer(
+    trainer_relative: str,
+    *,
+    config_relative: str,
+) -> Any:
+    expected = trainer_path_for_config(config_relative)
+    if trainer_relative != expected:
+        raise NeuralRemoteArtifactError(
+            "Trainer path differs from the authenticated bundle config."
+        )
     trainer_path = contained_regular_file(
         ROOT,
-        "scripts/train-open-vocab-seq2seq-transliterator.py",
+        trainer_relative,
     )
     specification = importlib.util.spec_from_file_location(
         "lekh_remote_cuda_trainer",
@@ -865,6 +880,7 @@ def publish_result_archive(
         "bundleId": bundle_manifest["bundleId"],
         "modelId": args.model_id,
         "trainingConfig": bundle_manifest["trainingConfig"],
+        "trainerPath": bundle_manifest["trainerPath"],
         "trainingRunId": training_run_id,
         "checkpointSha256": report["checkpointSha256"],
         "trainingRuntime": report["runInputSnapshot"]["runtime"],

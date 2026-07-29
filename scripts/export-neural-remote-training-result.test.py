@@ -23,7 +23,10 @@ SPECIFICATION.loader.exec_module(EXPORTER)
 
 class FakeCoreMLTools:
     def __init__(self) -> None:
-        self.precision = SimpleNamespace(FLOAT32=object())
+        self.precision = SimpleNamespace(
+            FLOAT16=object(),
+            FLOAT32=object(),
+        )
         self.calls: list[dict[str, object]] = []
 
     def convert(self, _model: object, **kwargs: object) -> object:
@@ -123,6 +126,65 @@ class RemoteCoreMLExporterTests(unittest.TestCase):
                 },
                 {"conversionCalls": 1},
             )
+
+    def test_ctc_policy_locks_one_fp16_conversion(self) -> None:
+        policy, expected_calls = (
+            EXPORTER.coreml_precision_contract_for_config(
+                EXPORTER.CTC_TRANSFORMER_CONFIG
+            )
+        )
+        self.assertEqual(
+            expected_calls,
+            EXPORTER.EXPECTED_CTC_CONVERSION_CALLS,
+        )
+        trainer = FakeTrainer()
+        with EXPORTER.enforce_coreml_compute_precision_policy(
+            trainer,
+            precision_policy=policy,
+        ) as state:
+            result = trainer.export_coreml(object(), object(), object())
+
+        self.assertEqual(state, {"conversionCalls": 2})
+        self.assertTrue(
+            all(
+                call["compute_precision"]
+                    is trainer.ct.precision.FLOAT16
+                for call in trainer.ct.calls
+            )
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "exactly 1 locked conversion",
+        ):
+            EXPORTER.validate_coreml_compute_precision_evidence(
+                {"coremlExport": result},
+                state,
+                precision_policy=policy,
+                expected_conversion_calls=expected_calls,
+            )
+
+        single_call_trainer = FakeTrainer()
+
+        def export_once(*_args: object) -> dict[str, object]:
+            single_call_trainer.ct.convert(object())
+            return {"status": "passed"}
+
+        single_call_trainer.export_coreml = export_once
+        with EXPORTER.enforce_coreml_compute_precision_policy(
+            single_call_trainer,
+            precision_policy=policy,
+        ) as single_state:
+            single_result = single_call_trainer.export_coreml(
+                object(),
+                object(),
+                object(),
+            )
+        EXPORTER.validate_coreml_compute_precision_evidence(
+            {"coremlExport": single_result},
+            single_state,
+            precision_policy=policy,
+            expected_conversion_calls=expected_calls,
+        )
 
 
 if __name__ == "__main__":
