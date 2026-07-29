@@ -36,6 +36,13 @@ so.
 | --- | --- | --- |
 | `lekh-open-vocab-seq2seq-v1` | GRU encoder-decoder baseline | `single-seq2seq-v1` |
 | `lekh-open-vocab-bigru-attention-v1` | bidirectional GRU with additive attention | `split-attention-incremental-v1` |
+| `lekh-open-vocab-ctc-transformer-v2` | fixed-shape Transformer encoder with CTC | `single-transformer-ctc-v1` |
+
+The two GRU candidates are retained as provenance-preserving reference
+artifacts. The measured production successor decision is recorded in
+[`docs/neural/CTC_TRANSFORMER_PRODUCTION_DECISION_2026-07-29.md`](neural/CTC_TRANSFORMER_PRODUCTION_DECISION_2026-07-29.md).
+The CTC candidate remains unqualified until its trained artifact passes every
+unchanged production gate.
 
 Both candidates must satisfy the same frozen product envelope:
 
@@ -239,9 +246,10 @@ Do not lower a locked gate.
    digest-bound unigram reranker with identical Python and Swift behavior.
 2. If the correct answer is absent, expand only from the already licensed
    canonical training source, preserve official-test isolation, and retrain.
-3. If recurrent candidates remain below the reference floor, distill into a
-   compact fixed-shape transformer that still satisfies the Core ML size,
-   latency, safety, and placement contracts.
+3. If recurrent candidates remain below the reference floor, train the
+   fixed-shape Transformer-CTC successor described in the measured production
+   decision. Distillation remains a later training-only option if that
+   candidate still misses the locked quality floor.
 4. Re-run the full selection and promotion chain. No partial result receives a
    production claim.
 
