@@ -82,6 +82,9 @@ const remoteWorkflowText = readText(
 );
 const evalText = readText("data/neural/eval/README.md");
 const ctcTrainerText = readText("scripts/train-open-vocab-ctc-transformer.py");
+const rareScalarGeneratorText = readText(
+  "scripts/generate-neural-rare-scalar-predictions.py"
+);
 const remoteExporterText = readText(
   "scripts/export-neural-remote-training-result.py"
 );
@@ -213,6 +216,16 @@ requireText(
   remoteWorkflowText,
   "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
   "remote-training guide must identify the active Transformer-CTC export default"
+);
+requireText(
+  rareScalarGeneratorText,
+  "open_stable_regular_binary",
+  "rare-scalar generator must use descriptor-bound stable evidence reads"
+);
+requireText(
+  rareScalarGeneratorText,
+  "Parsed rare-scalar JSON changed before artifact binding.",
+  "rare-scalar generator must bind parsed JSON to the exact certified bytes"
 );
 assert(
   packageJson?.scripts?.["neural:remote:export"]?.includes(

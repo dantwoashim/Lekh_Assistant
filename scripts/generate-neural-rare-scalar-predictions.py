@@ -18,9 +18,10 @@ import re
 import secrets
 import stat
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable, Iterable
+from typing import Any, BinaryIO, Callable, Iterable, Iterator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -167,6 +168,7 @@ def validate_export_binding(
     trainer_args: argparse.Namespace,
     export_report: dict[str, Any],
     contract: dict[str, Any],
+    parsed_json_hashes: dict[str, str],
     paths: dict[str, Path],
 ) -> dict[str, str]:
     """Fail closed unless every input is the exact exported CTC candidate."""
@@ -237,15 +239,34 @@ def validate_export_binding(
             )
 
     file_hashes = {
-        "export report": sha256_file(required_paths["export report"]),
-        "contract": sha256_file(required_paths["contract"]),
-        "dataset manifest": sha256_file(
-            required_paths["dataset manifest"]
+        "export report": sha256_file(
+            required_paths["export report"],
+            "export report",
         ),
-        "checkpoint": sha256_file(required_paths["checkpoint"]),
-        "training report": sha256_file(required_paths["training report"]),
-        "manifest": sha256_file(required_paths["manifest"]),
-        "vocabulary": sha256_file(required_paths["vocabulary"]),
+        "contract": sha256_file(
+            required_paths["contract"],
+            "rare-scalar contract",
+        ),
+        "dataset manifest": sha256_file(
+            required_paths["dataset manifest"],
+            "dataset manifest",
+        ),
+        "checkpoint": sha256_file(
+            required_paths["checkpoint"],
+            "checkpoint",
+        ),
+        "training report": sha256_file(
+            required_paths["training report"],
+            "training report",
+        ),
+        "manifest": sha256_file(
+            required_paths["manifest"],
+            "candidate manifest",
+        ),
+        "vocabulary": sha256_file(
+            required_paths["vocabulary"],
+            "candidate vocabulary",
+        ),
         "compiled model": trainer.directory_sha256(
             required_paths["compiled model"]
         ),
@@ -253,6 +274,13 @@ def validate_export_binding(
             required_paths["Core ML package"]
         ),
     }
+    if any(
+        parsed_json_hashes.get(name) != file_hashes[name]
+        for name in ("export report", "contract")
+    ):
+        raise RareScalarGenerationError(
+            "Parsed rare-scalar JSON changed before artifact binding."
+        )
     expected_hashes = {
         "checkpoint": export_report.get("checkpointSha256"),
         "training report": export_report.get("trainingReportSha256"),
@@ -343,13 +371,23 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         "compiled model": trainer_args.compiled_model,
         "Core ML package": trainer.mlpackage_path(trainer_args),
     }
-    export_report = read_json_object(export_report_path, "export report")
-    contract = read_json_object(contract_path, "rare-scalar contract")
+    export_report, export_report_sha256 = read_json_evidence(
+        export_report_path,
+        "export report",
+    )
+    contract, contract_sha256 = read_json_evidence(
+        contract_path,
+        "rare-scalar contract",
+    )
     file_hashes = validate_export_binding(
         trainer=trainer,
         trainer_args=trainer_args,
         export_report=export_report,
         contract=contract,
+        parsed_json_hashes={
+            "export report": export_report_sha256,
+            "contract": contract_sha256,
+        },
         paths=paths,
     )
     initial_hashes = dict(file_hashes)
@@ -401,17 +439,25 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         atomic_write(output_path, predictions_bytes)
         predictions_sha256 = sha256_file(output_path)
 
+        current_export_report, current_export_report_sha256 = (
+            read_json_evidence(
+                export_report_path,
+                "export report",
+            )
+        )
+        current_contract, current_contract_sha256 = read_json_evidence(
+            contract_path,
+            "rare-scalar contract",
+        )
         current_hashes = validate_export_binding(
             trainer=trainer,
             trainer_args=trainer_args,
-            export_report=read_json_object(
-                export_report_path,
-                "export report",
-            ),
-            contract=read_json_object(
-                contract_path,
-                "rare-scalar contract",
-            ),
+            export_report=current_export_report,
+            contract=current_contract,
+            parsed_json_hashes={
+                "export report": current_export_report_sha256,
+                "contract": current_contract_sha256,
+            },
             paths=paths,
         )
         if current_hashes != initial_hashes:
@@ -491,22 +537,30 @@ def load_trainer() -> ModuleType:
     return module
 
 
-def read_json_object(path: Path, label: str) -> dict[str, Any]:
-    path = canonical_path(path, label)
-    metadata = path.stat()
-    if metadata.st_size <= 0 or metadata.st_size > MAX_JSON_BYTES:
+def read_json_evidence(
+    path: Path,
+    label: str,
+) -> tuple[dict[str, Any], str]:
+    with open_stable_regular_binary(path, label) as handle:
+        metadata = os.fstat(handle.fileno())
+        if metadata.st_size <= 0 or metadata.st_size > MAX_JSON_BYTES:
+            raise RareScalarGenerationError(
+                f"{label} size is outside the accepted evidence bound."
+            )
+        payload = handle.read(MAX_JSON_BYTES + 1)
+    if len(payload) > MAX_JSON_BYTES:
         raise RareScalarGenerationError(
             f"{label} size is outside the accepted evidence bound."
         )
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        value = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise RareScalarGenerationError(
             f"{label} is not strict UTF-8 JSON."
         ) from error
     if not isinstance(value, dict):
         raise RareScalarGenerationError(f"{label} must be a JSON object.")
-    return value
+    return value, hashlib.sha256(payload).hexdigest()
 
 
 def canonical_path(
@@ -515,7 +569,10 @@ def canonical_path(
     *,
     expect_directory: bool = False,
 ) -> Path:
-    path = value if value.is_absolute() else ROOT / value
+    raw_path = value if value.is_absolute() else ROOT / value
+    path = Path(os.path.abspath(os.fspath(raw_path)))
+    ensure_within(ROOT, path, label)
+    ensure_real_directory_chain(ROOT, path.parent, label)
     try:
         metadata = path.lstat()
     except OSError as error:
@@ -527,9 +584,7 @@ def canonical_path(
             raise RareScalarGenerationError(f"{label} must be a directory.")
     elif not stat.S_ISREG(metadata.st_mode):
         raise RareScalarGenerationError(f"{label} must be a regular file.")
-    resolved = path.resolve()
-    ensure_within(ROOT, resolved, label)
-    return resolved
+    return path
 
 
 def safe_output_path(value: Path, parent: Path, label: str) -> Path:
@@ -626,9 +681,117 @@ def validate_output_destinations(
             )
 
 
-def sha256_file(path: Path) -> str:
+@contextmanager
+def open_stable_regular_binary(
+    path: Path,
+    label: str,
+) -> Iterator[BinaryIO]:
+    path = canonical_path(path, label)
+    directory_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    directory_descriptor: int | None = None
+    file_descriptor: int | None = None
+    handle: BinaryIO | None = None
+    try:
+        parent_before = path.parent.lstat()
+        directory_descriptor = os.open(path.parent, directory_flags)
+        parent_opened = os.fstat(directory_descriptor)
+        if (
+            not stat.S_ISDIR(parent_before.st_mode)
+            or not stat.S_ISDIR(parent_opened.st_mode)
+            or directory_identity(parent_before)
+            != directory_identity(parent_opened)
+        ):
+            raise RareScalarGenerationError(
+                f"{label} parent changed before it could be opened."
+            )
+        file_before = os.stat(
+            path.name,
+            dir_fd=directory_descriptor,
+            follow_symlinks=False,
+        )
+        if (
+            stat.S_ISLNK(file_before.st_mode)
+            or not stat.S_ISREG(file_before.st_mode)
+        ):
+            raise RareScalarGenerationError(
+                f"{label} must be a regular non-symlink file."
+            )
+        file_descriptor = os.open(
+            path.name,
+            file_flags,
+            dir_fd=directory_descriptor,
+        )
+        file_opened = os.fstat(file_descriptor)
+        if file_version(file_before) != file_version(file_opened):
+            raise RareScalarGenerationError(
+                f"{label} changed before it could be opened."
+            )
+        handle = os.fdopen(file_descriptor, "rb")
+        file_descriptor = None
+        yield handle
+
+        file_after = os.fstat(handle.fileno())
+        file_current = os.stat(
+            path.name,
+            dir_fd=directory_descriptor,
+            follow_symlinks=False,
+        )
+        parent_after = os.fstat(directory_descriptor)
+        parent_current = path.parent.lstat()
+        if (
+            file_version(file_opened) != file_version(file_after)
+            or file_version(file_opened) != file_version(file_current)
+            or directory_identity(parent_opened)
+            != directory_identity(parent_after)
+            or directory_identity(parent_opened)
+            != directory_identity(parent_current)
+        ):
+            raise RareScalarGenerationError(
+                f"{label} changed while it was read."
+            )
+    except OSError as error:
+        raise RareScalarGenerationError(
+            f"{label} could not be read as stable evidence."
+        ) from error
+    finally:
+        if handle is not None:
+            handle.close()
+        if file_descriptor is not None:
+            os.close(file_descriptor)
+        if directory_descriptor is not None:
+            os.close(directory_descriptor)
+
+
+def directory_identity(metadata: os.stat_result) -> tuple[int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        stat.S_IFMT(metadata.st_mode),
+    )
+
+
+def file_version(
+    metadata: os.stat_result,
+) -> tuple[int, int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        stat.S_IFMT(metadata.st_mode),
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def sha256_file(path: Path, label: str = "evidence file") -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    with open_stable_regular_binary(path, label) as handle:
         while chunk := handle.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()

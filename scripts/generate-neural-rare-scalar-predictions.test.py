@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 SCRIPT = (
@@ -27,6 +28,109 @@ SPEC.loader.exec_module(MODULE)
 
 
 class RareScalarPredictionGeneratorTests(unittest.TestCase):
+    def test_reads_and_hashes_the_same_json_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="lekh-rare-input-",
+        ) as directory:
+            root = Path(directory).resolve()
+            evidence = root / "evidence.json"
+            payload = b'{"schemaVersion":1,"status":"passed"}\n'
+            evidence.write_bytes(payload)
+
+            with mock.patch.object(MODULE, "ROOT", root):
+                value, digest = MODULE.read_json_evidence(
+                    evidence,
+                    "test evidence",
+                )
+
+            self.assertEqual(
+                value,
+                {"schemaVersion": 1, "status": "passed"},
+            )
+            self.assertEqual(
+                digest,
+                MODULE.hashlib.sha256(payload).hexdigest(),
+            )
+
+    def test_rejects_symlinked_input_parent(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="lekh-rare-input-parent-",
+        ) as directory:
+            root = Path(directory).resolve()
+            real_parent = root / "real"
+            real_parent.mkdir()
+            evidence = real_parent / "evidence.json"
+            evidence.write_text("{}", encoding="utf-8")
+            alias = root / "alias"
+            alias.symlink_to(real_parent, target_is_directory=True)
+
+            with mock.patch.object(MODULE, "ROOT", root):
+                with self.assertRaisesRegex(
+                    MODULE.RareScalarGenerationError,
+                    "parent must not contain symlinks",
+                ):
+                    MODULE.read_json_evidence(
+                        alias / evidence.name,
+                        "test evidence",
+                    )
+
+    def test_rejects_input_path_replacement_during_read(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="lekh-rare-input-race-",
+        ) as directory:
+            root = Path(directory).resolve()
+            evidence = root / "evidence.json"
+            evidence.write_text('{"version":1}', encoding="utf-8")
+            replacement = root / "replacement.json"
+            replacement.write_text('{"version":2}', encoding="utf-8")
+            displaced = root / "displaced.json"
+            real_open = MODULE.os.open
+            swapped = False
+
+            def swapping_open(
+                path: object,
+                flags: int,
+                mode: int = 0o777,
+                *,
+                dir_fd: int | None = None,
+            ) -> int:
+                nonlocal swapped
+                if dir_fd is None:
+                    descriptor = real_open(path, flags, mode)
+                else:
+                    descriptor = real_open(
+                        path,
+                        flags,
+                        mode,
+                        dir_fd=dir_fd,
+                    )
+                if (
+                    not swapped
+                    and dir_fd is not None
+                    and path == evidence.name
+                ):
+                    evidence.replace(displaced)
+                    replacement.replace(evidence)
+                    swapped = True
+                return descriptor
+
+            with (
+                mock.patch.object(MODULE, "ROOT", root),
+                mock.patch.object(
+                    MODULE.os,
+                    "open",
+                    side_effect=swapping_open,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    MODULE.RareScalarGenerationError,
+                    "changed",
+                ):
+                    MODULE.read_json_evidence(
+                        evidence,
+                        "test evidence",
+                    )
+
     def test_builds_closed_predictions_in_contract_order(self) -> None:
         contract = fixture_contract()
         mapping = {
