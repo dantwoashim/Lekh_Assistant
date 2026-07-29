@@ -54,6 +54,12 @@ class FakeTrainer:
 
 
 class RemoteCoreMLExporterTests(unittest.TestCase):
+    def test_default_targets_active_ctc_candidate(self) -> None:
+        self.assertEqual(
+            EXPORTER.DEFAULT_CONFIG,
+            EXPORTER.CTC_TRANSFORMER_CONFIG,
+        )
+
     def assert_same_bound_method(
         self,
         observed: object,

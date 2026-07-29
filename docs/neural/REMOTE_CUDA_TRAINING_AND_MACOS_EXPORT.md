@@ -125,13 +125,18 @@ Passing `--replace-existing` moves the old candidate to a recoverable
 ## 4. Export and qualify on the Mac
 
 ```sh
-npm run neural:remote:export -- \
-  --config data/neural/training/open-vocab-bigru-attention-v1.config.json
+npm run neural:remote:export
 ```
 
+The default is deliberately bound to the active
+`data/neural/training/open-vocab-ctc-transformer-v2.config.json` candidate.
+Historical candidates require an explicit `--config`; they can never become
+the implicit export target.
+
 The export command requires a completed CUDA training report, loads the
-checkpoint on CPU, converts the split attention model to Core ML, compiles the
-exact artifacts, runs PyTorch/Core ML parity, generates locked-gold and
+checkpoint on CPU, converts the single Transformer-CTC model to a Neural
+Engine-eligible Core ML ML Program under the locked FP16 policy, compiles the
+exact artifact, runs PyTorch/Core ML parity, generates locked-gold and
 official-benchmark predictions, and records local measurements.
 
 The candidate remains unpromoted until all normal quality, safety, packaged

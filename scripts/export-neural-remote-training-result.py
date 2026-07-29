@@ -29,9 +29,7 @@ from scripts.lib.neural_remote_artifacts import (  # noqa: E402
 )
 
 
-DEFAULT_CONFIG = (
-    "data/neural/training/open-vocab-bigru-attention-v1.config.json"
-)
+DEFAULT_CONFIG = CTC_TRANSFORMER_CONFIG
 EXPECTED_SPLIT_CONVERSION_CALLS = 2
 EXPECTED_CTC_CONVERSION_CALLS = 1
 COREML_COMPUTE_PRECISION_POLICY = {

@@ -12,6 +12,7 @@ const reportPath = join(root, "reports", "neural-production-contract-report.json
 const requiredFiles = [
   "package.json",
   "docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md",
+  "docs/neural/REMOTE_CUDA_TRAINING_AND_MACOS_EXPORT.md",
   "docs/neural/TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md",
   "data/neural/schema/lekh-neural-manifest.schema.json",
   "data/neural/eval/README.md",
@@ -33,6 +34,7 @@ const requiredFiles = [
   "scripts/check-neural-audit-evidence.mjs",
   "scripts/analyze-neural-output-tokenization.mjs",
   "scripts/generate-neural-rare-scalar-predictions.py",
+  "scripts/export-neural-remote-training-result.py",
   "scripts/evaluate-neural-rare-scalar-evidence.mjs",
   "scripts/lib/neural-artifact-descriptor.mjs",
   "scripts/lib/neural-vocabulary-contract.mjs",
@@ -75,8 +77,14 @@ try {
 }
 
 const specText = readText("docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md");
+const remoteWorkflowText = readText(
+  "docs/neural/REMOTE_CUDA_TRAINING_AND_MACOS_EXPORT.md"
+);
 const evalText = readText("data/neural/eval/README.md");
 const ctcTrainerText = readText("scripts/train-open-vocab-ctc-transformer.py");
+const remoteExporterText = readText(
+  "scripts/export-neural-remote-training-result.py"
+);
 const vocabularyContractText = readText(
   "scripts/lib/neural-vocabulary-contract.mjs"
 );
@@ -190,6 +198,27 @@ requireText(
   specText,
   "--runtime-placement-evidence",
   "production re-verification must require observed Neural Engine placement evidence"
+);
+requireText(
+  remoteExporterText,
+  "DEFAULT_CONFIG = CTC_TRANSFORMER_CONFIG",
+  "remote macOS export must default to the active Transformer-CTC candidate"
+);
+requireText(
+  remoteWorkflowText,
+  "npm run neural:remote:export",
+  "remote-training guide must document the macOS export entry point"
+);
+requireText(
+  remoteWorkflowText,
+  "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
+  "remote-training guide must identify the active Transformer-CTC export default"
+);
+assert(
+  packageJson?.scripts?.["neural:remote:export"]?.includes(
+    "scripts/export-neural-remote-training-result.py"
+  ),
+  "neural:remote:export must invoke the production-contracted exporter"
 );
 requireText(
   promoterText,
