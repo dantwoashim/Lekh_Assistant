@@ -189,6 +189,20 @@ class RareScalarPredictionGeneratorTests(unittest.TestCase):
                 lambda _text: ["क", "क"],
             )
 
+    def test_filters_candidates_without_a_finite_ctc_path(self) -> None:
+        self.assertEqual(
+            MODULE.finite_path_candidates(
+                ["क", "का", "कक"],
+                output_time_steps=2,
+            ),
+            ["क", "का"],
+        )
+        with self.assertRaisesRegex(
+            MODULE.RareScalarGenerationError,
+            "positive integer",
+        ):
+            MODULE.finite_path_candidates(["क"], output_time_steps=0)
+
     def test_rejects_output_symlink_to_sibling_file(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix="lekh-rare-output-",

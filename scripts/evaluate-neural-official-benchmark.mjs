@@ -21,6 +21,9 @@ import {
   evaluateOfficialBenchmarkQuality,
   scoreOfficialBenchmark
 } from "./lib/neural-official-benchmark.mjs";
+import {
+  isCTCFinitePathDecoderPolicy
+} from "./lib/neural-ctc-finite-path-contract.mjs";
 
 const ROOT = realpathSync(process.cwd());
 const CANONICAL_BENCHMARK_MANIFEST = join(
@@ -277,6 +280,10 @@ function evaluate() {
     distinctInputCount: candidateScore.distinctInputCount,
     exactCoverage: candidateScore.exactCoverage,
     metrics: candidateScore.metrics,
+    targetLengthDiagnosticPolicy:
+      candidateScore.targetLengthDiagnosticPolicy,
+    metricsByTargetLength:
+      candidateScore.metricsByTargetLength,
     reference: {
       manifest: portable(referenceManifestPath),
       manifestSha256: referenceEvidence.file.sha256,
@@ -284,7 +291,9 @@ function evaluate() {
       predictionsSha256: referencePredictionEvidence.sha256,
       runtimeFilteredInvalidCandidateCount:
         referenceScore.filteredInvalidCandidateCount,
-      metrics: referenceScore.metrics
+      metrics: referenceScore.metrics,
+      metricsByTargetLength:
+        referenceScore.metricsByTargetLength
     },
     qualityGate
   };
@@ -305,6 +314,15 @@ function validateExportIdentity({
       manifest.productionEligible !== false ||
       manifest.openVocabulary !== true) {
     fail("Official evaluation requires a passed immutable Core ML candidate export.");
+  }
+  if (descriptor.runtimeModelContract === "single-transformer-ctc-v1" &&
+      !isCTCFinitePathDecoderPolicy(
+        exportReport.coremlExport?.finitePathDecoderPolicy
+      )) {
+    fail(
+      "Official Transformer-CTC evaluation requires the exact finite-path " +
+      "decoder policy."
+    );
   }
   const runIdPattern = /^[a-f0-9]{32}$/u;
   if (!runIdPattern.test(String(manifest.trainingRunId ?? "")) ||

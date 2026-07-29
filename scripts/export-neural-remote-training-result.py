@@ -9,7 +9,7 @@ import json
 import platform
 import subprocess
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -47,6 +47,12 @@ CTC_COREML_COMPUTE_PRECISION_POLICY = {
     "tensorBoundaryPrecision": "FLOAT16",
     "neuralEngineEligible": True,
     "purpose": "ane-eligible-production-candidate",
+}
+CTC_FINITE_PATH_DECODER_POLICY = {
+    "schemaVersion": 1,
+    "policyId": "ctc-finite-path-only-v1",
+    "rule": "repeat-aware-required-time-steps<=logit-time-steps",
+    "purpose": "exclude-zero-probability-prefixes",
 }
 
 
@@ -94,29 +100,40 @@ def main() -> int:
             trainer,
             precision_policy=precision_policy,
         ) as precision_state:
-            with trainer.exclusive_run_lock(trainer_args):
-                training_report = trainer.read_json(
-                    trainer.training_report_path(trainer_args)
-                )
-                if training_report.get("trainingExecutionModes") != {
-                    "skipTrain": False,
-                    "skipCoreML": True,
-                    "trainingDevice": "cuda",
-                }:
-                    raise RuntimeError(
-                        "Canonical checkpoint is not a completed remote CUDA candidate."
+            decoder_context = (
+                enforce_ctc_finite_path_decoder(trainer)
+                if config_relative == CTC_TRANSFORMER_CONFIG
+                else nullcontext(None)
+            )
+            with decoder_context as decoder_state:
+                with trainer.exclusive_run_lock(trainer_args):
+                    training_report = trainer.read_json(
+                        trainer.training_report_path(trainer_args)
                     )
-                try:
-                    trainer.ensure_run_input_snapshot(trainer_args)
-                    export_report = trainer.run_pipeline(trainer_args)
-                finally:
-                    trainer.cleanup_run_input_snapshot(trainer_args)
+                    if training_report.get("trainingExecutionModes") != {
+                        "skipTrain": False,
+                        "skipCoreML": True,
+                        "trainingDevice": "cuda",
+                    }:
+                        raise RuntimeError(
+                            "Canonical checkpoint is not a completed remote CUDA candidate."
+                        )
+                    try:
+                        trainer.ensure_run_input_snapshot(trainer_args)
+                        export_report = trainer.run_pipeline(trainer_args)
+                    finally:
+                        trainer.cleanup_run_input_snapshot(trainer_args)
         validate_coreml_compute_precision_evidence(
             export_report,
             precision_state,
             precision_policy=precision_policy,
             expected_conversion_calls=expected_conversion_calls,
         )
+        if config_relative == CTC_TRANSFORMER_CONFIG:
+            validate_ctc_finite_path_decoder_evidence(
+                export_report,
+                decoder_state,
+            )
         if (
             export_report.get("executionTopology")
                 != "split-host-train-then-macos-export-v1"
@@ -152,6 +169,14 @@ def main() -> int:
                     "predictionsSha256": export_report[
                         "predictionsSha256"
                     ],
+                    "decoderSafety": (
+                        {
+                            "policy": CTC_FINITE_PATH_DECODER_POLICY,
+                            **decoder_state,
+                        }
+                        if decoder_state is not None
+                        else None
+                    ),
                     "productionEligible": export_report[
                         "productionEligible"
                     ],
@@ -302,6 +327,114 @@ def enforce_coreml_compute_precision_policy(
     finally:
         trainer.export_coreml = original_export_coreml
         trainer.ct.convert = original_convert
+
+
+@contextmanager
+def enforce_ctc_finite_path_decoder(
+    trainer: Any,
+) -> Iterator[dict[str, int]]:
+    """Exclude prefixes that have no finite CTC alignment path.
+
+    The authenticated remote trainer remains byte-for-byte unchanged. This
+    export-only boundary wraps its decoder so a mathematically impossible
+    prefix retained during beam bookkeeping can never enter local prediction
+    evidence.
+    """
+    original_decoder = trainer.ctc_prefix_beam_search
+    original_export_coreml = trainer.export_coreml
+    state = {"decodeCalls": 0, "filteredSequences": 0}
+
+    def finite_paths_only(
+        logits: Any,
+        *decoder_args: Any,
+        **decoder_kwargs: Any,
+    ) -> list[list[int]]:
+        shape = getattr(logits, "shape", None)
+        if (
+            not isinstance(shape, tuple)
+            or len(shape) != 2
+            or type(shape[0]) is not int
+            or shape[0] < 1
+        ):
+            raise RuntimeError(
+                "CTC finite-path decoder received an invalid logit tensor."
+            )
+        sequences = original_decoder(
+            logits,
+            *decoder_args,
+            **decoder_kwargs,
+        )
+        if not isinstance(sequences, list):
+            raise RuntimeError("CTC decoder returned an invalid sequence set.")
+        filtered: list[list[int]] = []
+        for sequence in sequences:
+            if not isinstance(sequence, list):
+                raise RuntimeError(
+                    "CTC decoder returned an invalid token sequence."
+                )
+            try:
+                required_steps = trainer.ctc_required_time_steps(sequence)
+            except (TypeError, ValueError) as error:
+                raise RuntimeError(
+                    "CTC decoder returned an invalid token sequence."
+                ) from error
+            if required_steps <= shape[0]:
+                filtered.append(sequence)
+            else:
+                state["filteredSequences"] += 1
+        state["decodeCalls"] += 1
+        return filtered
+
+    def export_coreml_with_decoder_evidence(
+        *export_args: Any,
+        **export_kwargs: Any,
+    ) -> dict[str, Any]:
+        result = original_export_coreml(*export_args, **export_kwargs)
+        if not isinstance(result, dict):
+            raise RuntimeError("Core ML export returned invalid evidence.")
+        if "finitePathDecoderPolicy" in result:
+            raise RuntimeError(
+                "Core ML export attempted to replace decoder-safety evidence."
+            )
+        return {
+            **result,
+            "finitePathDecoderPolicy": dict(
+                CTC_FINITE_PATH_DECODER_POLICY
+            ),
+        }
+
+    trainer.ctc_prefix_beam_search = finite_paths_only
+    trainer.export_coreml = export_coreml_with_decoder_evidence
+    try:
+        yield state
+    finally:
+        trainer.export_coreml = original_export_coreml
+        trainer.ctc_prefix_beam_search = original_decoder
+
+
+def validate_ctc_finite_path_decoder_evidence(
+    export_report: dict[str, Any],
+    decoder_state: dict[str, int] | None,
+) -> None:
+    coreml_export = export_report.get("coremlExport")
+    if (
+        not isinstance(coreml_export, dict)
+        or coreml_export.get("finitePathDecoderPolicy")
+            != CTC_FINITE_PATH_DECODER_POLICY
+    ):
+        raise RuntimeError(
+            "CTC export did not record the finite-path decoder policy."
+        )
+    if (
+        not isinstance(decoder_state, dict)
+        or type(decoder_state.get("decodeCalls")) is not int
+        or decoder_state["decodeCalls"] < 1
+        or type(decoder_state.get("filteredSequences")) is not int
+        or decoder_state["filteredSequences"] < 0
+    ):
+        raise RuntimeError(
+            "CTC export did not exercise the finite-path decoder boundary."
+        )
 
 
 def validate_coreml_compute_precision_evidence(

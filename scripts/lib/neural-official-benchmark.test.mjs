@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
 import {
+  OFFICIAL_BENCHMARK_LENGTH_DIAGNOSTIC_POLICY,
   evaluateOfficialBenchmarkQuality,
   scoreOfficialBenchmark
 } from "./neural-official-benchmark.mjs";
@@ -46,6 +47,48 @@ describe("locked official neural benchmark", () => {
     assert.equal(
       result.metrics.byBucket["native-frequent"].top1Accuracy,
       1
+    );
+    assert.deepEqual(result.targetLengthDiagnosticPolicy,
+      OFFICIAL_BENCHMARK_LENGTH_DIAGNOSTIC_POLICY);
+    assert.deepEqual(result.metricsByTargetLength["short-1-7"], {
+      rows: 3,
+      top1Hits: 1,
+      top3Hits: 3,
+      top1Accuracy: 0.333333,
+      top3Accuracy: 1
+    });
+  });
+
+  it("reports target-length quality without changing the promotion gate", () => {
+    const lengthRows = [
+      rowWithTargetLength("short", 7),
+      rowWithTargetLength("medium", 8),
+      rowWithTargetLength("long", 14)
+    ];
+    const result = scoreOfficialBenchmark(
+      lengthRows,
+      lengthRows.map((row, index) => ({
+        id: row.id,
+        input: row.input,
+        candidates: index === 1 ? ["गलत"] : [row.acceptable[0]]
+      }))
+    );
+
+    assert.equal(
+      result.metricsByTargetLength["short-1-7"].top1Accuracy,
+      1
+    );
+    assert.equal(
+      result.metricsByTargetLength["medium-8-13"].top1Accuracy,
+      0
+    );
+    assert.equal(
+      result.metricsByTargetLength["long-14-plus"].top1Accuracy,
+      1
+    );
+    assert.equal(
+      result.targetLengthDiagnosticPolicy.promotionBlocking,
+      false
     );
   });
 
@@ -126,5 +169,14 @@ function perfectMetrics() {
       "indian-name": structuredClone(bucket),
       "foreign-name": structuredClone(bucket)
     }
+  };
+}
+
+function rowWithTargetLength(id, length) {
+  return {
+    id,
+    input: `roman${id}`,
+    acceptable: ["क".repeat(length)],
+    benchmarkBucket: "native-frequent"
   };
 }

@@ -54,6 +54,9 @@ import {
 import {
   evaluateNeuralRareScalarEvidence
 } from "./lib/neural-rare-scalar-evaluation.mjs";
+import {
+  isCTCFinitePathDecoderPolicy
+} from "./lib/neural-ctc-finite-path-contract.mjs";
 
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
@@ -1242,6 +1245,13 @@ function verifyBaselineArtifacts({
         candidateManifest.sha256?.mlpackages !== undefined) {
       fail(
         "Transformer-CTC promotion requires the closed single-transformer-ctc artifact branch."
+      );
+    }
+    if (!isCTCFinitePathDecoderPolicy(
+      exportReport.coremlExport?.finitePathDecoderPolicy
+    )) {
+      fail(
+        "Transformer-CTC export lacks the exact finite-path decoder policy."
       );
     }
     if (canonicalJson(exportReport.coremlExport?.tensorContract) !==

@@ -53,6 +53,23 @@ class FakeTrainer:
         return {"status": "passed"}
 
 
+class FakeCTCTrainer(FakeTrainer):
+    def ctc_prefix_beam_search(
+        self,
+        _logits: object,
+        *_args: object,
+        **_kwargs: object,
+    ) -> list[list[int]]:
+        return [[1], [1, 1]]
+
+    @staticmethod
+    def ctc_required_time_steps(token_ids: list[int]) -> int:
+        return len(token_ids) + sum(
+            left == right
+            for left, right in zip(token_ids, token_ids[1:])
+        )
+
+
 class RemoteCoreMLExporterTests(unittest.TestCase):
     def test_default_targets_active_ctc_candidate(self) -> None:
         self.assertEqual(
@@ -191,6 +208,58 @@ class RemoteCoreMLExporterTests(unittest.TestCase):
             precision_policy=policy,
             expected_conversion_calls=expected_calls,
         )
+
+    def test_ctc_export_filters_sequences_without_a_finite_path(self) -> None:
+        trainer = FakeCTCTrainer()
+        original_decoder = trainer.ctc_prefix_beam_search
+        original_export = trainer.export_coreml
+
+        with EXPORTER.enforce_ctc_finite_path_decoder(trainer) as state:
+            candidates = trainer.ctc_prefix_beam_search(
+                SimpleNamespace(shape=(2, 2))
+            )
+            export = trainer.export_coreml(
+                object(),
+                object(),
+                object(),
+            )
+
+        self.assertEqual(candidates, [[1]])
+        self.assertEqual(
+            state,
+            {"decodeCalls": 1, "filteredSequences": 1},
+        )
+        self.assertEqual(
+            export["finitePathDecoderPolicy"],
+            EXPORTER.CTC_FINITE_PATH_DECODER_POLICY,
+        )
+        self.assert_same_bound_method(
+            trainer.ctc_prefix_beam_search,
+            original_decoder,
+        )
+        self.assert_same_bound_method(trainer.export_coreml, original_export)
+        EXPORTER.validate_ctc_finite_path_decoder_evidence(
+            {"coremlExport": export},
+            state,
+        )
+
+    def test_ctc_export_requires_decoder_policy_and_execution(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "record"):
+            EXPORTER.validate_ctc_finite_path_decoder_evidence(
+                {"coremlExport": {"status": "passed"}},
+                {"decodeCalls": 1, "filteredSequences": 0},
+            )
+        with self.assertRaisesRegex(RuntimeError, "exercise"):
+            EXPORTER.validate_ctc_finite_path_decoder_evidence(
+                {
+                    "coremlExport": {
+                        "status": "passed",
+                        "finitePathDecoderPolicy":
+                            EXPORTER.CTC_FINITE_PATH_DECODER_POLICY,
+                    }
+                },
+                {"decodeCalls": 0, "filteredSequences": 0},
+            )
 
 
 if __name__ == "__main__":

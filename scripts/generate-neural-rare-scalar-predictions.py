@@ -55,6 +55,12 @@ RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 ROMAN_INPUT_PATTERN = re.compile(r"^[a-z]+$")
 MAX_JSON_BYTES = 16 * 1024 * 1024
+CTC_FINITE_PATH_DECODER_POLICY = {
+    "schemaVersion": 1,
+    "policyId": "ctc-finite-path-only-v1",
+    "rule": "repeat-aware-required-time-steps<=logit-time-steps",
+    "purpose": "exclude-zero-probability-prefixes",
+}
 
 
 class RareScalarGenerationError(RuntimeError):
@@ -162,6 +168,31 @@ def build_prediction_rows(
     return rows
 
 
+def finite_path_candidates(
+    candidates: Iterable[str],
+    output_time_steps: int,
+) -> list[str]:
+    """Retain only candidate strings with at least one legal CTC path."""
+    if type(output_time_steps) is not int or output_time_steps < 1:
+        raise RareScalarGenerationError(
+            "CTC output time steps must be a positive integer."
+        )
+    filtered: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, str) or not candidate:
+            raise RareScalarGenerationError(
+                "Compiled decoder returned an invalid candidate."
+            )
+        scalars = list(candidate)
+        required_steps = len(scalars) + sum(
+            left == right
+            for left, right in zip(scalars, scalars[1:])
+        )
+        if required_steps <= output_time_steps:
+            filtered.append(candidate)
+    return filtered
+
+
 def validate_export_binding(
     *,
     trainer: ModuleType,
@@ -203,6 +234,9 @@ def validate_export_binding(
         != RUNTIME_MODEL_CONTRACT
         or export_report.get("productionEligible") is not False
         or export_report.get("coremlExport", {}).get("status") != "passed"
+        or export_report.get("coremlExport", {}).get(
+            "finitePathDecoderPolicy"
+        ) != CTC_FINITE_PATH_DECODER_POLICY
         or export_report.get("runtimeArtifactContractIssues") != []
     ):
         raise RareScalarGenerationError(
@@ -419,11 +453,14 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         )
         rows = build_prediction_rows(
             contract,
-            lambda text: trainer.decode_compiled_ctc_candidates(
-                backend,
-                text,
-                checkpoint,
-                trainer_args,
+            lambda text: finite_path_candidates(
+                trainer.decode_compiled_ctc_candidates(
+                    backend,
+                    text,
+                    checkpoint,
+                    trainer_args,
+                ),
+                trainer_args.output_time_steps,
             ),
         )
         predictions_bytes = "".join(
@@ -473,6 +510,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
             "exportRunId": export_report["exportRunId"],
             "productionEligible": False,
             "predictionsBackend": "coreml-compiled-transformer-ctc",
+            "finitePathDecoderPolicy": CTC_FINITE_PATH_DECODER_POLICY,
             "contract": {
                 "path": portable(contract_path),
                 "sha256": file_hashes["contract"],

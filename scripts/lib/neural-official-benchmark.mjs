@@ -7,6 +7,29 @@ const BUCKETS = Object.freeze([
   "indian-name",
   "foreign-name"
 ]);
+const TARGET_LENGTH_BUCKETS = Object.freeze([
+  Object.freeze({ id: "short-1-7", minimum: 1, maximum: 7 }),
+  Object.freeze({ id: "medium-8-13", minimum: 8, maximum: 13 }),
+  Object.freeze({ id: "long-14-plus", minimum: 14, maximum: Infinity })
+]);
+
+export const OFFICIAL_BENCHMARK_LENGTH_DIAGNOSTIC_POLICY = Object.freeze({
+  id: "ctc-primary-target-scalar-length-v1",
+  unit: "Unicode scalar count of the first locked acceptable target",
+  buckets: Object.freeze(
+    TARGET_LENGTH_BUCKETS.map(({ id, minimum, maximum }) =>
+      Object.freeze({
+        id,
+        minimum,
+        maximum: Number.isFinite(maximum) ? maximum : null
+      })
+    )
+  ),
+  promotionBlocking: false,
+  purpose:
+    "Expose short/medium/long quality separately so sequence-level CTC " +
+    "loss weighting cannot hide a target-length regression in aggregate accuracy."
+});
 
 export const OFFICIAL_BENCHMARK_QUALITY_POLICY = Object.freeze({
   id: "lekh-indicxlit-parity-v1",
@@ -165,6 +188,7 @@ export function scoreOfficialBenchmark(
     const acceptable = new Set(row.acceptable);
     return {
       bucket: row.benchmarkBucket,
+      targetScalarLength: [...row.acceptable[0]].length,
       top1: candidates.slice(0, 1).some((value) => acceptable.has(value)),
       top3: candidates.slice(0, 3).some((value) => acceptable.has(value))
     };
@@ -178,9 +202,20 @@ export function scoreOfficialBenchmark(
       ])
     )
   };
-  return result(metrics);
+  const metricsByTargetLength = Object.fromEntries(
+    TARGET_LENGTH_BUCKETS.map(({ id, minimum, maximum }) => [
+      id,
+      metricBucket(
+        scored.filter((row) =>
+          row.targetScalarLength >= minimum &&
+          row.targetScalarLength <= maximum
+        )
+      )
+    ])
+  );
+  return result(metrics, metricsByTargetLength);
 
-  function result(metrics) {
+  function result(metrics, metricsByTargetLength = null) {
     const issueCodes = [...new Set(issues)].sort();
     return Object.freeze({
       valid: issueCodes.length === 0,
@@ -191,7 +226,14 @@ export function scoreOfficialBenchmark(
       predictionRows: predictionsById.size,
       distinctInputCount: benchmarkInputs.size,
       filteredInvalidCandidateCount,
-      metrics: metrics ? deepFreeze(metrics) : null
+      metrics: metrics ? deepFreeze(metrics) : null,
+      targetLengthDiagnosticPolicy:
+        deepFreeze(
+          structuredClone(OFFICIAL_BENCHMARK_LENGTH_DIAGNOSTIC_POLICY)
+        ),
+      metricsByTargetLength: metricsByTargetLength
+        ? deepFreeze(metricsByTargetLength)
+        : null
     });
   }
 }

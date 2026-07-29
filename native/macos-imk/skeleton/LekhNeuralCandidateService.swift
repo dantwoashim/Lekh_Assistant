@@ -547,7 +547,11 @@ public enum LekhNeuralCTCPrefixBeamSearch {
           score: logAdd($0.probability.blank, $0.probability.nonBlank)
         )
       }
-      .filter { !$0.prefix.isEmpty && permitsSequence($0.prefix) }
+      .filter {
+        !$0.prefix.isEmpty &&
+          $0.score.isFinite &&
+          permitsSequence($0.prefix)
+      }
       .sorted {
         if $0.score != $1.score { return $0.score > $1.score }
         return $0.prefix.lexicographicallyPrecedes($1.prefix)

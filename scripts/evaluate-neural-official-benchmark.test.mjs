@@ -75,6 +75,21 @@ describe("official benchmark evaluator CLI", () => {
     });
   });
 
+  it("rejects an export without exact finite-path decoder evidence", () => {
+    withFixture((fixture) => {
+      const exportReport = readJson(fixture.exportReport);
+      delete exportReport.coremlExport.finitePathDecoderPolicy;
+      writeJson(fixture.exportReport, exportReport);
+
+      const result = run(fixture);
+
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /exact finite-path decoder policy/u.test(failure)
+      ));
+    });
+  });
+
   it("rejects a prediction backend identity that differs from the model bytes", () => {
     withFixture((fixture) => {
       const exportReport = readJson(fixture.exportReport);
@@ -228,7 +243,15 @@ function buildFixture(root) {
   writeJson(exportReport, {
     status: "passed-open-vocab-ctc-transformer-candidate",
     productionEligible: false,
-    coremlExport: { status: "passed" },
+    coremlExport: {
+      status: "passed",
+      finitePathDecoderPolicy: {
+        schemaVersion: 1,
+        policyId: "ctc-finite-path-only-v1",
+        rule: "repeat-aware-required-time-steps<=logit-time-steps",
+        purpose: "exclude-zero-probability-prefixes"
+      }
+    },
     runtimeArtifactContractIssues: [],
     trainingRunId,
     exportRunId,

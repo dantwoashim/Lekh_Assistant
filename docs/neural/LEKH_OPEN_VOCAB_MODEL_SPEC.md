@@ -7,6 +7,8 @@ for deterministic typing or its safety rules.
 
 Current architecture-specific research:
 [Transformer-CTC and Core ML production review, 2026-07-29](TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md).
+The latest executable mathematical review is
+[Transformer-CTC mathematical audit, 2026-07-30](CTC_MATHEMATICAL_AUDIT_2026-07-30.md).
 
 ## Product boundary
 

@@ -485,6 +485,20 @@ describe("evidence-bound neural candidate promotion", () => {
     });
   });
 
+  it("rejects a Transformer-CTC export without finite-path decoder evidence", () => {
+    withFixture("ctc", (fixture) => {
+      const report = readJson(fixture.paths.exportReport);
+      delete report.coremlExport.finitePathDecoderPolicy;
+      writeJson(fixture.paths.exportReport, report);
+
+      assert.throws(
+        () => promote(fixture),
+        /lacks the exact finite-path decoder policy/u
+      );
+      assert.equal(existsProduction(fixture), false);
+    });
+  });
+
   it("rejects a Transformer-CTC rare-scalar report with a spurious top-1 emission", () => {
     withFixture("ctc", (fixture) => {
       const report = readJson(fixture.paths.rareScalarEvaluation);
@@ -1280,6 +1294,12 @@ function buildRareScalarEvidenceFixture({
     exportRunId: EXPORT_RUN_ID,
     productionEligible: false,
     predictionsBackend: "coreml-compiled-transformer-ctc",
+    finitePathDecoderPolicy: {
+      schemaVersion: 1,
+      policyId: "ctc-finite-path-only-v1",
+      rule: "repeat-aware-required-time-steps<=logit-time-steps",
+      purpose: "exclude-zero-probability-prefixes"
+    },
     contract: {
       path: portable(root, paths.rareScalarContract),
       sha256: identities.rareScalarContract.sha256,
@@ -1442,6 +1462,12 @@ function buildCTCArtifacts(root, candidate, checkpointSha256) {
       coremlExport: {
         ...artifact.exportFields.coremlExport,
         runtimeModelContract: "single-transformer-ctc-v1",
+        finitePathDecoderPolicy: {
+          schemaVersion: 1,
+          policyId: "ctc-finite-path-only-v1",
+          rule: "repeat-aware-required-time-steps<=logit-time-steps",
+          purpose: "exclude-zero-probability-prefixes"
+        },
         sourceCheckpointSha256: checkpointSha256,
         tensorContract: ctcTensorContract(),
         prePublicationValidation: {

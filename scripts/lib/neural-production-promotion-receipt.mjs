@@ -31,6 +31,10 @@ import {
 import {
   evaluateNeuralRareScalarEvidence
 } from "./neural-rare-scalar-evaluation.mjs";
+import {
+  CTC_FINITE_PATH_DECODER_POLICY,
+  isCTCFinitePathDecoderPolicy
+} from "./neural-ctc-finite-path-contract.mjs";
 
 export const NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 3;
 
@@ -685,6 +689,11 @@ function validateRetainedEvidenceGraph({
     const contract = retainedRareValues?.contract;
     const records = receipt.rareScalarEvidence;
     const rareEvaluation = rare?.evaluation;
+    if (!isCTCFinitePathDecoderPolicy(
+      exportReport.coremlExport?.finitePathDecoderPolicy
+    )) {
+      fail("Retained Transformer-CTC export lacks finite-path decoder evidence.");
+    }
     if (
       rare?.schemaVersion !== 1 ||
       rare?.status !== "passed-neural-rare-scalar-production-gate" ||
@@ -764,6 +773,8 @@ function validateRetainedEvidenceGraph({
       generation?.productionEligible !== false ||
       generation?.predictionsBackend !==
         "coreml-compiled-transformer-ctc" ||
+      canonicalJson(generation?.finitePathDecoderPolicy) !==
+        canonicalJson(CTC_FINITE_PATH_DECODER_POLICY) ||
       generation?.predictions?.path !== records.predictions.path ||
       generation?.predictions?.sha256 !== records.predictions.sha256 ||
       generation?.predictions?.rows !== rare.probePredictions.rows ||

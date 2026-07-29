@@ -14,6 +14,7 @@ const requiredFiles = [
   "docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md",
   "docs/neural/REMOTE_CUDA_TRAINING_AND_MACOS_EXPORT.md",
   "docs/neural/TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md",
+  "docs/neural/CTC_MATHEMATICAL_AUDIT_2026-07-30.md",
   "data/neural/schema/lekh-neural-manifest.schema.json",
   "data/neural/eval/README.md",
   "data/neural/training/open-vocab-seq2seq-v1.config.json",
@@ -27,6 +28,7 @@ const requiredFiles = [
   "scripts/train-open-vocab-ctc-transformer.py",
   "scripts/lib/neural_ctc_transformer.py",
   "scripts/lib/neural-ctc-alignment-audit.mjs",
+  "scripts/lib/neural-ctc-finite-path-contract.mjs",
   "scripts/lib/neural-audit-evidence.mjs",
   "scripts/lib/neural-rare-scalar-contract.mjs",
   "scripts/lib/neural-rare-scalar-evaluation.mjs",
@@ -41,6 +43,8 @@ const requiredFiles = [
   "scripts/lib/neural-vocabulary-contract.mjs",
   "scripts/check-neural-training-contract.mjs",
   "scripts/evaluate-neural-open-vocab-model.mjs",
+  "scripts/evaluate-neural-official-benchmark.mjs",
+  "scripts/lib/neural-official-benchmark.mjs",
   "scripts/benchmark-neural-coreml-device.mjs",
   "scripts/benchmark-neural-native-service.mjs",
   "scripts/benchmark-neural-packaged-app.mjs",
@@ -88,6 +92,9 @@ const rareScalarGeneratorText = readText(
 );
 const remoteExporterText = readText(
   "scripts/export-neural-remote-training-result.py"
+);
+const officialBenchmarkText = readText(
+  "scripts/lib/neural-official-benchmark.mjs"
 );
 const vocabularyContractText = readText(
   "scripts/lib/neural-vocabulary-contract.mjs"
@@ -148,6 +155,11 @@ requireText(
   specText,
   "TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md",
   "spec must link the current Transformer-CTC research review"
+);
+requireText(
+  specText,
+  "CTC_MATHEMATICAL_AUDIT_2026-07-30.md",
+  "spec must link the current Transformer-CTC mathematical audit"
 );
 requireText(specText, "models/macos/LekhNeuralTransliterator.production", "spec must name the atomic production directory");
 requireText(specText, "artifactSetSha256", "spec must define the runtime artifact-set identity");
@@ -212,6 +224,11 @@ requireText(
   "remote macOS export must default to the active Transformer-CTC candidate"
 );
 requireText(
+  remoteExporterText,
+  '"policyId": "ctc-finite-path-only-v1"',
+  "remote macOS export must exclude zero-probability CTC prefixes"
+);
+requireText(
   remoteWorkflowText,
   "npm run neural:remote:export",
   "remote-training guide must document the macOS export entry point"
@@ -231,6 +248,23 @@ requireText(
   "Parsed rare-scalar JSON changed before artifact binding.",
   "rare-scalar generator must bind parsed JSON to the exact certified bytes"
 );
+requireText(
+  rareScalarGeneratorText,
+  '"policyId": "ctc-finite-path-only-v1"',
+  "rare-scalar evidence must exclude zero-probability CTC prefixes"
+);
+requireText(
+  officialBenchmarkText,
+  "ctc-primary-target-scalar-length-v1",
+  "official evaluation must expose target-length-specific CTC quality"
+);
+for (const bucket of ["short-1-7", "medium-8-13", "long-14-plus"]) {
+  requireText(
+    officialBenchmarkText,
+    bucket,
+    `official evaluation must expose the ${bucket} diagnostic bucket`
+  );
+}
 assert(
   packageJson?.scripts?.["neural:remote:export"]?.includes(
     "scripts/export-neural-remote-training-result.py"
@@ -321,6 +355,11 @@ requireText(
   nativeNeuralServiceText,
   "minimumTokenLength = 3",
   "Swift admission policy must enforce the evaluated three-character minimum"
+);
+requireText(
+  nativeNeuralServiceText,
+  "$0.score.isFinite",
+  "Swift CTC runtime must reject zero-probability final prefixes"
 );
 requireText(
   nativeNeuralServiceText,

@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import itertools
 import json
+import math
 import unittest
 from pathlib import Path
 
@@ -82,6 +84,28 @@ class ModelTests(unittest.TestCase):
                 self.dimensions,
             )
 
+    def test_padding_embedding_is_output_inert_and_gradient_free(self) -> None:
+        inputs = torch.zeros((1, 8), dtype=torch.int32)
+        inputs[0, :4] = torch.tensor([4, 5, 6, 2], dtype=torch.int32)
+        with torch.no_grad():
+            expected = self.model(inputs)
+            self.model.input_embedding.weight[
+                self.dimensions.padding_id
+            ].fill_(1)
+            observed = self.model(inputs)
+        self.assertTrue(torch.equal(expected, observed))
+
+        self.model.train()
+        self.model.zero_grad(set_to_none=True)
+        self.model(inputs).sum().backward()
+        padding_gradient = self.model.input_embedding.weight.grad[
+            self.dimensions.padding_id
+        ]
+        self.assertTrue(torch.equal(
+            padding_gradient,
+            torch.zeros_like(padding_gradient),
+        ))
+
 
 class CTCDecoderTests(unittest.TestCase):
     @staticmethod
@@ -118,6 +142,53 @@ class CTCDecoderTests(unittest.TestCase):
         )
         self.assertEqual(candidates[0], [1, 2])
         self.assertEqual(len(candidates), len({tuple(value) for value in candidates}))
+
+    def test_finite_prefix_ranking_matches_exhaustive_path_oracle(self) -> None:
+        random = np.random.default_rng(20260730)
+        checked = 0
+        for class_count in range(2, 5):
+            for time_steps in range(1, 5):
+                for _case in range(8):
+                    logits = random.normal(
+                        size=(time_steps, class_count)
+                    ).astype(np.float64)
+                    log_probabilities = np.stack([
+                        log_softmax(row)
+                        for row in logits
+                    ])
+                    scores: dict[tuple[int, ...], float] = {}
+                    for path in itertools.product(
+                        range(class_count),
+                        repeat=time_steps,
+                    ):
+                        sequence = collapse_ctc_path(path)
+                        score = sum(
+                            float(log_probabilities[index, token])
+                            for index, token in enumerate(path)
+                        )
+                        scores[sequence] = log_sum(
+                            scores.get(sequence, -math.inf),
+                            score,
+                        )
+                    expected = [
+                        list(sequence)
+                        for sequence, _score in sorted(
+                            (
+                                (sequence, score)
+                                for sequence, score in scores.items()
+                                if sequence
+                            ),
+                            key=lambda item: (-item[1], item[0]),
+                        )
+                    ]
+                    observed = ctc_prefix_beam_search(
+                        logits,
+                        beam_width=class_count ** time_steps,
+                        maximum_candidates=len(expected),
+                    )
+                    self.assertEqual(observed, expected)
+                    checked += 1
+        self.assertEqual(checked, 96)
 
     def test_prefix_beam_matches_shared_python_swift_cases(self) -> None:
         fixture_path = (
@@ -166,6 +237,31 @@ class CTCDecoderTests(unittest.TestCase):
                 beam_width=4,
                 maximum_candidates=1,
             )
+
+
+def log_softmax(values: np.ndarray) -> np.ndarray:
+    maximum = float(np.max(values))
+    return values - (
+        maximum
+        + math.log(float(np.exp(values - maximum).sum()))
+    )
+
+
+def log_sum(left: float, right: float) -> float:
+    maximum = max(left, right)
+    return maximum + math.log(
+        math.exp(left - maximum) + math.exp(right - maximum)
+    )
+
+
+def collapse_ctc_path(path: tuple[int, ...]) -> tuple[int, ...]:
+    result: list[int] = []
+    previous: int | None = None
+    for token in path:
+        if token != 0 and token != previous:
+            result.append(token)
+        previous = token
+    return tuple(result)
 
 
 if __name__ == "__main__":

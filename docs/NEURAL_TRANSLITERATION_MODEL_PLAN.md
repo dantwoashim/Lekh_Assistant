@@ -4,6 +4,8 @@ Status: active production execution guide.
 
 The current platform and reference-model research review is recorded in
 [`docs/neural/COREML_AND_TRANSLITERATION_RESEARCH_REVIEW_2026-07-28.md`](neural/COREML_AND_TRANSLITERATION_RESEARCH_REVIEW_2026-07-28.md).
+The current CTC loss, alignment, and decoder audit is
+[`docs/neural/CTC_MATHEMATICAL_AUDIT_2026-07-30.md`](neural/CTC_MATHEMATICAL_AUDIT_2026-07-30.md).
 The thermally safe production workflow is
 [`docs/neural/REMOTE_CUDA_TRAINING_AND_MACOS_EXPORT.md`](neural/REMOTE_CUDA_TRAINING_AND_MACOS_EXPORT.md).
 

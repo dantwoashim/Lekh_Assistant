@@ -697,6 +697,20 @@ private func verifyCTCPrefixBeamSearch() {
       tied == [[1], [2]],
       "Equal-probability CTC prefixes must use lexical token-id ordering"
     )
+
+    let finiteOnly = try LekhNeuralCTCPrefixBeamSearch.rank(
+      logits: [
+        [0, 6],
+        [0, 6]
+      ],
+      blankTokenId: 0,
+      beamWidth: 2,
+      maximumCandidates: 2
+    )
+    require(
+      finiteOnly == [[1]],
+      "A zero-probability CTC prefix must never become a candidate"
+    )
   } catch {
     require(false, "CTC prefix-beam fixtures failed: \(error)")
   }

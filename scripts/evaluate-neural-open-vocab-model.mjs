@@ -8,6 +8,9 @@ import {
   validateNeuralEvaluationSafety,
   validateNeuralPredictionRows
 } from "./lib/neural-evaluation.mjs";
+import {
+  isCTCFinitePathDecoderPolicy
+} from "./lib/neural-ctc-finite-path-contract.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -218,6 +221,14 @@ function bindExportEvidence() {
   if (!String(exportReport.status ?? "").startsWith("passed-") ||
       exportReport.productionEligible !== false) {
     failures.push("Evaluation requires an immutable passed candidate export report with productionEligible=false.");
+  }
+  if (exportReport.runtimeModelContract === "single-transformer-ctc-v1" &&
+      !isCTCFinitePathDecoderPolicy(
+        exportReport.coremlExport?.finitePathDecoderPolicy
+      )) {
+    failures.push(
+      "Transformer-CTC evaluation requires the exact finite-path decoder policy."
+    );
   }
 
   const predictionsSha256 = sha256File(predictionsAbsolutePath);
