@@ -16,7 +16,10 @@ import importlib.util
 import json
 import math
 import os
+import platform
 import random
+import re
+import shutil
 import sys
 import time
 import unicodedata
@@ -126,6 +129,22 @@ load_verified_gold_rows = LEGACY.load_verified_gold_rows
 load_verified_official_benchmark_rows = (
     LEGACY.load_verified_official_benchmark_rows
 )
+ct = LEGACY.ct
+COREML_IMPORT_ERROR = LEGACY.COREML_IMPORT_ERROR
+COREML_PARITY_RTOL = LEGACY.COREML_PARITY_RTOL
+COREML_PARITY_ATOL = LEGACY.COREML_PARITY_ATOL
+directory_bytes = LEGACY.directory_bytes
+directory_sha256 = LEGACY.directory_sha256
+secure_directory_files = LEGACY.secure_directory_files
+safe_remove_sibling_directory = LEGACY.safe_remove_sibling_directory
+publish_directories_atomically = LEGACY.publish_directories_atomically
+compile_mlpackage_with_coremltools = (
+    LEGACY.compile_mlpackage_with_coremltools
+)
+compile_mlpackage_with_xcode = LEGACY.compile_mlpackage_with_xcode
+normalize_compiled_model_path = LEGACY.normalize_compiled_model_path
+normalize_input = LEGACY.normalize_input
+execution_topology = LEGACY.execution_topology
 
 _legacy_capture_run_input_snapshot = LEGACY.capture_run_input_snapshot
 
@@ -2589,6 +2608,477 @@ def validate_checkpoint_runtime_bindings(
         is_valid_output_scalar(token) for token in lexical
     ):
         raise SystemExit("CTC lexical vocabulary is invalid.")
+
+
+class CompiledCTCCoreMLBackend:
+    def __init__(
+        self,
+        model: Any,
+        *,
+        output_time_steps: int,
+        output_class_count: int,
+        compiled_sha256: str,
+    ) -> None:
+        self.model = model
+        self.expected_shape = (
+            1,
+            output_time_steps,
+            output_class_count,
+        )
+        self.compiled_sha256 = compiled_sha256
+
+    def predict(self, input_ids: np.ndarray) -> np.ndarray:
+        values = np.asarray(input_ids)
+        if values.dtype != np.int32 or values.ndim != 2:
+            raise SystemExit(
+                "Compiled CTC Core ML input must be a rank-two INT32 array."
+            )
+        result = self.model.predict({"inputIds": values})
+        if not isinstance(result, dict) or set(result) != {"logits"}:
+            raise SystemExit(
+                "Compiled CTC Core ML inference must return only logits."
+            )
+        logits = np.asarray(result["logits"])
+        if (
+            logits.shape != self.expected_shape
+            or logits.dtype.kind != "f"
+            or not np.isfinite(logits).all()
+        ):
+            raise SystemExit(
+                "Compiled CTC Core ML logits violate the fixed tensor contract."
+            )
+        return logits
+
+
+def convert_ctc_coreml_for_testing(
+    model: CTCTransformer,
+    *,
+    max_input_len: int,
+    minimum_deployment_target: Any,
+) -> Any:
+    if ct is None:
+        raise RuntimeError(
+            f"Core ML conversion is unavailable: {COREML_IMPORT_ERROR}"
+        )
+    if (
+        not isinstance(model, CTCTransformer)
+        or model.dimensions.max_input_length != max_input_len
+    ):
+        raise ValueError("CTC conversion model dimensions are inconsistent.")
+    model = model.eval().to("cpu")
+    example = torch.zeros((1, max_input_len), dtype=torch.int32)
+    lexical_id = min(3, model.dimensions.input_vocab_size - 1)
+    example[0, 0] = lexical_id
+    traced = torch.jit.trace(model, example)
+    return ct.convert(
+        traced,
+        convert_to="mlprogram",
+        minimum_deployment_target=minimum_deployment_target,
+        inputs=[
+            ct.TensorType(
+                name="inputIds",
+                shape=tuple(example.shape),
+                dtype=np.int32,
+            ),
+        ],
+        outputs=[
+            ct.TensorType(name="logits", dtype=np.float16),
+        ],
+    )
+
+
+def ctc_coreml_tensor_contract(
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, dict[str, Any]]:
+    return {
+        "inputIds": {
+            "shape": [1, args.max_input_len],
+            "dataType": "INT32",
+        },
+        "logits": {
+            "shape": [
+                1,
+                args.output_time_steps,
+                len(checkpoint["outputVocab"]),
+            ],
+            "dataType": "FLOAT16",
+        },
+    }
+
+
+def validate_ctc_coreml_feature_contract(
+    coreml_model: Any,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, dict[str, Any]]:
+    specification = coreml_model.get_spec()
+    inputs = {
+        feature.name: feature
+        for feature in specification.description.input
+    }
+    outputs = {
+        feature.name: feature
+        for feature in specification.description.output
+    }
+    if set(inputs) != {"inputIds"} or set(outputs) != {"logits"}:
+        raise SystemExit(
+            "CTC Core ML feature names violate the native runtime contract."
+        )
+    expected = ctc_coreml_tensor_contract(checkpoint, args)
+    int32_type = ct.proto.FeatureTypes_pb2.ArrayFeatureType.INT32
+    float16_type = ct.proto.FeatureTypes_pb2.ArrayFeatureType.FLOAT16
+    input_feature = inputs["inputIds"].type.multiArrayType
+    output_feature = outputs["logits"].type.multiArrayType
+    if (
+        list(input_feature.shape) != expected["inputIds"]["shape"]
+        or input_feature.dataType != int32_type
+        or list(output_feature.shape) != expected["logits"]["shape"]
+        or output_feature.dataType != float16_type
+    ):
+        raise SystemExit(
+            "CTC Core ML feature shapes or data types are inconsistent."
+        )
+    return expected
+
+
+def ctc_known_answer_input(
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> np.ndarray:
+    input_vocab = checkpoint["inputVocab"]
+    lexical_ids = [
+        token_id
+        for token, token_id in sorted(
+            input_vocab.items(),
+            key=lambda item: item[1],
+        )
+        if token not in INPUT_SPECIAL
+    ]
+    if not lexical_ids:
+        raise SystemExit(
+            "CTC Core ML attestation requires lexical input tokens."
+        )
+    prefix = lexical_ids[: min(6, args.max_input_len - 1)]
+    prefix.append(input_vocab[EOS])
+    return np.asarray(
+        [
+            prefix
+            + [input_vocab[PAD]] * (args.max_input_len - len(prefix))
+        ],
+        dtype=np.int32,
+    )
+
+
+def validate_ctc_coreml_known_answer(
+    backend: CompiledCTCCoreMLBackend,
+    pytorch_model: CTCTransformer,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    input_ids = ctc_known_answer_input(checkpoint, args)
+    with torch.no_grad():
+        expected = (
+            pytorch_model.eval().to("cpu")(
+                torch.from_numpy(input_ids)
+            )
+            .detach()
+            .cpu()
+            .numpy()
+        )
+    observed = backend.predict(input_ids)
+    difference = np.abs(
+        observed.astype(np.float64) - expected.astype(np.float64)
+    )
+    maximum_error = float(np.max(difference))
+    if not np.allclose(
+        observed,
+        expected,
+        rtol=COREML_PARITY_RTOL,
+        atol=COREML_PARITY_ATOL,
+    ):
+        raise SystemExit(
+            "Exact compiled CTC Core ML logits diverge from the checkpoint; "
+            f"max error={maximum_error}."
+        )
+    return {
+        "knownAnswerInputSha256": hashlib.sha256(
+            input_ids.tobytes()
+        ).hexdigest(),
+        "maximumAbsoluteLogitError": maximum_error,
+        "relativeTolerance": COREML_PARITY_RTOL,
+        "absoluteTolerance": COREML_PARITY_ATOL,
+    }
+
+
+def load_verified_compiled_ctc_coreml(
+    pytorch_model: CTCTransformer,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+    *,
+    package_path: Path,
+    compiled_path: Path,
+    expected_package_sha256: str,
+    expected_compiled_sha256: str,
+) -> tuple[CompiledCTCCoreMLBackend, dict[str, Any]]:
+    if ct is None:
+        raise SystemExit(
+            f"Core ML validation is unavailable: {COREML_IMPORT_ERROR}"
+        )
+    package_sha256 = directory_sha256(package_path)
+    compiled_sha256 = directory_sha256(compiled_path)
+    if (
+        package_sha256 != expected_package_sha256
+        or compiled_sha256 != expected_compiled_sha256
+    ):
+        raise SystemExit(
+            "CTC Core ML bytes changed before exact-artifact validation."
+        )
+    try:
+        package_model = ct.models.MLModel(str(package_path))
+        compiled_model = ct.models.CompiledMLModel(str(compiled_path))
+    except Exception as error:
+        raise SystemExit(
+            "Unable to load the exact CTC Core ML artifacts."
+        ) from error
+    tensor_contract = validate_ctc_coreml_feature_contract(
+        package_model,
+        checkpoint,
+        args,
+    )
+    backend = CompiledCTCCoreMLBackend(
+        compiled_model,
+        output_time_steps=args.output_time_steps,
+        output_class_count=len(checkpoint["outputVocab"]),
+        compiled_sha256=compiled_sha256,
+    )
+    parity = validate_ctc_coreml_known_answer(
+        backend,
+        pytorch_model,
+        checkpoint,
+        args,
+    )
+    return backend, {
+        "status": "passed",
+        "runtimeModelContract": RUNTIME_MODEL_CONTRACT,
+        "mlpackageSha256": package_sha256,
+        "compiledModelSha256": compiled_sha256,
+        "tensorContract": tensor_contract,
+        **parity,
+    }
+
+
+def validate_ctc_checkpoint_file_binding(
+    model: CTCTransformer,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> str:
+    path = checkpoint_path(args)
+    try:
+        with open_regular_binary(path, "CTC checkpoint") as handle:
+            source = torch.load(
+                handle,
+                map_location="cpu",
+                weights_only=True,
+            )
+    except Exception as error:
+        raise SystemExit(
+            "CTC checkpoint failed exact tensor-only reload."
+        ) from error
+    if not isinstance(source, dict):
+        raise SystemExit("CTC checkpoint payload is not an object.")
+    source_state = source.get("stateDict")
+    memory_state = checkpoint.get("stateDict")
+    model_state = model.state_dict()
+    if (
+        not isinstance(source_state, dict)
+        or not isinstance(memory_state, dict)
+        or set(source_state) != set(memory_state)
+        or set(source_state) != set(model_state)
+    ):
+        raise SystemExit("CTC checkpoint state dictionary is inconsistent.")
+    source_metadata = {
+        key: value
+        for key, value in source.items()
+        if key != "stateDict"
+    }
+    memory_metadata = {
+        key: value
+        for key, value in checkpoint.items()
+        if key != "stateDict"
+    }
+    if source_metadata != memory_metadata:
+        raise SystemExit(
+            "CTC checkpoint file metadata differs from memory."
+        )
+    for name in sorted(source_state):
+        if (
+            not torch.equal(source_state[name], memory_state[name])
+            or not torch.equal(source_state[name], model_state[name])
+        ):
+            raise SystemExit(
+                f"CTC checkpoint tensor differs from the export model: {name}."
+            )
+    return sha256_file(path)
+
+
+def export_coreml(
+    model: CTCTransformer,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    if args.skip_coreml:
+        return {
+            "status": "skipped",
+            "trainingRunId": args.training_run_id,
+            "exportRunId": args.export_run_id,
+        }
+    if ct is None:
+        return {
+            "status": "failed",
+            "trainingRunId": args.training_run_id,
+            "exportRunId": args.export_run_id,
+            "runtimeModelContract": RUNTIME_MODEL_CONTRACT,
+            "error": f"coremltools import failed: {COREML_IMPORT_ERROR}",
+        }
+    if (
+        not isinstance(model, CTCTransformer)
+        or checkpoint.get("modelId") != MODEL_ID
+        or checkpoint.get("config") != checkpoint_runtime_config(args)
+        or checkpoint.get("trainingRunId") != args.training_run_id
+    ):
+        raise SystemExit(
+            "CTC Core ML export is not bound to the active checkpoint."
+        )
+    source_checkpoint_sha256 = validate_ctc_checkpoint_file_binding(
+        model,
+        checkpoint,
+        args,
+    )
+    package_target = mlpackage_path(args)
+    compiled_target = args.compiled_model
+    package_staging = staging_sibling(package_target, "staging")
+    compiled_staging = staging_sibling(compiled_target, "staging")
+    coremltools_output = staging_sibling(
+        args.out_dir / "LekhNeuralTransliterator.coremltools.mlmodelc",
+        "compile",
+    )
+    xcode_output = staging_sibling(
+        args.out_dir / "coreml-compiled",
+        "compile",
+    )
+    temporary_directories = (
+        package_staging,
+        compiled_staging,
+        coremltools_output,
+        xcode_output,
+    )
+    try:
+        converted = convert_ctc_coreml_for_testing(
+            model,
+            max_input_len=args.max_input_len,
+            minimum_deployment_target=ct.target.macOS13,
+        )
+        package_target.parent.mkdir(parents=True, exist_ok=True)
+        converted.save(str(package_staging))
+        compiled = ct.models.MLModel(
+            str(package_staging)
+        ).get_compiled_model_path()
+        if not compiled or not Path(compiled).exists():
+            compiled = compile_mlpackage_with_coremltools(
+                package_staging,
+                coremltools_output,
+            )
+        if not compiled or not Path(compiled).exists():
+            compiled = compile_mlpackage_with_xcode(
+                package_staging,
+                xcode_output,
+            )
+        if not compiled or not Path(compiled).exists():
+            raise RuntimeError(
+                "Core ML compilation returned no compiled CTC model."
+            )
+        compiled_source = normalize_compiled_model_path(Path(compiled))
+        secure_directory_files(
+            compiled_source,
+            require_repo_containment=False,
+        )
+        shutil.copytree(compiled_source, compiled_staging)
+        secure_directory_files(package_staging)
+        secure_directory_files(compiled_staging)
+        package_sha256 = directory_sha256(package_staging)
+        compiled_sha256 = directory_sha256(compiled_staging)
+        _backend, prepublication = load_verified_compiled_ctc_coreml(
+            model,
+            checkpoint,
+            args,
+            package_path=package_staging,
+            compiled_path=compiled_staging,
+            expected_package_sha256=package_sha256,
+            expected_compiled_sha256=compiled_sha256,
+        )
+        prepublication = {
+            **prepublication,
+            "phase": "pre-publication-staging",
+            "sourceCheckpointSha256": source_checkpoint_sha256,
+        }
+        assert_run_input_snapshot_unchanged(args)
+        publish_directories_atomically([
+            (package_staging, package_target),
+            (compiled_staging, compiled_target),
+        ])
+        _published_backend, artifact_validation = (
+            load_verified_compiled_ctc_coreml(
+                model,
+                checkpoint,
+                args,
+                package_path=package_target,
+                compiled_path=compiled_target,
+                expected_package_sha256=package_sha256,
+                expected_compiled_sha256=compiled_sha256,
+            )
+        )
+        return {
+            "status": "passed",
+            "trainingRunId": args.training_run_id,
+            "exportRunId": args.export_run_id,
+            "runtimeModelContract": RUNTIME_MODEL_CONTRACT,
+            "sourceCheckpointSha256": source_checkpoint_sha256,
+            "mlpackage": rel(package_target),
+            "mlpackageBytes": directory_bytes(package_target),
+            "mlpackageSha256": package_sha256,
+            "compiledModel": rel(compiled_target),
+            "compiledBytes": directory_bytes(compiled_target),
+            "compiledSha256": compiled_sha256,
+            "tensorContract": ctc_coreml_tensor_contract(
+                checkpoint,
+                args,
+            ),
+            "prePublicationValidation": prepublication,
+            "artifactValidation": {
+                **artifact_validation,
+                "phase": "published-exact-artifact",
+                "sourceCheckpointSha256": source_checkpoint_sha256,
+            },
+        }
+    except Exception as error:  # pragma: no cover - environment-dependent.
+        return {
+            "status": "failed",
+            "trainingRunId": args.training_run_id,
+            "exportRunId": args.export_run_id,
+            "runtimeModelContract": RUNTIME_MODEL_CONTRACT,
+            "sourceCheckpointSha256": source_checkpoint_sha256,
+            "error": repr(error),
+        }
+    finally:
+        for temporary in temporary_directories:
+            try:
+                safe_remove_sibling_directory(
+                    temporary,
+                    temporary.parent,
+                )
+            except Exception:
+                pass
 
 
 def candidate_limitations() -> list[str]:

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import importlib.util
+import platform
 import tempfile
 import unittest
 from pathlib import Path
@@ -267,6 +268,193 @@ class ProvenanceTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(SystemExit, "runtime contract"):
             TRAINER.load_model_from_checkpoint_payload(payload)
+
+
+class CoreMLContractTests(unittest.TestCase):
+    @unittest.skipUnless(
+        platform.system() == "Darwin" and TRAINER.ct is not None,
+        "CTC Core ML conversion requires macOS and coremltools",
+    )
+    def test_single_model_fp16_conversion_shape_and_parity(self) -> None:
+        torch.manual_seed(42)
+        input_vocab = {
+            TRAINER.PAD: 0,
+            TRAINER.EOS: 1,
+            TRAINER.UNK: 2,
+            "a": 3,
+            "n": 4,
+            "m": 5,
+        }
+        output_vocab = {
+            TRAINER.CTC_BLANK: 0,
+            "क": 1,
+            "ा": 2,
+            "न": 3,
+            "म": 4,
+        }
+        dimensions = TRAINER.CTCTransformerDimensions(
+            input_vocab_size=len(input_vocab),
+            output_class_count=len(output_vocab),
+            max_input_length=8,
+            output_time_steps=8,
+            model_dimension=16,
+            attention_heads=4,
+            feed_forward_dimension=32,
+            encoder_layers=1,
+            dropout=0,
+        )
+        model = TRAINER.CTCTransformer(dimensions).eval()
+        checkpoint = {
+            "inputVocab": input_vocab,
+            "outputVocab": output_vocab,
+        }
+        args = argparse.Namespace(
+            max_input_len=8,
+            output_time_steps=8,
+        )
+        converted = TRAINER.convert_ctc_coreml_for_testing(
+            model,
+            max_input_len=8,
+            minimum_deployment_target=TRAINER.ct.target.macOS13,
+        )
+        contract = TRAINER.validate_ctc_coreml_feature_contract(
+            converted,
+            checkpoint,
+            args,
+        )
+        self.assertEqual(
+            contract,
+            {
+                "inputIds": {
+                    "shape": [1, 8],
+                    "dataType": "INT32",
+                },
+                "logits": {
+                    "shape": [1, 8, 5],
+                    "dataType": "FLOAT16",
+                },
+            },
+        )
+        backend = TRAINER.CompiledCTCCoreMLBackend(
+            converted,
+            output_time_steps=8,
+            output_class_count=5,
+            compiled_sha256="a" * 64,
+        )
+        evidence = TRAINER.validate_ctc_coreml_known_answer(
+            backend,
+            model,
+            checkpoint,
+            args,
+        )
+        self.assertLessEqual(
+            evidence["maximumAbsoluteLogitError"],
+            TRAINER.COREML_PARITY_ATOL,
+        )
+
+    @unittest.skipUnless(
+        platform.system() == "Darwin" and TRAINER.ct is not None,
+        "Compiled CTC Core ML publication requires macOS and coremltools",
+    )
+    def test_compiled_publication_is_checkpoint_bound(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="lekh-ctc-coreml-publication-",
+            dir=ROOT / ".tmp",
+        ) as directory:
+            output = Path(directory) / "candidate"
+            args = TRAINER.parse_args([
+                "--out-dir",
+                str(output),
+                "--compiled-model",
+                str(output / "Candidate.mlmodelc"),
+                "--manifest",
+                str(output / "Candidate.manifest.json"),
+                "--vocab-metadata",
+                str(output / "Candidate.vocab.json"),
+                "--model-dimension",
+                "16",
+                "--attention-heads",
+                "4",
+                "--feed-forward-dimension",
+                "32",
+                "--layers",
+                "1",
+                "--dropout",
+                "0",
+                "--max-input-len",
+                "8",
+                "--output-time-steps",
+                "8",
+                "--beam-width",
+                "4",
+                "--maximum-candidates",
+                "2",
+                "--skip-train",
+            ], {})
+            args.training_run_id = "b" * 32
+            args.export_run_id = "c" * 32
+            input_vocab = {
+                TRAINER.PAD: 0,
+                TRAINER.EOS: 1,
+                TRAINER.UNK: 2,
+                "a": 3,
+                "n": 4,
+                "m": 5,
+            }
+            output_vocab = {
+                TRAINER.CTC_BLANK: 0,
+                "क": 1,
+                "ा": 2,
+                "न": 3,
+                "म": 4,
+            }
+            model = TRAINER.build_model_from_runtime_config(
+                len(input_vocab),
+                len(output_vocab),
+                TRAINER.checkpoint_runtime_config(args),
+            ).eval()
+            checkpoint = {
+                "modelId": TRAINER.MODEL_ID,
+                "trainingRunId": args.training_run_id,
+                "stateDict": model.state_dict(),
+                "inputVocab": input_vocab,
+                "outputVocab": output_vocab,
+                "config": TRAINER.checkpoint_runtime_config(args),
+            }
+            output.mkdir(parents=True)
+            torch.save(
+                checkpoint,
+                TRAINER.checkpoint_path(args),
+            )
+            with mock.patch.object(
+                TRAINER,
+                "assert_run_input_snapshot_unchanged",
+                return_value=None,
+            ):
+                export = TRAINER.export_coreml(
+                    model,
+                    checkpoint,
+                    args,
+                )
+            self.assertEqual(export["status"], "passed", export)
+            self.assertEqual(
+                export["runtimeModelContract"],
+                TRAINER.RUNTIME_MODEL_CONTRACT,
+            )
+            self.assertEqual(
+                export["artifactValidation"]["status"],
+                "passed",
+            )
+            self.assertEqual(
+                export["compiledSha256"],
+                TRAINER.directory_sha256(args.compiled_model),
+            )
+            self.assertEqual(
+                export["mlpackageSha256"],
+                TRAINER.directory_sha256(
+                    TRAINER.mlpackage_path(args)
+                ),
+            )
 
 
 class RecoveryAndPublicationTests(unittest.TestCase):
