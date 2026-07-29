@@ -7,6 +7,7 @@ import {
   inspectContainedRegularFile
 } from "./lib/neural-artifact-filesystem.mjs";
 import {
+  neuralRuntimeContractMetadata,
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
 import {
@@ -523,10 +524,9 @@ function validateComparisonReport({
       "canonical release."
     );
   }
-  const expectedBackend = descriptor.runtimeModelContract ===
-    "split-attention-incremental-v1"
-    ? "coreml-compiled-split-attention-models"
-    : "coreml-compiled-model";
+  const expectedBackend = neuralRuntimeContractMetadata(
+    descriptor.runtimeModelContract
+  ).predictionsBackend;
   const expectedPredictionArtifactIdentity = {
     runtimeModelContract: descriptor.runtimeModelContract,
     compiledArtifacts: Object.fromEntries(

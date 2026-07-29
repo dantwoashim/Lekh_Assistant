@@ -16,6 +16,7 @@ const BLOCKED_MIRROR_SOURCES = [
 const ARCHITECTURE_PROFILES = Object.freeze({
   "lekh-open-vocab-seq2seq-v1": Object.freeze({
     configPath: "data/neural/training/open-vocab-seq2seq-v1.config.json",
+    trainerPath: "scripts/train-open-vocab-seq2seq-transliterator.py",
     kind: "baseline",
     family: "gru-encoder-decoder-seq2seq",
     runtimeModelContract: "single-seq2seq-v1",
@@ -40,6 +41,7 @@ const ARCHITECTURE_PROFILES = Object.freeze({
   }),
   "lekh-open-vocab-bigru-attention-v1": Object.freeze({
     configPath: "data/neural/training/open-vocab-bigru-attention-v1.config.json",
+    trainerPath: "scripts/train-open-vocab-seq2seq-transliterator.py",
     kind: "split-attention",
     family: "bidirectional-gru-additive-attention-seq2seq",
     runtimeModelContract: "split-attention-incremental-v1",
@@ -61,7 +63,72 @@ const ARCHITECTURE_PROFILES = Object.freeze({
       sourceCheckpoint: "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/checkpoint.pt",
       intermediateMLPackage: "data/generated/neural-open-vocab-model/lekh-open-vocab-bigru-attention-v1/LekhNeuralTransliterator.mlpackage"
     })
+  }),
+  "lekh-open-vocab-ctc-transformer-v2": Object.freeze({
+    configPath: "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
+    trainerPath: "scripts/train-open-vocab-ctc-transformer.py",
+    kind: "ctc-transformer",
+    family: "fixed-shape-transformer-ctc",
+    runtimeModelContract: "single-transformer-ctc-v1",
+    successfulExportStatus: "passed-open-vocab-ctc-transformer-candidate",
+    predictionsBackend: "coreml-compiled-transformer-ctc",
+    modelDimension: 256,
+    attentionHeads: 4,
+    feedForwardDimension: 1024,
+    encoderLayers: 6,
+    dropout: 0.2,
+    decoder: Object.freeze({
+      type: "ctc-prefix-beam-search",
+      blankId: 0,
+      beamWidth: 8,
+      maxInputGraphemes: 32,
+      outputTimeSteps: 32,
+      maximumCandidates: 4
+    }),
+    artifact: Object.freeze({
+      compiledModel: "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.mlmodelc",
+      manifest: "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.manifest.json",
+      vocabMetadata: "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.vocab.json"
+    }),
+    export: Object.freeze({
+      sourceCheckpoint: "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/checkpoint.pt",
+      intermediateMLPackage: "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/LekhNeuralTransliterator.mlpackage"
+    })
   })
+});
+
+const CTC_SOURCE_MULTIPLIERS = Object.freeze({
+  "dictionary-ne-ranked": 1.5,
+  "manual-ambiguity": 512,
+  "manual-chat-tail": 2048,
+  "manual-name": 128,
+  "manual-x-ksha": 2048,
+  "runtime-names": 4,
+  "runtime-words": 1.5
+});
+
+const CTC_AUGMENTATION = Object.freeze({
+  enabled: true,
+  policy: "augmentation-chat-alias-v1",
+  aliases: Object.freeze([
+    Object.freeze({ from: "chh", to: "x", weightMultiplier: 0.75 }),
+    Object.freeze({ from: "bh", to: "v", weightMultiplier: 0.5 })
+  ]),
+  heldOutCollisionPolicy: "reject",
+  conflictingTrainingTargetPolicy: "reject"
+});
+
+const CTC_OPTIMIZER = Object.freeze({
+  type: "adamw",
+  beta1: 0.9,
+  beta2: 0.98,
+  epsilon: 1e-9,
+  weightDecay: 0.0001
+});
+
+const CTC_SCHEDULER = Object.freeze({
+  type: "linear-warmup-inverse-square-root",
+  warmupSteps: 4000
 });
 
 const ARTIFACT_NAMES = Object.freeze({
@@ -99,6 +166,29 @@ export function canonicalNeuralTrainingConfigPath(
     );
   }
   return resolve(repoRoot, profile.configPath);
+}
+
+export function neuralTrainingSampleIdentityDigests(report, layoutKind) {
+  if (!isRecord(report)) {
+    throw new NeuralTrainingLayoutError(
+      "Training report must be an object."
+    );
+  }
+  if (layoutKind === "ctc-transformer") {
+    return {
+      train: report.sampledRowDigests?.train,
+      dev: report.sampledRowDigests?.dev
+    };
+  }
+  if (layoutKind === "baseline" || layoutKind === "split-attention") {
+    return {
+      train: report.trainingSampleIdSha256,
+      dev: report.devSampleIdSha256
+    };
+  }
+  throw new NeuralTrainingLayoutError(
+    `Unsupported neural training layout kind: ${JSON.stringify(layoutKind)}.`
+  );
 }
 
 /**
@@ -191,13 +281,8 @@ export function resolveNeuralTrainingLayout(config, configPath, repoRoot = proce
     }
   }
 
-  const artifacts = profile.kind === "baseline"
-    ? [{
-        role: "model",
-        compiledModel: expectedConfigBindings.compiledModel,
-        mlpackage: expectedConfigBindings.intermediateMLPackage
-      }]
-    : [
+  const artifacts = profile.kind === "split-attention"
+    ? [
         {
           role: "encoder",
           compiledModel: join(
@@ -220,7 +305,12 @@ export function resolveNeuralTrainingLayout(config, configPath, repoRoot = proce
             ARTIFACT_NAMES.attentionDecoderMLPackage
           )
         }
-      ];
+      ]
+    : [{
+        role: "model",
+        compiledModel: expectedConfigBindings.compiledModel,
+        mlpackage: expectedConfigBindings.intermediateMLPackage
+      }];
   const datasetManifest = containedRecordedPath(
     root,
     config.training?.datasetManifest,
@@ -257,6 +347,8 @@ export function resolveNeuralTrainingLayout(config, configPath, repoRoot = proce
     root,
     configPath: resolvedConfigPath,
     configRelativePath: portable(root, resolvedConfigPath),
+    trainerPath: resolve(root, profile.trainerPath),
+    trainerRelativePath: profile.trainerPath,
     candidateRoot,
     candidateRootRelativePath: portable(root, candidateRoot),
     datasetManifest,
@@ -269,6 +361,37 @@ export function resolveNeuralTrainingLayout(config, configPath, repoRoot = proce
 }
 
 export function configuredNeuralTrainingContract(config) {
+  const profile = ARCHITECTURE_PROFILES[config?.modelId];
+  if (profile?.kind === "ctc-transformer") {
+    return {
+      architecture: {
+        family: config?.architecture?.family,
+        runtimeModelContract: config?.architecture?.runtimeModelContract,
+        modelDimension: config?.architecture?.modelDimension,
+        attentionHeads: config?.architecture?.attentionHeads,
+        feedForwardDimension: config?.architecture?.feedForwardDimension,
+        encoderLayers: config?.architecture?.encoderLayers,
+        dropout: config?.architecture?.dropout
+      },
+      decoder: {
+        type: config?.decoder?.type,
+        blankId: config?.decoder?.blankId,
+        beamWidth: config?.decoder?.beamWidth,
+        maxInputGraphemes: config?.decoder?.maxInputGraphemes,
+        outputTimeSteps: config?.decoder?.outputTimeSteps,
+        maximumCandidates: config?.decoder?.maximumCandidates
+      },
+      training: {
+        augmentation: structuredClone(config?.training?.augmentation ?? null),
+        sourceMultipliers: structuredClone(
+          config?.training?.samplingPolicy?.sourceMultipliers ?? null
+        ),
+        optimizer: structuredClone(config?.training?.optimizer ?? null),
+        scheduler: structuredClone(config?.training?.scheduler ?? null)
+      },
+      trainingRun: structuredClone(config?.trainingRun ?? null)
+    };
+  }
   return {
     architecture: {
       family: config?.architecture?.family,
@@ -300,9 +423,13 @@ export function validateNeuralTrainingConfig(config) {
     return result();
   }
 
+  const profile = ARCHITECTURE_PROFILES[config.modelId];
+  if (profile?.kind === "ctc-transformer") {
+    return validateCTCNeuralTrainingConfig(config, profile);
+  }
+
   requireEqual(config.schemaVersion, 2, "Config schemaVersion must be 2.");
   requireEqual(config.implementationContractVersion, 1, "Config implementationContractVersion must be 1.");
-  const profile = ARCHITECTURE_PROFILES[config.modelId];
   if (!profile) {
     failures.push(`Config modelId names an unsupported executable candidate: ${JSON.stringify(config.modelId)}.`);
   }
@@ -465,6 +592,410 @@ export function validateNeuralTrainingConfig(config) {
   }
 }
 
+function validateCTCNeuralTrainingConfig(config, profile) {
+  const failures = [];
+  const warnings = [];
+
+  requireEqual(config.schemaVersion, 2, "CTC config schemaVersion must be 2.");
+  requireEqual(
+    config.implementationContractVersion,
+    2,
+    "CTC config implementationContractVersion must be 2."
+  );
+  requireEqual(
+    config.modelId,
+    "lekh-open-vocab-ctc-transformer-v2",
+    "CTC config modelId must name the executable Transformer-CTC candidate."
+  );
+
+  requireEqual(
+    config.artifact?.compiledModel,
+    profile.artifact.compiledModel,
+    "CTC config must declare the canonical compiled-model path."
+  );
+  requireEqual(
+    config.artifact?.manifest,
+    profile.artifact.manifest,
+    "CTC config must declare the canonical model-manifest path."
+  );
+  requireEqual(
+    config.artifact?.vocabMetadata,
+    profile.artifact.vocabMetadata,
+    "CTC config must declare the canonical vocabulary path."
+  );
+  requireEqual(config.artifact?.runtime, "CoreML", "CTC config runtime must be CoreML.");
+  requireEqual(config.artifact?.localOnly, true, "CTC config must be local-only.");
+  requireEqual(
+    config.artifact?.neuralTailOnly,
+    true,
+    "CTC config must remain neural-tail-only."
+  );
+
+  requireEqual(
+    config.export?.sourceCheckpoint,
+    profile.export.sourceCheckpoint,
+    "CTC config must declare the canonical source checkpoint path."
+  );
+  requireEqual(
+    config.export?.intermediateMLPackage,
+    profile.export.intermediateMLPackage,
+    "CTC config must declare the canonical intermediate package path."
+  );
+  requireEqual(
+    config.export?.compiledModel,
+    profile.artifact.compiledModel,
+    "CTC export.compiledModel must match the canonical compiled-model path."
+  );
+  requireEqual(
+    config.export?.manifest,
+    profile.artifact.manifest,
+    "CTC export.manifest must match the canonical model-manifest path."
+  );
+  requireEqual(
+    config.export?.vocabMetadata,
+    profile.artifact.vocabMetadata,
+    "CTC export.vocabMetadata must match the canonical vocabulary path."
+  );
+
+  const architecture = config.architecture;
+  requireEqual(
+    architecture?.family,
+    profile.family,
+    "CTC architecture family must match the executable candidate."
+  );
+  requireEqual(
+    architecture?.runtimeModelContract,
+    profile.runtimeModelContract,
+    "CTC runtimeModelContract must match the native single-model runtime."
+  );
+  requireEqual(
+    architecture?.openVocabulary,
+    true,
+    "CTC config must describe an open-vocabulary model."
+  );
+  requireEqual(
+    architecture?.tokenization,
+    "unicode-scalar-character",
+    "CTC config must use the implemented Unicode-scalar tokenizer."
+  );
+  for (const [field, expected] of Object.entries({
+    modelDimension: profile.modelDimension,
+    attentionHeads: profile.attentionHeads,
+    feedForwardDimension: profile.feedForwardDimension,
+    encoderLayers: profile.encoderLayers,
+    dropout: profile.dropout
+  })) {
+    requireEqual(
+      architecture?.[field],
+      expected,
+      `CTC architecture ${field} must match the implementation contract.`
+    );
+  }
+  if (
+    Number.isInteger(architecture?.modelDimension) &&
+    Number.isInteger(architecture?.attentionHeads) &&
+    architecture.attentionHeads > 0 &&
+    architecture.modelDimension % architecture.attentionHeads !== 0
+  ) {
+    failures.push("CTC modelDimension must divide evenly by attentionHeads.");
+  }
+  requireEqual(
+    architecture?.minimumParameterCount,
+    1_000_000,
+    "CTC minimumParameterCount must be the frozen 1,000,000 lower bound."
+  );
+  requireEqual(
+    architecture?.maximumParameterCount,
+    5_000_000,
+    "CTC maximumParameterCount must be the frozen 5,000,000 upper bound."
+  );
+  requireEqual(
+    architecture?.maximumCompiledBytes,
+    16_777_216,
+    "CTC maximumCompiledBytes must be 16,777,216."
+  );
+
+  const decoder = config.decoder;
+  for (const [field, expected] of Object.entries(profile.decoder)) {
+    requireEqual(
+      decoder?.[field],
+      expected,
+      `CTC decoder ${field} must match the implementation contract.`
+    );
+  }
+  requireIntegerInRange(decoder?.beamWidth, 2, 16, "CTC decoder beamWidth");
+  requireIntegerInRange(
+    decoder?.maxInputGraphemes,
+    1,
+    64,
+    "CTC decoder maxInputGraphemes"
+  );
+  requireIntegerInRange(
+    decoder?.outputTimeSteps,
+    8,
+    48,
+    "CTC decoder outputTimeSteps"
+  );
+  requireIntegerInRange(
+    decoder?.maximumCandidates,
+    1,
+    decoder?.beamWidth,
+    "CTC decoder maximumCandidates"
+  );
+  requireEqual(
+    decoder?.outputSequenceValidation,
+    "devanagari-word-sequence-v1",
+    "CTC decoder must use the native Devanagari output grammar."
+  );
+  requireEqual(
+    decoder?.rejectWhitespaceOutput,
+    true,
+    "CTC decoder must reject whitespace outputs."
+  );
+  requireEqual(
+    decoder?.rejectLatinOutput,
+    true,
+    "CTC decoder must reject Latin outputs."
+  );
+  requireEqual(
+    decoder?.autoCommitEligible,
+    false,
+    "CTC candidates must never be auto-commit eligible."
+  );
+
+  const context = config.context;
+  const rescorer = context?.languageModelRescorer;
+  requireEqual(
+    context?.previousWords,
+    0,
+    "CTC implementation contract v2 must consume zero previous context words."
+  );
+  requireEqual(
+    rescorer?.enabled,
+    false,
+    "CTC implementation contract v2 requires context rescoring to remain disabled."
+  );
+  requireEqual(
+    rescorer?.status,
+    "not-implemented",
+    "CTC context rescorer must truthfully state that it is not implemented."
+  );
+  requireEqual(
+    rescorer?.source,
+    "none",
+    "CTC disabled context rescorer must declare source none."
+  );
+  requireEqual(rescorer?.weight, 0, "CTC disabled context rescorer must have zero weight.");
+  if (
+    context?.previousWords === 0 &&
+    rescorer?.enabled === false &&
+    rescorer?.status === "not-implemented" &&
+    rescorer?.source === "none" &&
+    rescorer?.weight === 0
+  ) {
+    warnings.push("Context language-model rescoring is disabled and not implemented.");
+  }
+
+  requireDeepEqual(
+    config.evaluation,
+    {
+      goldManifest: "data/neural/gold/manifest.v3.json",
+      officialBenchmarkManifest:
+        "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+      officialBenchmarkTrainingUse: "forbidden-evaluation-only"
+    },
+    "CTC evaluation inputs must equal the locked corpora contract."
+  );
+
+  const training = config.training;
+  requireEqual(
+    training?.datasetManifest,
+    "data/generated/neural-open-vocab/manifest.json",
+    "CTC config must use the canonical immutable dataset manifest."
+  );
+  requireEqual(training?.normalization, "NFC", "CTC normalization must be NFC.");
+  requireEqual(
+    training?.splitPolicy,
+    "connected-normalized-input-and-target-with-heldout-precedence",
+    "CTC split policy must keep connected normalized inputs and targets together with held-out precedence."
+  );
+  requireEqual(
+    training?.samplingPolicy?.type,
+    "deterministic-source-stratified-sampling",
+    "CTC sampling policy must use the executable deterministic sampler."
+  );
+  requireEqual(
+    training?.samplingPolicy?.version,
+    2,
+    "CTC sampling policy version must be 2."
+  );
+  requireEqual(
+    training?.samplingPolicy?.sourceQuotaWeight,
+    "square-root-of-source-row-count",
+    "CTC source quota weighting must match the executable sampler."
+  );
+  requireDeepEqual(
+    training?.samplingPolicy?.sourceMultipliers,
+    CTC_SOURCE_MULTIPLIERS,
+    "CTC sourceMultipliers must match the frozen production weighting contract."
+  );
+  requireDeepEqual(
+    training?.samplingPolicy?.pinnedSources,
+    [
+      "manual-ambiguity",
+      "manual-chat-tail",
+      "manual-name",
+      "manual-x-ksha",
+      "runtime-names"
+    ],
+    "CTC pinnedSources must match the frozen tail-preservation contract."
+  );
+  requireDeepEqual(
+    training?.augmentation,
+    CTC_AUGMENTATION,
+    "CTC augmentation must match the collision-safe production alias contract."
+  );
+  requireEqual(training?.loss, "weighted-ctc", "CTC config loss must be weighted-ctc.");
+  requireEqual(
+    training?.lossComputationDevice,
+    "cpu-for-deterministic-backward",
+    "CTC config must use deterministic CPU CTC-loss computation."
+  );
+  requireDeepEqual(
+    training?.optimizer,
+    CTC_OPTIMIZER,
+    "CTC optimizer must match the production AdamW contract."
+  );
+  requireDeepEqual(
+    training?.scheduler,
+    CTC_SCHEDULER,
+    "CTC scheduler must match the production warmup/inverse-square-root contract."
+  );
+  if (!training?.requiredSources?.includes(CANONICAL_PUBLIC_SOURCE)) {
+    failures.push(`CTC config missing required training source ${CANONICAL_PUBLIC_SOURCE}.`);
+  }
+  for (const mirrorSource of BLOCKED_MIRROR_SOURCES) {
+    if (training?.requiredSources?.includes(mirrorSource)) {
+      failures.push(
+        `CTC config must not count blocked lineage mirror ${mirrorSource} as a required training source.`
+      );
+    }
+  }
+  for (const suite of [
+    "protected-token-gold",
+    "non-nepali-pass-through-gold",
+    "adversarial-neural-tail-gold"
+  ]) {
+    if (!training?.admissionSafetyEvaluationSuites?.includes(suite)) {
+      failures.push(`CTC config missing admission safety suite ${suite}.`);
+    }
+  }
+
+  const run = config.trainingRun;
+  requireIntegerInRange(run?.seed, 0, Number.MAX_SAFE_INTEGER, "CTC trainingRun.seed");
+  requireIntegerInRange(
+    run?.maximumTrainRows,
+    1,
+    10_000_000,
+    "CTC trainingRun.maximumTrainRows"
+  );
+  requireIntegerInRange(
+    run?.maximumDevRows,
+    1,
+    1_000_000,
+    "CTC trainingRun.maximumDevRows"
+  );
+  requireIntegerInRange(run?.maximumEpochs, 1, 100, "CTC trainingRun.maximumEpochs");
+  requireIntegerInRange(run?.batchSize, 1, 4096, "CTC trainingRun.batchSize");
+  requireNumberInRange(
+    run?.peakLearningRate,
+    Number.MIN_VALUE,
+    0.1,
+    "CTC trainingRun.peakLearningRate"
+  );
+  requireNumberInRange(
+    run?.gradientClipNorm,
+    Number.MIN_VALUE,
+    100,
+    "CTC trainingRun.gradientClipNorm"
+  );
+  requireEqual(
+    run?.earlyStopping?.enabled,
+    true,
+    "CTC training must enable early stopping."
+  );
+  requireEqual(
+    run?.earlyStopping?.metric,
+    "dev-weighted-ctc-loss",
+    "CTC early-stopping metric must be weighted dev CTC loss."
+  );
+  requireEqual(
+    run?.earlyStopping?.patienceEpochs,
+    4,
+    "CTC early-stopping patience must match the production contract."
+  );
+  requireEqual(
+    run?.earlyStopping?.minimumDelta,
+    0.0001,
+    "CTC early-stopping minimumDelta must match the production contract."
+  );
+  requireEqual(
+    run?.earlyStopping?.restoreBestWeights,
+    true,
+    "CTC early stopping must restore the best weights."
+  );
+  if (
+    Number.isInteger(run?.maximumEpochs) &&
+    Number.isInteger(run?.earlyStopping?.patienceEpochs) &&
+    run.maximumEpochs <= run.earlyStopping.patienceEpochs
+  ) {
+    failures.push(
+      "CTC maximumEpochs must exceed early-stopping patience so the policy can execute."
+    );
+  }
+
+  return Object.freeze({
+    failures: Object.freeze(failures),
+    warnings: Object.freeze(warnings)
+  });
+
+  function requireEqual(actual, expected, message) {
+    if (actual !== expected) failures.push(`${message} Got ${JSON.stringify(actual)}.`);
+  }
+
+  function requireDeepEqual(actual, expected, message) {
+    if (!deepEqual(actual, expected)) {
+      failures.push(`${message} Got ${JSON.stringify(actual)}.`);
+    }
+  }
+
+  function requireIntegerInRange(actual, minimum, maximum, label) {
+    if (
+      !Number.isInteger(actual) ||
+      actual < minimum ||
+      !Number.isInteger(maximum) ||
+      actual > maximum
+    ) {
+      failures.push(
+        `${label} must be an integer in ${minimum}..${maximum}. Got ${JSON.stringify(actual)}.`
+      );
+    }
+  }
+
+  function requireNumberInRange(actual, minimum, maximum, label) {
+    if (
+      typeof actual !== "number" ||
+      !Number.isFinite(actual) ||
+      actual < minimum ||
+      actual > maximum
+    ) {
+      failures.push(
+        `${label} must be a finite number in ${minimum}..${maximum}. Got ${JSON.stringify(actual)}.`
+      );
+    }
+  }
+}
+
 export function inspectTrainingReportBinding({ report, trainingContractSha256, configuredContract }) {
   const issues = [];
   if (!isRecord(report)) {
@@ -584,6 +1115,12 @@ function differingLeafPaths(expected, actual, prefix = "") {
 
 function deepEqual(left, right) {
   if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => deepEqual(value, right[index]));
+  }
   if (!isRecord(left) || !isRecord(right)) return false;
   const leftKeys = Object.keys(left).sort();
   const rightKeys = Object.keys(right).sort();

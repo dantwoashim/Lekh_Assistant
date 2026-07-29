@@ -5,6 +5,9 @@ promotion. The deterministic engine remains the first-line product path. A
 neural model is an optional, local candidate tail and is never a replacement
 for deterministic typing or its safety rules.
 
+Current architecture-specific research:
+[Transformer-CTC and Core ML production review, 2026-07-29](TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md).
+
 ## Product boundary
 
 - no network inference;
@@ -34,7 +37,7 @@ models/macos/LekhNeuralTransliterator.production/
   ...one complete compiled runtime layout...
 ```
 
-Two closed manifest branches are supported:
+Three closed manifest branches are supported:
 
 1. `lekh-open-vocab-seq2seq-v1`
    (`single-seq2seq-v1` after normalization):
@@ -43,10 +46,13 @@ Two closed manifest branches are supported:
    (`split-attention-incremental-v1`):
    `LekhNeuralTransliteratorEncoder.mlmodelc` and
    `LekhNeuralTransliteratorDecoderStep.mlmodelc`.
+3. `lekh-open-vocab-ctc-transformer-v2`
+   (`single-transformer-ctc-v1`):
+   `LekhNeuralTransliterator.mlmodelc`.
 
-The split branch also records its exact tensor I/O contract and its export-only
-`.mlpackage` identities. The packages are provenance artifacts; the app ships
-only compiled runtime models, vocabulary, and manifest.
+The split and Transformer-CTC branches record their exact tensor I/O contracts
+and export-only `.mlpackage` identities. The packages are provenance artifacts;
+the app ships only compiled runtime models, vocabulary, and manifest.
 
 `scripts/lib/neural-artifact-descriptor.mjs` is the single normalization
 boundary. It verifies every source path, byte count, digest, role, canonical
@@ -57,26 +63,32 @@ are deliberately excluded.
 
 The JSON Schema at
 `data/neural/schema/lekh-neural-manifest.schema.json` is closed and
-discriminated. A baseline manifest cannot contain split fields; a split
-manifest must contain exactly `encoder` and `decoderStep`. Both use
-schemaVersion 2 and distinct 32-hex `trainingRunId` and `exportRunId` values.
+discriminated. A baseline manifest cannot contain explicit tensor/runtime
+fields; a split manifest must contain exactly `encoder` and `decoderStep`; a
+Transformer-CTC manifest must contain one fixed-shape model, `inputIds`
+`[1,32]`, and `logits` `[1,32,outputClasses]`. All branches use schemaVersion 2
+and distinct 32-hex `trainingRunId` and `exportRunId` values.
 
 ## Token and decoder contract
 
 - tokenization: `unicode-scalar-character`;
 - output grammar: `devanagari-word-sequence-v1`;
-- decoder: bounded beam search;
-- beam width: 2–8;
-- output tensor length: 32 scalars;
-- maximum decoder steps: 31, reserving the complete final EOS transition;
-- score: accumulated log-softmax;
-- length normalization: score divided by token count including SOS;
+- legacy decoder: bounded autoregressive beam search, width 2–8, with 31
+  decoder steps over a 32-scalar output bound so the complete final EOS
+  transition is reachable;
+- Transformer-CTC decoder: deterministic CTC prefix beam search, width 8, blank
+  class 0 named exactly `<ctc-blank>`, 32 output time steps, and at most four
+  candidates;
+- score: accumulated log-softmax; the legacy decoder applies its locked length
+  normalization, while CTC prefix probabilities merge blank and repeated-label
+  paths before ranking;
 - whitespace, Latin, malformed combining sequences, danda, unreachable EOS,
   and invalid special-token transitions are rejected.
 
-The JavaScript/Python and Swift paths share
-`contracts/neural-decoder/v2/lekh-neural-decoder.v2.json`. Swift validates the
-same scalar grammar before exposing a candidate.
+The legacy JavaScript/Python and Swift paths share
+`contracts/neural-decoder/v2/lekh-neural-decoder.v2.json`. The Transformer-CTC
+Python and Swift decoders have exact state-machine parity tests. Both runtime
+families validate the same scalar grammar before exposing a candidate.
 
 The language-model rescorer is explicitly absent:
 `{"enabled":false,"source":"none","weight":0}`. `contextWindowWords` is 0.
@@ -109,11 +121,14 @@ Training input snapshots bind:
 - training and export run identities.
 
 Canonical publication uses the exact fail-closed toolchain checked by
-`scripts/check-neural-open-vocab-toolchain.py`: Python 3.11, PyTorch 2.7.0,
-NumPy 1.26.4, and Core ML Tools 9.0. A stale virtual environment is not
-accepted, and `requirements/neural-open-vocab.lock` pins the complete runtime
-dependency closure. Final training remains on CPU because seeded PyTorch 2.7
-MPS runs were not bitwise reproducible on the current Apple Silicon host.
+`scripts/check-neural-open-vocab-toolchain.py`: Python 3.11, NumPy 1.26.4,
+Core ML Tools 9.0, PyTorch 2.7.0 on the macOS export host, and
+PyTorch 2.7.0+cu118 on the remote CUDA training host. A stale environment is
+not accepted. `requirements/neural-open-vocab.lock` pins the macOS conversion
+closure and `requirements/neural-open-vocab-cu118.lock` pins the remote
+training closure. Expensive training runs on the pinned CUDA host; the Mac
+performs only checkpoint import, Core ML conversion, exact parity validation,
+and device benchmarking.
 
 Vocabulary construction uses train rows only. Normalized inputs may not cross
 train/dev/test. Candidate artifacts are written only under their immutable

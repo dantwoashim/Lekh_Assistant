@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -16,6 +18,8 @@ from neural_ctc_transformer import (
     ctc_required_time_steps,
     validate_ctc_input_ids,
 )
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class DimensionsTests(unittest.TestCase):
@@ -114,6 +118,29 @@ class CTCDecoderTests(unittest.TestCase):
         )
         self.assertEqual(candidates[0], [1, 2])
         self.assertEqual(len(candidates), len({tuple(value) for value in candidates}))
+
+    def test_prefix_beam_matches_shared_python_swift_cases(self) -> None:
+        fixture_path = (
+            ROOT
+            / "contracts"
+            / "neural-decoder"
+            / "v2"
+            / "lekh-neural-decoder.v2.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(fixture["ctcCases"]), 5)
+        for case in fixture["ctcCases"]:
+            observed = ctc_prefix_beam_search(
+                np.asarray(case["logits"], dtype=np.float64),
+                blank_id=case["blankTokenId"],
+                beam_width=case["beamWidth"],
+                maximum_candidates=case["maximumCandidates"],
+            )
+            self.assertEqual(
+                observed,
+                case["expectedTokenIds"],
+                case["id"],
+            )
 
     def test_prefix_and_termination_guards_are_enforced(self) -> None:
         logits = self.logits([

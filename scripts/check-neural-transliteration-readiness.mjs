@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import Ajv2020 from "ajv/dist/2020.js";
 import {
+  neuralRuntimeContractMetadata,
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
 
@@ -134,9 +135,19 @@ function validateCommonManifest(manifestValue) {
       Number(manifestValue.contextWindowWords) !== 0) {
     failures.push("Runtime must not claim an unimplemented context rescorer.");
   }
-  if (manifestValue.beamSearch?.maxSteps !==
-      manifestValue.beamSearch?.maxOutputGraphemes - 1) {
-    failures.push("Beam search must expose every bounded scalar decoder step.");
+  const runtimeContract = neuralRuntimeContractMetadata(
+    descriptor.runtimeModelContract
+  );
+  const expectedMaxSteps =
+    manifestValue.beamSearch?.maxOutputGraphemes +
+    runtimeContract.decoderStepDelta;
+  if (manifestValue.decoder !== runtimeContract.decoder ||
+      manifestValue.beamSearch?.maxSteps !== expectedMaxSteps) {
+    failures.push(
+      runtimeContract.decoderStepDelta === 0
+        ? "CTC prefix beam search must consume every fixed output time step."
+        : "Beam search must expose every bounded scalar decoder step."
+    );
   }
 }
 

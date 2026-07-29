@@ -25,7 +25,7 @@ const exportReportPath = resolve(
   args.get("export-report") ?? (
     predictionsAbsolutePath
       ? join(dirname(predictionsAbsolutePath), "export-report.json")
-      : "data/generated/neural-open-vocab-model/lekh-open-vocab-seq2seq-v1/export-report.json"
+      : "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2/export-report.json"
   )
 );
 const reportPath = args.get("report") ?? join(root, "reports", production ? "neural-open-vocab-evaluation-production.json" : "neural-open-vocab-evaluation.json");

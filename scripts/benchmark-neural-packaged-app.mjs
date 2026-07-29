@@ -5,30 +5,72 @@ import { homedir, tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import { validateNeuralComputePlanEvidence } from "./lib/neural-compute-plan-evidence.mjs";
+import {
+  resolveNeuralArtifactDescriptor
+} from "./lib/neural-artifact-descriptor.mjs";
+import {
+  resolveNeuralPackagedBenchmarkContract
+} from "./lib/neural-packaged-benchmark-contract.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
 const args = parseArgs(process.argv.slice(2));
+const swiftPackagePath = join(root, "native", "macos-imk", "skeleton");
+const swiftScratchPath = join(tmpdir(), "lekh-neural-packaged-benchmark-swift-build");
+const swiftCachePath = join(tmpdir(), "lekh-neural-swift-package-cache");
 const packageReportPath = join(root, "reports", "macos-imk-dev-package-report.json");
 const defaultBundle = packageReportArtifact() ??
   join(homedir(), "Library", "Caches", "LekhKeyboardBuild", "native", "macos", "Lekh Keyboard.imkdevbundle");
 const appBundle = args.get("app") ?? defaultBundle;
-const outPath = args.get("measurements") ??
-  join(root, "data", "generated", "neural-open-vocab-model", "lekh-open-vocab-seq2seq-v1", "coreml-packaged-app-measurements.json");
+let outPath = args.get("measurements") ??
+  join(root, "data", "generated", "neural-open-vocab-model", "unknown", "coreml-packaged-app-measurements.json");
 const reportPath = args.get("report") ?? join(root, "reports", "neural-packaged-app-coreml-benchmark.json");
 const failures = [];
 const warnings = [];
 
-const modelPath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.mlmodelc");
-const manifestPath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.manifest.json");
-const vocabPath = join(appBundle, "Contents", "Resources", "LekhNeuralTransliterator.vocab.json");
+const resourcesPath = join(appBundle, "Contents", "Resources");
+const manifestPath = join(resourcesPath, "LekhNeuralTransliterator.manifest.json");
+const vocabPath = join(resourcesPath, "LekhNeuralTransliterator.vocab.json");
+let descriptor = null;
+let benchmarkContract = null;
+let modelPath = null;
 
 if (!existsSync(appBundle)) failures.push(`Missing packaged app bundle: ${appBundle}`);
-if (!existsSync(modelPath)) failures.push(`Missing packaged Core ML model: ${modelPath}`);
 if (!existsSync(manifestPath)) failures.push(`Missing packaged neural manifest: ${manifestPath}`);
 if (!existsSync(vocabPath)) failures.push(`Missing packaged neural vocab: ${vocabPath}`);
 
 let measurement = null;
+if (failures.length === 0) {
+  try {
+    descriptor = resolveNeuralArtifactDescriptor({
+      repoRoot: appBundle,
+      manifestPath,
+      vocabPath,
+      artifactDirectory: resourcesPath,
+      verifyExportArtifacts: false
+    });
+    benchmarkContract = resolveNeuralPackagedBenchmarkContract({
+      descriptor,
+      vocabulary: JSON.parse(readFileSync(vocabPath, "utf8"))
+    });
+    modelPath = benchmarkContract.artifact.sourcePath;
+    if (!args.has("measurements")) {
+      outPath = join(
+        root,
+        "data",
+        "generated",
+        "neural-open-vocab-model",
+        benchmarkContract.modelId,
+        "coreml-packaged-app-measurements.json"
+      );
+    }
+  } catch (error) {
+    failures.push(
+      `Packaged neural benchmark contract is invalid: ` +
+      `${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
 if (failures.length === 0) {
   measurement = runSwiftBenchmark();
   if (measurement) {
@@ -57,9 +99,12 @@ if (measurement) {
 
 finish(failures.length === 0 ? "passed-packaged-app-coreml-benchmark" : "failed-packaged-app-coreml-benchmark", failures.length === 0 ? 0 : 1, {
   appBundle: relative(root, appBundle),
-  model: relative(root, modelPath),
+  model: modelPath ? relative(root, modelPath) : null,
   manifest: relative(root, manifestPath),
   vocab: relative(root, vocabPath),
+  modelId: benchmarkContract?.modelId ?? null,
+  runtimeModelContract: benchmarkContract?.runtimeModelContract ?? null,
+  artifactSetSha256: benchmarkContract?.artifactSetSha256 ?? null,
   measurements: measurement ? relative(root, outPath) : null,
   measurement,
   failures,
@@ -69,7 +114,19 @@ finish(failures.length === 0 ? "passed-packaged-app-coreml-benchmark" : "failed-
 function runSwiftBenchmark() {
   const scriptPath = join(tmpdir(), `lekh-packaged-coreml-benchmark-${process.pid}.swift`);
   writeFileSync(scriptPath, swiftBenchmarkSource(), "utf8");
-  const result = spawnSync("swift", [scriptPath, modelPath], {
+  const result = spawnSync("swift", [
+    scriptPath,
+    modelPath,
+    benchmarkContract.runtimeModelContract,
+    String(benchmarkContract.inputLength),
+    String(benchmarkContract.outputSteps),
+    String(benchmarkContract.outputVocabularySize),
+    String(benchmarkContract.probeInputId),
+    String(benchmarkContract.probeDecoderInputId ?? -1),
+    benchmarkContract.modelId,
+    benchmarkContract.artifactSetSha256,
+    benchmarkContract.measurementKind
+  ], {
     cwd: root,
     encoding: "utf8",
     stdio: "pipe",
@@ -88,13 +145,15 @@ function runSwiftBenchmark() {
 }
 
 function runComputePlanProbe() {
-  const packagePath = join(root, "native", "macos-imk", "skeleton");
   const result = spawnSync(
     "swift",
     [
       "run",
+      "--disable-sandbox",
       "--configuration", "release",
-      "--package-path", packagePath,
+      "--package-path", swiftPackagePath,
+      "--scratch-path", swiftScratchPath,
+      "--cache-path", swiftCachePath,
       "LekhNeuralComputePlanProbe",
       modelPath
     ],
@@ -123,17 +182,100 @@ import CoreML
 import Foundation
 
 let modelPath = CommandLine.arguments[1]
+let runtimeModelContract = CommandLine.arguments[2]
+guard let inputLength = Int(CommandLine.arguments[3]),
+      let outputSteps = Int(CommandLine.arguments[4]),
+      let outputVocabularySize = Int(CommandLine.arguments[5]),
+      let probeInputId = Int(CommandLine.arguments[6]),
+      let probeDecoderInputId = Int(CommandLine.arguments[7]) else {
+  throw NSError(
+    domain: "LekhPackagedCoreMLBenchmark",
+    code: 1,
+    userInfo: [NSLocalizedDescriptionKey: "Invalid benchmark tensor arguments."]
+  )
+}
+let modelId = CommandLine.arguments[8]
+let artifactSetSha256 = CommandLine.arguments[9]
+let measurementKind = CommandLine.arguments[10]
 let configuration = MLModelConfiguration()
 configuration.computeUnits = .all
 let model = try MLModel(contentsOf: URL(fileURLWithPath: modelPath), configuration: configuration)
-let inputIds = try MLMultiArray(shape: [1, 32], dataType: .int32)
-let decoderIds = try MLMultiArray(shape: [1, 31], dataType: .int32)
-for index in 0..<inputIds.count { inputIds[index] = 1 }
-for index in 0..<decoderIds.count { decoderIds[index] = 1 }
-let provider = try MLDictionaryFeatureProvider(dictionary: [
-  "inputIds": MLFeatureValue(multiArray: inputIds),
-  "decoderInputIds": MLFeatureValue(multiArray: decoderIds)
-])
+let inputIds = try MLMultiArray(
+  shape: [1, NSNumber(value: inputLength)],
+  dataType: .int32
+)
+for index in 0..<inputIds.count {
+  inputIds[index] = NSNumber(value: probeInputId)
+}
+var features: [String: MLFeatureValue] = [
+  "inputIds": MLFeatureValue(multiArray: inputIds)
+]
+let expectedInputNames: Set<String>
+if runtimeModelContract == "single-seq2seq-v1" {
+  let decoderIds = try MLMultiArray(
+    shape: [1, NSNumber(value: outputSteps)],
+    dataType: .int32
+  )
+  for index in 0..<decoderIds.count {
+    decoderIds[index] = NSNumber(value: probeDecoderInputId)
+  }
+  features["decoderInputIds"] = MLFeatureValue(multiArray: decoderIds)
+  expectedInputNames = Set(["inputIds", "decoderInputIds"])
+} else if runtimeModelContract == "single-transformer-ctc-v1" {
+  expectedInputNames = Set(["inputIds"])
+} else {
+  throw NSError(
+    domain: "LekhPackagedCoreMLBenchmark",
+    code: 2,
+    userInfo: [
+      NSLocalizedDescriptionKey:
+        "Unsupported packaged benchmark runtime contract \(runtimeModelContract)."
+    ]
+  )
+}
+func validMultiArrayFeature(
+  _ feature: MLFeatureDescription?,
+  shape: [Int],
+  dataType: MLMultiArrayDataType
+) -> Bool {
+  guard let feature,
+        feature.type == .multiArray,
+        !feature.isOptional,
+        let constraint = feature.multiArrayConstraint else {
+    return false
+  }
+  return constraint.dataType == dataType &&
+    constraint.shape.map { $0.intValue } == shape
+}
+let description = model.modelDescription
+guard Set(description.inputDescriptionsByName.keys) == expectedInputNames,
+      Set(description.outputDescriptionsByName.keys) == Set(["logits"]),
+      validMultiArrayFeature(
+        description.inputDescriptionsByName["inputIds"],
+        shape: [1, inputLength],
+        dataType: .int32
+      ),
+      validMultiArrayFeature(
+        description.outputDescriptionsByName["logits"],
+        shape: [1, outputSteps, outputVocabularySize],
+        dataType: .float16
+      ),
+      runtimeModelContract != "single-seq2seq-v1" ||
+        validMultiArrayFeature(
+          description.inputDescriptionsByName["decoderInputIds"],
+          shape: [1, outputSteps],
+          dataType: .int32
+        ) else {
+  throw NSError(
+    domain: "LekhPackagedCoreMLBenchmark",
+    code: 3,
+    userInfo: [
+      NSLocalizedDescriptionKey:
+        "Compiled Core ML model does not match the selected runtime tensor contract."
+    ]
+  )
+}
+let provider = try MLDictionaryFeatureProvider(dictionary: features)
 for _ in 0..<10 {
   _ = try model.prediction(from: provider)
 }
@@ -164,6 +306,11 @@ let payload: [String: Any] = [
   "architecture": architecture,
   "packagedApp": true,
   "configurationComputeUnits": "all",
+  "modelId": modelId,
+  "runtimeModelContract": runtimeModelContract,
+  "artifactSetSha256": artifactSetSha256,
+  "measurementKind": measurementKind,
+  "coreMLPredictionCount": durations.count,
   "secureFieldInferenceCount": 0,
   "p50Ms": percentile(0.50),
   "p95Ms": percentile(0.95),

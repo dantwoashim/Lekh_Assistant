@@ -4,6 +4,12 @@ Date: 2026-07-28
 
 Status: applied to the active neural production program
 
+Update, 2026-07-29: the active candidate is now the fixed-shape
+Transformer-CTC branch. The split-attention findings below remain applicable
+to that retained compatibility branch, while the current candidate decision is
+recorded in
+[Transformer-CTC and Core ML Production Review](TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md).
+
 ## Decision summary
 
 The active candidate design remains technically sound:

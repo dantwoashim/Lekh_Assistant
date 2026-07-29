@@ -46,17 +46,28 @@
     "selectedArtifact": {
       "enum": [
         "lekh-open-vocab-seq2seq-v1",
-        "lekh-open-vocab-bigru-attention-v1"
+        "lekh-open-vocab-bigru-attention-v1",
+        "lekh-open-vocab-ctc-transformer-v2"
       ]
     },
     "runtime": {
       "const": "CoreML"
     },
     "runtimeModelContract": {
-      "const": "split-attention-incremental-v1"
+      "enum": [
+        "split-attention-incremental-v1",
+        "single-transformer-ctc-v1"
+      ]
     },
     "tensorContract": {
-      "$ref": "#/$defs/tensorContract"
+      "oneOf": [
+        {
+          "$ref": "#/$defs/tensorContract"
+        },
+        {
+          "$ref": "#/$defs/ctcTensorContract"
+        }
+      ]
     },
     "compiledModels": {
       "$ref": "#/$defs/compiledModels"
@@ -84,7 +95,10 @@
       "const": "devanagari-word-sequence-v1"
     },
     "decoder": {
-      "const": "beam-search"
+      "enum": [
+        "beam-search",
+        "ctc-prefix-beam-search"
+      ]
     },
     "beamSearch": {
       "type": "object",
@@ -103,7 +117,7 @@
           "const": 32
         },
         "maxSteps": {
-          "const": 31
+          "enum": [31, 32]
         }
       }
     },
@@ -369,6 +383,17 @@
         "architecture": {
           "const": "gru-encoder-decoder-seq2seq"
         },
+        "decoder": {
+          "const": "beam-search"
+        },
+        "beamSearch": {
+          "type": "object",
+          "properties": {
+            "maxSteps": {
+              "const": 31
+            }
+          }
+        },
         "runtimeModelContract": false,
         "tensorContract": false,
         "compiledModels": false,
@@ -394,8 +419,61 @@
         "runtimeModelContract": {
           "const": "split-attention-incremental-v1"
         },
+        "tensorContract": {
+          "$ref": "#/$defs/tensorContract"
+        },
+        "decoder": {
+          "const": "beam-search"
+        },
+        "beamSearch": {
+          "type": "object",
+          "properties": {
+            "maxSteps": {
+              "const": 31
+            }
+          }
+        },
         "sha256": {
           "$ref": "#/$defs/splitHashes"
+        }
+      }
+    },
+    {
+      "title": "Single-model fixed-shape Transformer CTC",
+      "required": [
+        "runtimeModelContract",
+        "tensorContract"
+      ],
+      "properties": {
+        "selectedArtifact": {
+          "const": "lekh-open-vocab-ctc-transformer-v2"
+        },
+        "architecture": {
+          "const": "fixed-shape-transformer-ctc"
+        },
+        "runtimeModelContract": {
+          "const": "single-transformer-ctc-v1"
+        },
+        "tensorContract": {
+          "$ref": "#/$defs/ctcTensorContract"
+        },
+        "compiledModels": false,
+        "decoder": {
+          "const": "ctc-prefix-beam-search"
+        },
+        "beamSearch": {
+          "type": "object",
+          "properties": {
+            "beamWidth": {
+              "const": 8
+            },
+            "maxSteps": {
+              "const": 32
+            }
+          }
+        },
+        "sha256": {
+          "$ref": "#/$defs/baselineHashes"
         }
       }
     }
@@ -681,6 +759,66 @@
                   "$ref": "#/$defs/tensor"
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    "ctcTensorContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputIds", "logits"],
+      "properties": {
+        "inputIds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["shape", "dataType"],
+          "properties": {
+            "shape": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": 1
+                },
+                {
+                  "const": 32
+                }
+              ],
+              "items": false
+            },
+            "dataType": {
+              "const": "INT32"
+            }
+          }
+        },
+        "logits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["shape", "dataType"],
+          "properties": {
+            "shape": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "prefixItems": [
+                {
+                  "const": 1
+                },
+                {
+                  "const": 32
+                },
+                {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 1048576
+                }
+              ],
+              "items": false
+            },
+            "dataType": {
+              "const": "FLOAT16"
             }
           }
         }

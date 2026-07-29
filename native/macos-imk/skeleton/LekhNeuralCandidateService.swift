@@ -2,6 +2,21 @@ import CoreML
 import CryptoKit
 import Foundation
 
+private func finiteMultiArrayValue(
+  _ array: MLMultiArray,
+  indices: [Int]
+) -> Double? {
+  let shape = array.shape.map(\.intValue)
+  guard indices.count == shape.count,
+        zip(indices, shape).allSatisfy({
+          $0.0 >= 0 && $0.0 < $0.1
+        }) else {
+    return nil
+  }
+  let value = array[indices.map { NSNumber(value: $0) }].doubleValue
+  return value.isFinite ? value : nil
+}
+
 /// Pure, model-independent admission policy for the optional neural tail.
 ///
 /// The deterministic engine owns exact shared tokens. Neural input must also
@@ -10,6 +25,7 @@ import Foundation
 /// than an unknown-token-ratio threshold and prevents the model from guessing
 /// from a lossy `<unk>`-heavy encoding.
 public struct LekhNeuralInputAdmissionPolicy {
+  private static let minimumTokenLength = 3
   private let maxLength: Int
   private let representableTokens: Set<String>
   private let deterministicTokenInputs: Set<String>
@@ -26,8 +42,9 @@ public struct LekhNeuralInputAdmissionPolicy {
 
   public func accepts(_ normalizedInput: String) -> Bool {
     let inputTokens = Array(normalizedInput).map(String.init)
-    guard !inputTokens.isEmpty,
+    guard inputTokens.count >= Self.minimumTokenLength,
           inputTokens.count < maxLength,
+          !LekhMixedScriptPolicy.isProtectedToken(normalizedInput),
           !deterministicTokenInputs.contains(normalizedInput) else {
       return false
     }
@@ -406,8 +423,300 @@ public enum LekhNeuralBeamSearch {
   }
 }
 
+public enum LekhNeuralCTCPrefixBeamSearchFailure: Error, Equatable {
+  case cancelled
+  case invalidConfiguration
+  case inconsistentLogitShape
+  case nonFiniteLogit
+}
+
+/// Deterministic log-domain CTC prefix beam search.
+///
+/// This is a direct native implementation of the training-side decoder:
+/// blank and non-blank path probabilities remain separate, repeated labels
+/// extend a prefix only after a blank, and score ties are resolved by lexical
+/// token-id order. Keeping this algorithm model-independent makes the exact
+/// Python/Swift contract testable without loading Core ML.
+public enum LekhNeuralCTCPrefixBeamSearch {
+  private struct ProbabilityPair {
+    var blank: Double
+    var nonBlank: Double
+  }
+
+  public static func rank(
+    logits: [[Double]],
+    blankTokenId: Int,
+    beamWidth: Int,
+    maximumCandidates: Int,
+    shouldCancel: () -> Bool = { false },
+    permitsToken: (_ prefixTokenIds: [Int], _ tokenId: Int) -> Bool = { _, _ in true },
+    permitsSequence: (_ tokenIds: [Int]) -> Bool = { _ in true }
+  ) throws -> [[Int]] {
+    guard (1...48).contains(logits.count),
+          let vocabularySize = logits.first?.count,
+          (2...4_096).contains(vocabularySize),
+          logits.allSatisfy({ $0.count == vocabularySize }),
+          (0..<vocabularySize).contains(blankTokenId),
+          (1...64).contains(beamWidth),
+          (1...64).contains(maximumCandidates) else {
+      throw LekhNeuralCTCPrefixBeamSearchFailure.invalidConfiguration
+    }
+    guard logits.flatMap({ $0 }).allSatisfy(\.isFinite) else {
+      throw LekhNeuralCTCPrefixBeamSearchFailure.nonFiniteLogit
+    }
+
+    var beams: [(prefix: [Int], probability: ProbabilityPair)] = [
+      (
+        prefix: [],
+        probability: ProbabilityPair(blank: 0, nonBlank: -.infinity)
+      )
+    ]
+
+    for row in logits {
+      guard !shouldCancel() else {
+        throw LekhNeuralCTCPrefixBeamSearchFailure.cancelled
+      }
+      let logProbabilities = logSoftmax(row)
+      guard logProbabilities.count == vocabularySize else {
+        throw LekhNeuralCTCPrefixBeamSearchFailure.inconsistentLogitShape
+      }
+      var next: [[Int]: ProbabilityPair] = [:]
+
+      func update(
+        _ prefix: [Int],
+        blank: Double = -.infinity,
+        nonBlank: Double = -.infinity
+      ) {
+        let previous = next[prefix] ?? ProbabilityPair(
+          blank: -.infinity,
+          nonBlank: -.infinity
+        )
+        next[prefix] = ProbabilityPair(
+          blank: logAdd(previous.blank, blank),
+          nonBlank: logAdd(previous.nonBlank, nonBlank)
+        )
+      }
+
+      for beam in beams {
+        guard !shouldCancel() else {
+          throw LekhNeuralCTCPrefixBeamSearchFailure.cancelled
+        }
+        let prefix = beam.prefix
+        let probability = beam.probability
+        let total = logAdd(probability.blank, probability.nonBlank)
+        update(
+          prefix,
+          blank: total + logProbabilities[blankTokenId]
+        )
+
+        for tokenId in 0..<vocabularySize where tokenId != blankTokenId {
+          let tokenProbability = logProbabilities[tokenId]
+          if prefix.last == tokenId {
+            update(
+              prefix,
+              nonBlank: probability.nonBlank + tokenProbability
+            )
+            if permitsToken(prefix, tokenId) {
+              update(
+                prefix + [tokenId],
+                nonBlank: probability.blank + tokenProbability
+              )
+            }
+          } else if permitsToken(prefix, tokenId) {
+            update(
+              prefix + [tokenId],
+              nonBlank: total + tokenProbability
+            )
+          }
+        }
+      }
+
+      beams = next
+        .sorted(by: ranksBefore)
+        .prefix(beamWidth)
+        .map { (prefix: $0.key, probability: $0.value) }
+    }
+
+    guard !shouldCancel() else {
+      throw LekhNeuralCTCPrefixBeamSearchFailure.cancelled
+    }
+    return beams
+      .map {
+        (
+          prefix: $0.prefix,
+          score: logAdd($0.probability.blank, $0.probability.nonBlank)
+        )
+      }
+      .filter { !$0.prefix.isEmpty && permitsSequence($0.prefix) }
+      .sorted {
+        if $0.score != $1.score { return $0.score > $1.score }
+        return $0.prefix.lexicographicallyPrecedes($1.prefix)
+      }
+      .prefix(maximumCandidates)
+      .map(\.prefix)
+  }
+
+  private static func ranksBefore(
+    _ left: Dictionary<[Int], ProbabilityPair>.Element,
+    _ right: Dictionary<[Int], ProbabilityPair>.Element
+  ) -> Bool {
+    let leftScore = logAdd(left.value.blank, left.value.nonBlank)
+    let rightScore = logAdd(right.value.blank, right.value.nonBlank)
+    if leftScore != rightScore { return leftScore > rightScore }
+    return left.key.lexicographicallyPrecedes(right.key)
+  }
+
+  private static func logSoftmax(_ logits: [Double]) -> [Double] {
+    guard let maximum = logits.max() else { return [] }
+    let exponentialSum = logits.reduce(0) {
+      $0 + Foundation.exp($1 - maximum)
+    }
+    guard exponentialSum.isFinite, exponentialSum > 0 else {
+      return Array(repeating: -.infinity, count: logits.count)
+    }
+    let normalizer = maximum + Foundation.log(exponentialSum)
+    return logits.map { $0 - normalizer }
+  }
+
+  private static func logAdd(_ left: Double, _ right: Double) -> Double {
+    if left == -.infinity { return right }
+    if right == -.infinity { return left }
+    let maximum = max(left, right)
+    return maximum + Foundation.log1p(
+      Foundation.exp(min(left, right) - maximum)
+    )
+  }
+}
+
 public protocol LekhNeuralModelPredicting: AnyObject {
   func prediction(from input: MLFeatureProvider) throws -> MLFeatureProvider
+}
+
+public struct LekhNeuralCTCContract: Equatable {
+  public let maxInputLength: Int
+  public let outputTimeSteps: Int
+  public let vocabularySize: Int
+  public let blankTokenId: Int
+  public let beamWidth: Int
+  public let maximumCandidates: Int
+
+  public init(
+    maxInputLength: Int,
+    outputTimeSteps: Int,
+    vocabularySize: Int,
+    blankTokenId: Int,
+    beamWidth: Int,
+    maximumCandidates: Int
+  ) {
+    self.maxInputLength = maxInputLength
+    self.outputTimeSteps = outputTimeSteps
+    self.vocabularySize = vocabularySize
+    self.blankTokenId = blankTokenId
+    self.beamWidth = beamWidth
+    self.maximumCandidates = maximumCandidates
+  }
+
+  fileprivate var isValid: Bool {
+    (4...128).contains(maxInputLength) &&
+      (8...48).contains(outputTimeSteps) &&
+      (2...4_096).contains(vocabularySize) &&
+      (0..<vocabularySize).contains(blankTokenId) &&
+      (1...64).contains(beamWidth) &&
+      (1...beamWidth).contains(maximumCandidates)
+  }
+}
+
+public enum LekhNeuralCTCRuntimeFailure: Error, Equatable {
+  case cancelled
+  case invalidConfiguration
+  case inputInvalid
+  case modelOutputInvalid
+}
+
+/// One-shot fixed-shape Transformer CTC inference. Core ML runs exactly once;
+/// only the small prefix-beam decoder remains on CPU.
+public enum LekhNeuralCTCRuntime {
+  public static func rank(
+    model: any LekhNeuralModelPredicting,
+    contract: LekhNeuralCTCContract,
+    inputIds: MLMultiArray,
+    shouldCancel: () -> Bool = { false },
+    permitsToken: (_ prefixTokenIds: [Int], _ tokenId: Int) -> Bool = { _, _ in true },
+    permitsSequence: (_ tokenIds: [Int]) -> Bool = { _ in true }
+  ) throws -> [[Int]] {
+    guard contract.isValid else {
+      throw LekhNeuralCTCRuntimeFailure.invalidConfiguration
+    }
+    guard validArray(
+      inputIds,
+      shape: [1, contract.maxInputLength],
+      dataType: .int32
+    ) else {
+      throw LekhNeuralCTCRuntimeFailure.inputInvalid
+    }
+    guard !shouldCancel() else {
+      throw LekhNeuralCTCRuntimeFailure.cancelled
+    }
+    let provider = try MLDictionaryFeatureProvider(dictionary: [
+      "inputIds": MLFeatureValue(multiArray: inputIds)
+    ])
+    let prediction = try model.prediction(from: provider)
+    guard !shouldCancel() else {
+      throw LekhNeuralCTCRuntimeFailure.cancelled
+    }
+    guard Set(prediction.featureNames) == Set(["logits"]),
+          let logits = prediction.featureValue(for: "logits")?.multiArrayValue,
+          validArray(
+            logits,
+            shape: [
+              1,
+              contract.outputTimeSteps,
+              contract.vocabularySize
+            ],
+            dataType: .float16
+          ) else {
+      throw LekhNeuralCTCRuntimeFailure.modelOutputInvalid
+    }
+    var rows: [[Double]] = []
+    rows.reserveCapacity(contract.outputTimeSteps)
+    for timeStep in 0..<contract.outputTimeSteps {
+      var row: [Double] = []
+      row.reserveCapacity(contract.vocabularySize)
+      for tokenId in 0..<contract.vocabularySize {
+        guard let value = finiteMultiArrayValue(
+          logits,
+          indices: [0, timeStep, tokenId]
+        ) else {
+          throw LekhNeuralCTCRuntimeFailure.modelOutputInvalid
+        }
+        row.append(value)
+      }
+      rows.append(row)
+    }
+    do {
+      return try LekhNeuralCTCPrefixBeamSearch.rank(
+        logits: rows,
+        blankTokenId: contract.blankTokenId,
+        beamWidth: contract.beamWidth,
+        maximumCandidates: contract.maximumCandidates,
+        shouldCancel: shouldCancel,
+        permitsToken: permitsToken,
+        permitsSequence: permitsSequence
+      )
+    } catch LekhNeuralCTCPrefixBeamSearchFailure.cancelled {
+      throw LekhNeuralCTCRuntimeFailure.cancelled
+    } catch {
+      throw LekhNeuralCTCRuntimeFailure.modelOutputInvalid
+    }
+  }
+
+  private static func validArray(
+    _ array: MLMultiArray,
+    shape: [Int],
+    dataType: MLMultiArrayDataType
+  ) -> Bool {
+    array.dataType == dataType && array.shape.map(\.intValue) == shape
+  }
 }
 
 public struct LekhNeuralSplitAttentionModels {
@@ -832,6 +1141,35 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     }
   }
 
+  /// Pure closed-shape parser seam for the single-model Transformer CTC
+  /// contract. Native probes use this before any compiled model is opened.
+  public static func validatesCTCManifestContract(
+    manifestData: Data,
+    vocabData: Data
+  ) -> Bool {
+    do {
+      try validateResourceJSONShape(
+        manifestData: manifestData,
+        vocabData: vocabData
+      )
+      let manifest = try JSONDecoder().decode(
+        LekhNeuralManifest.self,
+        from: manifestData
+      )
+      let vocab = try JSONDecoder().decode(
+        LekhNeuralVocabMetadata.self,
+        from: vocabData
+      )
+      guard manifest.runtimeModelContract == "single-transformer-ctc-v1" else {
+        return false
+      }
+      try validateArtifactContract(manifest: manifest, vocab: vocab)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   public init(bundle: Bundle = .main) {
     // Controller construction and the first deterministic keystroke must not
     // hash resources, instantiate Core ML, or build neural indexes. While this
@@ -881,8 +1219,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     guard let runtime = inferenceSnapshot(),
           LekhMixedScriptPolicy.preserveCandidate(for: rawInput) == nil,
           Self.isSafeToken(normalized),
-          runtime.inputAdmissionPolicy.accepts(normalized),
-          normalized.count >= 3 else {
+          runtime.inputAdmissionPolicy.accepts(normalized) else {
       completion([])
       return
     }
@@ -977,7 +1314,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     runtimeStateLock.lock()
     modelRuntime = verifiedArtifact?.modelRuntime
     vocab = verifiedArtifact?.vocab
-    inputAdmissionPolicy = verifiedArtifact.map { artifact in
+    inputAdmissionPolicy = verifiedArtifact.flatMap { artifact in
       Self.makeInputAdmissionPolicy(
         vocab: artifact.vocab,
         deterministicTokenInputs: deterministicInputs
@@ -1044,6 +1381,14 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
         input: input,
         shouldCancel: shouldCancel
       )
+    case .ctc(let model, let contract):
+      return try predictCTCCandidates(
+        model: model,
+        contract: contract,
+        vocab: vocab,
+        input: input,
+        shouldCancel: shouldCancel
+      )
     }
   }
 
@@ -1054,21 +1399,38 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     shouldCancel: () -> Bool
   ) throws -> [String] {
     let inputIds = try encodedInput(input, vocab: vocab)
-    let maxSteps = decoderMaximumSteps(input: input, vocab: vocab)
+    let outputContract = try legacyOutputContract(vocab)
+    let maxSteps = decoderMaximumSteps(
+      input: input,
+      vocab: vocab,
+      outputContract: outputContract
+    )
     let beamWidth = vocab.decoder.beamWidth
     let hypotheses = try LekhNeuralBeamSearch.rank(
       vocabularySize: vocab.output.tokensById.count,
-      sosTokenId: vocab.output.sosId,
-      eosTokenId: vocab.output.eosId,
-      invalidTokenIds: [vocab.output.padId, vocab.output.unkId, vocab.output.sosId],
+      sosTokenId: outputContract.sosTokenId,
+      eosTokenId: outputContract.eosTokenId,
+      invalidTokenIds: [
+        outputContract.padTokenId,
+        outputContract.unkTokenId,
+        outputContract.sosTokenId
+      ],
       beamWidth: beamWidth,
       maxSteps: maxSteps,
       shouldCancel: shouldCancel,
       permitsToken: { prefix, tokenId in
-        outputTokenPermitted(prefix: prefix, tokenId: tokenId, vocab: vocab)
+        outputTokenPermitted(
+          prefix: prefix,
+          tokenId: tokenId,
+          vocab: vocab,
+          outputContract: outputContract
+        )
       }
     ) { prefixTokenIds, step in
-        let decoderIds = try encodedDecoder(prefixTokenIds, vocab: vocab)
+        let decoderIds = try encodedDecoder(
+          prefixTokenIds,
+          outputContract: outputContract
+        )
         let provider = try MLDictionaryFeatureProvider(dictionary: [
           "inputIds": MLFeatureValue(multiArray: inputIds),
           "decoderInputIds": MLFeatureValue(multiArray: decoderIds)
@@ -1088,7 +1450,11 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     guard !shouldCancel() else { return [] }
     var output: [String] = []
     for hypothesis in hypotheses {
-      let candidate = decode(ids: hypothesis.tokenIds, vocab: vocab)
+      let candidate = decodeLegacy(
+        ids: hypothesis.tokenIds,
+        vocab: vocab,
+        outputContract: outputContract
+      )
       guard isSafeCandidate(candidate),
             !output.contains(candidate) else { continue }
       output.append(candidate)
@@ -1105,25 +1471,43 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     shouldCancel: () -> Bool
   ) throws -> [String] {
     let inputIds = try encodedInput(input, vocab: vocab)
-    let maxSteps = decoderMaximumSteps(input: input, vocab: vocab)
+    let outputContract = try legacyOutputContract(vocab)
+    let maxSteps = decoderMaximumSteps(
+      input: input,
+      vocab: vocab,
+      outputContract: outputContract
+    )
     let hypotheses = try LekhNeuralSplitAttentionRuntime.rank(
       models: models,
       contract: contract,
       inputIds: inputIds,
-      padTokenId: vocab.output.padId,
-      sosTokenId: vocab.output.sosId,
-      eosTokenId: vocab.output.eosId,
-      invalidTokenIds: [vocab.output.padId, vocab.output.unkId, vocab.output.sosId],
+      padTokenId: outputContract.padTokenId,
+      sosTokenId: outputContract.sosTokenId,
+      eosTokenId: outputContract.eosTokenId,
+      invalidTokenIds: [
+        outputContract.padTokenId,
+        outputContract.unkTokenId,
+        outputContract.sosTokenId
+      ],
       maxSteps: maxSteps,
       shouldCancel: shouldCancel,
       permitsToken: { prefix, tokenId in
-        outputTokenPermitted(prefix: prefix, tokenId: tokenId, vocab: vocab)
+        outputTokenPermitted(
+          prefix: prefix,
+          tokenId: tokenId,
+          vocab: vocab,
+          outputContract: outputContract
+        )
       }
     )
     guard !shouldCancel() else { return [] }
     var output: [String] = []
     for hypothesis in hypotheses {
-      let candidate = decode(ids: hypothesis.tokenIds, vocab: vocab)
+      let candidate = decodeLegacy(
+        ids: hypothesis.tokenIds,
+        vocab: vocab,
+        outputContract: outputContract
+      )
       guard isSafeCandidate(candidate), !output.contains(candidate) else { continue }
       output.append(candidate)
       if output.count >= contract.beamWidth { break }
@@ -1131,35 +1515,137 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     return output
   }
 
+  private static func inputVocabularyContract(
+    _ vocab: LekhNeuralVocabMetadata
+  ) throws -> LekhInputVocabularyContract {
+    guard let maxLength = vocab.input.maxLength,
+          let padTokenId = vocab.input.padId,
+          let eosTokenId = vocab.input.eosId,
+          let unkTokenId = vocab.input.unkId else {
+      throw LekhNeuralInferenceFailure.modelOutputInvalid
+    }
+    return LekhInputVocabularyContract(
+      maxLength: maxLength,
+      padTokenId: padTokenId,
+      eosTokenId: eosTokenId,
+      unkTokenId: unkTokenId
+    )
+  }
+
+  private static func legacyOutputContract(
+    _ vocab: LekhNeuralVocabMetadata
+  ) throws -> LekhLegacyOutputVocabularyContract {
+    guard let maxLength = vocab.output.maxLength,
+          let padTokenId = vocab.output.padId,
+          let sosTokenId = vocab.output.sosId,
+          let eosTokenId = vocab.output.eosId,
+          let unkTokenId = vocab.output.unkId else {
+      throw LekhNeuralInferenceFailure.modelOutputInvalid
+    }
+    return LekhLegacyOutputVocabularyContract(
+      maxLength: maxLength,
+      padTokenId: padTokenId,
+      sosTokenId: sosTokenId,
+      eosTokenId: eosTokenId,
+      unkTokenId: unkTokenId
+    )
+  }
+
+  private static func predictCTCCandidates(
+    model: any LekhNeuralModelPredicting,
+    contract: LekhNeuralCTCContract,
+    vocab: LekhNeuralVocabMetadata,
+    input: String,
+    shouldCancel: () -> Bool
+  ) throws -> [String] {
+    let inputIds = try encodedInput(input, vocab: vocab)
+    let tokenSequences = try LekhNeuralCTCRuntime.rank(
+      model: model,
+      contract: contract,
+      inputIds: inputIds,
+      shouldCancel: shouldCancel,
+      permitsToken: { prefix, tokenId in
+        guard tokenId != contract.blankTokenId,
+              vocab.output.tokensById.indices.contains(tokenId) else {
+          return false
+        }
+        let prefixText = decodeCTC(
+          ids: prefix,
+          tokensById: vocab.output.tokensById,
+          blankTokenId: contract.blankTokenId
+        )
+        let token = vocab.output.tokensById[tokenId]
+        return LekhDevanagariOutputSequence.isSupportedScalarToken(token) &&
+          LekhDevanagariOutputSequence.analyze(prefixText + token).validPrefix
+      },
+      permitsSequence: { tokenIds in
+        LekhDevanagariOutputSequence.analyze(
+          decodeCTC(
+            ids: tokenIds,
+            tokensById: vocab.output.tokensById,
+            blankTokenId: contract.blankTokenId
+          )
+        ).terminable
+      }
+    )
+    guard !shouldCancel() else { return [] }
+    var output: [String] = []
+    for tokenIds in tokenSequences {
+      let candidate = decodeCTC(
+        ids: tokenIds,
+        tokensById: vocab.output.tokensById,
+        blankTokenId: contract.blankTokenId
+      )
+      guard isSafeCandidate(candidate), !output.contains(candidate) else {
+        continue
+      }
+      output.append(candidate)
+      if output.count >= contract.maximumCandidates { break }
+    }
+    return output
+  }
+
   private static func encodedInput(_ input: String, vocab: LekhNeuralVocabMetadata) throws -> MLMultiArray {
+    let inputContract = try inputVocabularyContract(vocab)
     let chars = Array(input).map(String.init)
-    guard chars.count < vocab.input.maxLength,
+    guard chars.count < inputContract.maxLength,
           chars.allSatisfy({ character in
             guard let tokenId = vocab.input.idsByToken[character] else { return false }
-            return tokenId != vocab.input.unkId
+            return tokenId != inputContract.unkTokenId
           }) else {
       throw LekhNeuralInferenceFailure.inputNotRepresentable
     }
-    let array = try MLMultiArray(shape: [1, NSNumber(value: vocab.input.maxLength)], dataType: .int32)
-    for index in 0..<vocab.input.maxLength {
+    let array = try MLMultiArray(
+      shape: [1, NSNumber(value: inputContract.maxLength)],
+      dataType: .int32
+    )
+    for index in 0..<inputContract.maxLength {
       let value: Int
       if index < chars.count {
-        value = vocab.input.idsByToken[chars[index]] ?? vocab.input.unkId
+        value = vocab.input.idsByToken[chars[index]]
+          ?? inputContract.unkTokenId
       } else if index == chars.count {
-        value = vocab.input.eosId
+        value = inputContract.eosTokenId
       } else {
-        value = vocab.input.padId
+        value = inputContract.padTokenId
       }
       array[index] = NSNumber(value: value)
     }
     return array
   }
 
-  private static func encodedDecoder(_ ids: [Int], vocab: LekhNeuralVocabMetadata) throws -> MLMultiArray {
-    let decoderLength = max(1, vocab.output.maxLength - 1)
+  private static func encodedDecoder(
+    _ ids: [Int],
+    outputContract: LekhLegacyOutputVocabularyContract
+  ) throws -> MLMultiArray {
+    let decoderLength = max(1, outputContract.maxLength - 1)
     let array = try MLMultiArray(shape: [1, NSNumber(value: decoderLength)], dataType: .int32)
     for index in 0..<decoderLength {
-      array[index] = NSNumber(value: index < ids.count ? ids[index] : vocab.output.padId)
+      array[index] = NSNumber(
+        value: index < ids.count
+          ? ids[index]
+          : outputContract.padTokenId
+      )
     }
     return array
   }
@@ -1169,49 +1655,88 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     step: Int,
     vocabularySize: Int
   ) throws -> [Double] {
-    guard vocabularySize > 0,
+    let shape = logits.shape.map(\.intValue)
+    guard shape.count == 3,
+          shape[0] == 1,
+          shape[2] == vocabularySize,
+          vocabularySize > 0,
           step >= 0,
-          logits.count.isMultiple(of: vocabularySize),
-          step < logits.count / vocabularySize else {
+          step < shape[1] else {
       throw LekhNeuralInferenceFailure.modelOutputInvalid
     }
-    let offset = step * vocabularySize
-    return (0..<vocabularySize).map { logits[offset + $0].doubleValue }
+    return try (0..<vocabularySize).map { tokenId in
+      guard let value = finiteMultiArrayValue(
+        logits,
+        indices: [0, step, tokenId]
+      ) else {
+        throw LekhNeuralInferenceFailure.modelOutputInvalid
+      }
+      return value
+    }
   }
 
-  private static func decode(ids: [Int], vocab: LekhNeuralVocabMetadata) -> String {
+  private static func decodeLegacy(
+    ids: [Int],
+    vocab: LekhNeuralVocabMetadata,
+    outputContract: LekhLegacyOutputVocabularyContract
+  ) -> String {
     var output = ""
     for tokenId in ids {
-      if tokenId == vocab.output.padId || tokenId == vocab.output.sosId || tokenId == vocab.output.unkId {
+      if tokenId == outputContract.padTokenId ||
+          tokenId == outputContract.sosTokenId ||
+          tokenId == outputContract.unkTokenId {
         continue
       }
-      if tokenId == vocab.output.eosId { break }
+      if tokenId == outputContract.eosTokenId { break }
       guard tokenId >= 0, tokenId < vocab.output.tokensById.count else { continue }
       output += vocab.output.tokensById[tokenId]
     }
     return output
   }
 
+  private static func decodeCTC(
+    ids: [Int],
+    tokensById: [String],
+    blankTokenId: Int
+  ) -> String {
+    ids.compactMap { tokenId in
+      guard tokenId != blankTokenId,
+            tokensById.indices.contains(tokenId) else {
+        return nil
+      }
+      return tokensById[tokenId]
+    }.joined()
+  }
+
   private static func decoderMaximumSteps(
     input: String,
-    vocab: LekhNeuralVocabMetadata
+    vocab: LekhNeuralVocabMetadata,
+    outputContract: LekhLegacyOutputVocabularyContract
   ) -> Int {
     if vocab.tokenization == "unicode-scalar-character" {
-      return max(0, vocab.output.maxLength - 1)
+      return max(0, outputContract.maxLength - 1)
     }
     // Historical grapheme artifacts remain development-only and retain their
     // original latency bound. They can never satisfy the production contract.
-    return max(0, min(vocab.output.maxLength - 1, input.count + 8))
+    return max(
+      0,
+      min(outputContract.maxLength - 1, input.count + 8)
+    )
   }
 
   private static func outputTokenPermitted(
     prefix: [Int],
     tokenId: Int,
-    vocab: LekhNeuralVocabMetadata
+    vocab: LekhNeuralVocabMetadata,
+    outputContract: LekhLegacyOutputVocabularyContract
   ) -> Bool {
     guard vocab.tokenization == "unicode-scalar-character" else { return true }
-    let prefixText = decode(ids: prefix, vocab: vocab)
-    if tokenId == vocab.output.eosId {
+    let prefixText = decodeLegacy(
+      ids: prefix,
+      vocab: vocab,
+      outputContract: outputContract
+    )
+    if tokenId == outputContract.eosTokenId {
       return LekhDevanagariOutputSequence.analyze(prefixText).terminable
     }
     guard tokenId >= 0, tokenId < vocab.output.tokensById.count else { return false }
@@ -1258,18 +1783,23 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   private static func makeInputAdmissionPolicy(
     vocab: LekhNeuralVocabMetadata,
     deterministicTokenInputs: Set<String>
-  ) -> LekhNeuralInputAdmissionPolicy {
-    let specialTokenIds = Set([
-      vocab.input.padId,
-      vocab.input.sosId,
-      vocab.input.eosId,
-      vocab.input.unkId
-    ])
+  ) -> LekhNeuralInputAdmissionPolicy? {
+    guard let inputContract = try? inputVocabularyContract(vocab) else {
+      return nil
+    }
+    let specialTokenIds = Set(
+      [
+        vocab.input.padId,
+        vocab.input.sosId,
+        vocab.input.eosId,
+        vocab.input.unkId
+      ].compactMap { $0 }
+    )
     let representableTokens = Set(vocab.input.idsByToken.compactMap { entry in
       specialTokenIds.contains(entry.value) ? nil : entry.key
     })
     return LekhNeuralInputAdmissionPolicy(
-      maxLength: vocab.input.maxLength,
+      maxLength: inputContract.maxLength,
       representableTokens: representableTokens,
       deterministicTokenInputs: deterministicTokenInputs
     )
@@ -1350,6 +1880,35 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
         ),
         contract: runtimeContract
       )
+    } else if manifest.runtimeModelContract == "single-transformer-ctc-v1" {
+      guard let modelURL = bundle.url(
+        forResource: "LekhNeuralTransliterator",
+        withExtension: "mlmodelc"
+      ), let expectedModelHash = manifest.sha256.compiledModel,
+      let tensorContract = manifest.tensorContract else {
+        throw LekhNeuralGateFailure.resourceMissing
+      }
+      let modelIdentity = try sha256Directory(modelURL)
+      guard modelIdentity.bytes == manifest.modelBytes else {
+        throw LekhNeuralGateFailure.modelSizeMismatch
+      }
+      guard modelIdentity.digest == expectedModelHash else {
+        throw LekhNeuralGateFailure.modelHashMismatch
+      }
+      let model = try loadCoreMLModel(modelURL)
+      let runtimeContract = try ctcRuntimeContract(
+        tensorContract,
+        vocab: vocab,
+        manifest: manifest
+      )
+      try validateCTCModelContract(
+        model: model,
+        contract: runtimeContract
+      )
+      modelRuntime = .ctc(
+        model: LekhCoreMLModelPredictor(model),
+        contract: runtimeContract
+      )
     } else {
       guard let modelURL = bundle.url(
         forResource: "LekhNeuralTransliterator",
@@ -1396,10 +1955,12 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     ) else {
       throw LekhNeuralGateFailure.manifestIdentityInvalid
     }
+    let isCTC = manifest.runtimeModelContract == "single-transformer-ctc-v1"
     let scalarOutputContract =
       manifest.tokenization == "unicode-scalar-character" &&
       manifest.outputSequenceValidation == "devanagari-word-sequence-v1" &&
       hasCompleteScalarDecoderRange(
+        runtimeModelContract: manifest.runtimeModelContract,
         maxOutputLength: manifest.beamSearch.maxOutputGraphemes,
         maxSteps: manifest.beamSearch.maxSteps
       )
@@ -1413,7 +1974,11 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
           manifest.neuralTailOnly,
           manifest.openVocabulary,
           (scalarOutputContract || quarantinedLegacyOutputContract),
-          manifest.decoder == "beam-search",
+          manifest.decoder == (
+            isCTC
+              ? "ctc-prefix-beam-search"
+              : "beam-search"
+          ),
           manifest.beamSearch.enabled,
           (2...8).contains(manifest.beamSearch.beamWidth),
           (8...48).contains(manifest.beamSearch.maxOutputGraphemes),
@@ -1454,6 +2019,22 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
             (try? splitRuntimeContract(tensorContract, vocab: vocab, manifest: manifest)) != nil else {
         throw LekhNeuralGateFailure.artifactContractInvalid
       }
+    } else if isCTC {
+      guard manifest.selectedArtifact == "lekh-open-vocab-ctc-transformer-v2",
+            manifest.architecture == "fixed-shape-transformer-ctc",
+            manifest.compiledModels == nil,
+            manifest.sha256.compiledModels == nil,
+            manifest.sha256.mlpackages == nil,
+            let compiledModelHash = manifest.sha256.compiledModel,
+            isSHA256(compiledModelHash),
+            let tensorContract = manifest.tensorContract,
+            (try? ctcRuntimeContract(
+              tensorContract,
+              vocab: vocab,
+              manifest: manifest
+            )) != nil else {
+        throw LekhNeuralGateFailure.artifactContractInvalid
+      }
     } else {
       guard manifest.runtimeModelContract == nil,
             manifest.tensorContract == nil,
@@ -1468,25 +2049,13 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       }
     }
 
-    guard vocab.schemaVersion == 1,
-          vocab.modelId == manifest.selectedArtifact,
+    guard vocab.modelId == manifest.selectedArtifact,
           vocab.tokenization == manifest.tokenization,
           ISO8601DateFormatter().date(from: vocab.generatedAt) != nil,
           vocab.decoder.type == manifest.decoder,
           vocab.decoder.beamWidth == manifest.beamSearch.beamWidth,
-          (
-            quarantinedLegacyOutputContract ||
-            (
-              hasCompleteScalarDecoderRange(
-                maxOutputLength: vocab.output.maxLength,
-                maxSteps: vocab.decoder.maxSteps
-              ) &&
-              vocab.decoder.outputSequenceValidation == "devanagari-word-sequence-v1"
-            )
-          ),
           vocab.decoder.rejectWhitespaceCandidates,
           vocab.decoder.rejectLatinCandidates,
-          vocab.output.maxLength == manifest.beamSearch.maxOutputGraphemes,
           vocab.dataset.manifestSha256 == manifest.sha256.trainingDatasetManifest,
           vocab.nativeRuntimePolicy.asyncOnly,
           vocab.nativeRuntimePolicy.neverInvokeInSecureFields,
@@ -1494,12 +2063,55 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
           vocab.nativeRuntimePolicy.neuralTailOnly else {
       throw LekhNeuralGateFailure.runtimePolicyInvalid
     }
-    try validateVocabulary(vocab.input, inputSide: true, scalarOutput: false)
-    try validateVocabulary(
-      vocab.output,
-      inputSide: false,
-      scalarOutput: scalarOutputContract
-    )
+    if isCTC {
+      guard vocab.schemaVersion == 2,
+            vocab.runtimeModelContract == manifest.runtimeModelContract,
+            vocab.decoder.maximumCandidates != nil,
+            (1...manifest.beamSearch.beamWidth).contains(
+              vocab.decoder.maximumCandidates ?? 0
+            ),
+            vocab.decoder.maxSteps == nil,
+            vocab.decoder.outputSequenceValidation ==
+              "devanagari-word-sequence-v1",
+            vocab.output.timeSteps ==
+              manifest.beamSearch.maxOutputGraphemes else {
+        throw LekhNeuralGateFailure.runtimePolicyInvalid
+      }
+      try validateInputVocabulary(
+        vocab.input,
+        requiresSOSToken: false
+      )
+      try validateCTCOutputVocabulary(vocab.output)
+    } else {
+      guard vocab.schemaVersion == 1,
+            vocab.runtimeModelContract == nil,
+            vocab.decoder.maximumCandidates == nil,
+            (
+              quarantinedLegacyOutputContract ||
+              (
+                vocab.output.maxLength != nil &&
+                hasCompleteScalarDecoderRange(
+                  runtimeModelContract: manifest.runtimeModelContract,
+                  maxOutputLength: vocab.output.maxLength ?? 0,
+                  maxSteps: vocab.decoder.maxSteps
+                ) &&
+                vocab.decoder.outputSequenceValidation ==
+                  "devanagari-word-sequence-v1"
+              )
+            ),
+            vocab.output.maxLength ==
+              manifest.beamSearch.maxOutputGraphemes else {
+        throw LekhNeuralGateFailure.runtimePolicyInvalid
+      }
+      try validateInputVocabulary(
+        vocab.input,
+        requiresSOSToken: true
+      )
+      try validateLegacyOutputVocabulary(
+        vocab.output,
+        scalarOutput: scalarOutputContract
+      )
+    }
   }
 
   private static func validSplitArtifact(
@@ -1530,13 +2142,11 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     }
   }
 
-  private static func validateVocabulary(
+  private static func validateVocabularyMapping(
     _ vocabulary: LekhNeuralVocabMetadata.Vocabulary,
-    inputSide: Bool,
-    scalarOutput: Bool
+    minimumTokenCount: Int
   ) throws {
-    guard (4...128).contains(vocabulary.maxLength),
-          vocabulary.tokensById.count >= 5,
+    guard vocabulary.tokensById.count >= minimumTokenCount,
           vocabulary.tokensById.count == vocabulary.idsByToken.count,
           Set(vocabulary.tokensById).count == vocabulary.tokensById.count else {
       throw LekhNeuralGateFailure.vocabContractInvalid
@@ -1546,12 +2156,34 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
         throw LekhNeuralGateFailure.vocabContractInvalid
       }
     }
-    let special = [
-      (vocabulary.padId, "<pad>"),
-      (vocabulary.sosId, "<s>"),
-      (vocabulary.eosId, "</s>"),
-      (vocabulary.unkId, "<unk>")
+  }
+
+  private static func validateInputVocabulary(
+    _ vocabulary: LekhNeuralVocabMetadata.Vocabulary,
+    requiresSOSToken: Bool
+  ) throws {
+    try validateVocabularyMapping(
+      vocabulary,
+      minimumTokenCount: requiresSOSToken ? 5 : 4
+    )
+    guard let maxLength = vocabulary.maxLength,
+          (4...128).contains(maxLength),
+          vocabulary.timeSteps == nil,
+          vocabulary.blankId == nil,
+          let padId = vocabulary.padId,
+          let eosId = vocabulary.eosId,
+          let unkId = vocabulary.unkId,
+          requiresSOSToken == (vocabulary.sosId != nil) else {
+      throw LekhNeuralGateFailure.vocabContractInvalid
+    }
+    var special = [
+      (padId, "<pad>"),
+      (eosId, "</s>"),
+      (unkId, "<unk>")
     ]
+    if let sosId = vocabulary.sosId {
+      special.append((sosId, "<s>"))
+    }
     guard Set(special.map(\.0)).count == special.count,
           special.allSatisfy({ id, token in
             id >= 0 && id < vocabulary.tokensById.count && vocabulary.tokensById[id] == token
@@ -1561,24 +2193,84 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     let lexicalTokens = vocabulary.tokensById.enumerated().compactMap { id, token in
       special.contains(where: { $0.0 == id }) ? nil : token
     }
-    if inputSide {
-      guard lexicalTokens.allSatisfy({ token in
-        token.count == 1 && token.range(of: #"^[a-z]$"#, options: .regularExpression) != nil
-      }) else {
-        throw LekhNeuralGateFailure.vocabContractInvalid
-      }
-    } else {
-      guard lexicalTokens.allSatisfy({ token in
-        scalarOutput
-          ? LekhDevanagariOutputSequence.isSupportedScalarToken(token)
-          : !token.isEmpty && token.unicodeScalars.allSatisfy { scalar in
-            (0x0900...0x097F).contains(scalar.value) ||
-              scalar.value == 0x200C ||
-              scalar.value == 0x200D
-          }
-      }) else {
-        throw LekhNeuralGateFailure.vocabContractInvalid
-      }
+    guard lexicalTokens.allSatisfy({ token in
+      token.count == 1 &&
+        token.range(of: #"^[a-z]$"#, options: .regularExpression) != nil
+    }) else {
+      throw LekhNeuralGateFailure.vocabContractInvalid
+    }
+  }
+
+  private static func validateLegacyOutputVocabulary(
+    _ vocabulary: LekhNeuralVocabMetadata.Vocabulary,
+    scalarOutput: Bool
+  ) throws {
+    try validateVocabularyMapping(vocabulary, minimumTokenCount: 5)
+    guard let maxLength = vocabulary.maxLength,
+          (4...128).contains(maxLength),
+          vocabulary.timeSteps == nil,
+          vocabulary.blankId == nil,
+          let padId = vocabulary.padId,
+          let sosId = vocabulary.sosId,
+          let eosId = vocabulary.eosId,
+          let unkId = vocabulary.unkId else {
+      throw LekhNeuralGateFailure.vocabContractInvalid
+    }
+    let special = [
+      (padId, "<pad>"),
+      (sosId, "<s>"),
+      (eosId, "</s>"),
+      (unkId, "<unk>")
+    ]
+    guard Set(special.map(\.0)).count == special.count,
+          special.allSatisfy({ id, token in
+            vocabulary.tokensById.indices.contains(id) &&
+              vocabulary.tokensById[id] == token
+          }) else {
+      throw LekhNeuralGateFailure.vocabContractInvalid
+    }
+    let lexicalTokens = vocabulary.tokensById.enumerated().compactMap {
+      id, token in
+      special.contains(where: { $0.0 == id }) ? nil : token
+    }
+    guard lexicalTokens.allSatisfy({ token in
+      scalarOutput
+        ? LekhDevanagariOutputSequence.isSupportedScalarToken(token)
+        : !token.isEmpty && token.unicodeScalars.allSatisfy { scalar in
+          (0x0900...0x097F).contains(scalar.value) ||
+            scalar.value == 0x200C ||
+            scalar.value == 0x200D
+        }
+    }) else {
+      throw LekhNeuralGateFailure.vocabContractInvalid
+    }
+  }
+
+  private static func validateCTCOutputVocabulary(
+    _ vocabulary: LekhNeuralVocabMetadata.Vocabulary
+  ) throws {
+    try validateVocabularyMapping(vocabulary, minimumTokenCount: 2)
+    guard vocabulary.maxLength == nil,
+          let timeSteps = vocabulary.timeSteps,
+          (8...48).contains(timeSteps),
+          vocabulary.padId == nil,
+          vocabulary.sosId == nil,
+          vocabulary.eosId == nil,
+          vocabulary.unkId == nil,
+          let blankId = vocabulary.blankId,
+          blankId == 0,
+          vocabulary.tokensById.indices.contains(blankId),
+          vocabulary.tokensById[blankId] == "<ctc-blank>" else {
+      throw LekhNeuralGateFailure.vocabContractInvalid
+    }
+    let lexicalTokens = vocabulary.tokensById.enumerated().compactMap {
+      $0.offset == blankId ? nil : $0.element
+    }
+    guard !lexicalTokens.isEmpty,
+          lexicalTokens.allSatisfy(
+            LekhDevanagariOutputSequence.isSupportedScalarToken
+          ) else {
+      throw LekhNeuralGateFailure.vocabContractInvalid
     }
   }
 
@@ -1594,6 +2286,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
           manifest.tokenization == "unicode-scalar-character",
           manifest.outputSequenceValidation == "devanagari-word-sequence-v1",
           hasCompleteScalarDecoderRange(
+            runtimeModelContract: manifest.runtimeModelContract,
             maxOutputLength: manifest.beamSearch.maxOutputGraphemes,
             maxSteps: manifest.beamSearch.maxSteps
           ),
@@ -1644,10 +2337,14 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   }
 
   private static func hasCompleteScalarDecoderRange(
+    runtimeModelContract: String?,
     maxOutputLength: Int,
     maxSteps: Int?
   ) -> Bool {
     guard (8...48).contains(maxOutputLength) else { return false }
+    if runtimeModelContract == "single-transformer-ctc-v1" {
+      return maxSteps == maxOutputLength
+    }
     return maxSteps == maxOutputLength - 1
   }
 
@@ -1707,10 +2404,17 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     vocab: LekhNeuralVocabMetadata,
     manifest: LekhNeuralManifest
   ) throws -> LekhNeuralSplitAttentionContract {
-    let encoderInputs = tensorContract.encoder.inputs
-    let encoderOutputs = tensorContract.encoder.outputs
-    let decoderInputs = tensorContract.decoderStep.inputs
-    let decoderOutputs = tensorContract.decoderStep.outputs
+    guard let encoder = tensorContract.encoder,
+          let decoderStep = tensorContract.decoderStep,
+          tensorContract.inputIds == nil,
+          tensorContract.logits == nil,
+          let inputLength = vocab.input.maxLength else {
+      throw LekhNeuralGateFailure.modelIOContractInvalid
+    }
+    let encoderInputs = encoder.inputs
+    let encoderOutputs = encoder.outputs
+    let decoderInputs = decoderStep.inputs
+    let decoderOutputs = decoderStep.outputs
     guard Set(encoderInputs.keys) == Set(["inputIds"]),
           Set(encoderOutputs.keys) == Set([
             "encoderOutputs", "encoderEnergy", "validMask", "initialDecoderHidden"
@@ -1724,21 +2428,21 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
           let energy = encoderOutputs["encoderEnergy"],
           let mask = encoderOutputs["validMask"],
           let initialHidden = encoderOutputs["initialDecoderHidden"],
-          inputIds.dataType == "INT32", inputIds.shape == [1, vocab.input.maxLength],
+          inputIds.dataType == "INT32", inputIds.shape == [1, inputLength],
           encoded.dataType == "FLOAT16", encoded.shape.count == 3,
-          encoded.shape[0] == 1, encoded.shape[1] == vocab.input.maxLength,
+          encoded.shape[0] == 1, encoded.shape[1] == inputLength,
           encoded.shape[2] > 0,
           energy.dataType == "FLOAT16", energy.shape.count == 3,
-          energy.shape[0] == 1, energy.shape[1] == vocab.input.maxLength,
+          energy.shape[0] == 1, energy.shape[1] == inputLength,
           energy.shape[2] > 0,
-          mask.dataType == "FLOAT16", mask.shape == [1, vocab.input.maxLength],
+          mask.dataType == "FLOAT16", mask.shape == [1, inputLength],
           initialHidden.dataType == "FLOAT16", initialHidden.shape.count == 3,
           initialHidden.shape[0] > 0, initialHidden.shape[1] == 1,
           initialHidden.shape[2] > 0 else {
       throw LekhNeuralGateFailure.modelIOContractInvalid
     }
     let contract = LekhNeuralSplitAttentionContract(
-      maxInputLength: vocab.input.maxLength,
+      maxInputLength: inputLength,
       encoderWidth: encoded.shape[2],
       attentionWidth: energy.shape[2],
       decoderLayers: initialHidden.shape[0],
@@ -1767,6 +2471,50 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
             shape: [contract.decoderLayers, contract.beamWidth, contract.hiddenWidth],
             dataType: "FLOAT16"
           ),
+          vocab.decoder.beamWidth == contract.beamWidth else {
+      throw LekhNeuralGateFailure.modelIOContractInvalid
+    }
+    return contract
+  }
+
+  private static func ctcRuntimeContract(
+    _ tensorContract: LekhNeuralManifest.TensorContract,
+    vocab: LekhNeuralVocabMetadata,
+    manifest: LekhNeuralManifest
+  ) throws -> LekhNeuralCTCContract {
+    guard tensorContract.encoder == nil,
+          tensorContract.decoderStep == nil,
+          let inputIds = tensorContract.inputIds,
+          let logits = tensorContract.logits,
+          let inputLength = vocab.input.maxLength,
+          let outputTimeSteps = vocab.output.timeSteps,
+          let blankTokenId = vocab.output.blankId,
+          let maximumCandidates = vocab.decoder.maximumCandidates,
+          inputIds == .init(
+            shape: [1, inputLength],
+            dataType: "INT32"
+          ),
+          logits == .init(
+            shape: [
+              1,
+              outputTimeSteps,
+              vocab.output.tokensById.count
+            ],
+            dataType: "FLOAT16"
+          ),
+          manifest.beamSearch.maxOutputGraphemes == outputTimeSteps,
+          manifest.beamSearch.maxSteps == outputTimeSteps else {
+      throw LekhNeuralGateFailure.modelIOContractInvalid
+    }
+    let contract = LekhNeuralCTCContract(
+      maxInputLength: inputLength,
+      outputTimeSteps: outputTimeSteps,
+      vocabularySize: vocab.output.tokensById.count,
+      blankTokenId: blankTokenId,
+      beamWidth: manifest.beamSearch.beamWidth,
+      maximumCandidates: maximumCandidates
+    )
+    guard contract.isValid,
           vocab.decoder.beamWidth == contract.beamWidth else {
       throw LekhNeuralGateFailure.modelIOContractInvalid
     }
@@ -1855,22 +2603,55 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   }
 
   private static func validateModelContract(model: MLModel, vocab: LekhNeuralVocabMetadata) throws {
+    guard let inputLength = vocab.input.maxLength,
+          let outputLength = vocab.output.maxLength else {
+      throw LekhNeuralGateFailure.modelIOContractInvalid
+    }
     let description = model.modelDescription
     guard Set(description.inputDescriptionsByName.keys) == Set(["inputIds", "decoderInputIds"]),
           Set(description.outputDescriptionsByName.keys) == Set(["logits"]),
           validMultiArrayFeature(
             description.inputDescriptionsByName["inputIds"],
-            shape: [1, vocab.input.maxLength],
+            shape: [1, inputLength],
             dataType: .int32
           ),
           validMultiArrayFeature(
             description.inputDescriptionsByName["decoderInputIds"],
-            shape: [1, vocab.output.maxLength - 1],
+            shape: [1, outputLength - 1],
             dataType: .int32
           ),
           validMultiArrayFeature(
             description.outputDescriptionsByName["logits"],
-            shape: [1, vocab.output.maxLength - 1, vocab.output.tokensById.count],
+            shape: [
+              1,
+              outputLength - 1,
+              vocab.output.tokensById.count
+            ],
+            dataType: .float16
+          ) else {
+      throw LekhNeuralGateFailure.modelIOContractInvalid
+    }
+  }
+
+  private static func validateCTCModelContract(
+    model: MLModel,
+    contract: LekhNeuralCTCContract
+  ) throws {
+    let description = model.modelDescription
+    guard Set(description.inputDescriptionsByName.keys) == Set(["inputIds"]),
+          Set(description.outputDescriptionsByName.keys) == Set(["logits"]),
+          validMultiArrayFeature(
+            description.inputDescriptionsByName["inputIds"],
+            shape: [1, contract.maxInputLength],
+            dataType: .int32
+          ),
+          validMultiArrayFeature(
+            description.outputDescriptionsByName["logits"],
+            shape: [
+              1,
+              contract.outputTimeSteps,
+              contract.vocabularySize
+            ],
             dataType: .float16
           ) else {
       throw LekhNeuralGateFailure.modelIOContractInvalid
@@ -2010,6 +2791,15 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
             "compiledModels"
           ])
         )
+      } else if manifest["runtimeModelContract"] as? String ==
+          "single-transformer-ctc-v1" {
+        try requireExactKeys(
+          manifest,
+          manifestKeys.union([
+            "trainingRunId", "exportRunId", "runtimeModelContract",
+            "tensorContract"
+          ])
+        )
       } else {
         try requireExactKeys(manifest, manifestKeys.union(["trainingRunId", "exportRunId"]))
       }
@@ -2089,6 +2879,17 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       ])
       try requireExactKeys(try childObject(hashes, "compiledModels"), ["encoder", "decoderStep"])
       try requireExactKeys(try childObject(hashes, "mlpackages"), ["encoder", "decoderStep"])
+    } else if manifest["runtimeModelContract"] as? String ==
+        "single-transformer-ctc-v1" {
+      let tensorContract = try childObject(manifest, "tensorContract")
+      try validateTensorGroup(
+        tensorContract,
+        names: ["inputIds", "logits"]
+      )
+      try requireExactKeys(try childObject(manifest, "sha256"), [
+        "compiledModel", "sourceCheckpoint", "trainingDatasetManifest",
+        "vocabMetadata"
+      ])
     } else {
       try requireExactKeys(try childObject(manifest, "sha256"), [
         "compiledModel", "sourceCheckpoint", "trainingDatasetManifest", "vocabMetadata"
@@ -2096,19 +2897,44 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     }
 
     let vocab = try jsonObject(vocabData)
-    try requireExactKeys(vocab, [
-      "schemaVersion", "modelId", "generatedAt", "tokenization", "input", "output",
-      "decoder", "dataset", "nativeRuntimePolicy"
-    ])
-    let vocabularyKeys: Set<String> = [
-      "maxLength", "tokensById", "idsByToken", "padId", "sosId", "eosId", "unkId"
+    let isCTCVocabulary = vocab["runtimeModelContract"] as? String ==
+      "single-transformer-ctc-v1"
+    let vocabularyRootKeys: Set<String> = [
+      "schemaVersion", "modelId", "generatedAt", "tokenization", "input",
+      "output", "decoder", "dataset", "nativeRuntimePolicy"
     ]
-    try requireExactKeys(try childObject(vocab, "input"), vocabularyKeys)
-    try requireExactKeys(try childObject(vocab, "output"), vocabularyKeys)
+    try requireExactKeys(
+      vocab,
+      isCTCVocabulary
+        ? vocabularyRootKeys.union(["runtimeModelContract"])
+        : vocabularyRootKeys
+    )
+    if isCTCVocabulary {
+      try requireExactKeys(try childObject(vocab, "input"), [
+        "maxLength", "tokensById", "idsByToken", "padId", "eosId",
+        "unkId"
+      ])
+      try requireExactKeys(try childObject(vocab, "output"), [
+        "timeSteps", "tokensById", "idsByToken", "blankId"
+      ])
+    } else {
+      let vocabularyKeys: Set<String> = [
+        "maxLength", "tokensById", "idsByToken", "padId", "sosId",
+        "eosId", "unkId"
+      ]
+      try requireExactKeys(try childObject(vocab, "input"), vocabularyKeys)
+      try requireExactKeys(try childObject(vocab, "output"), vocabularyKeys)
+    }
     let scalarVocabContract = vocab["tokenization"] as? String == "unicode-scalar-character"
     try requireExactKeys(
       try childObject(vocab, "decoder"),
-      scalarVocabContract
+      isCTCVocabulary
+        ? [
+          "type", "beamWidth", "maximumCandidates",
+          "outputSequenceValidation", "rejectWhitespaceCandidates",
+          "rejectLatinCandidates"
+        ]
+        : scalarVocabContract
         ? [
           "type", "beamWidth", "maxSteps", "outputSequenceValidation",
           "rejectWhitespaceCandidates", "rejectLatinCandidates"
@@ -2289,6 +3115,21 @@ private enum LekhNeuralInferenceFailure: Error {
   case modelOutputInvalid
 }
 
+private struct LekhInputVocabularyContract {
+  let maxLength: Int
+  let padTokenId: Int
+  let eosTokenId: Int
+  let unkTokenId: Int
+}
+
+private struct LekhLegacyOutputVocabularyContract {
+  let maxLength: Int
+  let padTokenId: Int
+  let sosTokenId: Int
+  let eosTokenId: Int
+  let unkTokenId: Int
+}
+
 private struct LekhVerifiedNeuralArtifact {
   let manifest: LekhNeuralManifest
   let vocab: LekhNeuralVocabMetadata
@@ -2300,6 +3141,10 @@ private enum LekhNeuralModelRuntime {
   case splitAttention(
     models: LekhNeuralSplitAttentionModels,
     contract: LekhNeuralSplitAttentionContract
+  )
+  case ctc(
+    model: any LekhNeuralModelPredicting,
+    contract: LekhNeuralCTCContract
   )
 }
 
@@ -2435,8 +3280,10 @@ private struct LekhNeuralManifest: Decodable {
   }
 
   struct TensorContract: Decodable {
-    let encoder: TensorStage
-    let decoderStep: TensorStage
+    let encoder: TensorStage?
+    let decoderStep: TensorStage?
+    let inputIds: Tensor?
+    let logits: Tensor?
   }
 
   struct TensorStage: Decodable {
@@ -2462,6 +3309,7 @@ private struct LekhNeuralVocabMetadata: Decodable {
   let modelId: String
   let generatedAt: String
   let tokenization: String
+  let runtimeModelContract: String?
   let input: Vocabulary
   let output: Vocabulary
   let decoder: DecoderPolicy
@@ -2469,19 +3317,22 @@ private struct LekhNeuralVocabMetadata: Decodable {
   let nativeRuntimePolicy: NativeRuntimePolicy
 
   struct Vocabulary: Decodable {
-    let maxLength: Int
+    let maxLength: Int?
+    let timeSteps: Int?
     let tokensById: [String]
     let idsByToken: [String: Int]
-    let padId: Int
-    let sosId: Int
-    let eosId: Int
-    let unkId: Int
+    let padId: Int?
+    let sosId: Int?
+    let eosId: Int?
+    let unkId: Int?
+    let blankId: Int?
   }
 
   struct DecoderPolicy: Decodable {
     let type: String
     let beamWidth: Int
     let maxSteps: Int?
+    let maximumCandidates: Int?
     let outputSequenceValidation: String?
     let rejectWhitespaceCandidates: Bool
     let rejectLatinCandidates: Bool

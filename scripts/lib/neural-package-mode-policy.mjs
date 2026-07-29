@@ -36,6 +36,12 @@ const MODEL_LAYOUTS = Object.freeze({
       decoderStep: "LekhNeuralTransliteratorDecoderStep.mlmodelc",
       encoder: "LekhNeuralTransliteratorEncoder.mlmodelc"
     })
+  }),
+  "lekh-open-vocab-ctc-transformer-v2": Object.freeze({
+    runtimeModelContract: "single-transformer-ctc-v1",
+    artifacts: Object.freeze({
+      model: "LekhNeuralTransliterator.mlmodelc"
+    })
   })
 });
 

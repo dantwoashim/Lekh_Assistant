@@ -17,6 +17,7 @@ const MANIFEST_NAME = "LekhNeuralTransliterator.manifest.json";
 const VOCABULARY_NAME = "LekhNeuralTransliterator.vocab.json";
 const SINGLE_RUNTIME_CONTRACT = "single-seq2seq-v1";
 const SPLIT_RUNTIME_CONTRACT = "split-attention-incremental-v1";
+const CTC_RUNTIME_CONTRACT = "single-transformer-ctc-v1";
 const EVIDENCE_KEYS = Object.freeze([
   "artifactSetSha256",
   "artifacts",
@@ -45,6 +46,9 @@ const EXPECTED_ARTIFACTS = Object.freeze({
   [SINGLE_RUNTIME_CONTRACT]: Object.freeze({
     model: "LekhNeuralTransliterator.mlmodelc"
   }),
+  [CTC_RUNTIME_CONTRACT]: Object.freeze({
+    model: "LekhNeuralTransliterator.mlmodelc"
+  }),
   [SPLIT_RUNTIME_CONTRACT]: Object.freeze({
     decoderStep: "LekhNeuralTransliteratorDecoderStep.mlmodelc",
     encoder: "LekhNeuralTransliteratorEncoder.mlmodelc"
@@ -52,6 +56,7 @@ const EXPECTED_ARTIFACTS = Object.freeze({
 });
 const EXPECTED_MODEL_IDS = Object.freeze({
   [SINGLE_RUNTIME_CONTRACT]: "lekh-open-vocab-seq2seq-v1",
+  [CTC_RUNTIME_CONTRACT]: "lekh-open-vocab-ctc-transformer-v2",
   [SPLIT_RUNTIME_CONTRACT]: "lekh-open-vocab-bigru-attention-v1"
 });
 

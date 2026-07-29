@@ -47,7 +47,7 @@ describe("neural model-selection CLI evidence graph", () => {
       assert.equal(report.status, "passed-neural-model-selection");
       assert.equal(
         report.winner.candidateId,
-        `attention:${fixture.candidates[1].exportRunId}`
+        `ctc:${fixture.candidates[1].exportRunId}`
       );
       assert.equal(report.candidates.length, 2);
       assert.equal(
@@ -123,15 +123,16 @@ function withFixture(callback) {
       runSeed: "a",
       officialTop1Hits: 1
     });
-    const attention = buildCandidate(root, shared, {
-      label: "attention",
+    const ctc = buildCandidate(root, shared, {
+      label: "ctc",
+      kind: "ctc",
       runSeed: "c",
       officialTop1Hits: 3
     });
     callback({
       root,
       report: join(root, "reports", "selection.json"),
-      candidates: [baseline, attention]
+      candidates: [baseline, ctc]
     });
   } finally {
     rmSync(parent, { recursive: true, force: true });
@@ -183,6 +184,7 @@ function buildSharedEvidence(root) {
 }
 
 function buildCandidate(root, shared, options) {
+  const ctc = options.kind === "ctc";
   const candidateRoot = join(
     root,
     "data",
@@ -241,8 +243,12 @@ function buildCandidate(root, shared, options) {
     schemaVersion: 2,
     trainingRunId,
     exportRunId,
-    selectedArtifact: "lekh-open-vocab-seq2seq-v1",
-    architecture: "gru-encoder-decoder-seq2seq",
+    selectedArtifact: ctc
+      ? "lekh-open-vocab-ctc-transformer-v2"
+      : "lekh-open-vocab-seq2seq-v1",
+    architecture: ctc
+      ? "fixed-shape-transformer-ctc"
+      : "gru-encoder-decoder-seq2seq",
     runtime: "CoreML",
     localOnly: true,
     neuralTailOnly: true,
@@ -255,6 +261,13 @@ function buildCandidate(root, shared, options) {
       compiledModel: compiledEvidence.sha256
     }
   };
+  if (ctc) {
+    manifest.runtimeModelContract = "single-transformer-ctc-v1";
+    manifest.tensorContract = {
+      inputIds: { shape: [1, 32], dataType: "INT32" },
+      logits: { shape: [1, 32, 128], dataType: "FLOAT16" }
+    };
+  }
   writeJson(manifestPath, manifest);
   const manifestEvidence = inspectContainedRegularFile(root, manifestPath);
   const descriptor = resolveNeuralArtifactDescriptor({
@@ -284,7 +297,9 @@ function buildCandidate(root, shared, options) {
     }
   };
   const exportReport = {
-    status: "passed-open-vocab-seq2seq-candidate",
+    status: ctc
+      ? "passed-open-vocab-ctc-transformer-candidate"
+      : "passed-open-vocab-seq2seq-candidate",
     productionEligible: false,
     coremlExport: { status: "passed" },
     runtimeArtifactContractIssues: [],
@@ -309,6 +324,9 @@ function buildCandidate(root, shared, options) {
     manifest: portable(root, manifestPath),
     manifestSha256: manifestEvidence.sha256
   };
+  if (ctc) {
+    exportReport.runtimeModelContract = "single-transformer-ctc-v1";
+  }
   writeJson(exportReportPath, exportReport);
   const exportEvidence = inspectContainedRegularFile(root, exportReportPath);
   const artifactIdentity = {
@@ -358,7 +376,7 @@ function buildCandidate(root, shared, options) {
       runtimePlacement: runtimePlacementEvidence(descriptor)
     },
     performance: {
-      p99Ms: options.label === "attention" ? 20 : 10
+      p99Ms: ctc ? 20 : 10
     }
   };
   writeJson(benchmarkPath, benchmark);
@@ -405,7 +423,7 @@ function buildCandidate(root, shared, options) {
     benchmarkIsolation: trainingIsolation,
     predictions: portable(root, comparisonPredictions),
     predictionsSha256: predictionEvidence.sha256,
-    predictionsBackend: "coreml-compiled-model",
+    predictionsBackend: descriptor.predictionsBackend,
     predictionArtifactIdentity,
     predictionRows: 3,
     distinctInputCount: 3,

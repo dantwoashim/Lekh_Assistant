@@ -25,25 +25,25 @@ afterEach(() => {
 });
 
 describe("neural production re-verification plan", () => {
-  it("binds every candidate-specific gate to an attention winner", () => {
+  it("binds every candidate-specific gate to a Transformer-CTC winner", () => {
     const plan = buildNeuralProductionGatePlan({
       repoRoot: root,
       through: "phase0-10",
       configPath:
-        `${root}/data/neural/training/open-vocab-bigru-attention-v1.config.json`,
+        `${root}/data/neural/training/open-vocab-ctc-transformer-v2.config.json`,
       candidateRoot:
         `${root}/data/generated/neural-open-vocab-model/` +
-        "lekh-open-vocab-bigru-attention-v1",
+        "lekh-open-vocab-ctc-transformer-v2",
       candidateSpecifications: [
         `${root}/reports/baseline-spec.json`,
-        `${root}/reports/attention-spec.json`
+        `${root}/reports/ctc-spec.json`
       ],
       predictionsPath:
         `${root}/data/generated/neural-open-vocab-model/` +
-        "lekh-open-vocab-bigru-attention-v1/gold-predictions.jsonl",
+        "lekh-open-vocab-ctc-transformer-v2/gold-predictions.jsonl",
       exportReportPath:
         `${root}/data/generated/neural-open-vocab-model/` +
-        "lekh-open-vocab-bigru-attention-v1/export-report.json",
+        "lekh-open-vocab-ctc-transformer-v2/export-report.json",
       runtimePlacementEvidence:
         `${root}/reports/neural-runtime-placement-evidence.json`,
       bundle: "/tmp/Lekh Keyboard.imkdevbundle"
@@ -62,13 +62,13 @@ describe("neural production re-verification plan", () => {
     );
 
     expect(training.args.join(" ")).toContain(
-      "open-vocab-bigru-attention-v1.config.json"
+      "open-vocab-ctc-transformer-v2.config.json"
     );
     expect(training.args.join(" ")).toContain(
-      "lekh-open-vocab-bigru-attention-v1"
+      "lekh-open-vocab-ctc-transformer-v2"
     );
     expect(evaluation.args.join(" ")).toContain(
-      "lekh-open-vocab-bigru-attention-v1/gold-predictions.jsonl"
+      "lekh-open-vocab-ctc-transformer-v2/gold-predictions.jsonl"
     );
     expect(selection.args.filter((argument) =>
       argument === "--candidate-spec"

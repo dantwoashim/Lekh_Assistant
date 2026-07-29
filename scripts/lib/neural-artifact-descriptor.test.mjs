@@ -15,10 +15,39 @@ import { describe, expect, it } from "vitest";
 import { inspectContainedDirectoryTree } from "./neural-artifact-filesystem.mjs";
 import {
   NeuralArtifactDescriptorError,
+  neuralRuntimeContractMetadata,
   resolveNeuralArtifactDescriptor
 } from "./neural-artifact-descriptor.mjs";
 
 describe("neural runtime artifact descriptor", () => {
+  it("maps every closed runtime contract to one artifact layout and prediction backend", () => {
+    expect(neuralRuntimeContractMetadata("single-seq2seq-v1")).toEqual({
+      artifactLayout: "single-model",
+      predictionsBackend: "coreml-compiled-model",
+      decoder: "beam-search",
+      decoderStepDelta: -1
+    });
+    expect(
+      neuralRuntimeContractMetadata("split-attention-incremental-v1")
+    ).toEqual({
+      artifactLayout: "split-attention",
+      predictionsBackend: "coreml-compiled-split-attention-models",
+      decoder: "beam-search",
+      decoderStepDelta: -1
+    });
+    expect(
+      neuralRuntimeContractMetadata("single-transformer-ctc-v1")
+    ).toEqual({
+      artifactLayout: "single-model",
+      predictionsBackend: "coreml-compiled-transformer-ctc",
+      decoder: "ctc-prefix-beam-search",
+      decoderStepDelta: 0
+    });
+    expect(() => neuralRuntimeContractMetadata("unknown")).toThrow(
+      /Unsupported neural runtime model contract unknown/u
+    );
+  });
+
   it("normalizes and hashes the baseline runtime artifact", () => {
     withFixture("baseline", ({ root, manifest, manifestPath, vocabPath }) => {
       const descriptor = resolveNeuralArtifactDescriptor({
@@ -58,6 +87,56 @@ describe("neural runtime artifact descriptor", () => {
         "LekhNeuralTransliteratorDecoderStep.mlmodelc"
       ]);
       expect(descriptor.totalCompiledBytes).toBe(manifest.modelBytes);
+    });
+  });
+
+  it("normalizes the exact single-model Transformer CTC inventory", () => {
+    withFixture("ctc", ({ root, manifest, manifestPath, vocabPath }) => {
+      const descriptor = resolveNeuralArtifactDescriptor({
+        repoRoot: root,
+        manifest,
+        manifestPath,
+        vocabPath
+      });
+      expect(descriptor.modelId).toBe(
+        "lekh-open-vocab-ctc-transformer-v2"
+      );
+      expect(descriptor.runtimeModelContract).toBe(
+        "single-transformer-ctc-v1"
+      );
+      expect(descriptor.artifactLayout).toBe("single-model");
+      expect(descriptor.predictionsBackend).toBe(
+        "coreml-compiled-transformer-ctc"
+      );
+      expect(descriptor.tensorContract).toEqual(manifest.tensorContract);
+      expect(descriptor.artifacts).toHaveLength(1);
+      expect(descriptor.artifacts[0]).toMatchObject({
+        role: "model",
+        bundleName: "LekhNeuralTransliterator.mlmodelc"
+      });
+      expect(descriptor.totalCompiledBytes).toBe(manifest.modelBytes);
+    });
+  });
+
+  it("rejects a CTC model with a legacy or open artifact contract", () => {
+    withFixture("ctc", ({ root, manifest, manifestPath, vocabPath }) => {
+      delete manifest.tensorContract;
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      expect(() => resolveNeuralArtifactDescriptor({
+        repoRoot: root,
+        manifestPath,
+        vocabPath
+      })).toThrow(/single-transformer-ctc artifact branch/u);
+    });
+
+    withFixture("ctc", ({ root, manifest, manifestPath, vocabPath }) => {
+      manifest.compiledModels = {};
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      expect(() => resolveNeuralArtifactDescriptor({
+        repoRoot: root,
+        manifestPath,
+        vocabPath
+      })).toThrow(/single-transformer-ctc artifact branch/u);
     });
   });
 
@@ -183,12 +262,22 @@ function withFixture(kind, callback) {
       }
     };
     let modelPath;
-    if (kind === "baseline") {
+    if (kind === "baseline" || kind === "ctc") {
       modelPath = join(production, "LekhNeuralTransliterator.mlmodelc");
-      writeTree(modelPath, "baseline");
+      writeTree(modelPath, kind);
       const model = inspectContainedDirectoryTree(root, modelPath);
-      common.selectedArtifact = "lekh-open-vocab-seq2seq-v1";
-      common.architecture = "gru-encoder-decoder-seq2seq";
+      if (kind === "ctc") {
+        common.selectedArtifact = "lekh-open-vocab-ctc-transformer-v2";
+        common.architecture = "fixed-shape-transformer-ctc";
+        common.runtimeModelContract = "single-transformer-ctc-v1";
+        common.tensorContract = {
+          inputIds: { shape: [1, 32], dataType: "INT32" },
+          logits: { shape: [1, 32, 128], dataType: "FLOAT16" }
+        };
+      } else {
+        common.selectedArtifact = "lekh-open-vocab-seq2seq-v1";
+        common.architecture = "gru-encoder-decoder-seq2seq";
+      }
       common.modelBytes = model.bytes;
       common.sha256.compiledModel = model.sha256;
     } else {

@@ -397,6 +397,70 @@ describe("evidence-bound neural candidate promotion", () => {
     });
   });
 
+  it("publishes a closed Transformer-CTC candidate through the production receipt gate", () => {
+    withFixture("ctc", (fixture) => {
+      const result = promote(fixture);
+      assert.equal(result.artifactLayout, "single-model");
+
+      const manifest = readJson(result.manifest);
+      const verification = verifyNeuralProductionPromotionReceipt({
+        repoRoot: fixture.root,
+        productionDirectory: result.productionDir
+      });
+      assert.equal(
+        verification.runtimeModelContract,
+        "single-transformer-ctc-v1"
+      );
+      assert.deepEqual(
+        verification.artifacts.map((artifact) => artifact.id),
+        ["compiledModel", "mlpackage"]
+      );
+      assert.equal(
+        productionManifestValidator(manifest),
+        true,
+        JSON.stringify(productionManifestValidator.errors)
+      );
+      assert.equal(
+        manifest.selectedArtifact,
+        "lekh-open-vocab-ctc-transformer-v2"
+      );
+      assert.equal(manifest.architecture, "fixed-shape-transformer-ctc");
+      assert.equal(manifest.decoder, "ctc-prefix-beam-search");
+      assert.equal(manifest.beamSearch.beamWidth, 8);
+      assert.equal(manifest.beamSearch.maxSteps, 32);
+      assert.deepEqual(manifest.tensorContract, ctcTensorContract());
+      assert.equal(manifest.compiledModels, undefined);
+      assert.equal(
+        inspectContainedDirectoryTree(
+          fixture.root,
+          join(result.productionDir, "LekhNeuralTransliterator.mlmodelc")
+        ).sha256,
+        fixture.identities.compiledModel.sha256
+      );
+
+      const phase9Report = join(fixture.root, "reports", "phase9-ctc.json");
+      const phase9 = spawnSync(
+        process.execPath,
+        [
+          phase9Checker,
+          "--production",
+          "--report",
+          phase9Report
+        ],
+        {
+          cwd: fixture.root,
+          encoding: "utf8"
+        }
+      );
+      assert.equal(phase9.status, 0, phase9.stderr || phase9.stdout);
+      assert.equal(
+        readJson(phase9Report).status,
+        "passed-production-phase9-promotion"
+      );
+      assert.deepEqual(promotionDebris(fixture), []);
+    });
+  });
+
   it("rejects a rehashed production manifest whose metrics no longer come from retained evaluation evidence", () => {
     withFixture("baseline", (fixture) => {
       const result = promote(fixture);
@@ -522,7 +586,9 @@ function buildFixture(root, kind) {
   };
   const artifactFixture = kind === "split"
     ? buildSplitArtifacts(root, candidate)
-    : buildBaselineArtifacts(root, candidate);
+    : kind === "ctc"
+      ? buildCTCArtifacts(root, candidate, identities.checkpoint.sha256)
+      : buildBaselineArtifacts(root, candidate);
   Object.assign(paths, artifactFixture.paths);
   Object.assign(identities, artifactFixture.identities);
 
@@ -542,23 +608,29 @@ function buildFixture(root, kind) {
     exportRunId: EXPORT_RUN_ID,
     selectedArtifact: kind === "split"
       ? "lekh-open-vocab-bigru-attention-v1"
-      : "lekh-open-vocab-seq2seq-v1",
+      : kind === "ctc"
+        ? "lekh-open-vocab-ctc-transformer-v2"
+        : "lekh-open-vocab-seq2seq-v1",
     runtime: "CoreML",
     localOnly: true,
     neuralTailOnly: true,
     productionEligible: false,
     architecture: kind === "split"
       ? "bidirectional-gru-additive-attention-seq2seq"
-      : "gru-encoder-decoder-seq2seq",
+      : kind === "ctc"
+        ? "fixed-shape-transformer-ctc"
+        : "gru-encoder-decoder-seq2seq",
     openVocabulary: true,
     tokenization: "unicode-scalar-character",
     outputSequenceValidation: "devanagari-word-sequence-v1",
-    decoder: "beam-search",
+    decoder: kind === "ctc"
+      ? "ctc-prefix-beam-search"
+      : "beam-search",
     beamSearch: {
       enabled: true,
-      beamWidth: 4,
+      beamWidth: kind === "ctc" ? 8 : 4,
       maxOutputGraphemes: 32,
-      maxSteps: 31
+      maxSteps: kind === "ctc" ? 32 : 31
     },
     languageModelRescorer: { enabled: false, source: "none", weight: 0 },
     contextWindowWords: 0,
@@ -598,6 +670,9 @@ function buildFixture(root, kind) {
     manifest.runtimeModelContract = "split-attention-incremental-v1";
     manifest.tensorContract = splitTensorContract();
     manifest.compiledModels = artifactFixture.manifestArtifacts;
+  } else if (kind === "ctc") {
+    manifest.runtimeModelContract = "single-transformer-ctc-v1";
+    manifest.tensorContract = ctcTensorContract();
   }
   writeJson(paths.manifest, manifest);
   identities.manifest = inspectContainedRegularFile(root, paths.manifest);
@@ -634,7 +709,9 @@ function buildFixture(root, kind) {
   const exportReport = {
     status: kind === "split"
       ? "passed-open-vocab-attention-split-candidate"
-      : "passed-open-vocab-seq2seq-candidate",
+      : kind === "ctc"
+        ? "passed-open-vocab-ctc-transformer-candidate"
+        : "passed-open-vocab-seq2seq-candidate",
     modelId: manifest.selectedArtifact,
     trainingRunId: TRAINING_RUN_ID,
     exportRunId: EXPORT_RUN_ID,
@@ -802,7 +879,9 @@ function buildFixture(root, kind) {
     predictionsSha256: identities.comparisonPredictions.sha256,
     predictionsBackend: kind === "split"
       ? "coreml-compiled-split-attention-models"
-      : "coreml-compiled-model",
+      : kind === "ctc"
+        ? "coreml-compiled-transformer-ctc"
+        : "coreml-compiled-model",
     predictionArtifactIdentity,
     predictionRows: 1,
     distinctInputCount: 1,
@@ -959,6 +1038,29 @@ function buildBaselineArtifacts(root, candidate) {
   };
 }
 
+function buildCTCArtifacts(root, candidate, checkpointSha256) {
+  const artifact = buildBaselineArtifacts(root, candidate);
+  return {
+    ...artifact,
+    exportFields: {
+      ...artifact.exportFields,
+      runtimeModelContract: "single-transformer-ctc-v1",
+      coremlExport: {
+        ...artifact.exportFields.coremlExport,
+        runtimeModelContract: "single-transformer-ctc-v1",
+        sourceCheckpointSha256: checkpointSha256,
+        tensorContract: ctcTensorContract(),
+        prePublicationValidation: {
+          status: "passed"
+        },
+        artifactValidation: {
+          status: "passed"
+        }
+      }
+    }
+  };
+}
+
 function buildSplitArtifacts(root, candidate) {
   const roles = {};
   const compiledModels = {};
@@ -1107,6 +1209,19 @@ function splitTensorContract() {
         stepLogits: tensor([4, 128]),
         nextDecoderHidden: tensor([2, 4, 64])
       }
+    }
+  };
+}
+
+function ctcTensorContract() {
+  return {
+    inputIds: {
+      shape: [1, 32],
+      dataType: "INT32"
+    },
+    logits: {
+      shape: [1, 32, 128],
+      dataType: "FLOAT16"
     }
   };
 }

@@ -7,6 +7,7 @@ import {
   canonicalJsonSha256,
   configuredNeuralTrainingContract,
   inspectTrainingReportBinding,
+  neuralTrainingSampleIdentityDigests,
   resolveNeuralTrainingLayout,
   sha256Text,
   validateNeuralTrainingConfig
@@ -20,8 +21,37 @@ const attentionConfigPath = join(
   "training",
   "open-vocab-bigru-attention-v1.config.json"
 );
+const ctcConfigPath = join(
+  process.cwd(),
+  "data",
+  "neural",
+  "training",
+  "open-vocab-ctc-transformer-v2.config.json"
+);
 
 describe("neural training implementation contract", () => {
+  it("resolves architecture-specific sampled-row identities", () => {
+    expect(neuralTrainingSampleIdentityDigests({
+      trainingSampleIdSha256: "a".repeat(64),
+      devSampleIdSha256: "b".repeat(64)
+    }, "baseline")).toEqual({
+      train: "a".repeat(64),
+      dev: "b".repeat(64)
+    });
+    expect(neuralTrainingSampleIdentityDigests({
+      sampledRowDigests: {
+        train: "c".repeat(64),
+        dev: "d".repeat(64)
+      }
+    }, "ctc-transformer")).toEqual({
+      train: "c".repeat(64),
+      dev: "d".repeat(64)
+    });
+    expect(() => neuralTrainingSampleIdentityDigests({}, "unknown")).toThrow(
+      /Unsupported neural training layout kind/u
+    );
+  });
+
   it("accepts the truthful schema-v2 candidate config without requiring an estimated parameter count", () => {
     const config = currentConfig();
     delete config.architecture.estimatedParameterCount;
@@ -46,6 +76,18 @@ describe("neural training implementation contract", () => {
     expect(configuredNeuralTrainingContract(config).architecture.attentionDim).toBe(256);
   });
 
+  it("accepts the fixed-shape Transformer-CTC production contract", () => {
+    const config = currentCTCConfig();
+
+    const result = validateNeuralTrainingConfig(config);
+
+    expect(result.failures).toEqual([]);
+    expect(result.warnings).toEqual([
+      "Context language-model rescoring is disabled and not implemented."
+    ]);
+    expect(config.decoder.maximumCandidates).toBeLessThan(config.decoder.beamWidth);
+  });
+
   it("maps every allowlisted candidate id to its canonical config", () => {
     expect(
       canonicalNeuralTrainingConfigPath(
@@ -59,6 +101,12 @@ describe("neural training implementation contract", () => {
         process.cwd()
       )
     ).toBe(attentionConfigPath);
+    expect(
+      canonicalNeuralTrainingConfigPath(
+        "lekh-open-vocab-ctc-transformer-v2",
+        process.cwd()
+      )
+    ).toBe(ctcConfigPath);
     expect(() =>
       canonicalNeuralTrainingConfigPath("unregistered-model", process.cwd())
     ).toThrow(/Unsupported neural candidate modelId/u);
@@ -117,6 +165,134 @@ describe("neural training implementation contract", () => {
         "LekhNeuralTransliteratorDecoderStep.mlpackage"
       ]
     ]);
+  });
+
+  it("resolves the Transformer-CTC candidate as one canonical Core ML model", () => {
+    const layout = resolveNeuralTrainingLayout(
+      currentCTCConfig(),
+      ctcConfigPath,
+      process.cwd()
+    );
+
+    expect(layout).toMatchObject({
+      modelId: "lekh-open-vocab-ctc-transformer-v2",
+      kind: "ctc-transformer",
+      architecture: "fixed-shape-transformer-ctc",
+      runtimeModelContract: "single-transformer-ctc-v1",
+      successfulExportStatus: "passed-open-vocab-ctc-transformer-candidate",
+      predictionsBackend: "coreml-compiled-transformer-ctc",
+      candidateRootRelativePath:
+        "data/generated/neural-open-vocab-model/lekh-open-vocab-ctc-transformer-v2"
+    });
+    expect(layout.artifacts.map((artifact) => [
+      artifact.role,
+      artifact.compiledModel.split("/").at(-1),
+      artifact.mlpackage.split("/").at(-1)
+    ])).toEqual([[
+      "model",
+      "LekhNeuralTransliterator.mlmodelc",
+      "LekhNeuralTransliterator.mlpackage"
+    ]]);
+  });
+
+  it("mirrors the executable Python CTC training-contract snapshot exactly", () => {
+    const contract = configuredNeuralTrainingContract(currentCTCConfig());
+
+    expect(contract).toEqual({
+      architecture: {
+        family: "fixed-shape-transformer-ctc",
+        runtimeModelContract: "single-transformer-ctc-v1",
+        modelDimension: 256,
+        attentionHeads: 4,
+        feedForwardDimension: 1024,
+        encoderLayers: 6,
+        dropout: 0.2
+      },
+      decoder: {
+        type: "ctc-prefix-beam-search",
+        blankId: 0,
+        beamWidth: 8,
+        maxInputGraphemes: 32,
+        outputTimeSteps: 32,
+        maximumCandidates: 4
+      },
+      training: {
+        augmentation: {
+          enabled: true,
+          policy: "augmentation-chat-alias-v1",
+          aliases: [
+            { from: "chh", to: "x", weightMultiplier: 0.75 },
+            { from: "bh", to: "v", weightMultiplier: 0.5 }
+          ],
+          heldOutCollisionPolicy: "reject",
+          conflictingTrainingTargetPolicy: "reject"
+        },
+        sourceMultipliers: {
+          "dictionary-ne-ranked": 1.5,
+          "manual-ambiguity": 512,
+          "manual-chat-tail": 2048,
+          "manual-name": 128,
+          "manual-x-ksha": 2048,
+          "runtime-names": 4,
+          "runtime-words": 1.5
+        },
+        optimizer: {
+          type: "adamw",
+          beta1: 0.9,
+          beta2: 0.98,
+          epsilon: 1e-9,
+          weightDecay: 0.0001
+        },
+        scheduler: {
+          type: "linear-warmup-inverse-square-root",
+          warmupSteps: 4000
+        }
+      },
+      trainingRun: {
+        seed: 42,
+        maximumTrainRows: 1_000_000,
+        maximumDevRows: 50_000,
+        maximumEpochs: 30,
+        batchSize: 256,
+        peakLearningRate: 0.001,
+        gradientClipNorm: 1,
+        earlyStopping: {
+          enabled: true,
+          metric: "dev-weighted-ctc-loss",
+          patienceEpochs: 4,
+          minimumDelta: 0.0001,
+          restoreBestWeights: true
+        }
+      }
+    });
+  });
+
+  it("fails closed on Transformer-CTC architecture, decoder, optimizer, and path drift", () => {
+    const config = currentCTCConfig();
+    config.architecture.runtimeModelContract = "single-seq2seq-v1";
+    config.architecture.modelDimension = 255;
+    config.decoder.blankId = 1;
+    config.decoder.maximumCandidates = 9;
+    config.training.samplingPolicy.sourceMultipliers["runtime-names"] = 0;
+    config.training.augmentation.aliases[0].to = "chh";
+    config.training.optimizer.beta2 = 1;
+    config.export.compiledModel = "models/macos/Other.mlmodelc";
+    config.trainingRun.earlyStopping.patienceEpochs = 3;
+
+    const result = validateNeuralTrainingConfig(config);
+
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.stringContaining("runtimeModelContract"),
+      expect.stringContaining("modelDimension"),
+      expect.stringContaining("divide evenly"),
+      expect.stringContaining("blankId"),
+      expect.stringContaining("maximumCandidates"),
+      expect.stringContaining("sourceMultipliers"),
+      expect.stringContaining("augmentation"),
+      expect.stringContaining("optimizer"),
+      expect.stringContaining("export.compiledModel"),
+      expect.stringContaining("early-stopping patience")
+    ]));
   });
 
   it("rejects a supported model config loaded from a non-canonical path", () => {
@@ -317,4 +493,8 @@ describe("neural training implementation contract", () => {
 
 function currentConfig() {
   return JSON.parse(readFileSync(configPath, "utf8"));
+}
+
+function currentCTCConfig() {
+  return JSON.parse(readFileSync(ctcConfigPath, "utf8"));
 }

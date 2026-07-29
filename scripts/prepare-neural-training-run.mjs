@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
 import { validateNeuralDatasetManifest } from "./lib/neural-dataset-manifest.mjs";
 import {
+  neuralTrainingSampleIdentityDigests,
   resolveNeuralTrainingLayout,
   validateNeuralTrainingConfig
 } from "./lib/neural-training-contract.mjs";
@@ -138,8 +139,14 @@ if (trainingReport) {
   } else if (existsSync(checkpointPath) && trainingReport.checkpointSha256 !== sha256File(checkpointPath)) {
     blockModel("Training report checkpoint SHA-256 does not match checkpoint.pt.");
   }
-  if (!trainingReport.trainingSampleIdSha256 || !trainingReport.devSampleIdSha256) {
-    blockModel("Training report does not bind the exact sampled train/dev row identities.");
+  const sampledIdentities = layout
+    ? neuralTrainingSampleIdentityDigests(trainingReport, layout.kind)
+    : { train: null, dev: null };
+  if (!isSha256(sampledIdentities.train) ||
+      !isSha256(sampledIdentities.dev)) {
+    blockModel(
+      "Training report does not bind the exact sampled train/dev row identities."
+    );
   }
   if (Number(trainingReport.trainingSourceCounts?.["lekh-required-production-case"] ?? 0) > 0 ||
       Number(trainingReport.devSourceCounts?.["lekh-required-production-case"] ?? 0) > 0) {
@@ -170,7 +177,7 @@ finish(status, failures.length === 0 ? 0 : 1, {
   modelBlockers,
   proposedCommand:
     `.tmp/neural-seq2seq-venv/bin/python ` +
-    `scripts/train-open-vocab-seq2seq-transliterator.py ` +
+    `${layout?.trainerRelativePath ?? "scripts/train-open-vocab-seq2seq-transliterator.py"} ` +
     `--config ${relative(root, configPath)}`,
   failures,
   warnings
@@ -254,6 +261,10 @@ function blockModel(message) {
   modelBlockers.push(message);
   if (production) failures.push(message);
   else warnings.push(message);
+}
+
+function isSha256(value) {
+  return /^[a-f0-9]{64}$/u.test(String(value ?? ""));
 }
 
 function portable(path) {

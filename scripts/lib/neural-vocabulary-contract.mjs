@@ -50,8 +50,54 @@ const SPECIAL_TOKENS = Object.freeze([
 const SPECIAL_TOKEN_VALUES = new Set(
   SPECIAL_TOKENS.map(({ token }) => token)
 );
+const CTC_TOP_LEVEL_KEYS = Object.freeze([
+  "dataset",
+  "decoder",
+  "generatedAt",
+  "input",
+  "modelId",
+  "nativeRuntimePolicy",
+  "output",
+  "runtimeModelContract",
+  "schemaVersion",
+  "tokenization"
+]);
+const CTC_INPUT_KEYS = Object.freeze([
+  "eosId",
+  "idsByToken",
+  "maxLength",
+  "padId",
+  "tokensById",
+  "unkId"
+]);
+const CTC_OUTPUT_KEYS = Object.freeze([
+  "blankId",
+  "idsByToken",
+  "timeSteps",
+  "tokensById"
+]);
+const CTC_DECODER_KEYS = Object.freeze([
+  "beamWidth",
+  "maximumCandidates",
+  "outputSequenceValidation",
+  "rejectLatinCandidates",
+  "rejectWhitespaceCandidates",
+  "type"
+]);
+const CTC_INPUT_SPECIAL_TOKENS = Object.freeze([
+  Object.freeze({ field: "padId", token: "<pad>" }),
+  Object.freeze({ field: "eosId", token: "</s>" }),
+  Object.freeze({ field: "unkId", token: "<unk>" })
+]);
+const CTC_INPUT_SPECIAL_VALUES = new Set(
+  CTC_INPUT_SPECIAL_TOKENS.map(({ token }) => token)
+);
+const CTC_MODEL_ID = "lekh-open-vocab-ctc-transformer-v2";
+const CTC_RUNTIME_MODEL_CONTRACT = "single-transformer-ctc-v1";
+const CTC_BLANK_TOKEN = "<ctc-blank>";
 
 export const NEURAL_VOCABULARY_SCHEMA_VERSION = 1;
+export const NEURAL_CTC_VOCABULARY_SCHEMA_VERSION = 2;
 export const NEURAL_TOKENIZATION = "unicode-scalar-character";
 export const NEURAL_OUTPUT_SEQUENCE_VALIDATOR =
   "devanagari-word-sequence-v1";
@@ -73,6 +119,12 @@ export function validateNeuralVocabularyContract(options = {}) {
   if (!isRecord(vocabulary)) {
     failures.push("Neural vocabulary root must be an object.");
     return result(failures);
+  }
+  if (
+    vocabulary.schemaVersion === NEURAL_CTC_VOCABULARY_SCHEMA_VERSION ||
+    config?.modelId === CTC_MODEL_ID
+  ) {
+    return validateCTCVocabularyContract(options);
   }
   requireExactKeys(
     vocabulary,
@@ -184,6 +236,364 @@ export function validateNeuralVocabularyContract(options = {}) {
   }
 
   return result(failures);
+}
+
+function validateCTCVocabularyContract(options) {
+  const failures = [];
+  const vocabulary = options.vocabulary;
+  const config = options.config;
+  const manifest = options.manifest ?? null;
+
+  if (!isRecord(vocabulary)) {
+    failures.push("CTC vocabulary root must be an object.");
+    return result(failures);
+  }
+  requireExactKeys(
+    vocabulary,
+    CTC_TOP_LEVEL_KEYS,
+    "CTC vocabulary root",
+    failures
+  );
+  requireEqual(
+    vocabulary.schemaVersion,
+    NEURAL_CTC_VOCABULARY_SCHEMA_VERSION,
+    "CTC vocabulary schemaVersion must be 2.",
+    failures
+  );
+  requireEqual(
+    vocabulary.modelId,
+    CTC_MODEL_ID,
+    "CTC vocabulary modelId is unsupported.",
+    failures
+  );
+  requireEqual(
+    vocabulary.modelId,
+    config?.modelId,
+    "CTC vocabulary modelId differs from the training config.",
+    failures
+  );
+  requireEqual(
+    vocabulary.runtimeModelContract,
+    CTC_RUNTIME_MODEL_CONTRACT,
+    "CTC vocabulary runtimeModelContract is unsupported.",
+    failures
+  );
+  requireEqual(
+    vocabulary.runtimeModelContract,
+    config?.architecture?.runtimeModelContract,
+    "CTC vocabulary runtimeModelContract differs from the training config.",
+    failures
+  );
+  requireEqual(
+    vocabulary.tokenization,
+    NEURAL_TOKENIZATION,
+    "CTC vocabulary tokenization must be unicode-scalar-character.",
+    failures
+  );
+  requireEqual(
+    vocabulary.tokenization,
+    config?.architecture?.tokenization,
+    "CTC vocabulary tokenization differs from the training config.",
+    failures
+  );
+  validateGeneratedAt(vocabulary.generatedAt, failures);
+
+  validateCTCInputVocabulary(vocabulary.input, config, failures);
+  validateCTCOutputVocabulary(vocabulary.output, config, failures);
+  validateCTCDecoder({
+    decoder: vocabulary.decoder,
+    output: vocabulary.output,
+    config,
+    manifest,
+    failures
+  });
+  validateDatasetBinding({
+    dataset: vocabulary.dataset,
+    config,
+    datasetManifest: options.datasetManifest,
+    datasetManifestSha256: options.datasetManifestSha256,
+    manifest,
+    failures
+  });
+  validateNativeRuntimePolicy(vocabulary.nativeRuntimePolicy, failures);
+
+  if (isRecord(manifest)) {
+    requireEqual(
+      vocabulary.modelId,
+      manifest.selectedArtifact,
+      "CTC vocabulary modelId differs from the runtime manifest.",
+      failures
+    );
+    requireEqual(
+      vocabulary.runtimeModelContract,
+      manifest.runtimeModelContract,
+      "CTC vocabulary runtime contract differs from the runtime manifest.",
+      failures
+    );
+    requireEqual(
+      vocabulary.tokenization,
+      manifest.tokenization,
+      "CTC vocabulary tokenization differs from the runtime manifest.",
+      failures
+    );
+    requireEqual(
+      vocabulary.decoder?.type,
+      manifest.decoder,
+      "CTC vocabulary decoder type differs from the runtime manifest.",
+      failures
+    );
+    requireEqual(
+      vocabulary.decoder?.beamWidth,
+      manifest.beamSearch?.beamWidth,
+      "CTC vocabulary beam width differs from the runtime manifest.",
+      failures
+    );
+    requireEqual(
+      vocabulary.output?.timeSteps,
+      manifest.beamSearch?.maxOutputGraphemes,
+      "CTC vocabulary output time dimension differs from the runtime manifest.",
+      failures
+    );
+    requireEqual(
+      vocabulary.output?.timeSteps,
+      manifest.beamSearch?.maxSteps,
+      "CTC vocabulary decoder range differs from the runtime manifest.",
+      failures
+    );
+    requireEqual(
+      vocabulary.decoder?.outputSequenceValidation,
+      manifest.outputSequenceValidation,
+      "CTC vocabulary output validator differs from the runtime manifest.",
+      failures
+    );
+  }
+
+  return result(failures);
+}
+
+function validateCTCInputVocabulary(value, config, failures) {
+  if (!isRecord(value)) {
+    failures.push("CTC input vocabulary must be an object.");
+    return;
+  }
+  requireExactKeys(value, CTC_INPUT_KEYS, "CTC input vocabulary", failures);
+  if (
+    !Number.isSafeInteger(value.maxLength) ||
+    value.maxLength < 4 ||
+    value.maxLength > 128
+  ) {
+    failures.push("CTC input vocabulary maxLength must be an integer from 4 through 128.");
+  }
+  requireEqual(
+    value.maxLength,
+    config?.decoder?.maxInputGraphemes,
+    "CTC input vocabulary maxLength differs from the training config.",
+    failures
+  );
+  if (!validateTokenInventory(value, 4, "CTC input vocabulary", failures)) {
+    return;
+  }
+  const specialIds = [];
+  for (const { field, token } of CTC_INPUT_SPECIAL_TOKENS) {
+    const id = value[field];
+    specialIds.push(id);
+    if (
+      !Number.isSafeInteger(id) ||
+      id < 0 ||
+      id >= value.tokensById.length ||
+      value.tokensById[id] !== token ||
+      value.idsByToken?.[token] !== id
+    ) {
+      failures.push(
+        `CTC input vocabulary ${field} does not identify the exact ${token} token.`
+      );
+    }
+  }
+  if (new Set(specialIds).size !== CTC_INPUT_SPECIAL_TOKENS.length) {
+    failures.push("CTC input vocabulary special-token IDs must be distinct.");
+  }
+  for (const token of value.tokensById.filter(
+    (candidate) => !CTC_INPUT_SPECIAL_VALUES.has(candidate)
+  )) {
+    if (!/^[a-z]$/u.test(token)) {
+      failures.push(
+        `CTC input vocabulary lexical token ${JSON.stringify(token)} is not exactly one lowercase ASCII letter.`
+      );
+    }
+  }
+}
+
+function validateCTCOutputVocabulary(value, config, failures) {
+  if (!isRecord(value)) {
+    failures.push("CTC output vocabulary must be an object.");
+    return;
+  }
+  requireExactKeys(value, CTC_OUTPUT_KEYS, "CTC output vocabulary", failures);
+  if (
+    !Number.isSafeInteger(value.timeSteps) ||
+    value.timeSteps < 8 ||
+    value.timeSteps > 48
+  ) {
+    failures.push("CTC output vocabulary timeSteps must be an integer from 8 through 48.");
+  }
+  requireEqual(
+    value.timeSteps,
+    config?.decoder?.outputTimeSteps,
+    "CTC output vocabulary timeSteps differs from the training config.",
+    failures
+  );
+  if (!validateTokenInventory(value, 2, "CTC output vocabulary", failures)) {
+    return;
+  }
+  requireEqual(
+    value.blankId,
+    config?.decoder?.blankId,
+    "CTC output vocabulary blankId differs from the training config.",
+    failures
+  );
+  if (
+    !Number.isSafeInteger(value.blankId) ||
+    value.blankId !== 0 ||
+    value.tokensById[value.blankId] !== CTC_BLANK_TOKEN ||
+    value.idsByToken?.[CTC_BLANK_TOKEN] !== value.blankId
+  ) {
+    failures.push(
+      "CTC output vocabulary blankId must identify <ctc-blank> at class zero."
+    );
+  }
+  for (const [id, token] of value.tokensById.entries()) {
+    if (id !== value.blankId && !isSupportedNeuralOutputScalarToken(token)) {
+      failures.push(
+        `CTC output vocabulary lexical token ${JSON.stringify(token)} is not exactly one supported Devanagari or joiner Unicode scalar.`
+      );
+    }
+  }
+}
+
+function validateTokenInventory(value, minimumTokens, label, failures) {
+  if (
+    !Array.isArray(value.tokensById) ||
+    value.tokensById.length < minimumTokens ||
+    !value.tokensById.every((token) => typeof token === "string")
+  ) {
+    failures.push(
+      `${label} tokensById must contain its special tokens and at least one lexical token.`
+    );
+    return false;
+  }
+  if (new Set(value.tokensById).size !== value.tokensById.length) {
+    failures.push(`${label} tokensById contains duplicate tokens.`);
+  }
+  if (!isRecord(value.idsByToken)) {
+    failures.push(`${label} idsByToken must be an object.`);
+    return false;
+  }
+  const tokenKeys = [...value.tokensById].sort();
+  const idKeys = Object.keys(value.idsByToken).sort();
+  if (!deepEqual(tokenKeys, idKeys)) {
+    failures.push(`${label} idsByToken keys are not the exact inverse token inventory.`);
+  }
+  for (const [id, token] of value.tokensById.entries()) {
+    if (
+      !Number.isSafeInteger(value.idsByToken[token]) ||
+      value.idsByToken[token] !== id
+    ) {
+      failures.push(`${label} idsByToken is not the contiguous inverse of tokensById.`);
+      break;
+    }
+  }
+  return true;
+}
+
+function validateCTCDecoder({ decoder, output, config, manifest, failures }) {
+  if (!isRecord(decoder)) {
+    failures.push("CTC vocabulary decoder must be an object.");
+    return;
+  }
+  requireExactKeys(
+    decoder,
+    CTC_DECODER_KEYS,
+    "CTC vocabulary decoder",
+    failures
+  );
+  requireEqual(
+    decoder.type,
+    "ctc-prefix-beam-search",
+    "CTC vocabulary decoder type must be ctc-prefix-beam-search.",
+    failures
+  );
+  requireEqual(
+    decoder.type,
+    config?.decoder?.type,
+    "CTC vocabulary decoder type differs from the training config.",
+    failures
+  );
+  if (
+    !Number.isSafeInteger(decoder.beamWidth) ||
+    decoder.beamWidth < 2 ||
+    decoder.beamWidth > 16
+  ) {
+    failures.push("CTC vocabulary beamWidth must be an integer from 2 through 16.");
+  }
+  requireEqual(
+    decoder.beamWidth,
+    config?.decoder?.beamWidth,
+    "CTC vocabulary beam width differs from the training config.",
+    failures
+  );
+  if (
+    !Number.isSafeInteger(decoder.maximumCandidates) ||
+    decoder.maximumCandidates < 1 ||
+    decoder.maximumCandidates > decoder.beamWidth
+  ) {
+    failures.push(
+      "CTC vocabulary maximumCandidates must be an integer from 1 through beamWidth."
+    );
+  }
+  requireEqual(
+    decoder.maximumCandidates,
+    config?.decoder?.maximumCandidates,
+    "CTC vocabulary maximumCandidates differs from the training config.",
+    failures
+  );
+  requireEqual(
+    decoder.outputSequenceValidation,
+    NEURAL_OUTPUT_SEQUENCE_VALIDATOR,
+    "CTC vocabulary output sequence validator is unsupported.",
+    failures
+  );
+  requireEqual(
+    decoder.rejectWhitespaceCandidates,
+    true,
+    "CTC vocabulary must reject whitespace candidates.",
+    failures
+  );
+  requireEqual(
+    decoder.rejectLatinCandidates,
+    true,
+    "CTC vocabulary must reject Latin candidates.",
+    failures
+  );
+  requireEqual(
+    decoder.rejectWhitespaceCandidates,
+    config?.decoder?.rejectWhitespaceOutput,
+    "CTC vocabulary whitespace policy differs from the training config.",
+    failures
+  );
+  requireEqual(
+    decoder.rejectLatinCandidates,
+    config?.decoder?.rejectLatinOutput,
+    "CTC vocabulary Latin policy differs from the training config.",
+    failures
+  );
+  if (isRecord(manifest)) {
+    requireEqual(
+      output?.timeSteps,
+      manifest.beamSearch?.maxSteps,
+      "CTC vocabulary decoder does not cover the manifest output range.",
+      failures
+    );
+  }
 }
 
 export function isSupportedNeuralOutputScalarToken(value) {

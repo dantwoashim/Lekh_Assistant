@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { TextDecoder } from "node:util";
@@ -20,6 +20,9 @@ import {
 } from "./lib/neural-runtime-placement-evidence.mjs";
 
 const root = process.cwd();
+const swiftPackagePath = join(root, "native", "macos-imk", "skeleton");
+const swiftScratchPath = join(tmpdir(), "lekh-neural-native-service-swift-build");
+const swiftCachePath = join(tmpdir(), "lekh-neural-swift-package-cache");
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
   const argument = process.argv[index];
@@ -97,9 +100,17 @@ if (bundleStat.isSymbolicLink() || !bundleStat.isDirectory()) {
 
 const result = spawnSync(
   "swift",
-  ["run", "--configuration", "release", "LekhInputMethodBehaviorProbe"],
+  [
+    "run",
+    "--disable-sandbox",
+    "--configuration", "release",
+    "--package-path", swiftPackagePath,
+    "--scratch-path", swiftScratchPath,
+    "--cache-path", swiftCachePath,
+    "LekhInputMethodBehaviorProbe"
+  ],
   {
-    cwd: join(root, "native", "macos-imk", "skeleton"),
+    cwd: root,
     env: {
       ...process.env,
       LEKH_NEURAL_BENCH_BUNDLE: bundle,
@@ -162,7 +173,7 @@ parsed.artifactIdentity = {
   }).sha256,
   artifactSetSha256: artifactDescriptor.artifactSetSha256
 };
-if (artifactDescriptor.runtimeModelContract === "single-seq2seq-v1") {
+if (artifactDescriptor.artifactLayout === "single-model") {
   parsed.artifactIdentity.compiledModelSha256 =
     artifactDescriptor.artifacts[0].compiledSha256;
 } else {
@@ -327,8 +338,11 @@ function runComputePlanProbe(modelPath) {
     "swift",
     [
       "run",
+      "--disable-sandbox",
       "--configuration", "release",
-      "--package-path", join(root, "native", "macos-imk", "skeleton"),
+      "--package-path", swiftPackagePath,
+      "--scratch-path", swiftScratchPath,
+      "--cache-path", swiftCachePath,
       "LekhNeuralComputePlanProbe",
       modelPath
     ],

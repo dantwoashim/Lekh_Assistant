@@ -51,8 +51,6 @@ import {
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
-const CANONICAL_TRAINER =
-  "scripts/train-open-vocab-seq2seq-transliterator.py";
 const CANONICAL_OFFICIAL_BENCHMARK =
   "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json";
 const CANONICAL_OFFICIAL_BENCHMARK_SHA256 =
@@ -68,6 +66,28 @@ const MAX_CHECKPOINT_BYTES = 256 * 1024 * 1024;
 const MAX_MODEL_BYTES = 64 * 1024 * 1024;
 const MAX_DATASET_SPLIT_BYTES = 1024 * 1024 * 1024;
 const MAX_DATASET_LINE_CHARACTERS = 1024 * 1024;
+const PINNED_RUNTIME_VERSIONS = Object.freeze({
+  cpu: Object.freeze({
+    numpy: "1.26.4",
+    torch: "2.7.0",
+    coremltools: "9.0"
+  }),
+  cuda: Object.freeze({
+    numpy: "1.26.4",
+    torch: "2.7.0+cu118",
+    coremltools: "9.0"
+  })
+});
+
+export function pinnedNeuralRuntimeVersions(trainingDevice) {
+  const versions = PINNED_RUNTIME_VERSIONS[trainingDevice];
+  if (!versions) {
+    throw new TypeError(
+      `Unsupported neural training device ${String(trainingDevice)}.`
+    );
+  }
+  return versions;
+}
 
 export function verifyNeuralTrainingCandidate(options = {}) {
   const failures = [];
@@ -90,20 +110,11 @@ export function verifyNeuralTrainingCandidate(options = {}) {
     "Training config",
     failures
   );
-  const trainerPath = resolve(root, CANONICAL_TRAINER);
   const configEvidence = inspectRequiredFile(
     root,
     configPath,
     "Training config",
     MAX_JSON_BYTES,
-    failures,
-    true
-  );
-  const trainerEvidence = inspectRequiredFile(
-    root,
-    trainerPath,
-    "Training implementation",
-    8 * 1024 * 1024,
     failures,
     true
   );
@@ -128,6 +139,14 @@ export function verifyNeuralTrainingCandidate(options = {}) {
     failures.push(errorMessage(error));
     return result(null);
   }
+  const trainerEvidence = inspectRequiredFile(
+    root,
+    canonicalLayout.trainerPath,
+    "Training implementation",
+    8 * 1024 * 1024,
+    failures,
+    true
+  );
 
   const candidateRoot = safePath(
     root,
@@ -144,7 +163,7 @@ export function verifyNeuralTrainingCandidate(options = {}) {
   });
   const layout = effectiveLayout(canonicalLayout, candidateRoot);
   const trainerText = trainerEvidence?.contents?.toString("utf8") ?? "";
-  validateTrainerSource(trainerText, failures);
+  validateTrainerSource(trainerText, canonicalLayout.kind, failures);
 
   const dataset = inspectDataset({
     root,
@@ -410,7 +429,7 @@ export function verifyNeuralTrainingCandidate(options = {}) {
   }
 }
 
-function validateTrainerSource(source, failures) {
+function validateTrainerSource(source, kind, failures) {
   if (!source) {
     failures.push("Training implementation is empty.");
     return;
@@ -426,27 +445,52 @@ function validateTrainerSource(source, failures) {
       );
     }
   }
-  for (const required of [
-    'build_vocab(train_rows, "input")',
-    'build_vocab(train_rows, "output")',
-    "with exclusive_run_lock(args):",
-    "load_verified_official_benchmark_rows",
-    "verify_official_benchmark_training_isolation",
-    "decode_exact_compiled_candidates",
-    "predictionArtifactIdentity",
-    "effectiveArtifactInputsCanonicalJson",
-    "effectiveArtifactInputsSha256",
-    "artifactOverrides",
-    "save_training_recovery(",
-    "trainingGeneratorState",
-    "cudaRngStates",
-    "--training-device",
-    "CUBLAS_WORKSPACE_CONFIG",
-    "run_input_snapshots_share_immutable_inputs",
-    "split-host-train-then-macos-export-v1",
-    'torch.load(handle, map_location="cpu", weights_only=True)',
-    "clear_training_recovery(args)"
-  ]) {
+  const requiredMarkers = kind === "ctc-transformer"
+    ? [
+        "validate_executable_config(",
+        "configured_training_config(",
+        "ctc_prefix_beam_search(",
+        "with exclusive_run_lock(args):",
+        "load_verified_official_benchmark_rows",
+        "load_verified_compiled_ctc_coreml",
+        "write_ctc_runtime_manifest(",
+        "predictionArtifactIdentity",
+        "effectiveArtifactInputsCanonicalJson",
+        "effectiveArtifactInputsSha256",
+        "artifactOverrides",
+        "save_training_recovery(",
+        "trainingGeneratorState",
+        "cudaRngStates",
+        "--training-device",
+        "torch.use_deterministic_algorithms(True)",
+        "cpu-for-deterministic-backward",
+        "run_input_snapshots_share_immutable_inputs",
+        "split-host-train-then-macos-export-v1",
+        "weights_only=True",
+        "clear_training_recovery(args)"
+      ]
+    : [
+        'build_vocab(train_rows, "input")',
+        'build_vocab(train_rows, "output")',
+        "with exclusive_run_lock(args):",
+        "load_verified_official_benchmark_rows",
+        "verify_official_benchmark_training_isolation",
+        "decode_exact_compiled_candidates",
+        "predictionArtifactIdentity",
+        "effectiveArtifactInputsCanonicalJson",
+        "effectiveArtifactInputsSha256",
+        "artifactOverrides",
+        "save_training_recovery(",
+        "trainingGeneratorState",
+        "cudaRngStates",
+        "--training-device",
+        "CUBLAS_WORKSPACE_CONFIG",
+        "run_input_snapshots_share_immutable_inputs",
+        "split-host-train-then-macos-export-v1",
+        'torch.load(handle, map_location="cpu", weights_only=True)',
+        "clear_training_recovery(args)"
+      ];
+  for (const required of requiredMarkers) {
     if (!source.includes(required)) {
       failures.push(
         `Training implementation is missing required contract marker ${required}.`
@@ -764,10 +808,23 @@ function validateRuntimeExecutionEvidence({
     failures.push(`${role} runtime is not macOS.`);
   }
   if (!production) return;
+  const pinnedVersions = pinnedNeuralRuntimeVersions(expectedDevice);
   for (const [actual, expected, message] of [
-    [runtime.numpy, "1.26.4", `${role} NumPy version is not pinned.`],
-    [runtime.torch, "2.7.0", `${role} PyTorch version is not pinned.`],
-    [runtime.coremltools, "9.0", `${role} Core ML Tools version is not pinned.`]
+    [
+      runtime.numpy,
+      pinnedVersions.numpy,
+      `${role} NumPy version is not pinned.`
+    ],
+    [
+      runtime.torch,
+      pinnedVersions.torch,
+      `${role} PyTorch version is not pinned.`
+    ],
+    [
+      runtime.coremltools,
+      pinnedVersions.coremltools,
+      `${role} Core ML Tools version is not pinned.`
+    ]
   ]) {
     requireEqual(actual, expected, message, failures);
   }
@@ -1152,50 +1209,113 @@ function validateArchitectureExport({
   failures
 }) {
   if (!descriptor) return;
-  if (layout.kind === "baseline") {
+  if (layout.kind !== "split-attention") {
+    const label = layout.kind === "ctc-transformer" ? "CTC" : "Baseline";
     const artifact = descriptor.artifacts[0];
     requireEqual(
       report.compiledModel,
       portable(root, artifact.sourcePath),
-      "Baseline export compiled-model path is stale.",
+      `${label} export compiled-model path is stale.`,
       failures
     );
     requireEqual(
       report.compiledModelSha256,
       artifact.compiledSha256,
-      "Baseline export compiled-model digest is stale.",
+      `${label} export compiled-model digest is stale.`,
       failures
     );
     const packageEvidence = inspectDirectory(
       root,
       layout.artifacts[0].mlpackage,
-      "Baseline Core ML package",
+      `${label} Core ML package`,
       failures
     );
     requireEqual(
       report.mlpackage,
       portable(root, layout.artifacts[0].mlpackage),
-      "Baseline export package path is stale.",
+      `${label} export package path is stale.`,
       failures
     );
     requireEqual(
       report.mlpackageSha256,
       packageEvidence?.sha256,
-      "Baseline export package digest is stale.",
+      `${label} export package digest is stale.`,
       failures
     );
     requireEqual(
       report.coremlExport?.compiledSha256,
       artifact.compiledSha256,
-      "Baseline Core ML export digest is stale.",
+      `${label} Core ML export digest is stale.`,
       failures
     );
     requireEqual(
       report.coremlExport?.mlpackageSha256,
       packageEvidence?.sha256,
-      "Baseline Core ML package attestation is stale.",
+      `${label} Core ML package attestation is stale.`,
       failures
     );
+    if (layout.kind === "ctc-transformer") {
+      requireEqual(
+        report.runtimeModelContract,
+        layout.runtimeModelContract,
+        "CTC export runtime contract is stale.",
+        failures
+      );
+      requireEqual(
+        descriptor.runtimeModelContract,
+        layout.runtimeModelContract,
+        "CTC descriptor runtime contract differs from the selected layout.",
+        failures
+      );
+      requireDeepEqual(
+        descriptor.artifacts.map((candidate) => candidate.role),
+        ["model"],
+        "CTC descriptor must contain exactly one model artifact.",
+        failures
+      );
+      requireEqual(
+        manifest?.runtimeModelContract,
+        layout.runtimeModelContract,
+        "CTC manifest runtime contract is stale.",
+        failures
+      );
+      requireDeepEqual(
+        report.coremlExport?.tensorContract,
+        manifest?.tensorContract,
+        "CTC tensor contract differs between export and manifest.",
+        failures
+      );
+      requireEqual(
+        report.coremlExport?.prePublicationValidation?.status,
+        "passed",
+        "CTC pre-publication validation did not pass.",
+        failures
+      );
+      requireEqual(
+        report.coremlExport?.artifactValidation?.status,
+        "passed",
+        "CTC published-artifact validation did not pass.",
+        failures
+      );
+      requireEqual(
+        report.coremlExport?.sourceCheckpointSha256,
+        report.checkpointSha256,
+        "CTC export source-checkpoint digest is stale.",
+        failures
+      );
+      requireEqual(
+        report.coremlExport?.compiledModel,
+        report.compiledModel,
+        "CTC Core ML export path differs from the published compiled model.",
+        failures
+      );
+      requireEqual(
+        report.coremlExport?.mlpackage,
+        report.mlpackage,
+        "CTC Core ML package path differs from the published package.",
+        failures
+      );
+    }
     return;
   }
 
@@ -1510,7 +1630,7 @@ function validateRunInputSnapshot({
   requireDeepEqual(
     snapshot.trainer,
     {
-      path: CANONICAL_TRAINER,
+      path: layout.trainerRelativePath,
       sha256: trainerEvidence?.sha256
     },
     "Run snapshot trainer identity is stale.",

@@ -9,13 +9,35 @@ import {
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const BASELINE_MODEL_ID = "lekh-open-vocab-seq2seq-v1";
 const ATTENTION_MODEL_ID = "lekh-open-vocab-bigru-attention-v1";
+const CTC_MODEL_ID = "lekh-open-vocab-ctc-transformer-v2";
 const BASELINE_RUNTIME_CONTRACT = "single-seq2seq-v1";
 const ATTENTION_RUNTIME_CONTRACT = "split-attention-incremental-v1";
+const CTC_RUNTIME_CONTRACT = "single-transformer-ctc-v1";
 const BASELINE_BUNDLE_NAME = "LekhNeuralTransliterator.mlmodelc";
 const SPLIT_ROLES = Object.freeze(["encoder", "decoderStep"]);
 const SPLIT_BUNDLE_NAMES = Object.freeze({
   encoder: "LekhNeuralTransliteratorEncoder.mlmodelc",
   decoderStep: "LekhNeuralTransliteratorDecoderStep.mlmodelc"
+});
+const RUNTIME_CONTRACT_METADATA = Object.freeze({
+  [BASELINE_RUNTIME_CONTRACT]: Object.freeze({
+    artifactLayout: "single-model",
+    predictionsBackend: "coreml-compiled-model",
+    decoder: "beam-search",
+    decoderStepDelta: -1
+  }),
+  [ATTENTION_RUNTIME_CONTRACT]: Object.freeze({
+    artifactLayout: "split-attention",
+    predictionsBackend: "coreml-compiled-split-attention-models",
+    decoder: "beam-search",
+    decoderStepDelta: -1
+  }),
+  [CTC_RUNTIME_CONTRACT]: Object.freeze({
+    artifactLayout: "single-model",
+    predictionsBackend: "coreml-compiled-transformer-ctc",
+    decoder: "ctc-prefix-beam-search",
+    decoderStepDelta: 0
+  })
 });
 
 export class NeuralArtifactDescriptorError extends Error {
@@ -23,6 +45,16 @@ export class NeuralArtifactDescriptorError extends Error {
     super(message);
     this.name = "NeuralArtifactDescriptorError";
   }
+}
+
+export function neuralRuntimeContractMetadata(runtimeModelContract) {
+  const metadata = RUNTIME_CONTRACT_METADATA[runtimeModelContract];
+  if (!metadata) {
+    fail(
+      `Unsupported neural runtime model contract ${String(runtimeModelContract)}.`
+    );
+  }
+  return metadata;
 }
 
 /**
@@ -89,20 +121,46 @@ export function resolveNeuralArtifactDescriptor(options) {
   }
   const verifyExportArtifacts = options?.verifyExportArtifacts !== false;
 
-  const artifacts = manifest.runtimeModelContract === ATTENTION_RUNTIME_CONTRACT ||
+  let artifacts;
+  let runtimeModelContract;
+  if (
+    manifest.runtimeModelContract === ATTENTION_RUNTIME_CONTRACT &&
     manifest.selectedArtifact === ATTENTION_MODEL_ID
-    ? resolveSplitArtifacts(
-        repoRoot,
-        manifest,
-        artifactDirectory,
-        verifyExportArtifacts
-      )
-    : resolveBaselineArtifact(
-        repoRoot,
-        manifest,
-        manifestPath,
-        artifactDirectory
-      );
+  ) {
+    artifacts = resolveSplitArtifacts(
+      repoRoot,
+      manifest,
+      artifactDirectory,
+      verifyExportArtifacts
+    );
+    runtimeModelContract = ATTENTION_RUNTIME_CONTRACT;
+  } else if (
+    manifest.runtimeModelContract === CTC_RUNTIME_CONTRACT &&
+    manifest.selectedArtifact === CTC_MODEL_ID
+  ) {
+    artifacts = resolveCTCArtifact(
+      repoRoot,
+      manifest,
+      manifestPath,
+      artifactDirectory
+    );
+    runtimeModelContract = CTC_RUNTIME_CONTRACT;
+  } else if (
+    manifest.runtimeModelContract === undefined &&
+    manifest.selectedArtifact === BASELINE_MODEL_ID
+  ) {
+    artifacts = resolveBaselineArtifact(
+      repoRoot,
+      manifest,
+      manifestPath,
+      artifactDirectory
+    );
+    runtimeModelContract = BASELINE_RUNTIME_CONTRACT;
+  } else {
+    fail(
+      "Neural manifest does not select a supported closed runtime artifact branch."
+    );
+  }
   const totalCompiledBytes = artifacts.reduce(
     (total, artifact) => total + artifact.compiledBytes,
     0
@@ -115,9 +173,6 @@ export function resolveNeuralArtifactDescriptor(options) {
     );
   }
 
-  const runtimeModelContract = manifest.selectedArtifact === ATTENTION_MODEL_ID
-    ? ATTENTION_RUNTIME_CONTRACT
-    : BASELINE_RUNTIME_CONTRACT;
   const tensorContractSha256 = manifest.tensorContract === undefined
     ? null
     : sha256CanonicalJson(manifest.tensorContract);
@@ -141,6 +196,10 @@ export function resolveNeuralArtifactDescriptor(options) {
     schemaVersion: 1,
     modelId: manifest.selectedArtifact,
     runtimeModelContract,
+    artifactLayout:
+      neuralRuntimeContractMetadata(runtimeModelContract).artifactLayout,
+    predictionsBackend:
+      neuralRuntimeContractMetadata(runtimeModelContract).predictionsBackend,
     manifest,
     manifestPath,
     manifestSha256: manifestEvidence.sha256,
@@ -152,6 +211,34 @@ export function resolveNeuralArtifactDescriptor(options) {
     totalCompiledBytes,
     artifactSetIdentity,
     artifactSetSha256: sha256CanonicalJson(artifactSetIdentity)
+  });
+}
+
+function resolveCTCArtifact(
+  repoRoot,
+  manifest,
+  manifestPath,
+  artifactDirectory
+) {
+  if (manifest.selectedArtifact !== CTC_MODEL_ID ||
+      manifest.architecture !== "fixed-shape-transformer-ctc" ||
+      manifest.runtimeModelContract !== CTC_RUNTIME_CONTRACT ||
+      !manifest.tensorContract ||
+      typeof manifest.tensorContract !== "object" ||
+      Array.isArray(manifest.tensorContract) ||
+      manifest.compiledModels !== undefined ||
+      manifest.sha256?.compiledModels !== undefined ||
+      manifest.sha256?.mlpackages !== undefined) {
+    fail(
+      "CTC manifest does not satisfy the closed single-transformer-ctc artifact branch."
+    );
+  }
+  return resolveCanonicalSingleArtifact({
+    repoRoot,
+    manifest,
+    manifestPath,
+    artifactDirectory,
+    label: "CTC compiled model"
   });
 }
 
@@ -170,6 +257,22 @@ function resolveBaselineArtifact(
       manifest.sha256?.mlpackages !== undefined) {
     fail("Baseline manifest does not satisfy the closed single-seq2seq artifact branch.");
   }
+  return resolveCanonicalSingleArtifact({
+    repoRoot,
+    manifest,
+    manifestPath,
+    artifactDirectory,
+    label: "Baseline compiled model"
+  });
+}
+
+function resolveCanonicalSingleArtifact({
+  repoRoot,
+  manifest,
+  manifestPath,
+  artifactDirectory,
+  label
+}) {
   const expectedSha256 = requireSha256(
     manifest.sha256?.compiledModel,
     "manifest.sha256.compiledModel"
@@ -178,18 +281,14 @@ function resolveBaselineArtifact(
     artifactDirectory ?? dirname(manifestPath),
     BASELINE_BUNDLE_NAME
   );
-  assertNoSymlinkComponents(
-    repoRoot,
-    sourcePath,
-    "Baseline compiled neural model"
-  );
+  assertNoSymlinkComponents(repoRoot, sourcePath, label);
   const evidence = inspectContainedDirectoryTree(repoRoot, sourcePath, {
-    label: "Baseline compiled neural model",
+    label,
     maxBytes: 64 * 1024 * 1024,
     maxEntries: 10_000
   });
   if (evidence.sha256 !== expectedSha256) {
-    fail("Baseline compiled model bytes do not match manifest.sha256.compiledModel.");
+    fail(`${label} bytes do not match manifest.sha256.compiledModel.`);
   }
   return [{
     role: "model",

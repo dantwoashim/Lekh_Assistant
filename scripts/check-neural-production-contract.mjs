@@ -9,15 +9,23 @@ const startedAt = performance.now();
 const reportPath = join(root, "reports", "neural-production-contract-report.json");
 
 const requiredFiles = [
+  "package.json",
   "docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md",
+  "docs/neural/TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md",
   "data/neural/schema/lekh-neural-manifest.schema.json",
   "data/neural/eval/README.md",
   "data/neural/training/open-vocab-seq2seq-v1.config.json",
   "data/neural/training/open-vocab-bigru-attention-v1.config.json",
+  "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
+  "scripts/train-open-vocab-ctc-transformer.py",
+  "scripts/lib/neural_ctc_transformer.py",
   "scripts/lib/neural-artifact-descriptor.mjs",
+  "scripts/lib/neural-vocabulary-contract.mjs",
   "scripts/check-neural-training-contract.mjs",
   "scripts/evaluate-neural-open-vocab-model.mjs",
   "scripts/benchmark-neural-coreml-device.mjs",
+  "scripts/benchmark-neural-native-service.mjs",
+  "scripts/benchmark-neural-packaged-app.mjs",
   "scripts/check-neural-runtime-placement-evidence.mjs",
   "scripts/lib/neural-runtime-placement-evidence.mjs",
   "scripts/check-neural-native-integration.mjs",
@@ -25,7 +33,9 @@ const requiredFiles = [
   "scripts/check-neural-production-readiness.mjs",
   "scripts/check-neural-production-promotion.mjs",
   "scripts/promote-neural-candidate.mjs",
-  "scripts/check-neural-sota-worldclass.mjs"
+  "scripts/check-neural-sota-worldclass.mjs",
+  "native/macos-imk/skeleton/LekhNeuralCandidateService.swift",
+  "native/macos-imk/skeleton/LekhNativePreferences.swift"
 ];
 
 const failures = [];
@@ -37,10 +47,35 @@ for (const file of requiredFiles) {
 
 const specText = readText("docs/neural/LEKH_OPEN_VOCAB_MODEL_SPEC.md");
 const evalText = readText("data/neural/eval/README.md");
+const ctcTrainerText = readText("scripts/train-open-vocab-ctc-transformer.py");
+const vocabularyContractText = readText(
+  "scripts/lib/neural-vocabulary-contract.mjs"
+);
+const nativeNeuralServiceText = readText(
+  "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"
+);
+const nativePreferencesText = readText(
+  "native/macos-imk/skeleton/LekhNativePreferences.swift"
+);
+const nativeBenchmarkText = readText(
+  "scripts/benchmark-neural-native-service.mjs"
+);
+const packagedBenchmarkText = readText(
+  "scripts/benchmark-neural-packaged-app.mjs"
+);
+const packageJson = readJson("package.json");
 const schema = readJson("data/neural/schema/lekh-neural-manifest.schema.json");
 
 requireText(specText, "lekh-open-vocab-seq2seq-v1", "spec must define the baseline artifact id");
 requireText(specText, "lekh-open-vocab-bigru-attention-v1", "spec must define the split-attention artifact id");
+requireText(specText, "lekh-open-vocab-ctc-transformer-v2", "spec must define the Transformer-CTC artifact id");
+requireText(specText, "single-transformer-ctc-v1", "spec must define the Transformer-CTC runtime contract");
+requireText(specText, "<ctc-blank>", "spec must define the canonical CTC blank token");
+requireText(
+  specText,
+  "TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md",
+  "spec must link the current Transformer-CTC research review"
+);
 requireText(specText, "models/macos/LekhNeuralTransliterator.production", "spec must name the atomic production directory");
 requireText(specText, "artifactSetSha256", "spec must define the runtime artifact-set identity");
 requireText(
@@ -78,6 +113,74 @@ requireText(
   "--runtime-placement-evidence",
   "production re-verification must require observed Neural Engine placement evidence"
 );
+requireText(
+  ctcTrainerText,
+  'CTC_BLANK = "<ctc-blank>"',
+  "CTC trainer must emit the canonical blank token"
+);
+requireText(
+  vocabularyContractText,
+  'CTC_BLANK_TOKEN = "<ctc-blank>"',
+  "JavaScript vocabulary gate must accept the canonical CTC blank token"
+);
+requireText(
+  nativeNeuralServiceText,
+  'vocabulary.tokensById[blankId] == "<ctc-blank>"',
+  "Swift runtime must require the canonical CTC blank token"
+);
+requireText(
+  nativeNeuralServiceText,
+  "minimumTokenLength = 3",
+  "Swift admission policy must enforce the evaluated three-character minimum"
+);
+requireText(
+  nativeNeuralServiceText,
+  "!LekhMixedScriptPolicy.isProtectedToken(normalizedInput)",
+  "Swift admission policy must reject protected Latin tokens itself"
+);
+assert(
+  JSON.stringify(extractProtectedTokens(
+    ctcTrainerText,
+    /PROTECTED_LATIN_TOKENS\s*=\s*frozenset\(\{([\s\S]*?)\}\)/u
+  )) === JSON.stringify(extractProtectedTokens(
+    nativePreferencesText,
+    /private static let protectedTokens:\s*Set<String>\s*=\s*\[([\s\S]*?)\]/u
+  )),
+  "Python evaluation and Swift runtime protected-token inventories must match exactly"
+);
+for (const [text, label] of [
+  [nativeBenchmarkText, "native-service benchmark"],
+  [packagedBenchmarkText, "packaged-model benchmark"]
+]) {
+  requireText(
+    text,
+    "tmpdir()",
+    `${label} must keep Swift build state outside the repository`
+  );
+  requireText(
+    text,
+    '"--scratch-path"',
+    `${label} must set an explicit non-repository Swift scratch path`
+  );
+  requireText(
+    text,
+    '"--cache-path"',
+    `${label} must set an explicit non-repository Swift package cache`
+  );
+}
+for (const scriptName of [
+  "neural:open-vocab:evaluate",
+  "neural:open-vocab:benchmark",
+  "neural:phase5:evaluate",
+  "neural:phase5:benchmark"
+]) {
+  assert(
+    packageJson?.scripts?.[scriptName]?.includes(
+      "lekh-open-vocab-ctc-transformer-v2"
+    ),
+    `${scriptName} must target the active Transformer-CTC candidate`
+  );
+}
 
 for (const suite of [
   "romanized-nepali-token-gold.v1.jsonl",
@@ -115,19 +218,33 @@ if (schema) {
   assert(property(schema, "exportRunId")?.$ref === "#/$defs/runIdentifier", "schema must require an export run identity");
   assert(schema.$defs?.runIdentifier?.pattern === "^[a-f0-9]{32}$", "schema run identities must be lowercase 32-hex values");
   assert(
-    ["lekh-open-vocab-seq2seq-v1", "lekh-open-vocab-bigru-attention-v1"].every(
+    [
+      "lekh-open-vocab-seq2seq-v1",
+      "lekh-open-vocab-bigru-attention-v1",
+      "lekh-open-vocab-ctc-transformer-v2"
+    ].every(
       (artifact) => property(schema, "selectedArtifact")?.enum?.includes(artifact)
     ),
-    "schema must discriminate baseline and split-attention artifact ids"
+    "schema must discriminate baseline, split-attention, and Transformer-CTC artifact ids"
   );
-  assert(schema.oneOf?.length === 2, "schema must have exactly two closed runtime artifact branches");
+  assert(schema.oneOf?.length === 3, "schema must have exactly three closed runtime artifact branches");
   assert(
-    property(schema, "runtimeModelContract")?.const === "split-attention-incremental-v1",
-    "schema must name the split-attention runtime contract"
+    [
+      "split-attention-incremental-v1",
+      "single-transformer-ctc-v1"
+    ].every((contract) =>
+      property(schema, "runtimeModelContract")?.enum?.includes(contract)
+    ),
+    "schema must name both explicit runtime model contracts"
   );
   assert(
-    property(schema, "tensorContract")?.$ref === "#/$defs/tensorContract",
-    "schema must bind the split tensor contract"
+    JSON.stringify(property(schema, "tensorContract")).includes(
+      "#/$defs/tensorContract"
+    ) &&
+      JSON.stringify(property(schema, "tensorContract")).includes(
+        "#/$defs/ctcTensorContract"
+      ),
+    "schema must bind the split and Transformer-CTC tensor contracts"
   );
   assert(
     property(schema, "compiledModels")?.$ref === "#/$defs/compiledModels",
@@ -140,9 +257,18 @@ if (schema) {
   assert(propertyConst(schema, "openVocabulary") === true, "schema must require openVocabulary=true");
   assert(propertyConst(schema, "tokenization") === "unicode-scalar-character", "schema must require Unicode-scalar output tokens");
   assert(propertyConst(schema, "outputSequenceValidation") === "devanagari-word-sequence-v1", "schema must require the shared Devanagari output validator");
-  assert(propertyConst(schema, "decoder") === "beam-search", "schema must require beam-search decoder");
+  assert(
+    ["beam-search", "ctc-prefix-beam-search"].every((decoder) =>
+      property(schema, "decoder")?.enum?.includes(decoder)
+    ),
+    "schema must allow only the closed autoregressive and CTC decoders"
+  );
   assert(property(schema, "beamSearch")?.properties?.maxOutputGraphemes?.const === 32, "schema must bind the output tensor length");
-  assert(property(schema, "beamSearch")?.properties?.maxSteps?.const === 31, "schema must bind every scalar decoder step");
+  assert(
+    JSON.stringify(property(schema, "beamSearch")?.properties?.maxSteps?.enum) ===
+      JSON.stringify([31, 32]),
+    "schema must bind the legacy decoder to 31 steps and CTC to 32 time steps"
+  );
   assert(property(schema, "parameterCount")?.minimum === 1_000_000, "schema must enforce minimum parameter count");
   assert(property(schema, "parameterCount")?.maximum === 5_000_000, "schema must enforce maximum parameter count");
   assert(property(schema, "modelBytes")?.maximum === 16_777_216, "schema must enforce 16 MB compiled model cap");
@@ -177,6 +303,19 @@ if (schema) {
     JSON.stringify(schema.$defs?.splitHashes?.required).includes("compiledModels") &&
       JSON.stringify(schema.$defs?.splitHashes?.required).includes("mlpackages"),
     "split artifacts must bind compiled and export-package hashes"
+  );
+  assert(
+    schema.$defs?.ctcTensorContract?.required?.includes("inputIds") &&
+      schema.$defs?.ctcTensorContract?.required?.includes("logits") &&
+      JSON.stringify(
+        schema.$defs?.ctcTensorContract?.properties?.inputIds?.properties?.shape
+          ?.prefixItems
+      ).includes('"const":32') &&
+      JSON.stringify(
+        schema.$defs?.ctcTensorContract?.properties?.logits?.properties?.shape
+          ?.prefixItems
+      ).includes('"const":32'),
+    "Transformer-CTC schema must close the fixed input/logit tensor contract"
   );
   assert(property(schema, "metrics")?.properties?.tailTop1Accuracy?.minimum === 0.88, "schema must enforce tail top1 gate");
   assert(property(schema, "metrics")?.properties?.chatConventionTop1Accuracy?.minimum === 0.92, "schema must enforce chat top1 gate");
@@ -267,6 +406,13 @@ function property(schemaObject, name) {
 
 function propertyConst(schemaObject, name) {
   return property(schemaObject, name)?.const;
+}
+
+function extractProtectedTokens(text, blockPattern) {
+  const block = text.match(blockPattern)?.[1] ?? "";
+  return [...block.matchAll(/"([^"]+)"/gu)]
+    .map((match) => match[1])
+    .sort();
 }
 
 function finish(status, exitCode) {

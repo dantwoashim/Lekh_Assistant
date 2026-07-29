@@ -67,6 +67,8 @@ const reportPath = resolve(
 );
 const failures = [];
 const warnings = [];
+const CTC_MODEL_ID = "lekh-open-vocab-ctc-transformer-v2";
+const CTC_RUNTIME_CONTRACT = "single-transformer-ctc-v1";
 
 let descriptor;
 try {
@@ -101,6 +103,7 @@ const vocabEvidence = inspectContainedRegularFile(root, vocabPath, {
 });
 const manifest = descriptor.manifest;
 const vocab = parseJson(vocabEvidence.contents, "Neural vocabulary");
+const ctcRuntime = manifest.selectedArtifact === CTC_MODEL_ID;
 const service = serviceEvidence.contents.toString("utf8");
 const decoderContract = parseJson(
   decoderContractEvidence.contents,
@@ -127,7 +130,11 @@ warnings.push(...manifestVersion.warnings);
 
 require(manifest.runtime === "CoreML", "Manifest runtime must be CoreML.");
 require(
-  ["lekh-open-vocab-seq2seq-v1", "lekh-open-vocab-bigru-attention-v1"]
+  [
+    "lekh-open-vocab-seq2seq-v1",
+    "lekh-open-vocab-bigru-attention-v1",
+    CTC_MODEL_ID
+  ]
     .includes(manifest.selectedArtifact),
   "Runtime manifest artifact id is unsupported."
 );
@@ -135,13 +142,28 @@ require(
   manifest.tokenization === "unicode-scalar-character" &&
     manifest.outputSequenceValidation === "devanagari-word-sequence-v1" &&
     manifest.beamSearch?.maxSteps ===
-      manifest.beamSearch?.maxOutputGraphemes - 1,
+      manifest.beamSearch?.maxOutputGraphemes - (ctcRuntime ? 0 : 1),
   "Runtime manifest must use complete bounded Unicode-scalar decoding."
 );
 require(manifest.openVocabulary === true, "Manifest must be open-vocabulary.");
 require(manifest.localOnly === true, "Manifest must require local-only inference.");
 require(manifest.neuralTailOnly === true, "Manifest must be neural-tail-only.");
-require(manifest.decoder === "beam-search", "Manifest decoder must be beam-search.");
+require(
+  manifest.decoder === (
+    ctcRuntime ? "ctc-prefix-beam-search" : "beam-search"
+  ),
+  "Manifest decoder does not match the selected runtime architecture."
+);
+if (ctcRuntime) {
+  require(
+    manifest.runtimeModelContract === CTC_RUNTIME_CONTRACT,
+    "CTC manifest runtimeModelContract is unsupported."
+  );
+  require(
+    manifest.architecture === "fixed-shape-transformer-ctc",
+    "CTC manifest architecture is unsupported."
+  );
+}
 if (production) {
   require(
     manifest.productionEligible === true,
@@ -167,7 +189,10 @@ require(
   vocab.nativeRuntimePolicy?.neuralTailOnly === true,
   "Vocab policy must restrict the model to the candidate tail."
 );
-require(vocab.schemaVersion === 1, "Runtime supports vocab schemaVersion=1.");
+require(
+  vocab.schemaVersion === (ctcRuntime ? 2 : 1),
+  `Runtime requires vocab schemaVersion=${ctcRuntime ? 2 : 1} for the selected architecture.`
+);
 require(
   vocab.modelId === manifest.selectedArtifact,
   "Vocab modelId must match the selected artifact."
@@ -176,32 +201,55 @@ require(
   vocab.tokenization === manifest.tokenization,
   "Vocab tokenization must match the manifest."
 );
-require(
-  vocab.decoder?.type === manifest.decoder &&
-    vocab.decoder?.beamWidth === manifest.beamSearch?.beamWidth &&
-    vocab.decoder?.maxSteps === vocab.output?.maxLength - 1 &&
-    vocab.decoder?.outputSequenceValidation ===
-      "devanagari-word-sequence-v1",
-  "Vocab decoder contract does not match the manifest."
-);
-require(
-  vocab.output?.maxLength === manifest.beamSearch?.maxOutputGraphemes,
-  "Vocab output length must match the manifest."
-);
-requireVocabularyContract(vocab.input, "Input vocabulary");
-requireVocabularyContract(vocab.output, "Output vocabulary");
-const specialOutputIds = new Set([
-  vocab.output?.padId,
-  vocab.output?.sosId,
-  vocab.output?.eosId,
-  vocab.output?.unkId
-]);
-require(
-  vocab.output?.tokensById?.every((token, index) =>
-    specialOutputIds.has(index) || [...token].length === 1
-  ) === true,
-  "Every non-special output token must contain exactly one Unicode scalar."
-);
+if (ctcRuntime) {
+  require(
+    vocab.runtimeModelContract === CTC_RUNTIME_CONTRACT,
+    "CTC vocabulary runtimeModelContract is unsupported."
+  );
+  require(
+    vocab.decoder?.type === manifest.decoder &&
+      vocab.decoder?.beamWidth === manifest.beamSearch?.beamWidth &&
+      vocab.decoder?.maximumCandidates >= 1 &&
+      vocab.decoder?.maximumCandidates <= vocab.decoder?.beamWidth &&
+      vocab.decoder?.outputSequenceValidation ===
+        "devanagari-word-sequence-v1",
+    "CTC vocabulary decoder contract does not match the manifest."
+  );
+  require(
+    vocab.output?.timeSteps === manifest.beamSearch?.maxOutputGraphemes &&
+      vocab.output?.timeSteps === manifest.beamSearch?.maxSteps,
+    "CTC vocabulary output time dimension must match the manifest."
+  );
+  requireCTCVocabularyContract(vocab);
+  requireCTCTensorContract(manifest.tensorContract, vocab);
+} else {
+  require(
+    vocab.decoder?.type === manifest.decoder &&
+      vocab.decoder?.beamWidth === manifest.beamSearch?.beamWidth &&
+      vocab.decoder?.maxSteps === vocab.output?.maxLength - 1 &&
+      vocab.decoder?.outputSequenceValidation ===
+        "devanagari-word-sequence-v1",
+    "Vocab decoder contract does not match the manifest."
+  );
+  require(
+    vocab.output?.maxLength === manifest.beamSearch?.maxOutputGraphemes,
+    "Vocab output length must match the manifest."
+  );
+  requireVocabularyContract(vocab.input, "Input vocabulary");
+  requireVocabularyContract(vocab.output, "Output vocabulary");
+  const specialOutputIds = new Set([
+    vocab.output?.padId,
+    vocab.output?.sosId,
+    vocab.output?.eosId,
+    vocab.output?.unkId
+  ]);
+  require(
+    vocab.output?.tokensById?.every((token, index) =>
+      specialOutputIds.has(index) || [...token].length === 1
+    ) === true,
+    "Every non-special output token must contain exactly one Unicode scalar."
+  );
+}
 require(
   descriptor.vocabSha256 === manifest.sha256?.vocabMetadata,
   "Manifest vocabulary digest is stale."
@@ -234,7 +282,7 @@ verifyEndToEndEvidence();
 finish(manifest, descriptor, e2e, promotionReport);
 
 function verifyNativeSource() {
-  for (const [needle, message] of [
+  const requiredMarkers = [
     ["loadVerifiedArtifact(bundle: bundle)", "Runtime must verify the complete artifact before selecting a mode."],
     ["validateProductionContract(artifact)", "Manifest eligibility alone must not enable inference."],
     ["sha256Directory(modelURL)", "Runtime must verify compiled Core ML directory digests."],
@@ -249,7 +297,15 @@ function verifyNativeSource() {
     ["let budgetNanoseconds: UInt64 = 45_000_000", "Runtime must enforce its 45 ms decode budget."],
     ["LekhNeuralBeamSearch.rank(", "Runtime must use bounded beam decoding."],
     ["LekhDevanagariOutputSequence.analyze", "Runtime must constrain Devanagari output sequences."]
-  ]) {
+  ];
+  if (ctcRuntime) {
+    requiredMarkers.push(
+      ["validateCTCModelContract", "Runtime must validate the fixed CTC Core ML I/O contract."],
+      [CTC_RUNTIME_CONTRACT, "Runtime must implement the single-transformer-ctc-v1 contract."],
+      ["LekhNeuralCTCPrefixBeamSearch.rank(", "Runtime must use deterministic CTC prefix-beam decoding."]
+    );
+  }
+  for (const [needle, message] of requiredMarkers) {
     require(service.includes(needle), message);
   }
   require(
@@ -265,26 +321,40 @@ function verifyDecoderContract() {
     decoderContract.schemaVersion === 2,
     "Decoder contract schemaVersion must be 2."
   );
-  require(
-    decoderContract.score === "accumulated-log-softmax",
-    "Decoder contract must use log-softmax scoring."
-  );
-  require(
-    decoderContract.lengthNormalization ===
-      "score-divided-by-token-count-including-sos",
-    "Decoder length normalization is inconsistent."
-  );
-  require(
-    decoderContract.tokenization === "unicode-scalar-character" &&
-      decoderContract.outputSequenceValidation ===
-        "devanagari-word-sequence-v1" &&
-      decoderContract.maxSteps === "maxOutputLength-minus-1",
-    "Decoder contract is not the frozen scalar sequence contract."
-  );
+  if (!ctcRuntime) {
+    require(
+      decoderContract.score === "accumulated-log-softmax",
+      "Decoder contract must use log-softmax scoring."
+    );
+    require(
+      decoderContract.lengthNormalization ===
+        "score-divided-by-token-count-including-sos",
+      "Decoder length normalization is inconsistent."
+    );
+    require(
+      decoderContract.tokenization === "unicode-scalar-character" &&
+        decoderContract.outputSequenceValidation ===
+          "devanagari-word-sequence-v1" &&
+        decoderContract.maxSteps === "maxOutputLength-minus-1",
+      "Decoder contract is not the frozen scalar sequence contract."
+    );
+  } else {
+    require(
+      decoderContract.tokenization === "unicode-scalar-character" &&
+        decoderContract.outputSequenceValidation ===
+          "devanagari-word-sequence-v1",
+      "CTC runtime must retain the frozen scalar output grammar."
+    );
+  }
   require(
     Array.isArray(decoderContract.sequenceCases) &&
       decoderContract.sequenceCases.length >= 22,
     "Decoder contract must retain its cross-language grammar cases."
+  );
+  require(
+    Array.isArray(decoderContract.ctcCases) &&
+      decoderContract.ctcCases.length >= 5,
+    "Decoder contract must retain its cross-language CTC state-machine cases."
   );
 }
 
@@ -378,6 +448,112 @@ function verifyEndToEndEvidence() {
       e2e.cancelPendingSuppressesCompletion === true,
     "Cancellation evidence is incomplete."
   );
+}
+
+function requireCTCVocabularyContract(vocabulary) {
+  const input = vocabulary?.input;
+  const output = vocabulary?.output;
+  requireClosedVocabularyBijection(input, "CTC input vocabulary", 4);
+  requireClosedVocabularyBijection(output, "CTC output vocabulary", 2);
+  if (!input || !output) return;
+
+  const inputSpecial = [
+    ["<pad>", input.padId],
+    ["</s>", input.eosId],
+    ["<unk>", input.unkId]
+  ];
+  require(
+    input.sosId === undefined &&
+      inputSpecial.every(([token, id]) =>
+        Number.isInteger(id) &&
+        id >= 0 &&
+        id < input.tokensById.length &&
+        input.tokensById[id] === token
+      ) &&
+      new Set(inputSpecial.map(([, id]) => id)).size === inputSpecial.length,
+    "CTC input special-token identities must be distinct and exact without SOS."
+  );
+  const inputSpecialIds = new Set(inputSpecial.map(([, id]) => id));
+  require(
+    input.tokensById.every((token, index) =>
+      inputSpecialIds.has(index) || /^[a-z]$/u.test(token)
+    ),
+    "Every non-special CTC input token must be one lowercase ASCII letter."
+  );
+  require(
+    output.blankId === 0 &&
+      output.tokensById[0] === "<ctc-blank>" &&
+      output.idsByToken?.["<ctc-blank>"] === 0,
+    "CTC blank token must occupy output class zero."
+  );
+  require(
+    output.tokensById.every((token, index) =>
+      index === output.blankId || isSupportedDevanagariScalar(token)
+    ),
+    "Every non-blank CTC output token must be one supported Devanagari or joiner scalar."
+  );
+}
+
+function requireClosedVocabularyBijection(vocabulary, label, minimumTokens) {
+  const tokens = vocabulary?.tokensById;
+  const ids = vocabulary?.idsByToken;
+  require(
+    Array.isArray(tokens) && tokens.length >= minimumTokens,
+    `${label} tokensById must contain a closed token inventory.`
+  );
+  require(
+    ids && typeof ids === "object" && !Array.isArray(ids),
+    `${label} idsByToken must be an object.`
+  );
+  if (!Array.isArray(tokens) ||
+      !ids ||
+      typeof ids !== "object" ||
+      Array.isArray(ids)) return;
+  require(new Set(tokens).size === tokens.length, `${label} tokens must be unique.`);
+  require(
+    Object.keys(ids).length === tokens.length &&
+      tokens.every((token, index) => ids[token] === index),
+    `${label} token/id mappings must be a complete bijection.`
+  );
+}
+
+function requireCTCTensorContract(contract, vocabulary) {
+  const inputShape = contract?.inputIds?.shape;
+  const logitsShape = contract?.logits?.shape;
+  require(
+    contract &&
+      typeof contract === "object" &&
+      !Array.isArray(contract) &&
+      Object.keys(contract).sort().join(",") === "inputIds,logits",
+    "CTC manifest tensorContract must contain only inputIds and logits."
+  );
+  require(
+    Array.isArray(inputShape) &&
+      inputShape.length === 2 &&
+      inputShape[0] === 1 &&
+      inputShape[1] === vocabulary.input?.maxLength &&
+      contract?.inputIds?.dataType === "INT32",
+    "CTC inputIds tensor shape or data type differs from the vocabulary."
+  );
+  require(
+    Array.isArray(logitsShape) &&
+      logitsShape.length === 3 &&
+      logitsShape[0] === 1 &&
+      logitsShape[1] === vocabulary.output?.timeSteps &&
+      logitsShape[2] === vocabulary.output?.tokensById?.length &&
+      contract?.logits?.dataType === "FLOAT16",
+    "CTC logits tensor shape or data type differs from the vocabulary."
+  );
+}
+
+function isSupportedDevanagariScalar(value) {
+  if (typeof value !== "string") return false;
+  const scalars = [...value];
+  if (scalars.length !== 1) return false;
+  const codePoint = scalars[0].codePointAt(0);
+  return (codePoint >= 0x0900 && codePoint <= 0x097F) ||
+    codePoint === 0x200C ||
+    codePoint === 0x200D;
 }
 
 function requireVocabularyContract(vocabulary, label) {

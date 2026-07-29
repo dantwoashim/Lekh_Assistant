@@ -26,6 +26,43 @@ describe("neural vocabulary semantic contract", () => {
     });
   }
 
+  it("accepts the complete Transformer-CTC schema-2 runtime vocabulary", () => {
+    const validation = validateNeuralVocabularyContract(ctcFixture());
+
+    assert.equal(validation.status, "passed-neural-vocabulary-contract");
+    assert.deepEqual(validation.failures, []);
+  });
+
+  it("rejects a non-canonical CTC blank-token spelling", () => {
+    const options = ctcFixture();
+    options.vocabulary.output.tokensById[0] = "<blank>";
+    delete options.vocabulary.output.idsByToken["<ctc-blank>"];
+    options.vocabulary.output.idsByToken["<blank>"] = 0;
+
+    const validation = validateNeuralVocabularyContract(options);
+
+    assert.equal(validation.valid, false);
+    assert.match(validation.failures.join("\n"), /<ctc-blank>/u);
+  });
+
+  it("fails closed on Transformer-CTC blank, shape, decoder, and runtime drift", () => {
+    const options = ctcFixture();
+    options.vocabulary.runtimeModelContract = "single-seq2seq-v1";
+    options.vocabulary.output.blankId = 1;
+    options.vocabulary.output.timeSteps = 31;
+    options.vocabulary.decoder.maximumCandidates = 9;
+    options.vocabulary.decoder.type = "beam-search";
+    options.vocabulary.output.unreviewed = true;
+
+    const validation = validateNeuralVocabularyContract(options);
+
+    assert.equal(validation.valid, false);
+    assert.match(
+      validation.failures.join("\n"),
+      /runtimeModelContract|blankId|timeSteps|maximumCandidates|decoder type|keys are not closed/u
+    );
+  });
+
   it("requires distinct special IDs that point at exact special tokens", () => {
     const options = fixture();
     options.vocabulary.input.padId = options.vocabulary.input.sosId;
@@ -247,6 +284,100 @@ function vocabularySide(tokensById, maxLength) {
     sosId: 1,
     eosId: 2,
     unkId: 3
+  };
+}
+
+function ctcFixture() {
+  const inputTokens = ["<pad>", "</s>", "<unk>", "a", "b"];
+  const outputTokens = ["<ctc-blank>", "न", "े"];
+  const config = {
+    modelId: "lekh-open-vocab-ctc-transformer-v2",
+    architecture: {
+      runtimeModelContract: "single-transformer-ctc-v1",
+      tokenization: "unicode-scalar-character"
+    },
+    decoder: {
+      type: "ctc-prefix-beam-search",
+      blankId: 0,
+      beamWidth: 8,
+      maxInputGraphemes: 32,
+      outputTimeSteps: 32,
+      maximumCandidates: 4,
+      rejectWhitespaceOutput: true,
+      rejectLatinOutput: true
+    },
+    training: {
+      datasetManifest:
+        "data/generated/neural-open-vocab/manifest.json"
+    }
+  };
+  const vocabulary = {
+    schemaVersion: 2,
+    modelId: config.modelId,
+    generatedAt: "2026-07-29T00:00:00Z",
+    tokenization: "unicode-scalar-character",
+    runtimeModelContract: "single-transformer-ctc-v1",
+    input: {
+      maxLength: 32,
+      tokensById: inputTokens,
+      idsByToken: Object.fromEntries(
+        inputTokens.map((token, id) => [token, id])
+      ),
+      padId: 0,
+      eosId: 1,
+      unkId: 2
+    },
+    output: {
+      timeSteps: 32,
+      tokensById: outputTokens,
+      idsByToken: Object.fromEntries(
+        outputTokens.map((token, id) => [token, id])
+      ),
+      blankId: 0
+    },
+    decoder: {
+      type: "ctc-prefix-beam-search",
+      beamWidth: 8,
+      maximumCandidates: 4,
+      outputSequenceValidation: "devanagari-word-sequence-v1",
+      rejectWhitespaceCandidates: true,
+      rejectLatinCandidates: true
+    },
+    dataset: {
+      manifest: config.training.datasetManifest,
+      manifestSha256: DATASET_SHA256,
+      splitSha256: { ...SPLIT_SHA256 }
+    },
+    nativeRuntimePolicy: {
+      asyncOnly: true,
+      neverInvokeInSecureFields: true,
+      failOpenRawTypingOnError: true,
+      neuralTailOnly: true
+    }
+  };
+  const manifest = {
+    selectedArtifact: config.modelId,
+    runtimeModelContract: "single-transformer-ctc-v1",
+    tokenization: "unicode-scalar-character",
+    decoder: "ctc-prefix-beam-search",
+    outputSequenceValidation: "devanagari-word-sequence-v1",
+    beamSearch: {
+      beamWidth: 8,
+      maxOutputGraphemes: 32,
+      maxSteps: 32
+    },
+    sha256: {
+      trainingDatasetManifest: DATASET_SHA256
+    }
+  };
+  return {
+    vocabulary,
+    config,
+    datasetManifest: {
+      sha256: { ...SPLIT_SHA256 }
+    },
+    datasetManifestSha256: DATASET_SHA256,
+    manifest
   };
 }
 

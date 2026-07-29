@@ -456,6 +456,8 @@ private func verifyNeuralInputAdmissionPolicy() {
   )
 
   require(policy.accepts("cafe"), "A representable neural-tail token with an EOS slot must be admitted")
+  require(!policy.accepts("ab"), "Tokens shorter than the evaluated neural-tail minimum must fail closed")
+  require(!policy.accepts("git"), "Protected Latin tokens must fail closed inside the admission policy")
   require(!policy.accepts("bato"), "An exact shared deterministic token must bypass the neural tail")
   require(!policy.accepts("chha"), "Every exact shared deterministic token must bypass the neural tail")
   require(
@@ -481,6 +483,7 @@ private struct NeuralDecoderFixture: Decodable {
   let outputSequenceValidation: String
   let maxSteps: String
   let sequenceCases: [SequenceCase]
+  let ctcCases: [CTCDecoderCase]
   let cases: [DecoderCase]
 
   struct SequenceCase: Decodable {
@@ -500,6 +503,15 @@ private struct NeuralDecoderFixture: Decodable {
     let beamWidth: Int
     let maxOutputLength: Int
     let logitsByPrefix: [String: [Double]]
+    let expectedTokenIds: [[Int]]
+  }
+
+  struct CTCDecoderCase: Decodable {
+    let id: String
+    let blankTokenId: Int
+    let beamWidth: Int
+    let maximumCandidates: Int
+    let logits: [[Double]]
     let expectedTokenIds: [[Int]]
   }
 }
@@ -577,6 +589,23 @@ private func verifyNeuralDecoderContract() {
     }
   }
 
+  for item in fixture.ctcCases {
+    do {
+      let tokenIds = try LekhNeuralCTCPrefixBeamSearch.rank(
+        logits: item.logits,
+        blankTokenId: item.blankTokenId,
+        beamWidth: item.beamWidth,
+        maximumCandidates: item.maximumCandidates
+      )
+      require(
+        tokenIds == item.expectedTokenIds,
+        "Swift CTC decoder diverged from shared fixture \(item.id): \(tokenIds)"
+      )
+    } catch {
+      require(false, "Swift CTC decoder fixture \(item.id) failed: \(error)")
+    }
+  }
+
   for value in [
     "नेपाल", "क्षेत्र", "क़लम", "किं", "गाउँ", "दुःख",
     "पश्चात्", "क्‍ष", "पुनर्अभिमुखीकरण"
@@ -626,6 +655,82 @@ private func verifyNeuralDecoderContract() {
   }
 }
 
+private func verifyCTCPrefixBeamSearch() {
+  do {
+    let separatedRepeat = try LekhNeuralCTCPrefixBeamSearch.rank(
+      logits: [
+        [0, 6, 1],
+        [6, 0, 0],
+        [0, 6, 1]
+      ],
+      blankTokenId: 0,
+      beamWidth: 4,
+      maximumCandidates: 3
+    )
+    require(
+      separatedRepeat.first == [1, 1],
+      "A blank-separated repeated CTC label must decode twice"
+    )
+
+    let collapsedRepeat = try LekhNeuralCTCPrefixBeamSearch.rank(
+      logits: [
+        [0, 6, 1],
+        [0, 6, 1],
+        [6, 0, 0]
+      ],
+      blankTokenId: 0,
+      beamWidth: 4,
+      maximumCandidates: 3
+    )
+    require(
+      collapsedRepeat.first == [1],
+      "Adjacent repeated CTC labels without a blank must collapse"
+    )
+
+    let tied = try LekhNeuralCTCPrefixBeamSearch.rank(
+      logits: [[0, 4, 4]],
+      blankTokenId: 0,
+      beamWidth: 3,
+      maximumCandidates: 2
+    )
+    require(
+      tied == [[1], [2]],
+      "Equal-probability CTC prefixes must use lexical token-id ordering"
+    )
+  } catch {
+    require(false, "CTC prefix-beam fixtures failed: \(error)")
+  }
+
+  do {
+    _ = try LekhNeuralCTCPrefixBeamSearch.rank(
+      logits: [[0, .nan]],
+      blankTokenId: 0,
+      beamWidth: 2,
+      maximumCandidates: 1
+    )
+    require(false, "Non-finite CTC logits must fail closed")
+  } catch LekhNeuralCTCPrefixBeamSearchFailure.nonFiniteLogit {
+    // Expected.
+  } catch {
+    require(false, "Non-finite CTC logits raised the wrong failure: \(error)")
+  }
+
+  do {
+    _ = try LekhNeuralCTCPrefixBeamSearch.rank(
+      logits: [[0, 1]],
+      blankTokenId: 0,
+      beamWidth: 2,
+      maximumCandidates: 1,
+      shouldCancel: { true }
+    )
+    require(false, "A cancelled CTC decode must not emit candidates")
+  } catch LekhNeuralCTCPrefixBeamSearchFailure.cancelled {
+    // Expected.
+  } catch {
+    require(false, "Cancelled CTC decode raised the wrong failure: \(error)")
+  }
+}
+
 private final class FakeNeuralModel: LekhNeuralModelPredicting {
   typealias Handler = (MLFeatureProvider) throws -> MLFeatureProvider
 
@@ -660,6 +765,59 @@ private func neuralArray(
   return array
 }
 
+private func neuralStridedFloat16Array(
+  shape: [Int],
+  strides: [Int],
+  values: [Double]
+) -> MLMultiArray {
+  guard shape.count == strides.count,
+        !shape.isEmpty,
+        shape.allSatisfy({ $0 > 0 }),
+        strides.allSatisfy({ $0 > 0 }) else {
+    require(false, "Strided neural fixture shape and strides must be valid")
+    fatalError()
+  }
+  let logicalCount = shape.reduce(1, *)
+  let storageCount = 1 + zip(shape, strides).reduce(0) {
+    $0 + ($1.0 - 1) * $1.1
+  }
+  let pointer = UnsafeMutableRawPointer.allocate(
+    byteCount: storageCount * MemoryLayout<UInt16>.stride,
+    alignment: MemoryLayout<UInt16>.alignment
+  )
+  pointer.initializeMemory(
+    as: UInt16.self,
+    repeating: 0,
+    count: storageCount
+  )
+  let array: MLMultiArray
+  do {
+    array = try MLMultiArray(
+      dataPointer: pointer,
+      shape: shape.map(NSNumber.init(value:)),
+      dataType: .float16,
+      strides: strides.map(NSNumber.init(value:)),
+      deallocator: { $0.deallocate() }
+    )
+  } catch {
+    pointer.deallocate()
+    require(false, "Strided neural MLMultiArray fixture must allocate: \(error)")
+    fatalError()
+  }
+  for flatIndex in 0..<logicalCount {
+    var remainder = flatIndex
+    var indices = Array(repeating: 0, count: shape.count)
+    for axis in shape.indices.reversed() {
+      indices[axis] = remainder % shape[axis]
+      remainder /= shape[axis]
+    }
+    array[indices.map { NSNumber(value: $0) }] = NSNumber(
+      value: flatIndex < values.count ? values[flatIndex] : 0
+    )
+  }
+  return array
+}
+
 private func neuralProvider(_ arrays: [String: MLMultiArray]) -> MLFeatureProvider {
   let dictionary = arrays.mapValues { MLFeatureValue(multiArray: $0) }
   guard let provider = try? MLDictionaryFeatureProvider(dictionary: dictionary) else {
@@ -667,6 +825,111 @@ private func neuralProvider(_ arrays: [String: MLMultiArray]) -> MLFeatureProvid
     fatalError()
   }
   return provider
+}
+
+private func verifyCTCRuntime() {
+  let runtimeContract = LekhNeuralCTCContract(
+    maxInputLength: 4,
+    outputTimeSteps: 8,
+    vocabularySize: 3,
+    blankTokenId: 0,
+    beamWidth: 4,
+    maximumCandidates: 3
+  )
+  let inputIds = neuralArray(
+    shape: [1, runtimeContract.maxInputLength],
+    dataType: .int32,
+    values: [3, 1, 0, 0]
+  )
+  let rows = [
+    [0.0, 6.0, 1.0],
+    [6.0, 0.0, 0.0],
+    [0.0, 6.0, 1.0]
+  ] + Array(
+    repeating: [6.0, 0.0, 0.0],
+    count: runtimeContract.outputTimeSteps - 3
+  )
+  let model = FakeNeuralModel { provider in
+    require(
+      Set(provider.featureNames) == Set(["inputIds"]),
+      "CTC Core ML inference must receive only inputIds"
+    )
+    return neuralProvider([
+      "logits": neuralStridedFloat16Array(
+        shape: [
+          1,
+          runtimeContract.outputTimeSteps,
+          runtimeContract.vocabularySize
+        ],
+        strides: [
+          runtimeContract.outputTimeSteps * 5,
+          5,
+          1
+        ],
+        values: rows.flatMap { $0 }
+      )
+    ])
+  }
+  do {
+    let candidates = try LekhNeuralCTCRuntime.rank(
+      model: model,
+      contract: runtimeContract,
+      inputIds: inputIds
+    )
+    require(
+      candidates.first == [1, 1],
+      "One-shot Core ML CTC inference must preserve blank-separated repeats"
+    )
+    require(
+      model.callCount == 1,
+      "Fixed-shape CTC inference must invoke Core ML exactly once"
+    )
+    require(
+      candidates.first == [1, 1],
+      "CTC inference must respect non-contiguous MLMultiArray strides"
+    )
+  } catch {
+    require(false, "CTC runtime fixture failed: \(error)")
+  }
+
+  let malformed = FakeNeuralModel { _ in
+    neuralProvider([
+      "logits": neuralArray(
+        shape: [1, runtimeContract.outputTimeSteps, 2],
+        dataType: .float16
+      )
+    ])
+  }
+  do {
+    _ = try LekhNeuralCTCRuntime.rank(
+      model: malformed,
+      contract: runtimeContract,
+      inputIds: inputIds
+    )
+    require(false, "A malformed CTC output tensor must fail closed")
+  } catch LekhNeuralCTCRuntimeFailure.modelOutputInvalid {
+    // Expected.
+  } catch {
+    require(false, "Malformed CTC output raised the wrong failure: \(error)")
+  }
+
+  let cancelled = FakeNeuralModel { _ in neuralProvider([:]) }
+  do {
+    _ = try LekhNeuralCTCRuntime.rank(
+      model: cancelled,
+      contract: runtimeContract,
+      inputIds: inputIds,
+      shouldCancel: { true }
+    )
+    require(false, "Pre-cancelled CTC inference must not invoke Core ML")
+  } catch LekhNeuralCTCRuntimeFailure.cancelled {
+    require(
+      cancelled.callCount == 0,
+      "Pre-cancelled CTC inference must make zero model calls"
+    )
+  } catch {
+    require(false, "Cancelled CTC runtime raised the wrong failure: \(error)")
+  }
 }
 
 private func splitEncoderOutput(
@@ -1188,6 +1451,215 @@ private func verifySplitAttentionManifestContract() {
   require(!validates(openWorld), "An unknown split manifest field must fail closed")
 }
 
+private func verifyCTCManifestContract() {
+  let hashA = String(repeating: "a", count: 64)
+  let hashB = String(repeating: "b", count: 64)
+  let inputTokens = ["<pad>", "</s>", "<unk>", "a"]
+  let outputTokens = ["<ctc-blank>", "क"]
+  let inputVocabulary: [String: Any] = [
+    "maxLength": 4,
+    "tokensById": inputTokens,
+    "idsByToken": Dictionary(
+      uniqueKeysWithValues: inputTokens.enumerated().map {
+        ($0.element, $0.offset)
+      }
+    ),
+    "padId": 0,
+    "eosId": 1,
+    "unkId": 2
+  ]
+  let outputVocabulary: [String: Any] = [
+    "timeSteps": 8,
+    "tokensById": outputTokens,
+    "idsByToken": Dictionary(
+      uniqueKeysWithValues: outputTokens.enumerated().map {
+        ($0.element, $0.offset)
+      }
+    ),
+    "blankId": 0
+  ]
+  let vocab: [String: Any] = [
+    "schemaVersion": 2,
+    "modelId": "lekh-open-vocab-ctc-transformer-v2",
+    "generatedAt": "2026-07-29T00:00:00Z",
+    "tokenization": "unicode-scalar-character",
+    "runtimeModelContract": "single-transformer-ctc-v1",
+    "input": inputVocabulary,
+    "output": outputVocabulary,
+    "decoder": [
+      "type": "ctc-prefix-beam-search",
+      "beamWidth": 4,
+      "maximumCandidates": 2,
+      "outputSequenceValidation": "devanagari-word-sequence-v1",
+      "rejectWhitespaceCandidates": true,
+      "rejectLatinCandidates": true
+    ],
+    "dataset": [
+      "manifest": "data/neural/dataset.json",
+      "manifestSha256": hashA,
+      "splitSha256": [
+        "train": hashA,
+        "dev": hashB,
+        "test": hashA
+      ]
+    ],
+    "nativeRuntimePolicy": [
+      "asyncOnly": true,
+      "neverInvokeInSecureFields": true,
+      "failOpenRawTypingOnError": true,
+      "neuralTailOnly": true
+    ]
+  ]
+  let manifest: [String: Any] = [
+    "schemaVersion": 2,
+    "trainingRunId": String(repeating: "1", count: 32),
+    "exportRunId": String(repeating: "2", count: 32),
+    "selectedArtifact": "lekh-open-vocab-ctc-transformer-v2",
+    "runtime": "CoreML",
+    "runtimeModelContract": "single-transformer-ctc-v1",
+    "tensorContract": [
+      "inputIds": [
+        "shape": [1, 4],
+        "dataType": "INT32"
+      ],
+      "logits": [
+        "shape": [1, 8, 2],
+        "dataType": "FLOAT16"
+      ]
+    ],
+    "localOnly": true,
+    "neuralTailOnly": true,
+    "productionEligible": false,
+    "architecture": "fixed-shape-transformer-ctc",
+    "openVocabulary": true,
+    "tokenization": "unicode-scalar-character",
+    "outputSequenceValidation": "devanagari-word-sequence-v1",
+    "decoder": "ctc-prefix-beam-search",
+    "beamSearch": [
+      "enabled": true,
+      "beamWidth": 4,
+      "maxOutputGraphemes": 8,
+      "maxSteps": 8
+    ],
+    "languageModelRescorer": [
+      "enabled": false,
+      "source": "none",
+      "weight": 0
+    ],
+    "contextWindowWords": 0,
+    "parameterCount": 1_000_000,
+    "modelBytes": 200,
+    "trainingSources": [],
+    "datasetReports": ["reports/dataset.json"],
+    "evaluationReports": ["reports/evaluation.json"],
+    "benchmarkReports": ["reports/benchmark.json"],
+    "metrics": [
+      "tailTop1Accuracy": -1,
+      "tailTop3Accuracy": -1,
+      "chatConventionTop1Accuracy": -1,
+      "chatConventionTop3Accuracy": -1,
+      "namesTop3Accuracy": -1,
+      "protectedFalseConversionRate": -1,
+      "singleTokenPhraseExpansionRate": -1,
+      "secureFieldInferenceCount": -1
+    ],
+    "performance": [
+      "p50Ms": 999,
+      "p95Ms": 999,
+      "p99Ms": 999,
+      "targetP99Ms": 50,
+      "measuredOnDevice": false,
+      "devices": [[
+        "name": "fixture",
+        "macOS": "13",
+        "architecture": "arm64",
+        "packagedApp": false,
+        "secureFieldInferenceCount": -1,
+        "p50Ms": 999,
+        "p95Ms": 999,
+        "p99Ms": 999,
+        "artifact": "LekhNeuralTransliterator.mlmodelc",
+        "measurementKind": "full-candidate-generation"
+      ]]
+    ],
+    "requiredCases": [
+      "vato": "बाटो",
+      "bato": "बाटो",
+      "baato": "बाटो",
+      "chha": "छ",
+      "cha": "छ",
+      "xa": "छ",
+      "xaina": "छैन"
+    ],
+    "sha256": [
+      "compiledModel": hashA,
+      "sourceCheckpoint": hashB,
+      "trainingDatasetManifest": hashA,
+      "vocabMetadata": hashB
+    ],
+    "limitations": ["experimental"]
+  ]
+
+  func validates(
+    _ manifestCandidate: [String: Any],
+    _ vocabCandidate: [String: Any] = vocab
+  ) -> Bool {
+    guard let manifestData = try? JSONSerialization.data(
+      withJSONObject: manifestCandidate
+    ), let vocabData = try? JSONSerialization.data(
+      withJSONObject: vocabCandidate
+    ) else {
+      return false
+    }
+    return LekhNeuralCandidateService.validatesCTCManifestContract(
+      manifestData: manifestData,
+      vocabData: vocabData
+    )
+  }
+
+  require(
+    validates(manifest),
+    "The exact single-model Transformer CTC manifest must parse"
+  )
+
+  var malformedTensor = manifest
+  var tensorContract = malformedTensor["tensorContract"] as! [String: Any]
+  tensorContract["logits"] = [
+    "shape": [1, 8, 3],
+    "dataType": "FLOAT16"
+  ]
+  malformedTensor["tensorContract"] = tensorContract
+  require(
+    !validates(malformedTensor),
+    "A CTC class dimension detached from the vocabulary must fail closed"
+  )
+
+  var malformedVocab = vocab
+  var malformedOutput = malformedVocab["output"] as! [String: Any]
+  malformedOutput["blankId"] = 1
+  malformedVocab["output"] = malformedOutput
+  require(
+    !validates(manifest, malformedVocab),
+    "A nonzero or mislabeled CTC blank class must fail closed"
+  )
+
+  var partialTensor = manifest
+  var partialContract = partialTensor["tensorContract"] as! [String: Any]
+  partialContract.removeValue(forKey: "logits")
+  partialTensor["tensorContract"] = partialContract
+  require(
+    !validates(partialTensor),
+    "A partial CTC tensor contract must fail closed"
+  )
+
+  var openWorld = manifest
+  openWorld["unexpected"] = true
+  require(
+    !validates(openWorld),
+    "An unknown CTC manifest field must fail closed"
+  )
+}
+
 private func verifyNeuralManifestIdentityPolicy() {
   let trainingRunId = "0123456789abcdef0123456789abcdef"
   let exportRunId = "fedcba9876543210fedcba9876543210"
@@ -1267,7 +1739,10 @@ verifyRuntimeActivationGate()
 verifyCandidatePointerGate()
 verifyNeuralInputAdmissionPolicy()
 verifyNeuralDecoderContract()
+verifyCTCPrefixBeamSearch()
+verifyCTCRuntime()
 verifySplitAttentionRuntime()
 verifySplitAttentionManifestContract()
+verifyCTCManifestContract()
 verifyNeuralManifestIdentityPolicy()
 print("PASS: native candidate, delimiter, four-mode, neural admission, decoder, and manifest identity contracts")

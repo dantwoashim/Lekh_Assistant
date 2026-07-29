@@ -96,6 +96,31 @@ describe("final packaged neural evidence", () => {
     );
   });
 
+  it("binds the single-model Transformer CTC package inventory", () => {
+    withFixture("ctc", ({ resourcesDirectory }) => {
+      const evidence = buildFinalPackagedNeuralEvidence({
+        resourcesDirectory
+      });
+
+      expect(evidence).toMatchObject({
+        modelId: "lekh-open-vocab-ctc-transformer-v2",
+        runtimeModelContract: "single-transformer-ctc-v1",
+        productionEligible: false,
+        artifacts: [{
+          role: "model",
+          bundleName: "LekhNeuralTransliterator.mlmodelc"
+        }],
+        promotion: null
+      });
+      expect(
+        verifyFinalPackagedNeuralEvidence({
+          resourcesDirectory,
+          evidence
+        })
+      ).toEqual(evidence);
+    });
+  });
+
   it("detects compiled-model and manifest byte drift", () => {
     withFixture("baseline", ({ resourcesDirectory, modelPath, manifestPath }) => {
       const evidence = buildFinalPackagedNeuralEvidence({
@@ -315,15 +340,25 @@ function withFixture(kind, callback, options = {}) {
       }
     };
     let modelPath;
-    if (kind === "baseline") {
+    if (kind === "baseline" || kind === "ctc") {
       modelPath = join(
         resourcesDirectory,
         "LekhNeuralTransliterator.mlmodelc"
       );
-      writeTree(modelPath, "baseline");
+      writeTree(modelPath, kind);
       const compiled = inspectContainedDirectoryTree(root, modelPath);
-      manifest.selectedArtifact = "lekh-open-vocab-seq2seq-v1";
-      manifest.architecture = "gru-encoder-decoder-seq2seq";
+      if (kind === "ctc") {
+        manifest.selectedArtifact = "lekh-open-vocab-ctc-transformer-v2";
+        manifest.architecture = "fixed-shape-transformer-ctc";
+        manifest.runtimeModelContract = "single-transformer-ctc-v1";
+        manifest.tensorContract = {
+          inputIds: { shape: [1, 32], dataType: "INT32" },
+          logits: { shape: [1, 32, 128], dataType: "FLOAT16" }
+        };
+      } else {
+        manifest.selectedArtifact = "lekh-open-vocab-seq2seq-v1";
+        manifest.architecture = "gru-encoder-decoder-seq2seq";
+      }
       manifest.modelBytes = compiled.bytes;
       manifest.sha256.compiledModel = compiled.sha256;
     } else {

@@ -387,10 +387,33 @@ describe("neural macOS package mode policy", () => {
       artifactClass: "candidate"
     });
   });
+
+  it("accepts the closed single-model Transformer CTC branch", () => {
+    const modelId = "lekh-open-vocab-ctc-transformer-v2";
+    const artifactRoot = join(
+      ROOT,
+      "data",
+      "generated",
+      "neural-open-vocab-model",
+      modelId
+    );
+    expect(assertNeuralPackageModePolicy({
+      repoRoot: ROOT,
+      artifactRoot,
+      descriptor: descriptor(artifactRoot, false, modelId),
+      mode: "candidate-promotion",
+      experimentalEnabled: true
+    })).toMatchObject({
+      valid: true,
+      modelId,
+      artifactClass: "candidate"
+    });
+  });
 });
 
 function descriptor(artifactRoot, productionEligible, modelId = MODEL_ID) {
   const split = modelId === MODEL_ID;
+  const ctc = modelId === "lekh-open-vocab-ctc-transformer-v2";
   const artifacts = split
     ? [
         ["encoder", "LekhNeuralTransliteratorEncoder.mlmodelc"],
@@ -401,7 +424,9 @@ function descriptor(artifactRoot, productionEligible, modelId = MODEL_ID) {
     modelId,
     runtimeModelContract: split
       ? "split-attention-incremental-v1"
-      : "single-seq2seq-v1",
+      : ctc
+        ? "single-transformer-ctc-v1"
+        : "single-seq2seq-v1",
     manifestPath: join(
       artifactRoot,
       "LekhNeuralTransliterator.manifest.json"

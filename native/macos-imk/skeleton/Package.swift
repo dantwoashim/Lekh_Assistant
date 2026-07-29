@@ -21,6 +21,7 @@ let package = Package(
       exclude: [
         "App",
         "atomic-install-swap.swift",
+        "detect-quarantine.sh",
         "Info.plist",
         "PkgInfo",
         "Resources",

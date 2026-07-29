@@ -32,6 +32,7 @@ import {
   inspectContainedRegularFile
 } from "./lib/neural-artifact-filesystem.mjs";
 import {
+  neuralRuntimeContractMetadata,
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
 import {
@@ -50,6 +51,8 @@ import {
 
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+const CTC_MODEL_ID = "lekh-open-vocab-ctc-transformer-v2";
+const CTC_RUNTIME_CONTRACT = "single-transformer-ctc-v1";
 const BASELINE_COMPILED_NAME = "LekhNeuralTransliterator.mlmodelc";
 const BASELINE_PACKAGE_NAME = "LekhNeuralTransliterator.mlpackage";
 const VOCABULARY_NAME = "LekhNeuralTransliterator.vocab.json";
@@ -729,6 +732,37 @@ function verifyBaselineArtifacts({
   exportReport,
   trackedInputs
 }) {
+  const ctcRuntime = candidateManifest.selectedArtifact === CTC_MODEL_ID;
+  if (ctcRuntime) {
+    if (candidateManifest.runtimeModelContract !== CTC_RUNTIME_CONTRACT ||
+        exportReport.runtimeModelContract !== CTC_RUNTIME_CONTRACT ||
+        candidateManifest.architecture !== "fixed-shape-transformer-ctc" ||
+        !candidateManifest.tensorContract ||
+        candidateManifest.compiledModels !== undefined ||
+        candidateManifest.sha256?.compiledModels !== undefined ||
+        candidateManifest.sha256?.mlpackages !== undefined) {
+      fail(
+        "Transformer-CTC promotion requires the closed single-transformer-ctc artifact branch."
+      );
+    }
+    if (canonicalJson(exportReport.coremlExport?.tensorContract) !==
+        canonicalJson(candidateManifest.tensorContract) ||
+        exportReport.coremlExport?.prePublicationValidation?.status !==
+          "passed" ||
+        exportReport.coremlExport?.artifactValidation?.status !== "passed" ||
+        exportReport.coremlExport?.sourceCheckpointSha256 !==
+          exportReport.checkpointSha256) {
+      fail(
+        "Transformer-CTC export lacks exact tensor, checkpoint, or published-artifact attestation."
+      );
+    }
+  } else if (
+    candidateManifest.runtimeModelContract !== undefined ||
+    candidateManifest.tensorContract !== undefined ||
+    candidateManifest.selectedArtifact !== "lekh-open-vocab-seq2seq-v1"
+  ) {
+    fail("Baseline promotion requires the closed single-seq2seq artifact branch.");
+  }
   const compiledPath = declaredCandidatePath(
     repoRoot,
     candidateRoot,
@@ -1081,10 +1115,9 @@ function verifySelectionEvidence({
         artifactDescriptor.vocabSha256) {
     fail("Winning official benchmark report is stale or no longer production eligible.");
   }
-  const expectedBackend = artifactDescriptor.runtimeModelContract ===
-    "split-attention-incremental-v1"
-    ? "coreml-compiled-split-attention-models"
-    : "coreml-compiled-model";
+  const expectedBackend = neuralRuntimeContractMetadata(
+    artifactDescriptor.runtimeModelContract
+  ).predictionsBackend;
   const expectedPredictionArtifactIdentity = {
     runtimeModelContract: artifactDescriptor.runtimeModelContract,
     compiledArtifacts: Object.fromEntries(

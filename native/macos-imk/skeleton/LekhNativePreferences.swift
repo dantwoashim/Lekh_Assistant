@@ -128,6 +128,11 @@ public enum LekhMixedScriptPolicy {
     "video", "photo", "market", "bus", "taxi", "doctor", "file", "report"
   ]
 
+  public static func isProtectedToken(_ input: String) -> Bool {
+    let token = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return !token.isEmpty && protectedTokens.contains(token)
+  }
+
   public static func preserveCandidate(for normalizedInput: String) -> String? {
     let token = normalizedInput.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard !token.isEmpty, token.range(of: #"^[a-z0-9.+_-]+$"#, options: .regularExpression) != nil else {
@@ -137,7 +142,7 @@ public enum LekhMixedScriptPolicy {
     if token.contains("@") || token.range(of: #"^\+?\d[\d ._-]{3,}$"#, options: .regularExpression) != nil {
       return normalizedInput
     }
-    if protectedTokens.contains(token) {
+    if isProtectedToken(token) {
       return normalizedInput
     }
 

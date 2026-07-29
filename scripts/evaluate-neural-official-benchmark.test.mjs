@@ -209,8 +209,13 @@ function buildFixture(root) {
     schemaVersion: 2,
     trainingRunId,
     exportRunId,
-    selectedArtifact: "lekh-open-vocab-seq2seq-v1",
-    architecture: "gru-encoder-decoder-seq2seq",
+    selectedArtifact: "lekh-open-vocab-ctc-transformer-v2",
+    architecture: "fixed-shape-transformer-ctc",
+    runtimeModelContract: "single-transformer-ctc-v1",
+    tensorContract: {
+      inputIds: { shape: [1, 32], dataType: "INT32" },
+      logits: { shape: [1, 32, 128], dataType: "FLOAT16" }
+    },
     productionEligible: false,
     openVocabulary: true,
     modelBytes: compiledEvidence.bytes,
@@ -221,13 +226,14 @@ function buildFixture(root) {
   });
   const manifestEvidence = inspectContainedRegularFile(root, manifest);
   writeJson(exportReport, {
-    status: "passed-open-vocab-seq2seq-candidate",
+    status: "passed-open-vocab-ctc-transformer-candidate",
     productionEligible: false,
     coremlExport: { status: "passed" },
     runtimeArtifactContractIssues: [],
     trainingRunId,
     exportRunId,
-    modelId: "lekh-open-vocab-seq2seq-v1",
+    modelId: "lekh-open-vocab-ctc-transformer-v2",
+    runtimeModelContract: "single-transformer-ctc-v1",
     artifactOverrides: {},
     runInputSnapshot: {
       dataset: {
@@ -256,9 +262,9 @@ function buildFixture(root) {
       rows: benchmarkRows.length,
       suites: suiteEvidence,
       trainingIsolation,
-      predictionsBackend: "coreml-compiled-model",
+      predictionsBackend: "coreml-compiled-transformer-ctc",
       predictionArtifactIdentity: {
-        runtimeModelContract: "single-seq2seq-v1",
+        runtimeModelContract: "single-transformer-ctc-v1",
         compiledArtifacts: {
           model: {
             path: portable(root, compiled),

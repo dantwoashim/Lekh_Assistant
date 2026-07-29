@@ -165,6 +165,7 @@ class VocabularyAndLossTests(unittest.TestCase):
         self.output_vocab = TRAINER.build_output_vocab(self.rows)
 
     def test_ctc_vocabularies_have_distinct_special_contracts(self) -> None:
+        self.assertEqual(TRAINER.CTC_BLANK, "<ctc-blank>")
         self.assertEqual(self.input_vocab[TRAINER.PAD], 0)
         self.assertEqual(self.input_vocab[TRAINER.EOS], 1)
         self.assertEqual(self.input_vocab[TRAINER.UNK], 2)
