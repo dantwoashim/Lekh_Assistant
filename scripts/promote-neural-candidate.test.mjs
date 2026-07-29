@@ -31,6 +31,9 @@ import {
   NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
 } from "./lib/neural-runtime-placement-evidence.mjs";
 import {
+  evaluateNeuralRareScalarEvidence
+} from "./lib/neural-rare-scalar-evaluation.mjs";
+import {
   verifyNeuralProductionPromotionReceipt
 } from "./lib/neural-production-promotion-receipt.mjs";
 import {
@@ -499,6 +502,19 @@ describe("evidence-bound neural candidate promotion", () => {
     });
   });
 
+  it("rejects a forged rare-scalar pass that differs from recomputation", () => {
+    withFixture("ctc", (fixture) => {
+      const report = readJson(fixture.paths.rareScalarEvaluation);
+      report.evaluation.byScalar["ऑ"].top1ExactRows += 1;
+      writeJson(fixture.paths.rareScalarEvaluation, report);
+      assert.throws(
+        () => promote(fixture),
+        /does not match independent recomputation/u
+      );
+      assert.equal(existsProduction(fixture), false);
+    });
+  });
+
   it("rejects a rehashed production manifest whose metrics no longer come from retained evaluation evidence", () => {
     withFixture("baseline", (fixture) => {
       const result = promote(fixture);
@@ -900,11 +916,6 @@ function buildFixture(root, kind) {
   writeJson(paths.benchmark, benchmark);
   identities.benchmark = inspectContainedRegularFile(root, paths.benchmark);
 
-  write(paths.comparisonPredictions, `${JSON.stringify({
-    id: "official-1",
-    input: "nepal",
-    candidates: ["नेपाल"]
-  })}\n`);
   mkdirSync(dirname(paths.comparisonBenchmarkManifest), { recursive: true });
   copyFileSync(
     join(
@@ -912,6 +923,24 @@ function buildFixture(root, kind) {
       "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
     ),
     paths.comparisonBenchmarkManifest
+  );
+  const officialRows = kind === "ctc"
+    ? materializeOfficialBenchmarkRows(root)
+    : [{
+        id: "official-1",
+        input: "nepal",
+        acceptable: ["नेपाल"]
+      }];
+  const officialPredictionRows = officialRows.map((row) => ({
+    id: row.id,
+    input: row.input,
+    candidates: [firstAcceptedTarget(row)]
+  }));
+  write(
+    paths.comparisonPredictions,
+    officialPredictionRows
+      .map((row) => JSON.stringify(row))
+      .join("\n") + "\n"
   );
   identities.comparisonPredictions = inspectContainedRegularFile(
     root,
@@ -925,7 +954,7 @@ function buildFixture(root, kind) {
     manifest: portable(root, paths.comparisonBenchmarkManifest),
     manifestSha256: identities.comparisonBenchmarkManifest.sha256,
     corpusSha256: OFFICIAL_BENCHMARK_CORPUS_SHA256,
-    rows: 1,
+    rows: officialRows.length,
     trainingIsolation,
     predictions: portable(root, paths.comparisonPredictions),
     predictionsSha256: identities.comparisonPredictions.sha256,
@@ -967,8 +996,10 @@ function buildFixture(root, kind) {
         ? "coreml-compiled-transformer-ctc"
         : "coreml-compiled-model",
     predictionArtifactIdentity,
-    predictionRows: 1,
-    distinctInputCount: 1,
+    predictionRows: officialRows.length,
+    distinctInputCount: new Set(
+      officialRows.map((row) => row.input)
+    ).size,
     reference: {
       manifest: "data/neural/benchmarks/indicxlit-v1/manifest.json",
       manifestSha256: REFERENCE_MANIFEST_SHA256
@@ -986,7 +1017,8 @@ function buildFixture(root, kind) {
         manifest,
         datasetManifest,
         goldManifest,
-        artifactDescriptor
+        artifactDescriptor,
+        officialRows
       })
     : null;
   const candidateSpecification = {
@@ -1105,7 +1137,8 @@ function buildRareScalarEvidenceFixture({
   manifest,
   datasetManifest,
   goldManifest,
-  artifactDescriptor
+  artifactDescriptor,
+  officialRows
 }) {
   const scalarRows = [
     ["ऑ", "U+0911", true, "probe-o", "orbit", "ऑर्बिट"],
@@ -1262,6 +1295,23 @@ function buildRareScalarEvidenceFixture({
     paths.rareScalarGeneration
   );
 
+  const rareEvaluation = evaluateNeuralRareScalarEvidence({
+    contract,
+    probePredictions: predictionRows,
+    lockedEvaluations: [
+      {
+        label: "gold",
+        rows: readJsonLines(paths.goldSuite),
+        predictions: readJsonLines(paths.predictions)
+      },
+      {
+        label: "official-benchmark",
+        rows: officialRows,
+        predictions: readJsonLines(paths.comparisonPredictions)
+      }
+    ]
+  });
+  assert.equal(rareEvaluation.productionGatePassed, true);
   const report = {
     schemaVersion: 1,
     status: "passed-neural-rare-scalar-production-gate",
@@ -1295,7 +1345,7 @@ function buildRareScalarEvidenceFixture({
       ),
       corpusSha256: OFFICIAL_BENCHMARK_CORPUS_SHA256,
       predictions: fileEvidence(root, identities.comparisonPredictions),
-      rows: 1
+      rows: officialRows.length
     },
     artifactIdentity: {
       manifestSha256: identities.manifest.sha256,
@@ -1305,20 +1355,9 @@ function buildRareScalarEvidenceFixture({
       mlpackageSha256: identities.mlpackage.sha256,
       checkpointSha256: identities.checkpoint.sha256
     },
-    evaluation: {
-      status: "passed-neural-rare-scalar-evaluation",
-      policy:
-        "silver probes are diagnostic; unaccepted non-CLDR-exemplar sparse scalars are forbidden at top-1 on locked evaluations",
-      probeRows: predictionRows.length,
-      lockedEvaluationRows: 2,
-      byScalar: {},
-      spuriousNonExemplarTop1: [],
-      failures: [],
-      warnings: [],
-      productionGatePassed: true
-    },
+    evaluation: structuredClone(rareEvaluation),
     failures: [],
-    warnings: []
+    warnings: [...rareEvaluation.warnings]
   };
   writeJson(paths.rareScalarEvaluation, report);
   identities.rareScalarEvaluation = inspectContainedRegularFile(
@@ -1655,6 +1694,32 @@ function runtimePlacementEvidence(descriptor) {
   };
 }
 
+function materializeOfficialBenchmarkRows(root) {
+  const manifest = readJson(join(
+    root,
+    "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
+  ));
+  const rows = [];
+  for (const suite of manifest.suites) {
+    const source = join(sourceRoot, suite.path);
+    const destination = join(root, suite.path);
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(source, destination);
+    rows.push(...readJsonLines(destination));
+  }
+  return rows;
+}
+
+function firstAcceptedTarget(row) {
+  const accepted = row.acceptable ?? row.expected;
+  assert.ok(
+    Array.isArray(accepted) &&
+    typeof accepted[0] === "string" &&
+    accepted[0].length > 0
+  );
+  return accepted[0];
+}
+
 function write(path, contents) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, contents);
@@ -1666,6 +1731,13 @@ function writeJson(path, value) {
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function readJsonLines(path) {
+  return readFileSync(path, "utf8")
+    .split(/\r?\n/u)
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line));
 }
 
 function portable(root, path) {

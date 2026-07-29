@@ -244,6 +244,21 @@ requireText(
   "atomic promoter must fail closed when Transformer-CTC rare-scalar evidence is absent"
 );
 requireText(
+  promoterText,
+  "evaluateNeuralRareScalarEvidence({",
+  "atomic promoter must invoke the pure Transformer-CTC rare-scalar evaluator"
+);
+requireText(
+  promoterText,
+  "recomputation from locked prediction evidence.",
+  "atomic promoter must independently recompute Transformer-CTC rare-scalar semantics"
+);
+requireText(
+  specText,
+  "Promotion independently recomputes the pure rare-scalar evaluation",
+  "spec must forbid trusting a precomputed rare-scalar pass status"
+);
+requireText(
   promotionReceiptText,
   "NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 3",
   "promotion receipt schema must retain the Transformer-CTC rare-scalar evidence graph"

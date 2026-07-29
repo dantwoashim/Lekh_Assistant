@@ -51,6 +51,9 @@ import {
 import {
   validateNeuralRareScalarContract
 } from "./lib/neural-rare-scalar-contract.mjs";
+import {
+  evaluateNeuralRareScalarEvidence
+} from "./lib/neural-rare-scalar-evaluation.mjs";
 
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
@@ -632,7 +635,10 @@ function verifyEvaluationEvidence({
     predictionsPath,
     "Exact Core ML predictions",
     trackedInputs,
-    { maxBytes: 256 * 1024 * 1024 }
+    {
+      includeContents: true,
+      maxBytes: 256 * 1024 * 1024
+    }
   );
   const evaluationPredictionsSha = requireSha256(
     evaluationReport.predictionsSha256,
@@ -680,10 +686,17 @@ function verifyEvaluationEvidence({
       exportReport.goldCorpusSha256 !== goldCorpusSha256) {
     fail("Evaluation and export reports do not bind the gold corpus identity.");
   }
-  verifyGoldSuites(repoRoot, goldManifest.value, trackedInputs);
+  const rows = loadLockedEvaluationRows({
+    repoRoot,
+    manifest: goldManifest.value,
+    label: "Gold",
+    trackedInputs
+  });
 
-  if (!Number.isSafeInteger(evaluationReport.goldRows) || evaluationReport.goldRows < 1 ||
-      evaluationReport.goldRows !== exportReport.goldRows) {
+  if (!Number.isSafeInteger(evaluationReport.goldRows) ||
+      evaluationReport.goldRows < 1 ||
+      evaluationReport.goldRows !== exportReport.goldRows ||
+      evaluationReport.goldRows !== rows.length) {
     fail("Evaluation and export reports must bind the same positive goldRows count.");
   }
 
@@ -718,7 +731,12 @@ function verifyEvaluationEvidence({
       evaluationReport.datasetContentSha256 !== datasetContentSha256) {
     fail("Evaluation dataset identity does not match the candidate run-input snapshot.");
   }
-  return { predictions, manifest: goldManifest, dataset: datasetManifest };
+  return {
+    predictions,
+    manifest: goldManifest,
+    dataset: datasetManifest,
+    rows
+  };
 }
 
 function verifyRareScalarEvidence({
@@ -925,7 +943,10 @@ function verifyRareScalarEvidence({
     );
   }
 
-  const predictionRows = parseRareScalarPredictionRows(predictions.contents);
+  const predictionRows = parsePredictionRows(
+    predictions.contents,
+    "Rare-scalar predictions"
+  );
   const expectedProbes = contract.value.scalars.flatMap((record) =>
     record.probes.map((probe) => ({
       id: probe.id,
@@ -939,6 +960,38 @@ function verifyRareScalarEvidence({
     evaluation.probeRows !== predictionRows.length
   ) {
     fail("Rare-scalar predictions do not exactly cover the frozen probes.");
+  }
+  const recomputedEvaluation = evaluateNeuralRareScalarEvidence({
+    contract: contract.value,
+    probePredictions: predictionRows,
+    lockedEvaluations: [
+      {
+        label: "gold",
+        rows: goldEvidence.rows,
+        predictions: parsePredictionRows(
+          goldEvidence.predictions.contents,
+          "Gold predictions"
+        )
+      },
+      {
+        label: "official-benchmark",
+        rows: selectionResult.benchmarkRows,
+        predictions: parsePredictionRows(
+          selectionResult.comparisonPredictions.contents,
+          "Official benchmark predictions"
+        )
+      }
+    ]
+  });
+  if (
+    canonicalJson(recomputedEvaluation) !== canonicalJson(evaluation) ||
+    canonicalJson(recomputedEvaluation.warnings) !==
+      canonicalJson(value.warnings)
+  ) {
+    fail(
+      "Rare-scalar evaluation report does not match independent " +
+      "recomputation from locked prediction evidence."
+    );
   }
 
   const generation = generationReport.value;
@@ -1017,30 +1070,11 @@ function verifyEmbeddedEvidenceRecord({
   }
 }
 
-function parseRareScalarPredictionRows(contents) {
-  const text = contents.toString("utf8");
-  if (!text.endsWith("\n")) {
-    fail("Rare-scalar predictions must end with a newline.");
-  }
-  const lines = text.slice(0, -1).split("\n");
-  if (lines.length === 0 || lines.some((line) => !line)) {
-    fail("Rare-scalar predictions contain empty or missing rows.");
-  }
+function parsePredictionRows(contents, label) {
+  const rows = parseJsonLineObjects(contents, label);
   const seen = new Set();
-  return lines.map((line, index) => {
-    let row;
-    try {
-      row = JSON.parse(line);
-    } catch (error) {
-      fail(
-        `Rare-scalar prediction row ${index + 1} is invalid JSON: ` +
-        errorMessage(error)
-      );
-    }
+  return rows.map((row, index) => {
     if (
-      !row ||
-      typeof row !== "object" ||
-      Array.isArray(row) ||
       canonicalJson(Object.keys(row).sort()) !==
         canonicalJson(["candidates", "id", "input"]) ||
       typeof row.id !== "string" ||
@@ -1051,51 +1085,117 @@ function parseRareScalarPredictionRows(contents) {
       !Array.isArray(row.candidates) ||
       row.candidates.length > 4
     ) {
-      fail(`Rare-scalar prediction row ${index + 1} is invalid.`);
+      fail(`${label} row ${index + 1} is invalid.`);
     }
     seen.add(row.id);
     return row;
   });
 }
 
-function verifyGoldSuites(repoRoot, manifest, trackedInputs) {
+function parseJsonLineObjects(contents, label) {
+  const text = contents.toString("utf8");
+  if (!text.endsWith("\n")) {
+    fail(`${label} must end with a newline.`);
+  }
+  const lines = text.slice(0, -1).split("\n");
+  if (lines.length === 0 || lines.some((line) => !line)) {
+    fail(`${label} contains empty or missing rows.`);
+  }
+  return lines.map((line, index) => {
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch (error) {
+      fail(
+        `${label} row ${index + 1} is invalid JSON: ` +
+        errorMessage(error)
+      );
+    }
+    if (
+      !row ||
+      typeof row !== "object" ||
+      Array.isArray(row)
+    ) {
+      fail(`${label} row ${index + 1} must be an object.`);
+    }
+    return row;
+  });
+}
+
+function loadLockedEvaluationRows({
+  repoRoot,
+  manifest,
+  label,
+  trackedInputs
+}) {
   if (!Array.isArray(manifest.suites) || manifest.suites.length < 1) {
-    fail("Gold manifest must contain a non-empty suites inventory.");
+    fail(`${label} manifest must contain a non-empty suites inventory.`);
   }
   if (goldCorpusSha256(manifest.suites) !== manifest.corpusSha256) {
-    fail("Gold manifest corpusSha256 does not match its ordered suite inventory.");
+    fail(
+      `${label} manifest corpusSha256 does not match its ordered suite inventory.`
+    );
   }
-  const seen = new Set();
+  const seenSuites = new Set();
+  const seenRows = new Set();
+  const rows = [];
   for (const suite of manifest.suites) {
     if (!suite || typeof suite !== "object" ||
-        typeof suite.id !== "string" || suite.id.length === 0 || seen.has(suite.id)) {
-      fail("Gold suite IDs must be unique non-empty strings.");
+        typeof suite.id !== "string" || suite.id.length === 0 ||
+        seenSuites.has(suite.id)) {
+      fail(`${label} suite IDs must be unique non-empty strings.`);
     }
-    seen.add(suite.id);
+    seenSuites.add(suite.id);
     if (typeof suite.path !== "string" || isAbsolute(suite.path) ||
         suite.path.split(/[\\/]/u).includes("..")) {
-      fail(`Gold suite ${suite.id} must use a canonical repository-relative path.`);
+      fail(
+        `${label} suite ${suite.id} must use a canonical ` +
+        "repository-relative path."
+      );
     }
     const suitePath = resolve(repoRoot, suite.path);
     const evidence = trackFile(
       repoRoot,
       suitePath,
-      `Gold suite ${suite.id}`,
+      `${label} suite ${suite.id}`,
       trackedInputs,
       { maxBytes: 64 * 1024 * 1024, includeContents: true }
     );
-    if (evidence.sha256 !== requireSha256(suite.sha256, `Gold suite ${suite.id} sha256`)) {
-      fail(`Gold suite ${suite.id} bytes do not match its manifest identity.`);
+    if (
+      evidence.sha256 !== requireSha256(
+        suite.sha256,
+        `${label} suite ${suite.id} sha256`
+      )
+    ) {
+      fail(
+        `${label} suite ${suite.id} bytes do not match its manifest identity.`
+      );
     }
-    const rows = evidence.contents
-      .toString("utf8")
-      .split(/\r?\n/u)
-      .filter((line) => line.trim().length > 0)
-      .length;
-    if (!Number.isSafeInteger(suite.rows) || suite.rows !== rows) {
-      fail(`Gold suite ${suite.id} row count does not match its manifest.`);
+    const suiteRows = parseJsonLineObjects(
+      evidence.contents,
+      `${label} suite ${suite.id}`
+    );
+    if (!Number.isSafeInteger(suite.rows) ||
+        suite.rows !== suiteRows.length) {
+      fail(
+        `${label} suite ${suite.id} row count does not match its manifest.`
+      );
+    }
+    for (const row of suiteRows) {
+      if (
+        typeof row.id !== "string" ||
+        !row.id ||
+        seenRows.has(row.id) ||
+        typeof row.input !== "string" ||
+        !row.input
+      ) {
+        fail(`${label} suites contain an invalid or duplicate row identity.`);
+      }
+      seenRows.add(row.id);
+      rows.push(row);
     }
   }
+  return rows;
 }
 
 function discoverAndVerifyArtifacts({
@@ -1567,14 +1667,57 @@ function verifySelectionEvidence({
     winner.evidence.comparisonPredictions,
     "Winning official benchmark predictions",
     trackedInputs,
-    { maxBytes: 64 * 1024 * 1024 }
+    {
+      includeContents: candidateManifest.selectedArtifact === CTC_MODEL_ID,
+      maxBytes: 64 * 1024 * 1024
+    }
   );
-  const benchmarkManifest = trackSelectionEvidenceFile(
-    repoRoot,
-    winner.evidence.benchmarkManifest,
-    "Winning official benchmark manifest",
-    trackedInputs
-  );
+  let benchmarkRows = null;
+  let benchmarkManifest;
+  if (candidateManifest.selectedArtifact === CTC_MODEL_ID) {
+    const benchmarkManifestPath = resolveSelectionEvidencePath(
+      repoRoot,
+      winner.evidence.benchmarkManifest,
+      "Winning official benchmark manifest"
+    );
+    const benchmarkManifestEvidence = readJsonEvidence(
+      repoRoot,
+      benchmarkManifestPath,
+      "Winning official benchmark manifest",
+      trackedInputs
+    );
+    benchmarkManifest = benchmarkManifestEvidence.file;
+    if (
+      benchmarkManifest.sha256 !==
+      winner.evidence.benchmarkManifest.sha256
+    ) {
+      fail(
+        "Winning official benchmark manifest changed after model selection."
+      );
+    }
+    benchmarkRows = loadLockedEvaluationRows({
+      repoRoot,
+      manifest: benchmarkManifestEvidence.value,
+      label: "Official benchmark",
+      trackedInputs
+    });
+    if (
+      benchmarkRows.length !== comparison.predictionRows ||
+      benchmarkRows.length !== exportReport.comparisonBenchmark?.rows
+    ) {
+      fail(
+        "Winning official benchmark row inventory differs from the " +
+        "comparison and export evidence."
+      );
+    }
+  } else {
+    benchmarkManifest = trackSelectionEvidenceFile(
+      repoRoot,
+      winner.evidence.benchmarkManifest,
+      "Winning official benchmark manifest",
+      trackedInputs
+    );
+  }
   if (resolveDeclaredPath(
     repoRoot,
     comparison.predictions,
@@ -1604,7 +1747,8 @@ function verifySelectionEvidence({
     specification,
     comparisonReport: comparisonEvidence.file,
     comparisonPredictions,
-    benchmarkManifest
+    benchmarkManifest,
+    benchmarkRows
   };
 }
 
@@ -1635,6 +1779,7 @@ function trackSelectionEvidenceFile(
     label,
     trackedInputs,
     {
+      includeContents: Boolean(options.includeContents),
       maxBytes: options.maxBytes ?? 16 * 1024 * 1024
     }
   );
