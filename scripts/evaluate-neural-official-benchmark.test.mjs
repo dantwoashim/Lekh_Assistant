@@ -17,6 +17,10 @@ import {
   inspectContainedDirectoryTree,
   inspectContainedRegularFile
 } from "./lib/neural-artifact-filesystem.mjs";
+import {
+  CTC_COREML_PARITY_CASE_IDS,
+  CTC_COREML_PARITY_POLICY
+} from "./lib/neural-ctc-coreml-parity-contract.mjs";
 
 const evaluator = join(
   process.cwd(),
@@ -86,6 +90,21 @@ describe("official benchmark evaluator CLI", () => {
       assert.equal(result.status, 1);
       assert.ok(readJson(fixture.report).failures.some((failure) =>
         /exact finite-path decoder policy/u.test(failure)
+      ));
+    });
+  });
+
+  it("rejects an export without representative Core ML parity", () => {
+    withFixture((fixture) => {
+      const exportReport = readJson(fixture.exportReport);
+      delete exportReport.coremlExport.representativeParityPolicy;
+      writeJson(fixture.exportReport, exportReport);
+
+      const result = run(fixture);
+
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /representative compiled Core ML parity evidence/u.test(failure)
       ));
     });
   });
@@ -250,7 +269,8 @@ function buildFixture(root) {
         policyId: "ctc-finite-path-only-v1",
         rule: "repeat-aware-required-time-steps<=logit-time-steps",
         purpose: "exclude-zero-probability-prefixes"
-      }
+      },
+      ...ctcCoreMLParityEvidence()
     },
     runtimeArtifactContractIssues: [],
     trainingRunId,
@@ -308,6 +328,58 @@ function buildFixture(root) {
   };
 }
 
+function ctcCoreMLParityEvidence() {
+  const cases = CTC_COREML_PARITY_CASE_IDS.map((caseId, index) => ({
+    caseId,
+    contentLength: [6, 3, 5, 8, 31][index],
+    inputSha256: sha256(`official-parity-input-${index}`),
+    maximumAbsoluteLogitError: (index + 1) / 10_000
+  }));
+  const identities = cases.map((candidate) => ({
+    caseId: candidate.caseId,
+    contentLength: candidate.contentLength,
+    inputSha256: candidate.inputSha256
+  }));
+  const suite = {
+    schemaVersion: 1,
+    status: "passed",
+    policyId: CTC_COREML_PARITY_POLICY.policyId,
+    caseCount: cases.length,
+    caseIdentitySha256: sha256(JSON.stringify(identities)),
+    maximumAbsoluteLogitError: 0.0005,
+    relativeTolerance: 5e-3,
+    absoluteTolerance: 5e-3,
+    cases
+  };
+  return {
+    tensorContract: {
+      inputIds: { shape: [1, 32], dataType: "INT32" },
+      logits: { shape: [1, 32, 128], dataType: "FLOAT16" }
+    },
+    representativeParityPolicy: structuredClone(
+      CTC_COREML_PARITY_POLICY
+    ),
+    prePublicationValidation: {
+      status: "passed",
+      knownAnswerInputSha256: cases[0].inputSha256,
+      maximumAbsoluteLogitError:
+        cases[0].maximumAbsoluteLogitError,
+      relativeTolerance: 5e-3,
+      absoluteTolerance: 5e-3,
+      representativeParitySuite: structuredClone(suite)
+    },
+    artifactValidation: {
+      status: "passed",
+      knownAnswerInputSha256: cases[0].inputSha256,
+      maximumAbsoluteLogitError:
+        cases[0].maximumAbsoluteLogitError,
+      relativeTolerance: 5e-3,
+      absoluteTolerance: 5e-3,
+      representativeParitySuite: structuredClone(suite)
+    }
+  };
+}
+
 function run(fixture) {
   return spawnSync(process.execPath, [
     evaluator,
@@ -325,6 +397,10 @@ function run(fixture) {
     cwd: fixture.root,
     encoding: "utf8"
   });
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function officialBenchmarkInputSha256(rows) {

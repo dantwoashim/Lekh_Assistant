@@ -11,6 +11,9 @@ import {
 import {
   isCTCFinitePathDecoderPolicy
 } from "./lib/neural-ctc-finite-path-contract.mjs";
+import {
+  hasCTCCoreMLParityEvidence
+} from "./lib/neural-ctc-coreml-parity-contract.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -228,6 +231,12 @@ function bindExportEvidence() {
       )) {
     failures.push(
       "Transformer-CTC evaluation requires the exact finite-path decoder policy."
+    );
+  }
+  if (exportReport.runtimeModelContract === "single-transformer-ctc-v1" &&
+      !hasCTCCoreMLParityEvidence(exportReport.coremlExport)) {
+    failures.push(
+      "Transformer-CTC evaluation requires representative compiled Core ML parity evidence."
     );
   }
 

@@ -48,6 +48,9 @@ import {
 import {
   validateNeuralVocabularyContract
 } from "./neural-vocabulary-contract.mjs";
+import {
+  hasCTCCoreMLParityEvidence
+} from "./neural-ctc-coreml-parity-contract.mjs";
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
@@ -1315,6 +1318,11 @@ function validateArchitectureExport({
         "CTC Core ML package path differs from the published package.",
         failures
       );
+      if (!hasCTCCoreMLParityEvidence(report.coremlExport)) {
+        failures.push(
+          "CTC export lacks representative compiled Core ML parity evidence."
+        );
+      }
     }
     return;
   }

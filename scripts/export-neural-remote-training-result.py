@@ -27,6 +27,11 @@ from scripts.lib.neural_remote_artifacts import (  # noqa: E402
     safe_relative_path,
     trainer_path_for_config,
 )
+from scripts.lib.neural_ctc_coreml_parity import (  # noqa: E402
+    CTC_COREML_PARITY_POLICY,
+    enforce_ctc_representative_coreml_parity,
+    validate_ctc_representative_parity_evidence,
+)
 
 
 DEFAULT_CONFIG = CTC_TRANSFORMER_CONFIG
@@ -106,23 +111,30 @@ def main() -> int:
                 else nullcontext(None)
             )
             with decoder_context as decoder_state:
-                with trainer.exclusive_run_lock(trainer_args):
-                    training_report = trainer.read_json(
-                        trainer.training_report_path(trainer_args)
-                    )
-                    if training_report.get("trainingExecutionModes") != {
-                        "skipTrain": False,
-                        "skipCoreML": True,
-                        "trainingDevice": "cuda",
-                    }:
-                        raise RuntimeError(
-                            "Canonical checkpoint is not a completed remote CUDA candidate."
+                parity_context = (
+                    enforce_ctc_representative_coreml_parity(trainer)
+                    if config_relative == CTC_TRANSFORMER_CONFIG
+                    else nullcontext(None)
+                )
+                with parity_context as parity_state:
+                    with trainer.exclusive_run_lock(trainer_args):
+                        training_report = trainer.read_json(
+                            trainer.training_report_path(trainer_args)
                         )
-                    try:
-                        trainer.ensure_run_input_snapshot(trainer_args)
-                        export_report = trainer.run_pipeline(trainer_args)
-                    finally:
-                        trainer.cleanup_run_input_snapshot(trainer_args)
+                        if training_report.get("trainingExecutionModes") != {
+                            "skipTrain": False,
+                            "skipCoreML": True,
+                            "trainingDevice": "cuda",
+                        }:
+                            raise RuntimeError(
+                                "Canonical checkpoint is not a completed "
+                                "remote CUDA candidate."
+                            )
+                        try:
+                            trainer.ensure_run_input_snapshot(trainer_args)
+                            export_report = trainer.run_pipeline(trainer_args)
+                        finally:
+                            trainer.cleanup_run_input_snapshot(trainer_args)
         validate_coreml_compute_precision_evidence(
             export_report,
             precision_state,
@@ -133,6 +145,10 @@ def main() -> int:
             validate_ctc_finite_path_decoder_evidence(
                 export_report,
                 decoder_state,
+            )
+            validate_ctc_representative_parity_evidence(
+                export_report,
+                parity_state,
             )
         if (
             export_report.get("executionTopology")
@@ -175,6 +191,14 @@ def main() -> int:
                             **decoder_state,
                         }
                         if decoder_state is not None
+                        else None
+                    ),
+                    "conversionParity": (
+                        {
+                            "policy": CTC_COREML_PARITY_POLICY,
+                            **parity_state,
+                        }
+                        if parity_state is not None
                         else None
                     ),
                     "productionEligible": export_report[

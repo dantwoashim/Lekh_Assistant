@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+
+import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +22,9 @@ if SPECIFICATION is None or SPECIFICATION.loader is None:
     raise RuntimeError("Unable to load the remote Core ML exporter.")
 EXPORTER = importlib.util.module_from_spec(SPECIFICATION)
 SPECIFICATION.loader.exec_module(EXPORTER)
+from scripts.lib.neural_ctc_coreml_parity import (  # noqa: E402
+    EXPECTED_CTC_PARITY_VALIDATION_CALLS,
+)
 
 
 class FakeCoreMLTools:
@@ -68,6 +74,68 @@ class FakeCTCTrainer(FakeTrainer):
             left == right
             for left, right in zip(token_ids, token_ids[1:])
         )
+
+
+class FakeParityTrainer(FakeCTCTrainer):
+    np = np
+    INPUT_SPECIAL = ["<pad>", "</s>", "<unk>"]
+    PAD = "<pad>"
+    EOS = "</s>"
+
+    @staticmethod
+    def encode_input(
+        text: str,
+        vocabulary: dict[str, int],
+        maximum_length: int,
+    ) -> list[int]:
+        values = [vocabulary[token] for token in text]
+        values.append(vocabulary["</s>"])
+        return values + [vocabulary["<pad>"]] * (
+            maximum_length - len(values)
+        )
+
+    def ctc_known_answer_input(
+        self,
+        checkpoint: dict[str, object],
+        args: object,
+    ) -> np.ndarray:
+        vocabulary = checkpoint["inputVocab"]
+        assert isinstance(vocabulary, dict)
+        lexical_ids = [
+            token_id
+            for token, token_id in sorted(
+                vocabulary.items(),
+                key=lambda item: item[1],
+            )
+            if token not in self.INPUT_SPECIAL
+        ]
+        prefix = lexical_ids[:6] + [vocabulary[self.EOS]]
+        return np.asarray(
+            [
+                prefix
+                + [vocabulary[self.PAD]]
+                * (args.max_input_len - len(prefix))
+            ],
+            dtype=np.int32,
+        )
+
+    def validate_ctc_coreml_known_answer(
+        self,
+        _backend: object,
+        _pytorch_model: object,
+        checkpoint: dict[str, object],
+        args: object,
+    ) -> dict[str, object]:
+        values = self.ctc_known_answer_input(checkpoint, args)
+        return {
+            "knownAnswerInputSha256": hashlib.sha256(
+                values.tobytes()
+            ).hexdigest(),
+            "maximumAbsoluteLogitError":
+                float(int(values.sum()) % 5 + 1) / 10_000,
+            "relativeTolerance": 5e-3,
+            "absoluteTolerance": 5e-3,
+        }
 
 
 class RemoteCoreMLExporterTests(unittest.TestCase):
@@ -259,6 +327,151 @@ class RemoteCoreMLExporterTests(unittest.TestCase):
                     }
                 },
                 {"decodeCalls": 0, "filteredSequences": 0},
+            )
+
+    def test_ctc_export_replays_exact_representative_parity_suite(
+        self,
+    ) -> None:
+        trainer = FakeParityTrainer()
+        original_validator = trainer.validate_ctc_coreml_known_answer
+        original_input_builder = trainer.ctc_known_answer_input
+        original_export = trainer.export_coreml
+        vocabulary = {
+            "<pad>": 0,
+            "</s>": 1,
+            "<unk>": 2,
+            **{
+                character: index + 3
+                for index, character in enumerate(
+                    "abcdefghijklmnopqrstuvwxyz"
+                )
+            },
+        }
+        checkpoint = {"inputVocab": vocabulary}
+        args = SimpleNamespace(max_input_len=32)
+
+        with EXPORTER.enforce_ctc_representative_coreml_parity(
+            trainer
+        ) as state:
+            prepublication = trainer.validate_ctc_coreml_known_answer(
+                object(),
+                object(),
+                checkpoint,
+                args,
+            )
+            artifact = trainer.validate_ctc_coreml_known_answer(
+                object(),
+                object(),
+                checkpoint,
+                args,
+            )
+            export = trainer.export_coreml(
+                object(),
+                object(),
+                object(),
+            )
+            independent = trainer.validate_ctc_coreml_known_answer(
+                object(),
+                object(),
+                checkpoint,
+                args,
+            )
+            export.update({
+                "tensorContract": {
+                    "inputIds": {
+                        "shape": [1, 32],
+                        "dataType": "INT32",
+                    },
+                },
+                "prePublicationValidation": {
+                    "status": "passed",
+                    **prepublication,
+                },
+                "artifactValidation": {
+                    "status": "passed",
+                    **artifact,
+                },
+            })
+
+        self.assertEqual(
+            state["validationCalls"],
+            EXPECTED_CTC_PARITY_VALIDATION_CALLS,
+        )
+        self.assertEqual(state["caseEvaluations"], 15)
+        self.assertEqual(
+            export["representativeParityPolicy"],
+            EXPORTER.CTC_COREML_PARITY_POLICY,
+        )
+        suite = artifact["representativeParitySuite"]
+        self.assertEqual(
+            [case["caseId"] for case in suite["cases"]],
+            EXPORTER.CTC_COREML_PARITY_POLICY["caseIds"],
+        )
+        self.assertEqual(
+            [case["contentLength"] for case in suite["cases"]],
+            [6, 3, 5, 8, 31],
+        )
+        self.assertEqual(
+            independent["representativeParitySuite"][
+                "caseIdentitySha256"
+            ],
+            suite["caseIdentitySha256"],
+        )
+        EXPORTER.validate_ctc_representative_parity_evidence(
+            {"coremlExport": export},
+            state,
+        )
+        self.assert_same_bound_method(
+            trainer.validate_ctc_coreml_known_answer,
+            original_validator,
+        )
+        self.assert_same_bound_method(
+            trainer.ctc_known_answer_input,
+            original_input_builder,
+        )
+        self.assert_same_bound_method(trainer.export_coreml, original_export)
+
+    def test_ctc_parity_evidence_rejects_missing_boundary_replay(
+        self,
+    ) -> None:
+        suite = {
+            "schemaVersion": 1,
+            "status": "passed",
+            "policyId": EXPORTER.CTC_COREML_PARITY_POLICY["policyId"],
+            "caseCount": 0,
+            "caseIdentitySha256": "0" * 64,
+            "maximumAbsoluteLogitError": 0.0,
+            "relativeTolerance": 5e-3,
+            "absoluteTolerance": 5e-3,
+            "cases": [],
+        }
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "lacks exact representative",
+        ):
+            EXPORTER.validate_ctc_representative_parity_evidence(
+                {
+                    "coremlExport": {
+                        "representativeParityPolicy":
+                            EXPORTER.CTC_COREML_PARITY_POLICY,
+                        "tensorContract": {
+                            "inputIds": {"shape": [1, 32]},
+                        },
+                        "prePublicationValidation": {
+                            "knownAnswerInputSha256": "0" * 64,
+                            "representativeParitySuite": suite,
+                        },
+                        "artifactValidation": {
+                            "knownAnswerInputSha256": "0" * 64,
+                            "representativeParitySuite": suite,
+                        },
+                    },
+                },
+                {
+                    "validationCalls": 3,
+                    "caseEvaluations": 15,
+                    "caseIdentitySha256": "0" * 64,
+                },
             )
 
 

@@ -139,6 +139,13 @@ Engine-eligible Core ML ML Program under the locked FP16 policy, compiles the
 exact artifact, runs PyTorch/Core ML parity, generates locked-gold and
 official-benchmark predictions, and records local measurements.
 
+Parity is not a single smoke input. The export replays the original all-logit
+comparison for five deterministic inputs covering minimum admission, ordinary
+Romanized Nepali, repeated scalars, and the fixed tensor's maximum content
+length. It repeats the suite for staging, publication, and an independent
+published-artifact reload. See
+[the Core ML conversion parity audit](COREML_CONVERSION_PARITY_AUDIT_2026-07-30.md).
+
 The candidate remains unpromoted until all normal quality, safety, packaged
 latency, and runtime-placement gates pass. Core ML compute-unit eligibility is
 not Neural Engine placement proof.

@@ -34,6 +34,10 @@ import {
   evaluateNeuralRareScalarEvidence
 } from "./lib/neural-rare-scalar-evaluation.mjs";
 import {
+  CTC_COREML_PARITY_CASE_IDS,
+  CTC_COREML_PARITY_POLICY
+} from "./lib/neural-ctc-coreml-parity-contract.mjs";
+import {
   computeNeuralProductionPromotionId,
   verifyNeuralProductionPromotionReceipt
 } from "./lib/neural-production-promotion-receipt.mjs";
@@ -494,6 +498,20 @@ describe("evidence-bound neural candidate promotion", () => {
       assert.throws(
         () => promote(fixture),
         /lacks the exact finite-path decoder policy/u
+      );
+      assert.equal(existsProduction(fixture), false);
+    });
+  });
+
+  it("rejects a Transformer-CTC export without representative parity", () => {
+    withFixture("ctc", (fixture) => {
+      const report = readJson(fixture.paths.exportReport);
+      delete report.coremlExport.representativeParityPolicy;
+      writeJson(fixture.paths.exportReport, report);
+
+      assert.throws(
+        () => promote(fixture),
+        /lacks representative compiled Core ML parity evidence/u
       );
       assert.equal(existsProduction(fixture), false);
     });
@@ -1469,13 +1487,7 @@ function buildCTCArtifacts(root, candidate, checkpointSha256) {
           purpose: "exclude-zero-probability-prefixes"
         },
         sourceCheckpointSha256: checkpointSha256,
-        tensorContract: ctcTensorContract(),
-        prePublicationValidation: {
-          status: "passed"
-        },
-        artifactValidation: {
-          status: "passed"
-        }
+        ...ctcCoreMLParityEvidence()
       }
     }
   };
@@ -1645,6 +1657,59 @@ function ctcTensorContract() {
     logits: {
       shape: [1, 32, 128],
       dataType: "FLOAT16"
+    }
+  };
+}
+
+function ctcCoreMLParityEvidence() {
+  const cases = CTC_COREML_PARITY_CASE_IDS.map((caseId, index) => ({
+    caseId,
+    contentLength: [6, 3, 5, 8, 31][index],
+    inputSha256: createHash("sha256")
+      .update(`promotion-parity-input-${index}`)
+      .digest("hex"),
+    maximumAbsoluteLogitError: (index + 1) / 10_000
+  }));
+  const identities = cases.map((candidate) => ({
+    caseId: candidate.caseId,
+    contentLength: candidate.contentLength,
+    inputSha256: candidate.inputSha256
+  }));
+  const suite = {
+    schemaVersion: 1,
+    status: "passed",
+    policyId: CTC_COREML_PARITY_POLICY.policyId,
+    caseCount: cases.length,
+    caseIdentitySha256: createHash("sha256")
+      .update(JSON.stringify(identities))
+      .digest("hex"),
+    maximumAbsoluteLogitError: 0.0005,
+    relativeTolerance: 5e-3,
+    absoluteTolerance: 5e-3,
+    cases
+  };
+  return {
+    tensorContract: ctcTensorContract(),
+    representativeParityPolicy: structuredClone(
+      CTC_COREML_PARITY_POLICY
+    ),
+    prePublicationValidation: {
+      status: "passed",
+      knownAnswerInputSha256: cases[0].inputSha256,
+      maximumAbsoluteLogitError:
+        cases[0].maximumAbsoluteLogitError,
+      relativeTolerance: 5e-3,
+      absoluteTolerance: 5e-3,
+      representativeParitySuite: structuredClone(suite)
+    },
+    artifactValidation: {
+      status: "passed",
+      knownAnswerInputSha256: cases[0].inputSha256,
+      maximumAbsoluteLogitError:
+        cases[0].maximumAbsoluteLogitError,
+      relativeTolerance: 5e-3,
+      absoluteTolerance: 5e-3,
+      representativeParitySuite: structuredClone(suite)
     }
   };
 }

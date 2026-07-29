@@ -24,6 +24,9 @@ import {
 import {
   isCTCFinitePathDecoderPolicy
 } from "./lib/neural-ctc-finite-path-contract.mjs";
+import {
+  hasCTCCoreMLParityEvidence
+} from "./lib/neural-ctc-coreml-parity-contract.mjs";
 
 const ROOT = realpathSync(process.cwd());
 const CANONICAL_BENCHMARK_MANIFEST = join(
@@ -322,6 +325,13 @@ function validateExportIdentity({
     fail(
       "Official Transformer-CTC evaluation requires the exact finite-path " +
       "decoder policy."
+    );
+  }
+  if (descriptor.runtimeModelContract === "single-transformer-ctc-v1" &&
+      !hasCTCCoreMLParityEvidence(exportReport.coremlExport)) {
+    fail(
+      "Official Transformer-CTC evaluation requires representative compiled " +
+      "Core ML parity evidence."
     );
   }
   const runIdPattern = /^[a-f0-9]{32}$/u;

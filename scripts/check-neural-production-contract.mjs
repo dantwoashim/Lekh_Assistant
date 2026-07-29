@@ -15,6 +15,7 @@ const requiredFiles = [
   "docs/neural/REMOTE_CUDA_TRAINING_AND_MACOS_EXPORT.md",
   "docs/neural/TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md",
   "docs/neural/CTC_MATHEMATICAL_AUDIT_2026-07-30.md",
+  "docs/neural/COREML_CONVERSION_PARITY_AUDIT_2026-07-30.md",
   "data/neural/schema/lekh-neural-manifest.schema.json",
   "data/neural/eval/README.md",
   "data/neural/training/open-vocab-seq2seq-v1.config.json",
@@ -29,6 +30,8 @@ const requiredFiles = [
   "scripts/lib/neural_ctc_transformer.py",
   "scripts/lib/neural-ctc-alignment-audit.mjs",
   "scripts/lib/neural-ctc-finite-path-contract.mjs",
+  "scripts/lib/neural-ctc-coreml-parity-contract.mjs",
+  "scripts/lib/neural_ctc_coreml_parity.py",
   "scripts/lib/neural-audit-evidence.mjs",
   "scripts/lib/neural-rare-scalar-contract.mjs",
   "scripts/lib/neural-rare-scalar-evaluation.mjs",
@@ -92,6 +95,9 @@ const rareScalarGeneratorText = readText(
 );
 const remoteExporterText = readText(
   "scripts/export-neural-remote-training-result.py"
+);
+const coreMLParityExporterText = readText(
+  "scripts/lib/neural_ctc_coreml_parity.py"
 );
 const officialBenchmarkText = readText(
   "scripts/lib/neural-official-benchmark.mjs"
@@ -161,6 +167,11 @@ requireText(
   "CTC_MATHEMATICAL_AUDIT_2026-07-30.md",
   "spec must link the current Transformer-CTC mathematical audit"
 );
+requireText(
+  specText,
+  "COREML_CONVERSION_PARITY_AUDIT_2026-07-30.md",
+  "spec must link the current Core ML conversion parity audit"
+);
 requireText(specText, "models/macos/LekhNeuralTransliterator.production", "spec must name the atomic production directory");
 requireText(specText, "artifactSetSha256", "spec must define the runtime artifact-set identity");
 requireText(
@@ -227,6 +238,16 @@ requireText(
   remoteExporterText,
   '"policyId": "ctc-finite-path-only-v1"',
   "remote macOS export must exclude zero-probability CTC prefixes"
+);
+requireText(
+  coreMLParityExporterText,
+  '"policyId": "ctc-representative-logit-parity-v1"',
+  "remote macOS export must replay representative all-logit parity"
+);
+requireText(
+  remoteExporterText,
+  "enforce_ctc_representative_coreml_parity",
+  "remote macOS export must install the representative parity boundary"
 );
 requireText(
   remoteWorkflowText,
@@ -315,6 +336,11 @@ requireText(
   promotionReceiptText,
   "Retained rare-scalar evaluation does not match independent ",
   "promotion receipt verifier must reject retained semantic forgeries"
+);
+requireText(
+  promotionReceiptText,
+  "Retained Transformer-CTC export lacks representative compiled ",
+  "promotion receipt verifier must retain representative Core ML parity evidence"
 );
 requireText(
   artifactFilesystemText,

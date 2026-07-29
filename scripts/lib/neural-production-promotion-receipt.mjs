@@ -35,6 +35,9 @@ import {
   CTC_FINITE_PATH_DECODER_POLICY,
   isCTCFinitePathDecoderPolicy
 } from "./neural-ctc-finite-path-contract.mjs";
+import {
+  hasCTCCoreMLParityEvidence
+} from "./neural-ctc-coreml-parity-contract.mjs";
 
 export const NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 3;
 
@@ -693,6 +696,12 @@ function validateRetainedEvidenceGraph({
       exportReport.coremlExport?.finitePathDecoderPolicy
     )) {
       fail("Retained Transformer-CTC export lacks finite-path decoder evidence.");
+    }
+    if (!hasCTCCoreMLParityEvidence(exportReport.coremlExport)) {
+      fail(
+        "Retained Transformer-CTC export lacks representative compiled " +
+        "Core ML parity evidence."
+      );
     }
     if (
       rare?.schemaVersion !== 1 ||

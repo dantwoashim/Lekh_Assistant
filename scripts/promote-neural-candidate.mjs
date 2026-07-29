@@ -57,6 +57,9 @@ import {
 import {
   isCTCFinitePathDecoderPolicy
 } from "./lib/neural-ctc-finite-path-contract.mjs";
+import {
+  hasCTCCoreMLParityEvidence
+} from "./lib/neural-ctc-coreml-parity-contract.mjs";
 
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
@@ -1252,6 +1255,11 @@ function verifyBaselineArtifacts({
     )) {
       fail(
         "Transformer-CTC export lacks the exact finite-path decoder policy."
+      );
+    }
+    if (!hasCTCCoreMLParityEvidence(exportReport.coremlExport)) {
+      fail(
+        "Transformer-CTC export lacks representative compiled Core ML parity evidence."
       );
     }
     if (canonicalJson(exportReport.coremlExport?.tensorContract) !==

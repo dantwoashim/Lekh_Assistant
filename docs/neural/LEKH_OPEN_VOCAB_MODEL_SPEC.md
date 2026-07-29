@@ -9,6 +9,8 @@ Current architecture-specific research:
 [Transformer-CTC and Core ML production review, 2026-07-29](TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md).
 The latest executable mathematical review is
 [Transformer-CTC mathematical audit, 2026-07-30](CTC_MATHEMATICAL_AUDIT_2026-07-30.md).
+The compiled-model numerical proof is recorded in
+[Core ML conversion parity audit, 2026-07-30](COREML_CONVERSION_PARITY_AUDIT_2026-07-30.md).
 
 ## Product boundary
 
