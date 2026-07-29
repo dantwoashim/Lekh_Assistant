@@ -743,6 +743,149 @@ private func verifyCTCPrefixBeamSearch() {
   } catch {
     require(false, "Cancelled CTC decode raised the wrong failure: \(error)")
   }
+
+  verifyCTCExactOracle()
+}
+
+private func verifyCTCExactOracle() {
+  var matrixCount = 0
+  for seed in 0..<96 {
+    let vocabularySize = 2 + seed % 3
+    let timeSteps = 1 + (seed / 3) % 4
+    let logits = deterministicCTCLogits(
+      seed: seed,
+      timeSteps: timeSteps,
+      vocabularySize: vocabularySize
+    )
+    let expected = exactCTCRanking(
+      logits: logits,
+      blankTokenId: 0
+    )
+    require(
+      expected.count <= 64,
+      "Exact CTC oracle exceeded the unpruned native beam capacity"
+    )
+    do {
+      let observed = try LekhNeuralCTCPrefixBeamSearch.rank(
+        logits: logits,
+        blankTokenId: 0,
+        beamWidth: 64,
+        maximumCandidates: 64
+      )
+      require(
+        observed == expected,
+        "Swift CTC decoder diverged from exhaustive oracle seed \(seed): " +
+          "expected \(expected), observed \(observed)"
+      )
+    } catch {
+      require(
+        false,
+        "Swift CTC exhaustive-oracle seed \(seed) failed: \(error)"
+      )
+    }
+    matrixCount += 1
+  }
+  require(
+    matrixCount == 96,
+    "Swift CTC exhaustive oracle must cover exactly 96 matrices"
+  )
+}
+
+private func deterministicCTCLogits(
+  seed: Int,
+  timeSteps: Int,
+  vocabularySize: Int
+) -> [[Double]] {
+  var state = UInt64(seed + 1)
+  return (0..<timeSteps).map { timeStep in
+    (0..<vocabularySize).map { tokenId in
+      state = state &* 6_364_136_223_846_793_005
+        &+ 1_442_695_040_888_963_407
+      let centered = Int((state >> 32) % 2_001) - 1_000
+      return Double(centered) / 211.0
+        + Double(timeStep * vocabularySize + tokenId) / 1_000_000
+    }
+  }
+}
+
+private func exactCTCRanking(
+  logits: [[Double]],
+  blankTokenId: Int
+) -> [[Int]] {
+  guard let vocabularySize = logits.first?.count,
+        vocabularySize > 1,
+        logits.allSatisfy({ $0.count == vocabularySize }) else {
+    require(false, "Exact CTC oracle received malformed logits")
+    return []
+  }
+  var pathScores: [[Int]: [Double]] = [:]
+
+  func enumeratePaths(
+    timeStep: Int,
+    path: [Int],
+    accumulatedLogit: Double
+  ) {
+    if timeStep == logits.count {
+      let sequence = collapseCTCPath(
+        path,
+        blankTokenId: blankTokenId
+      )
+      if !sequence.isEmpty {
+        pathScores[sequence, default: []].append(accumulatedLogit)
+      }
+      return
+    }
+    for tokenId in 0..<vocabularySize {
+      enumeratePaths(
+        timeStep: timeStep + 1,
+        path: path + [tokenId],
+        accumulatedLogit: accumulatedLogit
+          + logits[timeStep][tokenId]
+      )
+    }
+  }
+
+  enumeratePaths(timeStep: 0, path: [], accumulatedLogit: 0)
+  // Every complete path contains one value from every time step, so the
+  // log-softmax normalizer is a sequence-independent constant. Raw-logit path
+  // sums therefore preserve the exact CTC sequence ranking.
+  return pathScores
+    .map { sequence, scores in
+      (
+        sequence: sequence,
+        score: oracleLogSumExp(scores)
+      )
+    }
+    .sorted { left, right in
+      if left.score != right.score {
+        return left.score > right.score
+      }
+      return left.sequence.lexicographicallyPrecedes(right.sequence)
+    }
+    .map(\.sequence)
+}
+
+private func collapseCTCPath(
+  _ path: [Int],
+  blankTokenId: Int
+) -> [Int] {
+  var output: [Int] = []
+  var previous: Int?
+  for tokenId in path {
+    if tokenId != previous, tokenId != blankTokenId {
+      output.append(tokenId)
+    }
+    previous = tokenId
+  }
+  return output
+}
+
+private func oracleLogSumExp(_ values: [Double]) -> Double {
+  guard let maximum = values.max() else { return -.infinity }
+  let exponentialSum = values.reduce(0) {
+    $0 + Foundation.exp($1 - maximum)
+  }
+  return maximum + Foundation.log(exponentialSum)
 }
 
 private final class FakeNeuralModel: LekhNeuralModelPredicting {
@@ -876,9 +1019,9 @@ private func verifyCTCRuntime() {
           runtimeContract.vocabularySize
         ],
         strides: [
-          runtimeContract.outputTimeSteps * 5,
-          5,
-          1
+          runtimeContract.outputTimeSteps * 7,
+          7,
+          2
         ],
         values: rows.flatMap { $0 }
       )
@@ -1759,4 +1902,7 @@ verifySplitAttentionRuntime()
 verifySplitAttentionManifestContract()
 verifyCTCManifestContract()
 verifyNeuralManifestIdentityPolicy()
-print("PASS: native candidate, delimiter, four-mode, neural admission, decoder, and manifest identity contracts")
+print(
+  "PASS: native candidate, delimiter, four-mode, neural admission, " +
+    "exhaustive CTC decoder oracle, and manifest identity contracts"
+)

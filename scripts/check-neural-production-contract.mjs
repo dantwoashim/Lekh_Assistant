@@ -60,7 +60,8 @@ const requiredFiles = [
   "scripts/promote-neural-candidate.mjs",
   "scripts/check-neural-sota-worldclass.mjs",
   "native/macos-imk/skeleton/LekhNeuralCandidateService.swift",
-  "native/macos-imk/skeleton/LekhNativePreferences.swift"
+  "native/macos-imk/skeleton/LekhNativePreferences.swift",
+  "native/macos-imk/skeleton/Tests/LekhInputMethodUnitProbe/main.swift"
 ];
 
 const failures = [];
@@ -110,6 +111,9 @@ const nativeNeuralServiceText = readText(
 );
 const nativePreferencesText = readText(
   "native/macos-imk/skeleton/LekhNativePreferences.swift"
+);
+const nativeUnitProbeText = readText(
+  "native/macos-imk/skeleton/Tests/LekhInputMethodUnitProbe/main.swift"
 );
 const nativeBenchmarkText = readText(
   "scripts/benchmark-neural-native-service.mjs"
@@ -341,6 +345,21 @@ requireText(
   promotionReceiptText,
   "Retained Transformer-CTC export lacks representative compiled ",
   "promotion receipt verifier must retain representative Core ML parity evidence"
+);
+requireText(
+  nativeUnitProbeText,
+  "verifyCTCExactOracle()",
+  "native unit proof must execute the exhaustive CTC decoder oracle"
+);
+requireText(
+  nativeUnitProbeText,
+  "matrixCount == 96",
+  "native CTC decoder oracle must retain its exact matrix coverage"
+);
+requireText(
+  nativeUnitProbeText,
+  "exactCTCRanking(",
+  "native CTC decoder proof must compare against exhaustive path ranking"
 );
 requireText(
   artifactFilesystemText,

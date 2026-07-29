@@ -64,6 +64,46 @@ than had any legal CTC path. The stress oracle observed 28,960 such extra
 zero-probability outputs because it intentionally requested the complete
 candidate inventory.
 
+The native Swift decoder now has its own independent exhaustive oracle rather
+than relying only on five shared examples. For 96 deterministic matrices it:
+
+- varies class count from `2–4` and time steps from `1–4`;
+- enumerates every complete class path (`4^4 = 256` at the largest case);
+- performs the standard merge-repeats-then-remove-blank collapse;
+- sums the scores of every path mapping to the same sequence;
+- compares the entire finite sequence ranking, including lexical tie order;
+- uses beam width `64`, which retains all at-most-61 prefixes in this bounded
+  state space, so the comparison is exact rather than an approximation.
+
+All 96 matrices matched. The oracle aggregates raw-logit path sums because
+each full path contains exactly one value from every time step; the omitted
+per-time-step log-softmax normalizers are therefore the same constant for
+every complete path and cannot change sequence ranking.
+
+This matches the original CTC definition: a label's probability is the sum of
+all paths collapsing to it, repeated adjacent labels collapse, and a blank is
+required to express two consecutive copies of the same label:
+
+- [Graves et al., original CTC paper](https://www.cs.toronto.edu/~graves/icml_2006.pdf)
+- [PyTorch CTCLoss contract](https://docs.pytorch.org/docs/stable/generated/torch.nn.CTCLoss.html)
+
+## Native Core ML tensor-layout audit
+
+Core ML output arrays are not required to use tightly packed row-major
+storage. Apple defines each `MLMultiArray.strides` entry as the number of
+memory locations spanning that dimension, and its multidimensional subscript
+accepts one index per dimension:
+
+- [Apple `MLMultiArray.strides`](https://developer.apple.com/documentation/coreml/mlmultiarray/strides)
+- [Apple multidimensional `MLMultiArray` subscript](https://developer.apple.com/documentation/coreml/mlmultiarray/subscript%28_%3A%29-3d9el)
+
+The active CTC runtime already reads `[batch, time, class]` logits through that
+multidimensional subscript rather than assuming `time * classCount + class`.
+Its native model fixture returns a deliberately non-contiguous Float16 array
+with gaps between both time rows and adjacent class values; the expected
+blank-separated repeated candidate is recovered correctly. No production CTC
+stride fix was required.
+
 ## Resolution without recovery loss
 
 Three boundaries now enforce the same finite-path rule:
@@ -106,7 +146,8 @@ The low-heat verification set for this increment is:
 17 promotion and live-receipt tests passed
 1 closed finite-path policy contract test passed
 13 shared Transformer/CTC tests passed, including a 96-matrix permanent oracle
-native Swift LekhInputMethodUnitProbe passed
+native Swift LekhInputMethodUnitProbe passed, including a separate 96-matrix
+exhaustive CTC path oracle
 1,200 exact brute-force CTC oracle matrices passed finite ranking
 ```
 
