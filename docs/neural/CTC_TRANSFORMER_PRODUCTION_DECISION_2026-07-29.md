@@ -58,6 +58,13 @@ compiled-size product envelope and repeats Core ML prediction for every output
 step. The CTC probe is approximately forty times faster than the measured GRU
 candidate at p99 and stays inside both size envelopes.
 
+The exact shared implementation was then probed independently after it replaced
+the exploratory code. It contains 4,781,382 parameters, converts to a 9,582,018
+byte default-Float16 ML Program, passes locked parity with a maximum absolute
+logit error of 0.001281381, and measures 4.597 ms combined p99 over 240 local
+unpackaged predictions. The p99 tail is slightly wider than the exploratory
+probe but remains more than ten times below the 50 ms product ceiling.
+
 Core ML conversion eligibility does not prove observed Neural Engine
 placement. A live, artifact-bound Instruments trace remains required before
 the product says that the model ran on the Neural Engine.
