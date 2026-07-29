@@ -88,6 +88,18 @@ UNK = "<unk>"
 INPUT_SPECIAL = [PAD, EOS, UNK]
 AUGMENTATION_SOURCE = "augmentation-chat-alias-v1"
 MAX_CONFIG_BYTES = 8 * 1024 * 1024
+NEURAL_TAIL_ADMISSION_POLICY = "roman-token-protected-bypass-v1"
+PROTECTED_LATIN_TOKENS = frozenset({
+    "api", "otp", "pan", "pdf", "url", "http", "https", "email",
+    "gmail", "icloud", "login", "username", "password", "wifi",
+    "wi-fi", "qr", "id", "pin", "cvv", "esewa", "khalti", "ime",
+    "ntc", "ncell", "tiktok", "whatsapp", "viber", "zoom", "teams",
+    "slack", "github", "git", "xcode", "swift", "json", "csv",
+    "postgresql", "npm", "swiftui", "macos", "readme", "hello",
+    "user", "candidate", "phrase", "detect", "wrong", "upload",
+    "submit",
+})
+SAFE_NEURAL_ROMAN_TOKEN = re.compile(r"^[a-z][a-z'-]*$")
 
 # The remote handoff deliberately calls these names as a trainer interface.
 checkpoint_path = LEGACY.checkpoint_path
@@ -145,6 +157,7 @@ compile_mlpackage_with_xcode = LEGACY.compile_mlpackage_with_xcode
 normalize_compiled_model_path = LEGACY.normalize_compiled_model_path
 normalize_input = LEGACY.normalize_input
 execution_topology = LEGACY.execution_topology
+REQUIRED_CASES = LEGACY.REQUIRED_CASES
 
 _legacy_capture_run_input_snapshot = LEGACY.capture_run_input_snapshot
 
@@ -3081,6 +3094,512 @@ def export_coreml(
                 pass
 
 
+def admitted_neural_input(
+    text: str,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> str | None:
+    normalized = normalize_input(text)
+    if (
+        not 3 <= len(normalized) < args.max_input_len
+        or SAFE_NEURAL_ROMAN_TOKEN.fullmatch(normalized) is None
+        or normalized in PROTECTED_LATIN_TOKENS
+    ):
+        return None
+    input_vocab = checkpoint["inputVocab"]
+    if any(
+        token not in input_vocab
+        or input_vocab[token] == input_vocab[UNK]
+        for token in normalized
+    ):
+        return None
+    return normalized
+
+
+def decode_compiled_ctc_candidates(
+    backend: CompiledCTCCoreMLBackend,
+    text: str,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> list[str]:
+    normalized = admitted_neural_input(text, checkpoint, args)
+    if normalized is None:
+        return []
+    encoded = encode_input(
+        normalized,
+        checkpoint["inputVocab"],
+        args.max_input_len,
+    )
+    logits = backend.predict(
+        np.asarray([encoded], dtype=np.int32)
+    )[0]
+    return decode_ctc_logits(
+        logits,
+        checkpoint["outputVocab"],
+        beam_width=args.beam_width,
+        maximum_candidates=args.maximum_candidates,
+    )
+
+
+def verified_ctc_backend_evidence(
+    backend: CompiledCTCCoreMLBackend,
+    args: argparse.Namespace,
+    operation: str,
+) -> dict[str, Any]:
+    observed_sha256 = directory_sha256(args.compiled_model)
+    if observed_sha256 != backend.compiled_sha256:
+        raise SystemExit(
+            f"Compiled CTC Core ML bytes changed during {operation}."
+        )
+    compiled_bytes = directory_bytes(args.compiled_model)
+    return {
+        "backend": "coreml-compiled-transformer-ctc",
+        "runtimeModelContract": RUNTIME_MODEL_CONTRACT,
+        "compiledModel": rel(args.compiled_model),
+        "compiledModelSha256": observed_sha256,
+        "artifactIdentity": {
+            "runtimeModelContract": RUNTIME_MODEL_CONTRACT,
+            "compiledArtifacts": {
+                "model": {
+                    "path": rel(args.compiled_model),
+                    "sha256": observed_sha256,
+                    "bytes": compiled_bytes,
+                },
+            },
+        },
+    }
+
+
+def write_ctc_gold_predictions(
+    backend: CompiledCTCCoreMLBackend,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    rows, gold_evidence = load_verified_gold_rows(args)
+    output_path = predictions_path(args)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    staging = staging_sibling(output_path, "staging")
+    try:
+        with staging.open("x", encoding="utf-8") as handle:
+            for row in rows:
+                candidates = decode_compiled_ctc_candidates(
+                    backend,
+                    row["input"],
+                    checkpoint,
+                    args,
+                )
+                handle.write(json.dumps({
+                    "id": row["id"],
+                    "input": row["input"],
+                    "candidates": candidates[:args.maximum_candidates],
+                }, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(staging, output_path)
+    finally:
+        staging.unlink(missing_ok=True)
+    _, verified_again = load_verified_gold_rows(args)
+    if verified_again != gold_evidence:
+        raise SystemExit(
+            "Gold corpus changed during CTC prediction generation."
+        )
+    backend_evidence = verified_ctc_backend_evidence(
+        backend,
+        args,
+        "gold prediction generation",
+    )
+    return {
+        **backend_evidence,
+        "trainingRunId": args.training_run_id,
+        "exportRunId": args.export_run_id,
+        "inputAdmissionPolicy": NEURAL_TAIL_ADMISSION_POLICY,
+        **gold_evidence,
+        "predictions": rel(output_path),
+        "predictionsSha256": sha256_file(output_path),
+    }
+
+
+def write_ctc_official_benchmark_predictions(
+    backend: CompiledCTCCoreMLBackend,
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    rows, current_evidence = load_verified_official_benchmark_rows(args)
+    locked_evidence = ensure_run_input_snapshot(args)["officialBenchmark"]
+    locked_base = {
+        key: value
+        for key, value in locked_evidence.items()
+        if key != "trainingIsolation"
+    }
+    if current_evidence != locked_base:
+        raise SystemExit(
+            "Official benchmark differs from the CTC input snapshot."
+        )
+    output_path = official_benchmark_predictions_path(args)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    staging = staging_sibling(output_path, "staging")
+    try:
+        with staging.open("x", encoding="utf-8") as handle:
+            for row in rows:
+                candidates = decode_compiled_ctc_candidates(
+                    backend,
+                    row["input"],
+                    checkpoint,
+                    args,
+                )
+                handle.write(json.dumps({
+                    "id": row["id"],
+                    "input": row["input"],
+                    "candidates": candidates[:args.maximum_candidates],
+                }, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(staging, output_path)
+    finally:
+        staging.unlink(missing_ok=True)
+    _, verified_again = load_verified_official_benchmark_rows(args)
+    if verified_again != current_evidence:
+        raise SystemExit(
+            "Official benchmark changed during CTC prediction generation."
+        )
+    backend_evidence = verified_ctc_backend_evidence(
+        backend,
+        args,
+        "official benchmark prediction generation",
+    )
+    return {
+        **backend_evidence,
+        "trainingRunId": args.training_run_id,
+        "exportRunId": args.export_run_id,
+        "inputAdmissionPolicy": NEURAL_TAIL_ADMISSION_POLICY,
+        **current_evidence,
+        "trainingIsolation": locked_evidence["trainingIsolation"],
+        "predictions": rel(output_path),
+        "predictionsSha256": sha256_file(output_path),
+    }
+
+
+def ctc_benchmark_inputs(
+    checkpoint: dict[str, Any],
+    args: argparse.Namespace,
+) -> list[str]:
+    preferred = (
+        "prashasan",
+        "niraj",
+        "nepal",
+        "sambidhan",
+        "pariwartan",
+    )
+    values = [
+        value
+        for value in preferred
+        if admitted_neural_input(value, checkpoint, args) is not None
+    ]
+    lexical = [
+        token
+        for token, token_id in sorted(
+            checkpoint["inputVocab"].items(),
+            key=lambda item: item[1],
+        )
+        if token not in INPUT_SPECIAL
+        and len(token) == 1
+        and "a" <= token <= "z"
+    ]
+    for requested_length in (3, 8, 16):
+        length = min(requested_length, args.max_input_len - 1)
+        if length < 3 or not lexical:
+            continue
+        candidate = "".join(
+            lexical[index % len(lexical)]
+            for index in range(length)
+        )
+        if (
+            candidate not in values
+            and admitted_neural_input(candidate, checkpoint, args)
+                is not None
+        ):
+            values.append(candidate)
+    if not values:
+        raise SystemExit(
+            "CTC benchmark could not construct an admitted input."
+        )
+    return values[:3]
+
+
+def benchmark_compiled_ctc_coreml(
+    args: argparse.Namespace,
+    backend: CompiledCTCCoreMLBackend,
+    checkpoint: dict[str, Any],
+) -> dict[str, Any]:
+    architecture = platform.machine().lower()
+    mapped_architecture = (
+        "arm64"
+        if architecture == "arm64"
+        else "x86_64"
+        if architecture in {"x86_64", "amd64"}
+        else architecture
+    )
+    inputs = ctc_benchmark_inputs(checkpoint, args)
+    for _ in range(3):
+        for value in inputs:
+            decode_compiled_ctc_candidates(
+                backend,
+                value,
+                checkpoint,
+                args,
+            )
+    durations: list[float] = []
+    while len(durations) < 120:
+        for value in inputs:
+            started = time.perf_counter()
+            decode_compiled_ctc_candidates(
+                backend,
+                value,
+                checkpoint,
+                args,
+            )
+            durations.append((time.perf_counter() - started) * 1_000)
+            if len(durations) >= 120:
+                break
+    verified_ctc_backend_evidence(
+        backend,
+        args,
+        "full-candidate benchmark",
+    )
+    result = {
+        "name": "local-mac",
+        "macOS": platform.mac_ver()[0] or "unknown",
+        "architecture": mapped_architecture,
+        "packagedApp": False,
+        "secureFieldInferenceCount": -1,
+        "measurementKind": "full-candidate-generation",
+        "p50Ms": round(float(np.percentile(durations, 50)), 6),
+        "p95Ms": round(float(np.percentile(durations, 95)), 6),
+        "p99Ms": round(float(np.percentile(durations, 99)), 6),
+        "artifact": rel(args.compiled_model),
+    }
+    write_json(measurements_path(args), {
+        "generatedAt": iso_now(),
+        "measurementKind": "full-candidate-generation",
+        "decoder": "ctc-prefix-beam-search",
+        "beamWidth": args.beam_width,
+        "sampleCount": len(durations),
+        "benchmarkInputsSha256": sha256_text("\n".join(inputs)),
+        "devices": [result],
+    })
+    return result
+
+
+def valid_ctc_benchmark_result(
+    result: dict[str, Any],
+    args: argparse.Namespace,
+) -> bool:
+    required = {
+        "name",
+        "macOS",
+        "architecture",
+        "packagedApp",
+        "secureFieldInferenceCount",
+        "measurementKind",
+        "p50Ms",
+        "p95Ms",
+        "p99Ms",
+        "artifact",
+    }
+    try:
+        evidence = read_json(measurements_path(args))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        set(result) == required
+        and result["measurementKind"] == "full-candidate-generation"
+        and all(
+            isinstance(result.get(key), (int, float))
+            and math.isfinite(float(result[key]))
+            and result[key] >= 0
+            for key in ("p50Ms", "p95Ms", "p99Ms")
+        )
+        and result["artifact"] == rel(args.compiled_model)
+        and evidence.get("measurementKind")
+            == "full-candidate-generation"
+        and evidence.get("decoder") == "ctc-prefix-beam-search"
+        and evidence.get("beamWidth") == args.beam_width
+        and evidence.get("sampleCount") == 120
+        and isinstance(evidence.get("benchmarkInputsSha256"), str)
+        and len(evidence["benchmarkInputsSha256"]) == 64
+        and evidence.get("devices") == [result]
+    )
+
+
+def ctc_runtime_artifact_contract_issues(
+    args: argparse.Namespace,
+    checkpoint: dict[str, Any],
+    compiled_bytes: int,
+) -> list[str]:
+    architecture = args.training_config["architecture"]
+    parameter_count = int(checkpoint.get("parameterCount", 0))
+    issues: list[str] = []
+    if not (
+        int(architecture["minimumParameterCount"])
+        <= parameter_count
+        <= int(architecture["maximumParameterCount"])
+    ):
+        issues.append(
+            "parameter count is outside the configured CTC contract"
+        )
+    if not 1 <= compiled_bytes <= int(
+        architecture["maximumCompiledBytes"]
+    ):
+        issues.append(
+            "compiled model size is outside the configured CTC contract"
+        )
+    if not 4 <= args.max_input_len <= 128:
+        issues.append("input length is outside the native contract")
+    if not 8 <= args.output_time_steps <= 48:
+        issues.append("CTC time dimension is outside the native contract")
+    if checkpoint.get("outputVocab", {}).get(CTC_BLANK) != CTC_BLANK_ID:
+        issues.append("CTC blank class is not zero")
+    return issues
+
+
+def write_ctc_runtime_manifest(
+    args: argparse.Namespace,
+    checkpoint: dict[str, Any],
+    training_report: dict[str, Any],
+    coreml: dict[str, Any],
+    benchmark: dict[str, Any],
+) -> dict[str, Any]:
+    if not run_input_snapshots_share_immutable_inputs(
+        checkpoint.get("runInputSnapshot"),
+        ensure_run_input_snapshot(args),
+    ):
+        raise SystemExit(
+            "Refusing a CTC runtime manifest with mixed immutable inputs."
+        )
+    if (
+        coreml.get("status") != "passed"
+        or coreml.get("runtimeModelContract") != RUNTIME_MODEL_CONTRACT
+        or coreml.get("tensorContract")
+            != ctc_coreml_tensor_contract(checkpoint, args)
+        or coreml.get("compiledSha256")
+            != directory_sha256(args.compiled_model)
+        or coreml.get("mlpackageSha256")
+            != directory_sha256(mlpackage_path(args))
+        or coreml.get("artifactValidation", {}).get("status")
+            != "passed"
+        or coreml.get("artifactValidation", {}).get(
+            "sourceCheckpointSha256"
+        ) != sha256_file(checkpoint_path(args))
+    ):
+        raise SystemExit(
+            "Refusing a CTC manifest without exact Core ML attestation."
+        )
+    if (
+        not is_run_identifier(args.training_run_id)
+        or not is_run_identifier(args.export_run_id)
+        or args.training_run_id == args.export_run_id
+        or checkpoint.get("trainingRunId") != args.training_run_id
+        or training_report.get("trainingRunId") != args.training_run_id
+    ):
+        raise SystemExit("CTC manifest run identities are inconsistent.")
+    checkpoint_sha256 = sha256_file(checkpoint_path(args))
+    if training_report.get("checkpointSha256") != checkpoint_sha256:
+        raise SystemExit("CTC training report binds another checkpoint.")
+    compiled_bytes = directory_bytes(args.compiled_model)
+    issues = ctc_runtime_artifact_contract_issues(
+        args,
+        checkpoint,
+        compiled_bytes,
+    )
+    if issues:
+        raise SystemExit(
+            "Refusing an invalid CTC runtime artifact: "
+            + "; ".join(issues)
+        )
+    context = args.training_config["context"]
+    rescorer = context["languageModelRescorer"]
+    training_sources = sorted(
+        source
+        for source, count in checkpoint.get(
+            "trainingSourceCounts",
+            {},
+        ).items()
+        if int(count) > 0
+    )
+    manifest = {
+        "schemaVersion": 2,
+        "trainingRunId": args.training_run_id,
+        "exportRunId": args.export_run_id,
+        "selectedArtifact": checkpoint["modelId"],
+        "runtime": "CoreML",
+        "runtimeModelContract": RUNTIME_MODEL_CONTRACT,
+        "tensorContract": coreml["tensorContract"],
+        "localOnly": True,
+        "neuralTailOnly": True,
+        "productionEligible": False,
+        "architecture": ARCHITECTURE_FAMILY,
+        "openVocabulary": True,
+        "tokenization": OUTPUT_TOKENIZATION,
+        "outputSequenceValidation": OUTPUT_SEQUENCE_VALIDATION,
+        "decoder": "ctc-prefix-beam-search",
+        "beamSearch": {
+            "enabled": True,
+            "beamWidth": args.beam_width,
+            "maxOutputGraphemes": args.output_time_steps,
+            "maxSteps": args.output_time_steps,
+        },
+        "languageModelRescorer": {
+            "enabled": bool(rescorer["enabled"]),
+            "source": str(rescorer["source"]),
+            "weight": float(rescorer["weight"]),
+        },
+        "contextWindowWords": int(context["previousWords"]),
+        "parameterCount": int(checkpoint["parameterCount"]),
+        "modelBytes": compiled_bytes,
+        "trainingSources": training_sources,
+        "datasetReports": [
+            args.training_config["export"]["reports"]["dataset"],
+        ],
+        "evaluationReports": [
+            args.training_config["export"]["reports"]["evaluation"],
+        ],
+        "benchmarkReports": [
+            args.training_config["export"]["reports"]["benchmark"],
+        ],
+        "metrics": {
+            "tailTop1Accuracy": -1,
+            "tailTop3Accuracy": -1,
+            "chatConventionTop1Accuracy": -1,
+            "chatConventionTop3Accuracy": -1,
+            "namesTop3Accuracy": -1,
+            "protectedFalseConversionRate": -1,
+            "singleTokenPhraseExpansionRate": -1,
+            "secureFieldInferenceCount": -1,
+        },
+        "performance": {
+            "p50Ms": benchmark["p50Ms"],
+            "p95Ms": benchmark["p95Ms"],
+            "p99Ms": benchmark["p99Ms"],
+            "targetP99Ms": args.training_config[
+                "productionGates"
+            ]["p99Ms"],
+            "measuredOnDevice": True,
+            "devices": [benchmark],
+        },
+        "requiredCases": REQUIRED_CASES,
+        "sha256": {
+            "compiledModel": coreml["compiledSha256"],
+            "sourceCheckpoint": checkpoint_sha256,
+            "trainingDatasetManifest":
+                checkpoint["datasetManifestSha256"],
+            "vocabMetadata": checkpoint["vocabMetadataSha256"],
+        },
+        "limitations": candidate_limitations(),
+    }
+    write_json(args.manifest, manifest)
+    return manifest
+
+
 def candidate_limitations() -> list[str]:
     return [
         "Quality metrics remain provisional until locked gold and official benchmark evaluation pass.",
@@ -3093,25 +3612,208 @@ def candidate_limitations() -> list[str]:
 def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     ensure_run_input_snapshot(args)
     loaded = load_checkpoint(args) if args.skip_train else train_model(args)
+    model: CTCTransformer = loaded["model"]
     checkpoint = loaded["checkpoint"]
-    report = loaded["report"]
-    if not args.skip_coreml:
+    training_report = loaded["report"]
+    topology = execution_topology(
+        training_report.get("trainingExecutionModes", {}),
+        args.execution_modes,
+    )
+    if args.training_run_id == args.export_run_id:
         raise SystemExit(
-            "CTC Core ML publication is not enabled until exact compiled "
-            "artifact parity is bound."
+            "CTC training and export identities must be distinct."
         )
-    if report.get("trainingExecutionModes") != args.execution_modes:
-        raise SystemExit("CTC training-only execution modes are inconsistent.")
     assert_run_input_snapshot_unchanged(args)
+    coreml = export_coreml(model, checkpoint, args)
+    export_succeeded = coreml.get("status") == "passed"
+    prediction_evidence: dict[str, Any] | None = None
+    comparison_evidence: dict[str, Any] | None = None
+    if export_succeeded:
+        backend, independent_validation = (
+            load_verified_compiled_ctc_coreml(
+                model,
+                checkpoint,
+                args,
+                package_path=mlpackage_path(args),
+                compiled_path=args.compiled_model,
+                expected_package_sha256=str(
+                    coreml["mlpackageSha256"]
+                ),
+                expected_compiled_sha256=str(
+                    coreml["compiledSha256"]
+                ),
+            )
+        )
+        if (
+            independent_validation.get("status") != "passed"
+            or independent_validation.get("tensorContract")
+                != coreml.get("tensorContract")
+            or independent_validation.get("knownAnswerInputSha256")
+                != coreml.get("artifactValidation", {}).get(
+                    "knownAnswerInputSha256"
+                )
+            or independent_validation.get("relativeTolerance")
+                != COREML_PARITY_RTOL
+            or independent_validation.get("absoluteTolerance")
+                != COREML_PARITY_ATOL
+        ):
+            raise SystemExit(
+                "Published CTC artifact attestation is inconsistent."
+            )
+        prediction_evidence = write_ctc_gold_predictions(
+            backend,
+            checkpoint,
+            args,
+        )
+        comparison_evidence = (
+            write_ctc_official_benchmark_predictions(
+                backend,
+                checkpoint,
+                args,
+            )
+        )
+        benchmark = benchmark_compiled_ctc_coreml(
+            args,
+            backend,
+            checkpoint,
+        )
+    else:
+        benchmark = {
+            "status": "skipped",
+            "reason": (
+                "Core ML export did not produce a verified CTC artifact."
+            ),
+        }
+    benchmark_succeeded = (
+        export_succeeded
+        and valid_ctc_benchmark_result(benchmark, args)
+    )
+    runtime_contract_issues = (
+        ctc_runtime_artifact_contract_issues(
+            args,
+            checkpoint,
+            directory_bytes(args.compiled_model),
+        )
+        if export_succeeded
+        else []
+    )
+    publishable = (
+        benchmark_succeeded
+        and prediction_evidence is not None
+        and comparison_evidence is not None
+        and not runtime_contract_issues
+    )
+    assert_run_input_snapshot_unchanged(args)
+    manifest = (
+        write_ctc_runtime_manifest(
+            args,
+            checkpoint,
+            training_report,
+            coreml,
+            benchmark,
+        )
+        if publishable
+        else None
+    )
+    if publishable:
+        status = "passed-open-vocab-ctc-transformer-candidate"
+    elif args.skip_coreml:
+        status = "passed-training-candidate-coreml-export-skipped"
+    elif export_succeeded:
+        status = (
+            "failed-runtime-artifact-contract"
+            if runtime_contract_issues
+            else "failed-coreml-benchmark"
+        )
+    else:
+        status = "failed-coreml-export"
+
+    checkpoint_sha256 = sha256_file(checkpoint_path(args))
+    training_report_sha256 = sha256_file(training_report_path(args))
+    if (
+        checkpoint.get("trainingRunId") != args.training_run_id
+        or training_report.get("trainingRunId") != args.training_run_id
+        or training_report.get("checkpointSha256")
+            != checkpoint_sha256
+    ):
+        raise SystemExit(
+            "CTC training artifacts changed before export publication."
+        )
+    if export_succeeded:
+        if (
+            directory_sha256(args.compiled_model)
+                != coreml.get("compiledSha256")
+            or directory_sha256(mlpackage_path(args))
+                != coreml.get("mlpackageSha256")
+        ):
+            raise SystemExit(
+                "CTC Core ML bytes changed before export publication."
+            )
+    if prediction_evidence is not None:
+        if prediction_evidence.get("predictionsSha256") != sha256_file(
+            predictions_path(args)
+        ):
+            raise SystemExit(
+                "CTC gold predictions changed before publication."
+            )
+        _, current_gold = load_verified_gold_rows(args)
+        expected_gold = {
+            key: prediction_evidence[key]
+            for key in (
+                "goldManifest",
+                "goldManifestSha256",
+                "goldCorpusSha256",
+                "goldSuites",
+                "goldRows",
+            )
+        }
+        if current_gold != expected_gold:
+            raise SystemExit(
+                "CTC gold evidence changed before publication."
+            )
+    if comparison_evidence is not None:
+        if comparison_evidence.get(
+            "predictionsSha256"
+        ) != sha256_file(official_benchmark_predictions_path(args)):
+            raise SystemExit(
+                "CTC official predictions changed before publication."
+            )
+        _, current_official = (
+            load_verified_official_benchmark_rows(args)
+        )
+        expected_official = {
+            key: comparison_evidence[key]
+            for key in (
+                "manifest",
+                "manifestSha256",
+                "corpusSha256",
+                "suites",
+                "rows",
+            )
+        }
+        if current_official != expected_official:
+            raise SystemExit(
+                "CTC official evidence changed before publication."
+            )
+        if comparison_evidence.get(
+            "trainingIsolation"
+        ) != ensure_run_input_snapshot(args)["officialBenchmark"][
+            "trainingIsolation"
+        ]:
+            raise SystemExit(
+                "CTC official training-isolation evidence changed."
+            )
+
     export_report = {
         "generatedAt": iso_now(),
-        "status": "passed-training-candidate-coreml-export-skipped",
+        "status": status,
         "modelId": args.model_id,
         "trainingRunId": args.training_run_id,
         "exportRunId": args.export_run_id,
         "executionModes": args.execution_modes,
-        "executionTopology": "training-only-no-coreml-v1",
-        "trainingExecutionModes": report["trainingExecutionModes"],
+        "executionTopology": topology,
+        "trainingExecutionModes":
+            training_report["trainingExecutionModes"],
         "trainingContractSha256": args.training_contract_sha256,
         "effectiveTrainingConfigSha256":
             args.effective_training_config_sha256,
@@ -3119,31 +3821,139 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             args.effective_artifact_inputs_sha256,
         "artifactOverrides": args.artifact_overrides,
         "runInputSnapshot": ensure_run_input_snapshot(args),
+        "trainingRunInputSnapshotSha256": sha256_json(
+            training_report["runInputSnapshot"]
+        ),
+        "exportRunInputSnapshotSha256": sha256_json(
+            ensure_run_input_snapshot(args)
+        ),
+        "runtimeArtifactContractIssues": runtime_contract_issues,
         "checkpoint": rel(checkpoint_path(args)),
-        "checkpointSha256": sha256_file(checkpoint_path(args)),
+        "checkpointSha256": checkpoint_sha256,
         "trainingReport": rel(training_report_path(args)),
-        "trainingReportSha256": sha256_file(training_report_path(args)),
-        "coremlExport": {
-            "status": "skipped",
-            "reason": "training-only CUDA phase",
-        },
-        "productionEligible": False,
+        "trainingReportSha256": training_report_sha256,
+        "coremlExport": coreml,
+        "runtimeModelContract": RUNTIME_MODEL_CONTRACT,
+        "inputAdmissionPolicy": NEURAL_TAIL_ADMISSION_POLICY,
+        "predictions": (
+            prediction_evidence.get("predictions")
+            if prediction_evidence
+            else None
+        ),
+        "predictionsSha256": (
+            prediction_evidence.get("predictionsSha256")
+            if prediction_evidence
+            else None
+        ),
+        "predictionsBackend": (
+            prediction_evidence.get("backend")
+            if prediction_evidence
+            else None
+        ),
+        "goldManifest": (
+            prediction_evidence.get("goldManifest")
+            if prediction_evidence
+            else None
+        ),
+        "goldManifestSha256": (
+            prediction_evidence.get("goldManifestSha256")
+            if prediction_evidence
+            else None
+        ),
+        "goldCorpusSha256": (
+            prediction_evidence.get("goldCorpusSha256")
+            if prediction_evidence
+            else None
+        ),
+        "goldSuites": (
+            prediction_evidence.get("goldSuites")
+            if prediction_evidence
+            else None
+        ),
+        "goldRows": (
+            prediction_evidence.get("goldRows")
+            if prediction_evidence
+            else None
+        ),
+        "comparisonBenchmark": ({
+            "manifest": comparison_evidence["manifest"],
+            "manifestSha256":
+                comparison_evidence["manifestSha256"],
+            "corpusSha256": comparison_evidence["corpusSha256"],
+            "suites": comparison_evidence["suites"],
+            "rows": comparison_evidence["rows"],
+            "trainingIsolation":
+                comparison_evidence["trainingIsolation"],
+            "predictions": comparison_evidence["predictions"],
+            "predictionsSha256":
+                comparison_evidence["predictionsSha256"],
+            "predictionsBackend":
+                comparison_evidence["backend"],
+            "predictionArtifactIdentity":
+                comparison_evidence["artifactIdentity"],
+        } if comparison_evidence else None),
+        "measurements": (
+            rel(measurements_path(args))
+            if export_succeeded
+            else None
+        ),
+        "measurementsSha256": (
+            sha256_file(measurements_path(args))
+            if export_succeeded
+            else None
+        ),
+        "compiledModel": (
+            rel(args.compiled_model)
+            if export_succeeded
+            else None
+        ),
+        "compiledModelSha256": (
+            coreml.get("compiledSha256")
+            if export_succeeded
+            else None
+        ),
+        "mlpackage": (
+            rel(mlpackage_path(args))
+            if export_succeeded
+            else None
+        ),
+        "mlpackageSha256": (
+            coreml.get("mlpackageSha256")
+            if export_succeeded
+            else None
+        ),
+        "manifest": rel(args.manifest) if manifest else None,
+        "manifestSha256": (
+            sha256_file(args.manifest)
+            if manifest
+            else None
+        ),
+        "productionEligible": bool(
+            manifest and manifest["productionEligible"]
+        ),
         "candidateLimitations": candidate_limitations(),
     }
-    if (
-        report.get("checkpointSha256")
-            != export_report["checkpointSha256"]
-        or checkpoint.get("trainingRunId") != args.training_run_id
-    ):
-        raise SystemExit("CTC training artifacts changed before publication.")
+    assert_run_input_snapshot_unchanged(args)
     write_json(export_report_path(args), export_report)
     print(json.dumps({
         "status": export_report["status"],
         "checkpoint": export_report["checkpoint"],
         "trainingReport": export_report["trainingReport"],
         "exportReport": rel(export_report_path(args)),
-        "productionEligible": False,
+        "compiledModel": export_report["compiledModel"],
+        "manifest": export_report["manifest"],
+        "predictions": export_report["predictions"],
+        "comparisonPredictions": (
+            export_report["comparisonBenchmark"]["predictions"]
+            if export_report["comparisonBenchmark"]
+            else None
+        ),
+        "measurements": export_report["measurements"],
+        "coremlExport": coreml.get("status"),
+        "productionEligible": export_report["productionEligible"],
     }, ensure_ascii=False, indent=2))
+    if not publishable and not args.skip_coreml:
+        raise SystemExit(1)
     return export_report
 
 

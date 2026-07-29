@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import importlib.util
+import json
 import platform
 import tempfile
 import unittest
@@ -232,6 +233,74 @@ class VocabularyAndLossTests(unittest.TestCase):
             all(not candidate.startswith("ा") for candidate in candidates)
         )
 
+    def test_runtime_admission_bypasses_protected_tokens_before_inference(
+        self,
+    ) -> None:
+        input_vocab = {
+            TRAINER.PAD: 0,
+            TRAINER.EOS: 1,
+            TRAINER.UNK: 2,
+            "a": 3,
+            "m": 4,
+            "n": 5,
+            "p": 6,
+        }
+        output_vocab = {
+            TRAINER.CTC_BLANK: 0,
+            "क": 1,
+            "ा": 2,
+        }
+        logits = np.zeros((1, 8, 3), dtype=np.float16)
+        logits[0, 0, 1] = 10
+        logits[0, 1, 0] = 10
+        logits[0, 2, 2] = 10
+        logits[0, 3:, 0] = 10
+
+        class Predictor:
+            calls = 0
+
+            @classmethod
+            def predict(
+                cls,
+                _payload: dict[str, np.ndarray],
+            ) -> dict[str, np.ndarray]:
+                cls.calls += 1
+                return {"logits": logits}
+
+        backend = TRAINER.CompiledCTCCoreMLBackend(
+            Predictor,
+            output_time_steps=8,
+            output_class_count=3,
+            compiled_sha256="a" * 64,
+        )
+        checkpoint = {
+            "inputVocab": input_vocab,
+            "outputVocab": output_vocab,
+        }
+        args = argparse.Namespace(
+            max_input_len=8,
+            beam_width=4,
+            maximum_candidates=2,
+        )
+        self.assertEqual(
+            TRAINER.decode_compiled_ctc_candidates(
+                backend,
+                "npm",
+                checkpoint,
+                args,
+            ),
+            [],
+        )
+        self.assertEqual(Predictor.calls, 0)
+        candidates = TRAINER.decode_compiled_ctc_candidates(
+            backend,
+            "nam",
+            checkpoint,
+            args,
+        )
+        self.assertEqual(Predictor.calls, 1)
+        self.assertEqual(candidates[0], "का")
+
     def test_inverse_square_root_schedule_peaks_at_warmup(self) -> None:
         before = TRAINER.learning_rate_for_step(
             2000,
@@ -454,6 +523,240 @@ class CoreMLContractTests(unittest.TestCase):
                 TRAINER.directory_sha256(
                     TRAINER.mlpackage_path(args)
                 ),
+            )
+
+    @unittest.skipUnless(
+        platform.system() == "Darwin" and TRAINER.ct is not None,
+        "End-to-end CTC Core ML publication requires macOS",
+    )
+    def test_tiny_split_host_export_pipeline_is_complete(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="lekh-ctc-complete-pipeline-",
+            dir=ROOT / ".tmp",
+        ) as directory:
+            output = Path(directory) / "candidate"
+            args = TRAINER.parse_args([
+                "--out-dir",
+                str(output),
+                "--compiled-model",
+                str(output / "Candidate.mlmodelc"),
+                "--manifest",
+                str(output / "Candidate.manifest.json"),
+                "--vocab-metadata",
+                str(output / "Candidate.vocab.json"),
+                "--model-dimension",
+                "16",
+                "--attention-heads",
+                "4",
+                "--feed-forward-dimension",
+                "32",
+                "--layers",
+                "1",
+                "--dropout",
+                "0",
+                "--max-input-len",
+                "8",
+                "--output-time-steps",
+                "8",
+                "--beam-width",
+                "4",
+                "--maximum-candidates",
+                "2",
+                "--skip-train",
+            ], {})
+            args.training_config = copy.deepcopy(args.training_config)
+            args.training_config["architecture"][
+                "minimumParameterCount"
+            ] = 1
+            args.training_config["architecture"][
+                "maximumParameterCount"
+            ] = 1_000_000
+            args.training_run_id = "b" * 32
+            args.export_run_id = "c" * 32
+            input_vocab = {
+                TRAINER.PAD: 0,
+                TRAINER.EOS: 1,
+                TRAINER.UNK: 2,
+                "a": 3,
+                "m": 4,
+                "n": 5,
+                "p": 6,
+            }
+            output_vocab = {
+                TRAINER.CTC_BLANK: 0,
+                "क": 1,
+                "ा": 2,
+                "न": 3,
+                "म": 4,
+            }
+            model = TRAINER.build_model_from_runtime_config(
+                len(input_vocab),
+                len(output_vocab),
+                TRAINER.checkpoint_runtime_config(args),
+            ).eval()
+            official_base = {
+                "manifest": "official-manifest.json",
+                "manifestSha256": "1" * 64,
+                "corpusSha256": "2" * 64,
+                "suites": [],
+                "rows": 1,
+            }
+            training_isolation = {
+                "policy": "test-isolation",
+                "overlappingInputCount": 0,
+            }
+            snapshot = {
+                "schemaVersion": 1,
+                "trainer": {
+                    "path": "scripts/train-open-vocab-ctc-transformer.py",
+                    "sha256": TRAINER.sha256_file(
+                        Path(TRAINER.__file__)
+                    ),
+                },
+                "dataset": {
+                    "manifestSha256": "3" * 64,
+                    "contentSha256": "4" * 64,
+                    "splits": {},
+                },
+                "gold": {},
+                "officialBenchmark": {
+                    **official_base,
+                    "trainingIsolation": training_isolation,
+                },
+                "runtime": {
+                    "trainingDevice": "cpu",
+                },
+            }
+            args.run_input_snapshot = snapshot
+            output.mkdir(parents=True)
+            args.vocab_metadata.write_text(
+                "{}\n",
+                encoding="utf-8",
+            )
+            checkpoint = {
+                "modelId": TRAINER.MODEL_ID,
+                "trainingRunId": args.training_run_id,
+                "stateDict": model.state_dict(),
+                "inputVocab": input_vocab,
+                "outputVocab": output_vocab,
+                "config": TRAINER.checkpoint_runtime_config(args),
+                "runInputSnapshot": snapshot,
+                "parameterCount": sum(
+                    parameter.numel()
+                    for parameter in model.parameters()
+                ),
+                "datasetManifestSha256": "3" * 64,
+                "vocabMetadataSha256": TRAINER.sha256_file(
+                    args.vocab_metadata
+                ),
+                "trainingSourceCounts": {
+                    "test-source": 2,
+                },
+            }
+            torch.save(
+                checkpoint,
+                TRAINER.checkpoint_path(args),
+            )
+            training_report = {
+                "trainingRunId": args.training_run_id,
+                "trainingExecutionModes": {
+                    "skipTrain": False,
+                    "skipCoreML": True,
+                    "trainingDevice": "cuda",
+                },
+                "checkpointSha256": TRAINER.sha256_file(
+                    TRAINER.checkpoint_path(args)
+                ),
+                "runInputSnapshot": snapshot,
+            }
+            TRAINER.write_json(
+                TRAINER.training_report_path(args),
+                training_report,
+            )
+            gold_evidence = {
+                "goldManifest": "gold-manifest.json",
+                "goldManifestSha256": "5" * 64,
+                "goldCorpusSha256": "6" * 64,
+                "goldSuites": [],
+                "goldRows": 2,
+            }
+            gold_rows = [
+                {"id": "protected", "input": "npm"},
+                {"id": "candidate", "input": "nam"},
+            ]
+            official_rows = [
+                {"id": "official", "input": "nam"},
+            ]
+            with (
+                mock.patch.object(
+                    TRAINER,
+                    "ensure_run_input_snapshot",
+                    return_value=snapshot,
+                ),
+                mock.patch.object(
+                    TRAINER,
+                    "assert_run_input_snapshot_unchanged",
+                    return_value=None,
+                ),
+                mock.patch.object(
+                    TRAINER,
+                    "run_input_snapshots_share_immutable_inputs",
+                    return_value=True,
+                ),
+                mock.patch.object(
+                    TRAINER,
+                    "load_checkpoint",
+                    return_value={
+                        "model": model,
+                        "checkpoint": checkpoint,
+                        "report": training_report,
+                    },
+                ),
+                mock.patch.object(
+                    TRAINER,
+                    "load_verified_gold_rows",
+                    return_value=(gold_rows, gold_evidence),
+                ),
+                mock.patch.object(
+                    TRAINER,
+                    "load_verified_official_benchmark_rows",
+                    return_value=(official_rows, official_base),
+                ),
+            ):
+                export = TRAINER.run_pipeline(args)
+            self.assertEqual(
+                export["status"],
+                "passed-open-vocab-ctc-transformer-candidate",
+            )
+            self.assertEqual(
+                export["executionTopology"],
+                "split-host-train-then-macos-export-v1",
+            )
+            self.assertEqual(
+                export["runtimeArtifactContractIssues"],
+                [],
+            )
+            self.assertEqual(
+                export["predictionsBackend"],
+                "coreml-compiled-transformer-ctc",
+            )
+            self.assertTrue(args.manifest.is_file())
+            self.assertTrue(
+                TRAINER.measurements_path(args).is_file()
+            )
+            prediction_rows = [
+                json.loads(line)
+                for line in TRAINER.predictions_path(args)
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+            ]
+            self.assertEqual(
+                set(prediction_rows[0]),
+                {"id", "input", "candidates"},
+            )
+            self.assertEqual(
+                prediction_rows[0]["candidates"],
+                [],
             )
 
 
