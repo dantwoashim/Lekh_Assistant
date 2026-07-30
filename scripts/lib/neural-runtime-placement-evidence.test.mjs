@@ -7,6 +7,21 @@ import {
 } from "./neural-runtime-placement-evidence.mjs";
 
 describe("observed Neural Engine runtime placement evidence", () => {
+  it("keeps placement capture at exactly one plus eight passes", () => {
+    expect(
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.warmupPasses
+    ).toBe(1);
+    expect(
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT.measuredPasses
+    ).toBe(8);
+    expect(
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY.warmupIterations
+    ).toBe(5);
+    expect(
+      NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY.measuredIterations
+    ).toBe(40);
+  });
+
   it("accepts an exact split-artifact Instruments trace summary", () => {
     const descriptor = splitDescriptor();
     const result = validateNeuralRuntimePlacementEvidence(

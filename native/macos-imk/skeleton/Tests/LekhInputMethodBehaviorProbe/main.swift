@@ -363,7 +363,9 @@ private func benchmarkNeuralServiceIfRequested() {
   }
 
   let tokens = ["prashasan", "nagarikta", "mantralaya", "sambidhan", "paryatan"]
-  let benchmarkIterations = placementCapture ? 9 : 3
+  let benchmarkWarmupPasses = 1
+  let benchmarkMeasuredPasses = placementCapture ? 8 : 48
+  let benchmarkIterations = benchmarkWarmupPasses + benchmarkMeasuredPasses
   var samples: [UInt64] = []
   var steadyStateByToken: [String: [Double]] = [:]
   var observed: [String: [String]] = [:]
@@ -374,7 +376,7 @@ private func benchmarkNeuralServiceIfRequested() {
       service.candidates(for: token, secureInputActive: false) { candidates in
         let elapsed = DispatchTime.now().uptimeNanoseconds - started
         samples.append(elapsed)
-        if iteration > 0 {
+        if iteration >= benchmarkWarmupPasses {
           steadyStateByToken[token, default: []].append(Double(elapsed) / 1_000_000)
         }
         observed[token] = candidates
@@ -385,14 +387,16 @@ private func benchmarkNeuralServiceIfRequested() {
         RunLoop.current.run(until: Date().addingTimeInterval(0.005))
       }
       require(completed, "Packaged neural candidate service timed out for \(token)")
-      if iteration == 0 {
-        // The first request includes model/runtime warm-up and remains in the
-        // report, but percentile gates use steady-state requests below.
+      if iteration < benchmarkWarmupPasses {
+        // The first workload pass includes model/runtime warm-up and remains
+        // outside the percentile gates, which use steady-state requests below.
         continue
       }
     }
   }
-  let steadyState = Array(samples.dropFirst(tokens.count)).sorted()
+  let steadyState = Array(
+    samples.dropFirst(tokens.count * benchmarkWarmupPasses)
+  ).sorted()
   func percentile(_ value: Double) -> Double {
     let index = min(steadyState.count - 1, max(0, Int(ceil(value * Double(steadyState.count))) - 1))
     return Double(steadyState[index]) / 1_000_000
@@ -478,9 +482,9 @@ private func benchmarkNeuralServiceIfRequested() {
       "placementCapture": placementCapture,
       "workloadTokens": tokens,
       "benchmarkPasses": benchmarkIterations,
-      "warmupPasses": 1,
-      "measuredPasses": benchmarkIterations - 1,
-      "warmupRequests": tokens.count,
+      "warmupPasses": benchmarkWarmupPasses,
+      "measuredPasses": benchmarkMeasuredPasses,
+      "warmupRequests": tokens.count * benchmarkWarmupPasses,
       "steadyStateSamples": steadyState.count,
       "targetP95Ms": 50,
       "performance": ["p50Ms": p50, "p95Ms": p95, "p99Ms": p99],

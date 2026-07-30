@@ -13,6 +13,9 @@ import {
 } from "./lib/neural-artifact-descriptor.mjs";
 import { validateNeuralDeviceMeasurements } from "./lib/neural-device-measurements.mjs";
 import {
+  validateNeuralNativeServiceBenchmarkReport
+} from "./lib/neural-native-service-benchmark-evidence.mjs";
+import {
   NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT,
   NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY,
   validateNeuralPlacementCaptureReport,
@@ -139,6 +142,18 @@ const parsed = JSON.parse(reportEvidence.contents.toString("utf8"));
 if (parsed.runNonce !== runNonce || resolve(String(parsed.bundle ?? "")) !== bundle) {
   console.error("Behavior probe report is stale or bound to a different packaged bundle.");
   process.exit(1);
+}
+if (!placementCapture) {
+  const benchmarkValidation =
+    validateNeuralNativeServiceBenchmarkReport(parsed);
+  if (!benchmarkValidation.valid) {
+    console.error(
+      "Full native neural-service benchmark workload drifted from its " +
+      "closed contract: " +
+      benchmarkValidation.issueCodes.join(", ")
+    );
+    process.exit(1);
+  }
 }
 const manifestEvidence = inspectContainedRegularFile(bundle, manifest, {
   label: "Packaged neural manifest",
