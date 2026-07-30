@@ -233,6 +233,13 @@ Core ML forward pass is never reported as consumer latency.
 Required production evidence:
 
 - p50, p95, and p99 are each below 50 ms;
+- the benchmark runs in a fresh isolated process and records current and
+  lifetime-peak physical footprint through
+  `proc_pid_rusage:RUSAGE_INFO_V4`;
+- the absolute lifetime peak is at most 128 MiB on every measured device;
+- the canonical memory summary is one exact observed device record whose
+  lifetime peak is no smaller than any other retained device record; device
+  baselines and peaks are not required to be identical;
 - at least one Apple Silicon packaged-app measurement;
 - `secureFieldInferenceCount=0`;
 - `measurementKind=full-candidate-generation`;
@@ -252,7 +259,10 @@ Intel fallback evidence is useful but optional. It cannot support a Neural
 Engine claim. `MLComputePlan` is anticipated device usage and cannot support
 that claim by itself. The authoritative runtime contract is implemented in
 `scripts/lib/neural-runtime-placement-evidence.mjs`; capture instructions are
-in `docs/neural/NEURAL_ENGINE_RUNTIME_PLACEMENT.md`.
+in `docs/neural/NEURAL_ENGINE_RUNTIME_PLACEMENT.md`. Apple's documented
+process-memory measurement uses `proc_pid_rusage` with physical footprint and
+lifetime maximum physical footprint; a baseline-relative delta remains
+diagnostic and cannot conceal an oversized process baseline.
 
 ## Immutable qualification and promotion
 

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   NEURAL_POST_EXPORT_MEMORY_POLICY,
+  validateCanonicalNeuralMemorySummary,
   validateNeuralPostExportMemoryEvidence
 } from "./neural-post-export-memory-evidence.mjs";
 
@@ -37,6 +38,44 @@ describe("post-export neural process-memory evidence", () => {
       evidence.baselinePhysicalFootprintBytes;
 
     expect(validateNeuralPostExportMemoryEvidence(evidence).valid).toBe(true);
+  });
+
+  it("requires the summary to be the exact worst observed device row", () => {
+    const worst = validEvidence();
+    const lower = validEvidence();
+    lower.lifetimePeakPhysicalFootprintBytes = 80 * 1024 * 1024;
+    lower.peakIncreaseFromBaselineBytes =
+      lower.lifetimePeakPhysicalFootprintBytes -
+      lower.baselinePhysicalFootprintBytes;
+    expect(
+      validateCanonicalNeuralMemorySummary(worst, [lower, worst])
+    ).toMatchObject({
+      valid: true,
+      matchingDeviceIndexes: [1],
+      exceedingDeviceIndexes: []
+    });
+
+    const lowerSummary = structuredClone(lower);
+    const notWorst = validateCanonicalNeuralMemorySummary(
+      lowerSummary,
+      [lower, worst]
+    );
+    expect(notWorst.valid).toBe(false);
+    expect(notWorst.issueCodes).toContain(
+      "neural-post-export-memory.summary-not-worst:device-1"
+    );
+
+    const unobserved = structuredClone(worst);
+    unobserved.baselinePhysicalFootprintBytes += 1;
+    unobserved.peakIncreaseFromBaselineBytes -= 1;
+    const synthetic = validateCanonicalNeuralMemorySummary(
+      unobserved,
+      [lower, worst]
+    );
+    expect(synthetic.valid).toBe(false);
+    expect(synthetic.issueCodes).toContain(
+      "neural-post-export-memory.summary-not-observed"
+    );
   });
 
   for (const [label, mutate, issue] of [

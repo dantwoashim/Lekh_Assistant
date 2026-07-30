@@ -12,6 +12,9 @@ import {
 import {
   validateNeuralRuntimePlacementEvidence
 } from "./lib/neural-runtime-placement-evidence.mjs";
+import {
+  inspectNeuralRuntimeTraceProvenance
+} from "./lib/neural-runtime-trace-provenance.mjs";
 
 const root = process.cwd();
 const args = parseArgs(process.argv.slice(2));
@@ -30,10 +33,27 @@ const reportPath = safePath(
     "reports/neural-runtime-placement-validation.json",
   "Runtime-placement validation report"
 );
+const traceDirectoryArgument = args.get("trace-directory");
+const traceExportArgument = args.get("trace-export");
+if (
+  (traceDirectoryArgument === undefined) !==
+  (traceExportArgument === undefined)
+) {
+  throw new TypeError(
+    "--trace-directory and --trace-export must be supplied together."
+  );
+}
+const traceDirectory = traceDirectoryArgument === undefined
+  ? null
+  : safePath(traceDirectoryArgument, "Raw xctrace directory");
+const traceExport = traceExportArgument === undefined
+  ? null
+  : safePath(traceExportArgument, "xctrace XML export");
 const failures = [];
 let descriptor = null;
 let evidence = null;
 let evidenceSha256 = null;
+let traceProvenance = null;
 
 try {
   descriptor = resolveNeuralArtifactDescriptor({
@@ -71,10 +91,28 @@ try {
     (error instanceof Error ? error.message : String(error))
   );
 }
+if (evidence && traceDirectory && traceExport) {
+  try {
+    traceProvenance = inspectNeuralRuntimeTraceProvenance({
+      repoRoot: root,
+      traceDirectory,
+      traceExport,
+      expectedTraceSha256: evidence.capture?.traceSha256,
+      expectedTraceExportSha256:
+        evidence.capture?.traceExportSha256
+    });
+  } catch (error) {
+    failures.push(
+      "Runtime-placement trace provenance is invalid: " +
+      (error instanceof Error ? error.message : String(error))
+    );
+  }
+}
 
 const validation = descriptor && evidence
   ? validateNeuralRuntimePlacementEvidence(evidence, {
-      artifactDescriptor: descriptor
+      artifactDescriptor: descriptor,
+      traceProvenance
     })
   : null;
 if (validation) failures.push(...validation.issueCodes);
@@ -91,6 +129,16 @@ const report = {
   artifactSetSha256: descriptor?.artifactSetSha256 ?? null,
   evidence: portable(evidencePath),
   evidenceSha256,
+  traceDirectory: traceDirectory ? portable(traceDirectory) : null,
+  traceExport: traceExport ? portable(traceExport) : null,
+  traceProvenance: traceProvenance
+    ? {
+        provenanceKind: traceProvenance.provenanceKind,
+        traceSha256: traceProvenance.trace.sha256,
+        traceExportSha256: traceProvenance.traceExport.sha256,
+        semanticDerivation: traceProvenance.semanticDerivation
+      }
+    : null,
   neuralEngineClaimAllowed:
     validation?.neuralEngineClaimAllowed === true,
   failures
@@ -113,7 +161,9 @@ function parseArgs(argv) {
     if (![
       "--artifact-root",
       "--evidence",
-      "--report"
+      "--report",
+      "--trace-directory",
+      "--trace-export"
     ].includes(argument)) {
       throw new TypeError(
         `Unknown runtime-placement argument ${argument}.`

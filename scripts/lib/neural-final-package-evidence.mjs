@@ -216,7 +216,7 @@ function resolvePromotionEvidence(options, descriptor) {
       receipt.schemaVersion !==
         NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION ||
       receipt.status !== "passed-neural-candidate-promotion" ||
-      receipt.candidateImmutable !== true ||
+      receipt.candidateEvidenceStable !== true ||
       receipt.trainingRunId !== descriptor.manifest.trainingRunId ||
       receipt.exportRunId !== descriptor.manifest.exportRunId ||
       receipt.artifactSetSha256 !== descriptor.artifactSetSha256 ||

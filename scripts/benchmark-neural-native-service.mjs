@@ -13,7 +13,8 @@ import {
 } from "./lib/neural-artifact-descriptor.mjs";
 import { validateNeuralDeviceMeasurements } from "./lib/neural-device-measurements.mjs";
 import {
-  validateNeuralNativeServiceBenchmarkReport
+  validateNeuralNativeServiceBenchmarkReport,
+  validateNeuralNativeServiceBenchmarkWorkload
 } from "./lib/neural-native-service-benchmark-evidence.mjs";
 import {
   NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT,
@@ -145,7 +146,7 @@ if (parsed.runNonce !== runNonce || resolve(String(parsed.bundle ?? "")) !== bun
 }
 if (!placementCapture) {
   const benchmarkValidation =
-    validateNeuralNativeServiceBenchmarkReport(parsed);
+    validateNeuralNativeServiceBenchmarkWorkload(parsed);
   if (!benchmarkValidation.valid) {
     console.error(
       "Full native neural-service benchmark workload drifted from its " +
@@ -305,13 +306,14 @@ if (production || promotionEvidence) {
     runtimePlacement: runtimePlacementEvidence
   };
 }
-parsed.proofMode = production
+const expectedProofMode = production
   ? "production"
   : promotionEvidence
     ? "candidate-promotion"
     : placementCapture
       ? "placement-capture"
       : "experimental";
+parsed.proofMode = expectedProofMode;
 if (placementCapture) {
   parsed.runtimePlacementWorkload = {
     ...NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
@@ -332,6 +334,21 @@ if (placementCapture) {
   };
 }
 if (promotionEvidence) parsed.status = "passed-candidate-promotion-evidence";
+if (!placementCapture) {
+  const benchmarkValidation =
+    validateNeuralNativeServiceBenchmarkReport(parsed, {
+      artifactDescriptor,
+      expectedProofMode
+    });
+  if (!benchmarkValidation.valid) {
+    console.error(
+      "Final native neural-service report failed its closed lifecycle, " +
+      "safety, and identity contract: " +
+      benchmarkValidation.issueCodes.join(", ")
+    );
+    process.exit(1);
+  }
+}
 writeFileSync(stagedReport, `${JSON.stringify(parsed, null, 2)}\n`);
 renameSync(stagedReport, report);
 reportPublished = true;

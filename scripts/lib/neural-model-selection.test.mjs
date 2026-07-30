@@ -87,6 +87,31 @@ describe("immutable neural model selection", () => {
     );
   });
 
+  it("rejects re-exports of the same training run or source checkpoint", () => {
+    const original = candidate("original", "a");
+    for (const mutation of [
+      (replay) => {
+        replay.identity.trainingRunId = original.identity.trainingRunId;
+      },
+      (replay) => {
+        replay.identity.sourceCheckpointSha256 =
+          original.identity.sourceCheckpointSha256;
+        replay.evidence.checkpoint.sha256 =
+          original.identity.sourceCheckpointSha256;
+      }
+    ]) {
+      const replay = candidate("replay", "b");
+      mutation(replay);
+      assert.throws(
+        () => buildNeuralSelectionReport({
+          candidates: [original, replay],
+          generatedAt: "2026-07-24T00:00:00.000Z"
+        }),
+        /distinct trainingRunId|distinct source checkpoints/u
+      );
+    }
+  });
+
   it("detects winner, ranking, evidence, and selection-id tampering", () => {
     const report = buildNeuralSelectionReport({
       candidates: [candidate("baseline", "a"), candidate("attention", "b", {
@@ -148,6 +173,10 @@ function candidate(name, digestSeed, metricOverrides = {}) {
     identity: {
       trainingRunId,
       exportRunId,
+      sourceCheckpointSha256: digest(9),
+      trainingReportSha256: digest(10),
+      effectiveTrainingConfigSha256: digest(11),
+      trainingSeed: digestSeed.charCodeAt(0),
       manifestSha256,
       exportReportSha256,
       vocabSha256: digest(3),
@@ -165,6 +194,14 @@ function candidate(name, digestSeed, metricOverrides = {}) {
       exportReport: {
         path: `data/generated/${name}/export-report.json`,
         sha256: exportReportSha256
+      },
+      checkpoint: {
+        path: `data/generated/${name}/checkpoint.pt`,
+        sha256: digest(9)
+      },
+      trainingReport: {
+        path: `data/generated/${name}/training-report.json`,
+        sha256: digest(10)
       },
       evaluationReport: {
         path: `reports/${name}-evaluation.json`,

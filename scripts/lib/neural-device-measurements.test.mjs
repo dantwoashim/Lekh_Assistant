@@ -161,6 +161,55 @@ describe("neural packaged-device measurements", () => {
     expect(result.intelFallbackProven).toBe(true);
   });
 
+  it("accepts distinct device memory when root is the exact worst row", () => {
+    const arm = measurement("arm64", true);
+    const intel = measurement("x86_64", false);
+    arm.memory = memoryEvidence(112 * 1024 * 1024);
+    intel.memory = memoryEvidence(88 * 1024 * 1024);
+    const result = validateNeuralDeviceMeasurements([arm, intel], {
+      manifest,
+      memoryEvidence: structuredClone(arm.memory),
+      now,
+      production: true
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects a root row that is observed but not the worst device", () => {
+    const arm = measurement("arm64", true);
+    const intel = measurement("x86_64", false);
+    arm.memory = memoryEvidence(112 * 1024 * 1024);
+    intel.memory = memoryEvidence(88 * 1024 * 1024);
+    const result = validateNeuralDeviceMeasurements([arm, intel], {
+      manifest,
+      memoryEvidence: structuredClone(intel.memory),
+      now,
+      production: true
+    });
+    expect(result.issueCodes).toContain(
+      "neural-device-measurements.memory-summary-not-worst:Mac-arm64"
+    );
+  });
+
+  it("rejects a synthetic worst summary not observed on a device", () => {
+    const arm = measurement("arm64", true);
+    const intel = measurement("x86_64", false);
+    arm.memory = memoryEvidence(112 * 1024 * 1024);
+    intel.memory = memoryEvidence(88 * 1024 * 1024);
+    const synthetic = structuredClone(arm.memory);
+    synthetic.baselinePhysicalFootprintBytes += 1;
+    synthetic.peakIncreaseFromBaselineBytes -= 1;
+    const result = validateNeuralDeviceMeasurements([arm, intel], {
+      manifest,
+      memoryEvidence: synthetic,
+      now,
+      production: true
+    });
+    expect(result.issueCodes).toContain(
+      "neural-device-measurements.memory-mismatch:summary"
+    );
+  });
+
   it("keeps current supported-but-not-preferred placement experimental", () => {
     const development = validateNeuralDeviceMeasurements([
       measurement("arm64", false)
@@ -267,7 +316,7 @@ describe("neural packaged-device measurements", () => {
       production: true
     });
     expect(mismatch.issueCodes).toContain(
-      "neural-device-measurements.memory-mismatch:Mac-arm64"
+      "neural-device-measurements.memory-mismatch:summary"
     );
   });
 

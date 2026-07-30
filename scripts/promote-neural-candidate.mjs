@@ -32,6 +32,9 @@ import {
   inspectContainedRegularFile
 } from "./lib/neural-artifact-filesystem.mjs";
 import {
+  inspectNeuralCandidateEvidenceCustody
+} from "./lib/neural-candidate-evidence-custody.mjs";
+import {
   neuralRuntimeContractMetadata,
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
@@ -39,6 +42,10 @@ import {
   validateNeuralDeviceMeasurements
 } from "./lib/neural-device-measurements.mjs";
 import {
+  replayRetainedNeuralNativeServiceBenchmarkEvidence
+} from "./lib/neural-native-service-benchmark-evidence.mjs";
+import {
+  validateCanonicalNeuralMemorySummary,
   validateNeuralPostExportMemoryEvidence
 } from "./lib/neural-post-export-memory-evidence.mjs";
 import {
@@ -63,9 +70,28 @@ import {
 import {
   hasCTCCoreMLParityEvidence
 } from "./lib/neural-ctc-coreml-parity-contract.mjs";
+import {
+  expectedNeuralCandidateExportStatus,
+  validateCanonicalNeuralGoldEvidence
+} from "./lib/neural-production-evidence-policy.mjs";
+import {
+  validateNeuralTrainingCandidateIdentity
+} from "./lib/neural-training-candidate-identity.mjs";
+import {
+  validateRecomputedNeuralGoldEvaluation,
+  validateRecomputedOfficialBenchmarkEvaluation
+} from "./lib/neural-metric-recomputation.mjs";
+import {
+  projectNeuralProductionManifestMetrics
+} from "./lib/neural-production-metrics.mjs";
+import {
+  verifyOfficialBenchmarkTrainingIsolation
+} from "./lib/neural-official-benchmark-isolation.mjs";
 
 const RUN_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+const UTC_TIMESTAMP_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u;
 const CTC_MODEL_ID = "lekh-open-vocab-ctc-transformer-v2";
 const CTC_RUNTIME_CONTRACT = "single-transformer-ctc-v1";
 const BASELINE_COMPILED_NAME = "LekhNeuralTransliterator.mlmodelc";
@@ -221,7 +247,16 @@ export function promoteNeuralCandidate(options) {
   if (exportReport.productionEligible === true) {
     fail("Candidate export report is already productionEligible and cannot be promoted again.");
   }
-  requirePassedStatus(exportReport.status, "Candidate export report");
+  const expectedExportStatus =
+    expectedNeuralCandidateExportStatus(candidateManifest);
+  if (expectedExportStatus === null ||
+      exportReport.status !== expectedExportStatus ||
+      exportReport.modelId !== candidateManifest.selectedArtifact) {
+    fail(
+      "Candidate export report must have the exact passed status for its " +
+      "model and architecture."
+    );
+  }
   if (exportReport.coremlExport?.status !== "passed") {
     fail("Candidate export report must bind a passed Core ML export.");
   }
@@ -254,11 +289,23 @@ export function promoteNeuralCandidate(options) {
     exportReport,
     trackedInputs
   );
+  const trainingEvidence = verifyTrainingIdentity({
+    repoRoot,
+    candidateRoot,
+    manifest: candidateManifest,
+    exportReport,
+    checkpointEvidence,
+    trackedInputs
+  });
   const goldEvidence = verifyEvaluationEvidence({
     repoRoot,
     candidateRoot,
+    candidateManifest,
+    candidateManifestEvidence: candidateManifestEvidence.file,
     exportReport,
+    exportEvidence: exportEvidence.file,
     evaluationReport,
+    artifactDescriptor,
     trackedInputs
   });
   if (requireSha256(
@@ -274,13 +321,26 @@ export function promoteNeuralCandidate(options) {
     exportReport,
     trackedInputs
   });
-  verifyPackagedBenchmarkEvidence({
+  const packagedBenchmarkEvidence = verifyPackagedBenchmarkEvidence({
     benchmarkReport,
     candidateManifestEvidence: candidateManifestEvidence.file,
     vocabularyEvidence,
     artifactSet,
     artifactDescriptor
   });
+  const productionMetricsProjection =
+    projectNeuralProductionManifestMetrics({
+      recomputedGoldEvaluation:
+        goldEvidence.recomputedGoldEvaluation,
+      nativeBenchmarkDevices: packagedBenchmarkEvidence.devices
+    });
+  if (!productionMetricsProjection.valid) {
+    fail(
+      "Production manifest metrics cannot be derived from independently " +
+      "verified gold and native benchmark evidence: " +
+      `${productionMetricsProjection.issueCodes.join(", ")}.`
+    );
+  }
   const selectionResult = verifySelectionEvidence({
     repoRoot,
     candidateRoot,
@@ -289,10 +349,14 @@ export function promoteNeuralCandidate(options) {
     exportReport,
     exportEvidence: exportEvidence.file,
     evaluationEvidence: evaluationEvidence.file,
+    evaluationReport,
     benchmarkEvidence: benchmarkEvidence.file,
+    benchmarkReport,
     selectionReport,
     artifactDescriptor,
     goldEvidence,
+    checkpointEvidence,
+    trainingEvidence,
     trackedInputs
   });
   const rareScalarEvidence = verifyRareScalarEvidence({
@@ -309,8 +373,31 @@ export function promoteNeuralCandidate(options) {
     selectionResult,
     trackedInputs
   });
+  const candidateCustody = inspectCandidateCustody({
+    repoRoot,
+    candidateRoot,
+    candidateManifestPath,
+    vocabularyPath,
+    exportReportPath
+  });
+  validateCandidateCustodyBindings({
+    repoRoot,
+    candidateCustody,
+    candidateRoot,
+    candidateManifest,
+    exportReport,
+    candidateManifestEvidence: candidateManifestEvidence.file,
+    exportEvidence: exportEvidence.file,
+    vocabularyEvidence,
+    artifactDescriptor
+  });
+  assertTrackedEvidenceOutsideCandidateArtifactTrees({
+    repoRoot,
+    candidateCustody,
+    trackedInputs
+  });
 
-  const metrics = exactRecord(evaluationReport.metrics, "Evaluation report metrics");
+  const metrics = productionMetricsProjection.metrics;
   const performance = productionPerformanceFromBenchmark(benchmarkReport);
   const productionManifest = structuredClone(candidateManifest);
   productionManifest.productionEligible = true;
@@ -321,10 +408,45 @@ export function promoteNeuralCandidate(options) {
   ];
   productionManifest.benchmarkReports = [portableRelative(repoRoot, benchmarkReportPath)];
   rewriteSplitArtifactPaths(productionManifest, repoRoot, productionDir, artifactSet);
+  const generatedAt = requireCanonicalTimestamp(
+    now(),
+    "Promotion generatedAt"
+  );
+  const plannedArtifacts = artifactSet.artifacts.map((artifact) => ({
+    id: artifact.id,
+    role: artifact.role,
+    artifactKind: artifact.artifactKind,
+    kind: artifact.kind,
+    source: portableRelative(repoRoot, artifact.source),
+    destination: portableRelative(
+      repoRoot,
+      join(productionDir, artifact.destinationName)
+    ),
+    bytes: artifact.evidence.bytes,
+    sha256: artifact.evidence.sha256
+  }));
+  const productionManifestDocument =
+    jsonDocumentEvidence(productionManifest);
+  const plannedProductionManifest = {
+    path: portableRelative(
+      repoRoot,
+      join(productionDir, PRODUCTION_MANIFEST_NAME)
+    ),
+    bytes: productionManifestDocument.bytes,
+    sha256: productionManifestDocument.sha256,
+    metricsSourceSha256: evaluationEvidence.file.sha256,
+    performanceSourceSha256: benchmarkEvidence.file.sha256
+  };
 
   const promotionIdentity = {
+    generatedAt,
     trainingRunId: candidateManifest.trainingRunId,
     exportRunId: candidateManifest.exportRunId,
+    candidateEvidenceStable: true,
+    candidateRoot: portableRelative(repoRoot, candidateRoot),
+    productionDirectory: portableRelative(repoRoot, productionDir),
+    artifactLayout: artifactSet.kind,
+    candidateCustodySetSha256: candidateCustody.custodySetSha256,
     candidateManifestSha256: candidateManifestEvidence.file.sha256,
     exportReportSha256: exportEvidence.file.sha256,
     evaluationReportSha256: evaluationEvidence.file.sha256,
@@ -354,12 +476,10 @@ export function promoteNeuralCandidate(options) {
     vocabularySha256: vocabularyEvidence.sha256,
     artifactSetSha256: artifactDescriptor.artifactSetSha256,
     checkpointSha256: checkpointEvidence.sha256,
-    artifacts: Object.fromEntries(
-      artifactSet.artifacts.map((artifact) => [
-        artifact.id,
-        artifact.evidence.sha256
-      ])
-    )
+    trainingIdentity: structuredClone(trainingEvidence.identity),
+    artifacts: [...plannedArtifacts]
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    productionManifest: structuredClone(plannedProductionManifest)
   };
   const promotionId =
     computeNeuralProductionPromotionIdFromIdentity(promotionIdentity);
@@ -402,11 +522,13 @@ export function promoteNeuralCandidate(options) {
     promotionReport = {
       schemaVersion: NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION,
       status: "passed-neural-candidate-promotion",
-      generatedAt: now(),
+      generatedAt,
       promotionId,
       trainingRunId: candidateManifest.trainingRunId,
       exportRunId: candidateManifest.exportRunId,
-      candidateImmutable: true,
+      candidateEvidenceStable: true,
+      candidateCustodySetSha256: candidateCustody.custodySetSha256,
+      trainingIdentity: structuredClone(trainingEvidence.identity),
       candidateRoot: portableRelative(repoRoot, candidateRoot),
       productionDirectory: portableRelative(repoRoot, productionDir),
       artifactLayout: artifactSet.kind,
@@ -439,6 +561,10 @@ export function promoteNeuralCandidate(options) {
         datasetManifest: evidenceRecord(repoRoot, goldEvidence.dataset.file),
         datasetContentSha256: goldEvidence.dataset.value.datasetContentSha256,
         checkpoint: evidenceRecord(repoRoot, checkpointEvidence),
+        trainingReport: evidenceRecord(
+          repoRoot,
+          trainingEvidence.report.file
+        ),
         vocabulary: evidenceRecord(repoRoot, vocabularyEvidence)
       },
       rareScalarEvidence: rareScalarEvidence
@@ -481,14 +607,26 @@ export function promoteNeuralCandidate(options) {
         bytes: artifact.stagedEvidence.bytes,
         sha256: artifact.stagedEvidence.sha256
       })),
-      productionManifest: {
-        path: portableRelative(repoRoot, join(productionDir, PRODUCTION_MANIFEST_NAME)),
-        bytes: stagedManifestEvidence.bytes,
-        sha256: stagedManifestEvidence.sha256,
-        metricsSourceSha256: evaluationEvidence.file.sha256,
-        performanceSourceSha256: benchmarkEvidence.file.sha256
-      }
+      productionManifest: structuredClone(plannedProductionManifest)
     };
+    if (
+      stagedManifestEvidence.bytes !==
+        plannedProductionManifest.bytes ||
+      stagedManifestEvidence.sha256 !==
+        plannedProductionManifest.sha256 ||
+      canonicalJson(
+        [...promotionReport.artifacts]
+          .sort((left, right) => left.id.localeCompare(right.id))
+      ) !== canonicalJson(
+        [...plannedArtifacts]
+          .sort((left, right) => left.id.localeCompare(right.id))
+      )
+    ) {
+      fail(
+        "Staged production manifest or artifact receipt differs from the " +
+        "event identity bound by promotionId."
+      );
+    }
     const stagedPromotionReportPath = join(stagingDir, PROMOTION_REPORT_NAME);
     writeExclusiveJson(stagedPromotionReportPath, promotionReport);
     const stagedPromotionReportEvidence = inspectContainedRegularFile(
@@ -502,6 +640,14 @@ export function promoteNeuralCandidate(options) {
     );
 
     assertTrackedInputsUnchanged(repoRoot, trackedInputs);
+    assertCandidateCustodyUnchanged({
+      repoRoot,
+      candidateRoot,
+      candidateManifestPath,
+      vocabularyPath,
+      exportReportPath,
+      expectedCustodySetSha256: candidateCustody.custodySetSha256
+    });
     fsyncTree(stagingDir);
     hooks.beforePublish?.({ stagingDir, productionDir, backupDir });
     if (existsSync(productionDir)) {
@@ -513,6 +659,15 @@ export function promoteNeuralCandidate(options) {
     published = true;
     hooks.afterPublish?.({ productionDir, backupDir });
 
+    assertTrackedInputsUnchanged(repoRoot, trackedInputs);
+    assertCandidateCustodyUnchanged({
+      repoRoot,
+      candidateRoot,
+      candidateManifestPath,
+      vocabularyPath,
+      exportReportPath,
+      expectedCustodySetSha256: candidateCustody.custodySetSha256
+    });
     verifyPublishedBundle({
       repoRoot,
       productionDir,
@@ -521,7 +676,6 @@ export function promoteNeuralCandidate(options) {
       manifestEvidence: stagedManifestEvidence,
       reportEvidence: stagedPromotionReportEvidence
     });
-    assertTrackedInputsUnchanged(repoRoot, trackedInputs);
   } catch (error) {
     const rollbackFailures = [];
     if (published && existsSync(productionDir)) {
@@ -563,6 +717,128 @@ export function promoteNeuralCandidate(options) {
     report: join(productionDir, PROMOTION_REPORT_NAME),
     artifactLayout: artifactSet.kind
   });
+}
+
+function inspectCandidateCustody({
+  repoRoot,
+  candidateRoot,
+  candidateManifestPath,
+  vocabularyPath,
+  exportReportPath
+}) {
+  try {
+    return inspectNeuralCandidateEvidenceCustody({
+      repoRoot,
+      candidateRoot,
+      manifestPath: candidateManifestPath,
+      vocabPath: vocabularyPath,
+      exportReportPath
+    });
+  } catch (error) {
+    fail(`Candidate evidence custody is invalid: ${errorMessage(error)}`);
+  }
+}
+
+function validateCandidateCustodyBindings({
+  repoRoot,
+  candidateCustody,
+  candidateRoot,
+  candidateManifest,
+  exportReport,
+  candidateManifestEvidence,
+  exportEvidence,
+  vocabularyEvidence,
+  artifactDescriptor
+}) {
+  if (
+    candidateCustody.candidateRoot !== candidateRoot ||
+    candidateCustody.modelId !== artifactDescriptor.modelId ||
+    candidateCustody.runtimeModelContract !==
+      artifactDescriptor.runtimeModelContract ||
+    candidateCustody.predictionsBackend !==
+      artifactDescriptor.predictionsBackend ||
+    candidateCustody.trainingRunId !== candidateManifest.trainingRunId ||
+    candidateCustody.exportRunId !== candidateManifest.exportRunId ||
+    candidateCustody.trainingRunId !== exportReport.trainingRunId ||
+    candidateCustody.exportRunId !== exportReport.exportRunId ||
+    candidateCustody.artifactSetSha256 !==
+      artifactDescriptor.artifactSetSha256 ||
+    !evidenceSummaryMatches(
+      repoRoot,
+      candidateCustody.files.manifest,
+      candidateManifestEvidence
+    ) ||
+    !evidenceSummaryMatches(
+      repoRoot,
+      candidateCustody.files.exportReport,
+      exportEvidence
+    ) ||
+    !evidenceSummaryMatches(
+      repoRoot,
+      candidateCustody.files.vocabulary,
+      vocabularyEvidence
+    )
+  ) {
+    fail(
+      "Candidate evidence custody does not bind the exact candidate, " +
+      "trust anchors, runtime contract, and artifact set being promoted."
+    );
+  }
+}
+
+function evidenceSummaryMatches(repoRoot, summary, evidence) {
+  return (
+    summary?.path === portableRelative(repoRoot, evidence.path) &&
+    summary?.sha256 === evidence.sha256 &&
+    summary?.bytes === evidence.bytes
+  );
+}
+
+function assertCandidateCustodyUnchanged({
+  repoRoot,
+  candidateRoot,
+  candidateManifestPath,
+  vocabularyPath,
+  exportReportPath,
+  expectedCustodySetSha256
+}) {
+  const current = inspectCandidateCustody({
+    repoRoot,
+    candidateRoot,
+    candidateManifestPath,
+    vocabularyPath,
+    exportReportPath
+  });
+  if (current.custodySetSha256 !== expectedCustodySetSha256) {
+    fail(
+      "Candidate evidence custody changed while the atomic promotion was " +
+      "being staged or published."
+    );
+  }
+}
+
+function assertTrackedEvidenceOutsideCandidateArtifactTrees({
+  repoRoot,
+  candidateCustody,
+  trackedInputs
+}) {
+  const artifactRoots = [
+    ...Object.values(candidateCustody.compiledArtifacts),
+    ...Object.values(candidateCustody.exportPackages)
+  ].map((record) => resolve(repoRoot, record.path));
+  for (const input of trackedInputs) {
+    if (
+      input.kind === "file" &&
+      artifactRoots.some((artifactRoot) =>
+        isWithin(artifactRoot, input.path)
+      )
+    ) {
+      fail(
+        `${input.label} must remain outside every candidate compiled-model ` +
+        "and Core ML package tree."
+      );
+    }
+  }
 }
 
 function validateRunIdentities(manifest, exportReport, evaluation, benchmark) {
@@ -613,16 +889,66 @@ function verifyCheckpoint(repoRoot, candidateRoot, manifest, exportReport, track
   return checkpoint;
 }
 
+function verifyTrainingIdentity({
+  repoRoot,
+  candidateRoot,
+  manifest,
+  exportReport,
+  checkpointEvidence,
+  trackedInputs
+}) {
+  const trainingReportPath = declaredCandidatePath(
+    repoRoot,
+    candidateRoot,
+    exportReport.trainingReport,
+    "Export training report"
+  );
+  const report = readJsonEvidence(
+    repoRoot,
+    trainingReportPath,
+    "Candidate training report",
+    trackedInputs
+  );
+  const expectedReportSha256 = requireSha256(
+    exportReport.trainingReportSha256,
+    "Export report trainingReportSha256"
+  );
+  if (report.file.sha256 !== expectedReportSha256) {
+    fail("Candidate training report bytes do not match the export identity.");
+  }
+  const validation = validateNeuralTrainingCandidateIdentity({
+    manifest,
+    exportReport,
+    trainingReport: report.value,
+    checkpointSha256: checkpointEvidence.sha256,
+    trainingReportSha256: report.file.sha256
+  });
+  if (!validation.valid) {
+    fail(
+      "Candidate training identity is invalid: " +
+      `${validation.issueCodes.join(", ")}.`
+    );
+  }
+  return {
+    report,
+    identity: validation.identity
+  };
+}
+
 function verifyEvaluationEvidence({
   repoRoot,
   candidateRoot,
+  candidateManifest,
+  candidateManifestEvidence,
   exportReport,
+  exportEvidence,
   evaluationReport,
+  artifactDescriptor,
   trackedInputs
 }) {
   if (evaluationReport.production !== true ||
       evaluationReport.productionEligible !== true ||
-      !String(evaluationReport.status ?? "").startsWith("passed-production-")) {
+      evaluationReport.status !== "passed-production-phase5-evaluation") {
     fail("Evaluation evidence must be a passed production evaluation.");
   }
   if (Array.isArray(evaluationReport.failures) && evaluationReport.failures.length > 0) {
@@ -631,6 +957,36 @@ function verifyEvaluationEvidence({
   if (evaluationReport.predictionValidation?.exactCoverage !== true ||
       evaluationReport.predictionValidation?.metricsReportable !== true) {
     fail("Evaluation evidence must prove exact, reportable prediction coverage.");
+  }
+  const expectedArtifactIdentity = {
+    trainingRunId: candidateManifest.trainingRunId,
+    exportRunId: candidateManifest.exportRunId,
+    manifestSha256: candidateManifestEvidence.sha256,
+    vocabSha256: artifactDescriptor.vocabSha256,
+    compiledModelSha256:
+      candidateManifest.sha256?.compiledModel ?? null,
+    compiledModels:
+      candidateManifest.sha256?.compiledModels ?? null
+  };
+  if (evaluationReport.candidateManifestSha256 !==
+        candidateManifestEvidence.sha256 ||
+      evaluationReport.exportReportSha256 !== exportEvidence.sha256 ||
+      resolveDeclaredPath(
+        repoRoot,
+        evaluationReport.candidateManifest,
+        "Evaluation candidate manifest"
+      ) !== candidateManifestEvidence.path ||
+      resolveDeclaredPath(
+        repoRoot,
+        evaluationReport.exportReport,
+        "Evaluation export report"
+      ) !== exportEvidence.path ||
+      canonicalJson(evaluationReport.artifactIdentity) !==
+        canonicalJson(expectedArtifactIdentity)) {
+    fail(
+      "Evaluation evidence is not bound to the exact candidate manifest, " +
+      "export report, and compiled artifact set."
+    );
   }
 
   const predictionsPath = declaredCandidatePath(
@@ -659,7 +1015,10 @@ function verifyEvaluationEvidence({
   );
   if (predictions.sha256 !== evaluationPredictionsSha ||
       predictions.sha256 !== exportPredictionsSha ||
-      resolveDeclaredPath(repoRoot, exportReport.predictions, "Export predictions") !== predictionsPath) {
+      resolveDeclaredPath(repoRoot, exportReport.predictions, "Export predictions") !== predictionsPath ||
+      exportReport.predictionsBackend !== neuralRuntimeContractMetadata(
+        artifactDescriptor.runtimeModelContract
+      ).predictionsBackend) {
     fail("Evaluation predictions are not the exact candidate export predictions.");
   }
 
@@ -674,6 +1033,19 @@ function verifyEvaluationEvidence({
     "Production gold manifest",
     trackedInputs
   );
+  const canonicalGold = validateCanonicalNeuralGoldEvidence({
+    repoRoot,
+    manifestPath: goldManifestPath,
+    manifestSha256: goldManifest.file.sha256,
+    corpusSha256: goldManifest.value.corpusSha256,
+    artifactOverrides: exportReport.artifactOverrides
+  });
+  if (!canonicalGold.valid) {
+    fail(
+      "Promotion requires the canonical production gold corpus: " +
+      `${canonicalGold.issueCodes.join(", ")}.`
+    );
+  }
   const evaluationGoldManifestSha = requireSha256(
     evaluationReport.goldManifestSha256,
     "Evaluation goldManifestSha256"
@@ -701,6 +1073,24 @@ function verifyEvaluationEvidence({
     label: "Gold",
     trackedInputs
   });
+  if (canonicalJson(exportReport.goldSuites) !==
+      canonicalJson(lockedSuiteEvidence(goldManifest.value))) {
+    fail("Candidate export gold suite inventory is stale.");
+  }
+  const metricReplay = validateRecomputedNeuralGoldEvaluation({
+    report: evaluationReport,
+    goldRows: rows,
+    predictionRows: parseJsonLineObjects(
+      predictions.contents,
+      "Exact Core ML gold predictions"
+    )
+  });
+  if (!metricReplay.valid) {
+    fail(
+      "Evaluation metrics do not match independent recomputation from the " +
+      `locked gold rows and predictions: ${metricReplay.issueCodes.join(", ")}.`
+    );
+  }
 
   if (!Number.isSafeInteger(evaluationReport.goldRows) ||
       evaluationReport.goldRows < 1 ||
@@ -744,7 +1134,8 @@ function verifyEvaluationEvidence({
     predictions,
     manifest: goldManifest,
     dataset: datasetManifest,
-    rows
+    rows,
+    recomputedGoldEvaluation: metricReplay.recomputed
   };
 }
 
@@ -1201,10 +1592,29 @@ function loadLockedEvaluationRows({
         fail(`${label} suites contain an invalid or duplicate row identity.`);
       }
       seenRows.add(row.id);
-      rows.push(row);
+      rows.push({
+        ...row,
+        suiteId: suite.id,
+        suitePath: suite.path,
+        ...(suite.benchmarkBucket === undefined
+          ? {}
+          : { benchmarkBucket: suite.benchmarkBucket })
+      });
     }
   }
   return rows;
+}
+
+function lockedSuiteEvidence(manifest) {
+  return manifest.suites.map((suite) => ({
+    id: suite.id,
+    path: suite.path,
+    sha256: suite.sha256,
+    rows: suite.rows,
+    ...(suite.benchmarkBucket === undefined
+      ? {}
+      : { benchmarkBucket: suite.benchmarkBucket })
+  }));
 }
 
 function discoverAndVerifyArtifacts({
@@ -1500,6 +1910,21 @@ function verifyPackagedBenchmarkEvidence({
       `${deviceValidation.issueCodes.join(", ")}.`
     );
   }
+  const nativeBenchmarkReplay =
+    replayRetainedNeuralNativeServiceBenchmarkEvidence(
+      benchmarkReport,
+      {
+        artifactDescriptor,
+        expectedProofMode: "candidate-promotion"
+      }
+    );
+  if (!nativeBenchmarkReplay.valid || !nativeBenchmarkReplay.evidence) {
+    fail(
+      "Candidate benchmark cannot be independently replayed from its exact " +
+      "native workload, latency samples, invocation deltas, and artifact " +
+      `identity: ${nativeBenchmarkReplay.issueCodes.join(", ")}.`
+    );
+  }
   const identity = benchmarkReport.artifactIdentity;
   if (!identity || typeof identity !== "object" ||
       identity.manifestSha256 !== candidateManifestEvidence.sha256 ||
@@ -1529,6 +1954,10 @@ function verifyPackagedBenchmarkEvidence({
       }
     }
   }
+  return {
+    devices: structuredClone(devices),
+    replay: structuredClone(nativeBenchmarkReplay.evidence)
+  };
 }
 
 function verifySelectionEvidence({
@@ -1539,10 +1968,14 @@ function verifySelectionEvidence({
   exportReport,
   exportEvidence,
   evaluationEvidence,
+  evaluationReport,
   benchmarkEvidence,
+  benchmarkReport,
   selectionReport,
   artifactDescriptor,
   goldEvidence,
+  checkpointEvidence,
+  trainingEvidence,
   trackedInputs
 }) {
   const validated = validateNeuralSelectionReport(selectionReport);
@@ -1555,6 +1988,11 @@ function verifySelectionEvidence({
       identity.exportRunId !== candidateManifest.exportRunId ||
       identity.manifestSha256 !== candidateManifestEvidence.sha256 ||
       identity.exportReportSha256 !== exportEvidence.sha256 ||
+      identity.sourceCheckpointSha256 !== checkpointEvidence.sha256 ||
+      identity.trainingReportSha256 !== trainingEvidence.report.file.sha256 ||
+      identity.effectiveTrainingConfigSha256 !==
+        trainingEvidence.identity.effectiveTrainingConfigSha256 ||
+      identity.trainingSeed !== trainingEvidence.identity.trainingSeed ||
       identity.vocabSha256 !== artifactDescriptor.vocabSha256 ||
       identity.artifactSetSha256 !== artifactDescriptor.artifactSetSha256) {
     fail("Model-selection winner identity does not match this candidate artifact set.");
@@ -1571,6 +2009,18 @@ function verifySelectionEvidence({
     winner.evidence.exportReport,
     exportEvidence,
     "Model-selection winner export report"
+  );
+  verifySelectionEvidenceRecord(
+    repoRoot,
+    winner.evidence.checkpoint,
+    checkpointEvidence,
+    "Model-selection winner source checkpoint"
+  );
+  verifySelectionEvidenceRecord(
+    repoRoot,
+    winner.evidence.trainingReport,
+    trainingEvidence.report.file,
+    "Model-selection winner training report"
   );
   verifySelectionEvidenceRecord(
     repoRoot,
@@ -1618,6 +2068,13 @@ function verifySelectionEvidence({
     fail("Winning official benchmark report changed after model selection.");
   }
   const comparison = comparisonEvidence.value;
+  const expectedComparisonArtifactIdentity = {
+    trainingRunId: candidateManifest.trainingRunId,
+    exportRunId: candidateManifest.exportRunId,
+    manifestSha256: candidateManifestEvidence.sha256,
+    vocabSha256: artifactDescriptor.vocabSha256,
+    artifactSetSha256: artifactDescriptor.artifactSetSha256
+  };
   if (comparison.status !== "passed-official-benchmark-evaluation" ||
       comparison.suite !== "neural-official-benchmark-evaluation" ||
       comparison.productionEligible !== true ||
@@ -1628,12 +2085,14 @@ function verifySelectionEvidence({
       comparison.exportRunId !== candidateManifest.exportRunId ||
       comparison.candidateManifestSha256 !==
         candidateManifestEvidence.sha256 ||
-      comparison.artifactIdentity?.artifactSetSha256 !==
-        artifactDescriptor.artifactSetSha256 ||
-      comparison.artifactIdentity?.manifestSha256 !==
-        candidateManifestEvidence.sha256 ||
-      comparison.artifactIdentity?.vocabSha256 !==
-        artifactDescriptor.vocabSha256) {
+      comparison.exportReportSha256 !== exportEvidence.sha256 ||
+      resolveDeclaredPath(
+        repoRoot,
+        comparison.exportReport,
+        "Winning official benchmark export report"
+      ) !== exportEvidence.path ||
+      canonicalJson(comparison.artifactIdentity) !==
+        canonicalJson(expectedComparisonArtifactIdentity)) {
     fail("Winning official benchmark report is stale or no longer production eligible.");
   }
   const expectedBackend = neuralRuntimeContractMetadata(
@@ -1690,54 +2149,81 @@ function verifySelectionEvidence({
     "Winning official benchmark predictions",
     trackedInputs,
     {
-      includeContents: candidateManifest.selectedArtifact === CTC_MODEL_ID,
+      includeContents: true,
       maxBytes: 64 * 1024 * 1024
     }
   );
-  let benchmarkRows = null;
-  let benchmarkManifest;
-  if (candidateManifest.selectedArtifact === CTC_MODEL_ID) {
-    const benchmarkManifestPath = resolveSelectionEvidencePath(
-      repoRoot,
-      winner.evidence.benchmarkManifest,
-      "Winning official benchmark manifest"
+  assertWithin(
+    candidateRoot,
+    comparisonPredictions.path,
+    "Winning official benchmark predictions must remain inside the candidate"
+  );
+  const benchmarkManifestPath = resolveSelectionEvidencePath(
+    repoRoot,
+    winner.evidence.benchmarkManifest,
+    "Winning official benchmark manifest"
+  );
+  const benchmarkManifestEvidence = readJsonEvidence(
+    repoRoot,
+    benchmarkManifestPath,
+    "Winning official benchmark manifest",
+    trackedInputs
+  );
+  const benchmarkManifest = benchmarkManifestEvidence.file;
+  if (
+    benchmarkManifest.sha256 !==
+    winner.evidence.benchmarkManifest.sha256
+  ) {
+    fail(
+      "Winning official benchmark manifest changed after model selection."
     );
-    const benchmarkManifestEvidence = readJsonEvidence(
-      repoRoot,
-      benchmarkManifestPath,
-      "Winning official benchmark manifest",
-      trackedInputs
+  }
+  const benchmarkRows = loadLockedEvaluationRows({
+    repoRoot,
+    manifest: benchmarkManifestEvidence.value,
+    label: "Official benchmark",
+    trackedInputs
+  });
+  const expectedOfficialSuites =
+    lockedSuiteEvidence(benchmarkManifestEvidence.value);
+  const isolationReplay = verifyOfficialBenchmarkTrainingIsolation({
+    repoRoot,
+    datasetManifestPath: goldEvidence.dataset.file.path,
+    expectedDatasetManifestSha256:
+      goldEvidence.dataset.file.sha256,
+    officialRows: benchmarkRows
+  });
+  if (!isolationReplay.valid ||
+      !isolationReplay.evidence ||
+      canonicalJson(isolation) !==
+        canonicalJson(isolationReplay.evidence) ||
+      canonicalJson(exportReport.runInputSnapshot?.dataset?.splits) !==
+        canonicalJson(isolationReplay.comparedSplits)) {
+    fail(
+      "Winning official benchmark training isolation does not match an " +
+      "independent rescan of the exact train/dev split bytes: " +
+      `${isolationReplay.issueCodes.join(", ")}.`
     );
-    benchmarkManifest = benchmarkManifestEvidence.file;
-    if (
-      benchmarkManifest.sha256 !==
-      winner.evidence.benchmarkManifest.sha256
-    ) {
-      fail(
-        "Winning official benchmark manifest changed after model selection."
-      );
-    }
-    benchmarkRows = loadLockedEvaluationRows({
-      repoRoot,
-      manifest: benchmarkManifestEvidence.value,
-      label: "Official benchmark",
-      trackedInputs
-    });
-    if (
-      benchmarkRows.length !== comparison.predictionRows ||
-      benchmarkRows.length !== exportReport.comparisonBenchmark?.rows
-    ) {
-      fail(
-        "Winning official benchmark row inventory differs from the " +
-        "comparison and export evidence."
-      );
-    }
-  } else {
-    benchmarkManifest = trackSelectionEvidenceFile(
-      repoRoot,
-      winner.evidence.benchmarkManifest,
-      "Winning official benchmark manifest",
-      trackedInputs
+  }
+  const exportComparison = exactRecord(
+    exportReport.comparisonBenchmark,
+    "Candidate export official benchmark binding"
+  );
+  const expectedOfficialSnapshot = {
+    manifest: portableRelative(repoRoot, benchmarkManifest.path),
+    manifestSha256: benchmarkManifest.sha256,
+    corpusSha256: benchmarkManifestEvidence.value.corpusSha256,
+    suites: expectedOfficialSuites,
+    rows: benchmarkRows.length,
+    trainingIsolation: isolationReplay.evidence
+  };
+  if (
+    benchmarkRows.length !== comparison.predictionRows ||
+    benchmarkRows.length !== exportComparison.rows
+  ) {
+    fail(
+      "Winning official benchmark row inventory differs from the " +
+      "comparison and export evidence."
     );
   }
   if (resolveDeclaredPath(
@@ -1752,9 +2238,34 @@ function verifySelectionEvidence({
         "Official benchmark manifest path"
       ) !== benchmarkManifest.path ||
       comparison.benchmarkManifestSha256 !== benchmarkManifest.sha256 ||
+      comparison.benchmarkCorpusSha256 !==
+        benchmarkManifestEvidence.value.corpusSha256 ||
+      resolveDeclaredPath(
+        repoRoot,
+        exportComparison.manifest,
+        "Export official benchmark manifest"
+      ) !== benchmarkManifest.path ||
+      exportComparison.manifestSha256 !== benchmarkManifest.sha256 ||
+      exportComparison.corpusSha256 !==
+        benchmarkManifestEvidence.value.corpusSha256 ||
+      exportComparison.rows !== benchmarkRows.length ||
+      canonicalJson(exportComparison.suites) !==
+        canonicalJson(expectedOfficialSuites) ||
+      resolveDeclaredPath(
+        repoRoot,
+        exportComparison.predictions,
+        "Export official benchmark predictions"
+      ) !== comparisonPredictions.path ||
+      exportComparison.predictionsSha256 !==
+        comparisonPredictions.sha256 ||
+      exportComparison.predictionsBackend !== expectedBackend ||
+      canonicalJson(exportComparison.predictionArtifactIdentity) !==
+        canonicalJson(expectedPredictionArtifactIdentity) ||
+      canonicalJson(exportReport.runInputSnapshot?.officialBenchmark) !==
+        canonicalJson(expectedOfficialSnapshot) ||
       winner.bindings.benchmarkManifestSha256 !== benchmarkManifest.sha256 ||
       winner.bindings.benchmarkCorpusSha256 !==
-        comparison.benchmarkCorpusSha256) {
+        benchmarkManifestEvidence.value.corpusSha256) {
     fail("Winning official benchmark inputs do not match the selection receipt.");
   }
   if (benchmarkManifest.path !== resolve(
@@ -1763,6 +2274,140 @@ function verifySelectionEvidence({
   ) || benchmarkManifest.sha256 !==
       CANONICAL_OFFICIAL_BENCHMARK_MANIFEST_SHA256) {
     fail("Winning official benchmark manifest is not the canonical locked release.");
+  }
+  const referenceManifestEvidence = readJsonEvidence(
+    repoRoot,
+    resolve(repoRoot, CANONICAL_REFERENCE_MANIFEST),
+    "Canonical IndicXlit reference manifest",
+    trackedInputs
+  );
+  if (
+    referenceManifestEvidence.file.sha256 !==
+      CANONICAL_REFERENCE_MANIFEST_SHA256 ||
+    resolveDeclaredPath(
+      repoRoot,
+      comparison.reference?.manifest,
+      "Official benchmark reference manifest"
+    ) !== referenceManifestEvidence.file.path ||
+    comparison.reference?.manifestSha256 !==
+      referenceManifestEvidence.file.sha256
+  ) {
+    fail(
+      "Winning official benchmark reference manifest is not the canonical " +
+      "locked release."
+    );
+  }
+  const referenceArtifact =
+    referenceManifestEvidence.value.predictionArtifact;
+  const referencePredictions = trackFile(
+    repoRoot,
+    resolveDeclaredPath(
+      repoRoot,
+      referenceArtifact?.path,
+      "Canonical IndicXlit reference predictions"
+    ),
+    "Canonical IndicXlit reference predictions",
+    trackedInputs,
+    {
+      includeContents: true,
+      maxBytes: 64 * 1024 * 1024
+    }
+  );
+  if (
+    referencePredictions.sha256 !== requireSha256(
+      referenceArtifact?.sha256,
+      "Canonical IndicXlit reference predictions sha256"
+    ) ||
+    referencePredictions.bytes !== referenceArtifact?.bytes ||
+    referenceArtifact?.rows !== benchmarkRows.length ||
+    resolveDeclaredPath(
+      repoRoot,
+      comparison.reference?.predictions,
+      "Official benchmark reference predictions"
+    ) !== referencePredictions.path ||
+    comparison.reference?.predictionsSha256 !==
+      referencePredictions.sha256
+  ) {
+    fail(
+      "Winning official benchmark reference predictions are stale or not " +
+      "the canonical locked artifact."
+    );
+  }
+  const metricReplay = validateRecomputedOfficialBenchmarkEvaluation({
+    report: comparison,
+    benchmarkRows,
+    candidatePredictionRows: parseJsonLineObjects(
+      comparisonPredictions.contents,
+      "Winning official benchmark predictions"
+    ),
+    referencePredictionRows: parseJsonLineObjects(
+      referencePredictions.contents,
+      "Canonical IndicXlit reference predictions"
+    )
+  });
+  if (!metricReplay.valid) {
+    fail(
+      "Official benchmark metrics do not match independent recomputation " +
+      `from locked predictions: ${metricReplay.issueCodes.join(", ")}.`
+    );
+  }
+  const officialMetrics = exactRecord(
+    comparison.metrics,
+    "Winning official benchmark metrics"
+  );
+  const officialBuckets = exactRecord(
+    officialMetrics.byBucket,
+    "Winning official benchmark bucket metrics"
+  );
+  const indianNames = exactRecord(
+    officialBuckets["indian-name"],
+    "Winning Indian-name metrics"
+  );
+  const foreignNames = exactRecord(
+    officialBuckets["foreign-name"],
+    "Winning foreign-name metrics"
+  );
+  const nameRows = indianNames.rows + foreignNames.rows;
+  const expectedWinnerMetrics = {
+    officialOverallTop1Accuracy:
+      officialMetrics.overall.top1Accuracy,
+    officialOverallTop3Accuracy:
+      officialMetrics.overall.top3Accuracy,
+    officialNativeTop1Accuracy:
+      officialBuckets["native-frequent"].top1Accuracy,
+    officialNameTop1Accuracy: roundMetric(
+      (indianNames.top1Hits + foreignNames.top1Hits) / nameRows
+    ),
+    goldTailTop1Accuracy:
+      evaluationReport.metrics?.tailTop1Accuracy,
+    goldTailTop3Accuracy:
+      evaluationReport.metrics?.tailTop3Accuracy,
+    latencyP99Ms: Number(benchmarkReport.performance?.p99Ms),
+    compiledBytes: artifactDescriptor.totalCompiledBytes
+  };
+  if (nameRows < 1 ||
+      canonicalJson(winner.metrics) !== canonicalJson(expectedWinnerMetrics)) {
+    fail(
+      "Model-selection winner metrics are not derived from the independently " +
+      "verified gold, official benchmark, latency, and artifact evidence."
+    );
+  }
+  const expectedWinnerBindings = {
+    datasetManifestSha256: goldEvidence.dataset.file.sha256,
+    datasetContentSha256:
+      goldEvidence.dataset.value.datasetContentSha256,
+    goldManifestSha256: goldEvidence.manifest.file.sha256,
+    goldCorpusSha256: goldEvidence.manifest.value.corpusSha256,
+    benchmarkManifestSha256: benchmarkManifest.sha256,
+    benchmarkCorpusSha256:
+      benchmarkManifestEvidence.value.corpusSha256
+  };
+  if (canonicalJson(winner.bindings) !==
+      canonicalJson(expectedWinnerBindings)) {
+    fail(
+      "Model-selection winner corpus bindings do not match the independently " +
+      "verified candidate evidence."
+    );
   }
   return {
     selectionId: validated.selectionId,
@@ -1873,12 +2518,22 @@ function productionPerformanceFromBenchmark(benchmarkReport) {
         ) ||
         normalized.p50Ms > normalized.p95Ms ||
         normalized.p95Ms > normalized.p99Ms ||
-        !validateNeuralPostExportMemoryEvidence(normalized.memory).valid ||
-        canonicalJson(normalized.memory) !== canonicalJson(memory)) {
+        !validateNeuralPostExportMemoryEvidence(normalized.memory).valid) {
       fail("Benchmark contains a device row that cannot enter the production manifest.");
     }
     return normalized;
   });
+  const canonicalMemoryValidation =
+    validateCanonicalNeuralMemorySummary(
+      memory,
+      devices.map((device) => device.memory)
+    );
+  if (!canonicalMemoryValidation.valid) {
+    fail(
+      "Benchmark process-memory summary is not the exact worst observed " +
+      `device row: ${canonicalMemoryValidation.issueCodes.join(", ")}.`
+    );
+  }
   if (!devices.some((device) => device.architecture === "arm64")) {
     fail("Production performance evidence requires an Apple Silicon device.");
   }
@@ -1997,6 +2652,19 @@ function verifyPublishedBundle({
         published.bytes !== artifact.evidence.bytes) {
       fail(`Published ${artifact.id} differs from the qualified candidate.`);
     }
+  }
+  const expectedNames = [
+    PRODUCTION_MANIFEST_NAME,
+    PROMOTION_REPORT_NAME,
+    VOCABULARY_NAME,
+    ...artifactSet.artifacts.map((artifact) => artifact.destinationName)
+  ].sort();
+  const observedNames = readdirSync(productionDir).sort();
+  if (JSON.stringify(observedNames) !== JSON.stringify(expectedNames)) {
+    fail(
+      "Published production directory is not closed-world; expected " +
+      `${expectedNames.join(", ")}, observed ${observedNames.join(", ")}.`
+    );
   }
 }
 
@@ -2188,12 +2856,6 @@ function requireSha256(value, label) {
   return value;
 }
 
-function requirePassedStatus(value, label) {
-  if (typeof value !== "string" || !value.startsWith("passed-")) {
-    fail(`${label} must have a passed status.`);
-  }
-}
-
 function sameKeys(value, expected) {
   return Boolean(value) &&
     typeof value === "object" &&
@@ -2240,6 +2902,28 @@ function writeExclusiveJson(path, value) {
   } finally {
     closeSync(descriptor);
   }
+}
+
+function jsonDocumentEvidence(value) {
+  const contents = Buffer.from(
+    `${JSON.stringify(value, null, 2)}\n`,
+    "utf8"
+  );
+  return Object.freeze({
+    bytes: contents.length,
+    sha256: createHash("sha256").update(contents).digest("hex")
+  });
+}
+
+function requireCanonicalTimestamp(value, label) {
+  if (
+    typeof value !== "string" ||
+    !UTC_TIMESTAMP_PATTERN.test(value) ||
+    !Number.isFinite(Date.parse(value))
+  ) {
+    fail(`${label} must be a canonical UTC timestamp.`);
+  }
+  return value;
 }
 
 function fsyncTree(root) {
@@ -2303,6 +2987,10 @@ function assertWithin(parent, candidate, message) {
 
 function portableRelative(parent, candidate) {
   return relative(resolve(parent), resolve(candidate)).split(sep).join("/");
+}
+
+function roundMetric(value) {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function errorMessage(error) {

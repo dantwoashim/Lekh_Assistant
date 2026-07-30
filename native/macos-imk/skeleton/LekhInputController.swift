@@ -272,12 +272,15 @@ open class LekhInputController: IMKInputController {
   public init(
     engineClient: LekhEngineClient = LekhNativeEngineClient(),
     secureInputActive: @escaping () -> Bool = { IsSecureEventInputEnabled() },
-    neuralCandidateService: any LekhNeuralCandidateServing = LekhNeuralCandidateService.shared.makeScopedClient()
+    neuralCandidateService: (any LekhNeuralCandidateServing)? = nil
   ) {
     LekhNativePreferences.registerDefaults()
     self.engineClient = engineClient
     self.secureInputActive = secureInputActive
-    self.neuralCandidateService = neuralCandidateService
+    self.neuralCandidateService = neuralCandidateService ??
+      LekhNeuralCandidateService.shared.makeScopedClient(
+        liveSecureInputActive: secureInputActive
+      )
     super.init()
     observeSharedPreferencesChanges()
     configureModeFromDefaults()
@@ -287,8 +290,12 @@ open class LekhInputController: IMKInputController {
   public required override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
     LekhNativePreferences.registerDefaults()
     self.engineClient = Self.defaultEngineClient()
-    self.secureInputActive = { IsSecureEventInputEnabled() }
-    self.neuralCandidateService = LekhNeuralCandidateService.shared.makeScopedClient()
+    let liveSecureInputActive = { IsSecureEventInputEnabled() }
+    self.secureInputActive = liveSecureInputActive
+    self.neuralCandidateService =
+      LekhNeuralCandidateService.shared.makeScopedClient(
+        liveSecureInputActive: liveSecureInputActive
+      )
     super.init(server: server, delegate: delegate, client: inputClient)
     self.candidatePanel = IMKCandidates(server: server, panelType: kIMKSingleRowSteppingCandidatePanel)
     self.candidatePanel?.setDismissesAutomatically(true)

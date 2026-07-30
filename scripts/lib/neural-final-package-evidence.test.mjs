@@ -21,6 +21,9 @@ import {
   NeuralFinalPackageEvidenceError,
   verifyFinalPackagedNeuralEvidence
 } from "./neural-final-package-evidence.mjs";
+import {
+  NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION
+} from "./neural-production-promotion-receipt.mjs";
 
 const TRAINING_RUN_ID = "1".repeat(32);
 const EXPORT_RUN_ID = "2".repeat(32);
@@ -420,13 +423,13 @@ function withFixture(kind, callback, options = {}) {
     writeFileSync(
       promotionReceiptPath,
       `${JSON.stringify({
-        schemaVersion: 3,
+        schemaVersion: NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION,
         status: "passed-neural-candidate-promotion",
         generatedAt: "2026-07-24T00:00:00.000Z",
         promotionId: PROMOTION_ID,
         trainingRunId: TRAINING_RUN_ID,
         exportRunId: EXPORT_RUN_ID,
-        candidateImmutable: true,
+        candidateEvidenceStable: true,
         artifactSetSha256: descriptor.artifactSetSha256,
         productionManifest: {
           sha256: descriptor.manifestSha256

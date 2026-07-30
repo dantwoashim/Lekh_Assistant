@@ -1,3 +1,4 @@
+import Carbon
 import CoreML
 import CryptoKit
 import Foundation
@@ -688,6 +689,9 @@ public enum LekhNeuralCTCRuntime {
     let provider = try MLDictionaryFeatureProvider(dictionary: [
       "inputIds": MLFeatureValue(multiArray: inputIds)
     ])
+    guard !shouldCancel() else {
+      throw LekhNeuralCTCRuntimeFailure.cancelled
+    }
     let prediction = try model.prediction(from: provider)
     guard !shouldCancel() else {
       throw LekhNeuralCTCRuntimeFailure.cancelled
@@ -1131,13 +1135,40 @@ public protocol LekhNeuralCandidateServing: AnyObject {
   func cancelPending()
 }
 
+/// Combines the secure-input state observed by the caller with a live,
+/// thread-safe predicate that is re-read on the neural worker.
+///
+/// Secure Event Input can become active after a keystroke leaves the main
+/// thread but before Core ML begins. Treating either observation as active
+/// closes that transition window. Callers supplying a live predicate must make
+/// it safe to invoke from the service's serial worker queue.
+public struct LekhNeuralSecureInputGuard {
+  private let observedActive: Bool
+  private let liveIsActive: () -> Bool
+
+  public init(
+    observedActive: Bool,
+    liveIsActive: @escaping () -> Bool = { false }
+  ) {
+    self.observedActive = observedActive
+    self.liveIsActive = liveIsActive
+  }
+
+  public func isActive() -> Bool {
+    observedActive || liveIsActive()
+  }
+}
+
 public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   public static let shared = LekhNeuralCandidateService()
 
   private let queue = DispatchQueue(label: "com.lekh.inputmethod.neural-candidate-tail", qos: .userInitiated)
   private let requestLock = NSLock()
   private let defaultRequestScope = UUID()
+  private let defaultLiveSecureInputActive: () -> Bool
   private var requestGenerations: [UUID: UInt64] = [:]
+  private let predictorInvocationLock = NSLock()
+  private var predictorInvocations = 0
   private let runtimeStateLock = NSLock()
   private var runtimeState: LekhNeuralRuntimeState = .loading
   private var modelRuntime: LekhNeuralModelRuntime?
@@ -1149,6 +1180,16 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     let status = runtimeState.status
     runtimeStateLock.unlock()
     return status
+  }
+
+  /// Number of admitted public requests that reached the model predictor
+  /// boundary. The behavior probe snapshots this counter around secure and
+  /// bypass requests instead of publishing an assumed constant.
+  public var predictorInvocationCount: Int {
+    predictorInvocationLock.lock()
+    let count = predictorInvocations
+    predictorInvocationLock.unlock()
+    return count
   }
 
   /// Pure parser/contract seam used by native probes before any Core ML model
@@ -1198,7 +1239,13 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     }
   }
 
-  public init(bundle: Bundle = .main) {
+  public init(
+    bundle: Bundle = .main,
+    liveSecureInputActive: @escaping () -> Bool = {
+      IsSecureEventInputEnabled()
+    }
+  ) {
+    defaultLiveSecureInputActive = liveSecureInputActive
     // Controller construction and the first deterministic keystroke must not
     // hash resources, instantiate Core ML, or build neural indexes. While this
     // worker verifies the optional artifact, requests fail open with no neural
@@ -1211,8 +1258,14 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
   /// Returns an independently cancellable view over the verified shared model.
   /// The wrapper owns only request-generation state; model loading and compiled
   /// weights remain shared across every controller.
-  public func makeScopedClient() -> any LekhNeuralCandidateServing {
-    LekhScopedNeuralCandidateService(service: self)
+  public func makeScopedClient(
+    liveSecureInputActive: (() -> Bool)? = nil
+  ) -> any LekhNeuralCandidateServing {
+    LekhScopedNeuralCandidateService(
+      service: self,
+      liveSecureInputActive:
+        liveSecureInputActive ?? defaultLiveSecureInputActive
+    )
   }
 
   public func candidates(
@@ -1224,6 +1277,7 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       for: rawInput,
       secureInputActive: secureInputActive,
       requestScope: defaultRequestScope,
+      liveSecureInputActive: defaultLiveSecureInputActive,
       completion: completion
     )
   }
@@ -1232,14 +1286,21 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     for rawInput: String,
     secureInputActive: Bool,
     requestScope: UUID,
+    liveSecureInputActive: @escaping () -> Bool,
     completion: @escaping ([String]) -> Void
   ) {
     // Every request, including a secure-field transition, invalidates work for
     // the previous composition. This prevents a queue of stale per-keystroke
     // beam decodes from accumulating behind the user's current token.
     let generation = beginRequest(in: requestScope)
-    // neverInvokeInSecureFields: secure fields never run model inference, log, learn, or retain typed content.
-    guard !secureInputActive else {
+    let secureInputGuard = LekhNeuralSecureInputGuard(
+      observedActive: secureInputActive,
+      liveIsActive: liveSecureInputActive
+    )
+    // neverInvokeInSecureFields: secure fields never run model inference, log,
+    // learn, or retain typed content. Re-read live state because it can change
+    // after the caller's initial observation.
+    guard !secureInputGuard.isActive() else {
       completion([])
       return
     }
@@ -1253,22 +1314,28 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     }
 
     queue.async { [weak self, modelRuntime = runtime.modelRuntime, vocab = runtime.vocab] in
-      guard let self, self.isCurrentRequest(generation, in: requestScope) else { return }
+      guard let self,
+            self.isCurrentRequest(generation, in: requestScope),
+            !secureInputGuard.isActive() else { return }
       let started = DispatchTime.now().uptimeNanoseconds
       let budgetNanoseconds: UInt64 = 45_000_000
       let shouldCancel = { [weak self] in
         guard let self, self.isCurrentRequest(generation, in: requestScope) else { return true }
-        return DispatchTime.now().uptimeNanoseconds - started >= budgetNanoseconds
+        return secureInputGuard.isActive() ||
+          DispatchTime.now().uptimeNanoseconds - started >= budgetNanoseconds
       }
+      self.recordPredictorInvocation()
       let result = (try? Self.predictCandidates(
         modelRuntime: modelRuntime,
         vocab: vocab,
         input: normalized,
         shouldCancel: shouldCancel
       )) ?? []
-      guard self.isCurrentRequest(generation, in: requestScope) else { return }
+      guard self.isCurrentRequest(generation, in: requestScope),
+            !secureInputGuard.isActive() else { return }
       DispatchQueue.main.async {
-        guard self.isCurrentRequest(generation, in: requestScope) else { return }
+        guard self.isCurrentRequest(generation, in: requestScope),
+              !secureInputGuard.isActive() else { return }
         completion(result)
       }
     }
@@ -1380,6 +1447,12 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     return generation
   }
 
+  private func recordPredictorInvocation() {
+    predictorInvocationLock.lock()
+    predictorInvocations += 1
+    predictorInvocationLock.unlock()
+  }
+
   private func isCurrentRequest(_ generation: UInt64, in requestScope: UUID) -> Bool {
     requestLock.lock()
     let current = requestGenerations[requestScope] == generation
@@ -1463,6 +1536,9 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
           "inputIds": MLFeatureValue(multiArray: inputIds),
           "decoderInputIds": MLFeatureValue(multiArray: decoderIds)
         ])
+        guard !shouldCancel() else {
+          throw LekhNeuralBeamSearchFailure.cancelled
+        }
         let prediction = try model.prediction(from: provider)
         guard !shouldCancel() else { throw LekhNeuralBeamSearchFailure.cancelled }
         guard let logits = multiArrayOutput(from: prediction) else {
@@ -3095,9 +3171,14 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
 private final class LekhScopedNeuralCandidateService: LekhNeuralCandidateServing {
   private let service: LekhNeuralCandidateService
   private let requestScope = UUID()
+  private let liveSecureInputActive: () -> Bool
 
-  init(service: LekhNeuralCandidateService) {
+  init(
+    service: LekhNeuralCandidateService,
+    liveSecureInputActive: @escaping () -> Bool
+  ) {
     self.service = service
+    self.liveSecureInputActive = liveSecureInputActive
   }
 
   deinit {
@@ -3113,6 +3194,7 @@ private final class LekhScopedNeuralCandidateService: LekhNeuralCandidateServing
       for: rawInput,
       secureInputActive: secureInputActive,
       requestScope: requestScope,
+      liveSecureInputActive: liveSecureInputActive,
       completion: completion
     )
   }
@@ -3266,9 +3348,17 @@ public enum LekhNeuralProductionMemoryPolicy {
           !devices.isEmpty else {
       return false
     }
-    return devices.allSatisfy { device in
-      guard let device else { return false }
-      return validates(device) && device == summary
+    let validDevices = devices.compactMap { device -> Evidence? in
+      guard let device, validates(device) else { return nil }
+      return device
+    }
+    guard validDevices.count == devices.count,
+          validDevices.contains(summary) else {
+      return false
+    }
+    return validDevices.allSatisfy {
+      $0.lifetimePeakPhysicalFootprintBytes <=
+        summary.lifetimePeakPhysicalFootprintBytes
     }
   }
 

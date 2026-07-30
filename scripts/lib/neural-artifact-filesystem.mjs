@@ -32,6 +32,9 @@ export function inspectContainedRegularFile(repoRoot, artifactPath, options = {}
   const before = lstat(location.lexicalPath, label);
   if (before.isSymbolicLink()) fail(`${label} must not be a symbolic link: ${location.displayPath}.`);
   if (!before.isFile()) fail(`${label} must be a regular file: ${location.displayPath}.`);
+  if (before.nlink !== 1n) {
+    fail(`${label} must not be hard-linked: ${location.displayPath}.`);
+  }
   if (before.size > BigInt(maxBytes)) {
     fail(`${label} exceeds the ${maxBytes}-byte verification limit: ${location.displayPath}.`);
   }
@@ -132,6 +135,9 @@ export function inspectContainedDirectoryTree(repoRoot, artifactPath, options = 
         continue;
       }
       if (!childStat.isFile()) fail(`${label} contains a non-regular filesystem entry: ${childDisplay}.`);
+      if (childStat.nlink !== 1n) {
+        fail(`${label} contains a hard-linked regular file: ${childDisplay}.`);
+      }
       if (childStat.size > BigInt(maxBytes - totalBytes)) {
         fail(`${label} exceeds the ${maxBytes}-byte verification limit.`);
       }

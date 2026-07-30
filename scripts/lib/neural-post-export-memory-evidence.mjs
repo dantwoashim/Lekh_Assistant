@@ -75,9 +75,88 @@ export function validateNeuralPostExportMemoryEvidence(evidence) {
   }
 }
 
+/**
+ * Validate the canonical process-memory summary retained above a device set.
+ *
+ * The summary must be one exact valid device row and its absolute lifetime
+ * peak must be greater than or equal to every other valid device peak. This
+ * preserves the full evidence record from the worst observed device instead
+ * of synthesizing an aggregate that was never measured.
+ */
+export function validateCanonicalNeuralMemorySummary(
+  summary,
+  deviceEvidence
+) {
+  const issues = [];
+  const addIssue = (code) => {
+    if (!issues.includes(code)) issues.push(code);
+  };
+  const summaryValidation =
+    validateNeuralPostExportMemoryEvidence(summary);
+  for (const issue of summaryValidation.issueCodes) {
+    addIssue(`${issue}:summary`);
+  }
+  if (!Array.isArray(deviceEvidence) || deviceEvidence.length === 0) {
+    addIssue("neural-post-export-memory.devices-invalid");
+    return result([], []);
+  }
+
+  const validDevices = [];
+  for (const [index, evidence] of deviceEvidence.entries()) {
+    const validation = validateNeuralPostExportMemoryEvidence(evidence);
+    for (const issue of validation.issueCodes) {
+      addIssue(`${issue}:device-${index}`);
+    }
+    if (validation.valid) validDevices.push({ evidence, index });
+  }
+  if (!summaryValidation.valid ||
+      validDevices.length !== deviceEvidence.length) {
+    return result([], []);
+  }
+
+  const summaryIdentity = canonicalJson(summary);
+  const matchingDeviceIndexes = validDevices
+    .filter(({ evidence }) => canonicalJson(evidence) === summaryIdentity)
+    .map(({ index }) => index);
+  if (matchingDeviceIndexes.length === 0) {
+    addIssue("neural-post-export-memory.summary-not-observed");
+  }
+  const exceedingDeviceIndexes = validDevices
+    .filter(({ evidence }) =>
+      evidence.lifetimePeakPhysicalFootprintBytes >
+        summary.lifetimePeakPhysicalFootprintBytes
+    )
+    .map(({ index }) => index);
+  for (const index of exceedingDeviceIndexes) {
+    addIssue(`neural-post-export-memory.summary-not-worst:device-${index}`);
+  }
+  return result(matchingDeviceIndexes, exceedingDeviceIndexes);
+
+  function result(matchingDeviceIndexes, exceedingDeviceIndexes) {
+    return Object.freeze({
+      valid: issues.length === 0,
+      issueCodes: Object.freeze([...issues].sort(compareText)),
+      matchingDeviceIndexes: Object.freeze([...matchingDeviceIndexes]),
+      exceedingDeviceIndexes: Object.freeze([...exceedingDeviceIndexes])
+    });
+  }
+}
+
 function exactKeys(value, expected) {
   return isRecord(value) &&
     Object.keys(value).sort(compareText).join("\0") === expected.join("\0");
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort(compareText).map((key) =>
+      `${JSON.stringify(key)}:${canonicalJson(value[key])}`
+    ).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function isRecord(value) {

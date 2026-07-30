@@ -1,5 +1,6 @@
 import { validateNeuralComputePlanEvidence } from "./neural-compute-plan-evidence.mjs";
 import {
+  validateCanonicalNeuralMemorySummary,
   validateNeuralPostExportMemoryEvidence
 } from "./neural-post-export-memory-evidence.mjs";
 import { basename } from "node:path";
@@ -56,6 +57,8 @@ export function validateNeuralDeviceMeasurements(devices, context) {
       : null;
   const architectures = new Set();
   const identities = new Set();
+  let deviceMemoryEvidence = [];
+  let deviceMemoryLabels = [];
   let neuralEngineCompatibilityIndicated = false;
   let intelFallbackProven = false;
 
@@ -63,6 +66,8 @@ export function validateNeuralDeviceMeasurements(devices, context) {
     issues.push("neural-device-measurements.devices-invalid");
     return result();
   }
+  deviceMemoryEvidence = Array(devices.length).fill(null);
+  deviceMemoryLabels = Array(devices.length).fill(null);
 
   if (summaryMemoryValidation && !summaryMemoryValidation.valid) {
     issues.push(...summaryMemoryValidation.issueCodes.map((issue) =>
@@ -123,11 +128,9 @@ export function validateNeuralDeviceMeasurements(devices, context) {
         issues.push(...memoryValidation.issueCodes.map((issue) =>
           `${issue}:${label}`
         ));
-      } else if (
-        summaryMemoryValidation?.valid &&
-        canonicalJson(device.memory) !== canonicalJson(summaryMemory)
-      ) {
-        issues.push(`neural-device-measurements.memory-mismatch:${label}`);
+      } else {
+        deviceMemoryEvidence[index] = device.memory;
+        deviceMemoryLabels[index] = label;
       }
     }
 
@@ -230,6 +233,27 @@ export function validateNeuralDeviceMeasurements(devices, context) {
     }
   }
 
+  if (
+    summaryMemoryValidation?.valid &&
+    deviceMemoryEvidence.length === devices.length &&
+    deviceMemoryEvidence.every((memory) => memory !== null)
+  ) {
+    const canonicalMemoryValidation =
+      validateCanonicalNeuralMemorySummary(
+        summaryMemory,
+        deviceMemoryEvidence
+      );
+    if (canonicalMemoryValidation.matchingDeviceIndexes.length === 0) {
+      issues.push("neural-device-measurements.memory-mismatch:summary");
+    }
+    for (const index of canonicalMemoryValidation.exceedingDeviceIndexes) {
+      issues.push(
+        "neural-device-measurements.memory-summary-not-worst:" +
+        deviceMemoryLabels[index]
+      );
+    }
+  }
+
   if (production) {
     if (!architectures.has("arm64")) {
       issues.push("neural-device-measurements.architecture-missing:arm64");
@@ -255,16 +279,4 @@ export function validateNeuralDeviceMeasurements(devices, context) {
       production
     });
   }
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-  if (isRecord(value)) {
-    return `{${Object.keys(value).sort().map((key) =>
-      `${JSON.stringify(key)}:${canonicalJson(value[key])}`
-    ).join(",")}}`;
-  }
-  return JSON.stringify(value);
 }

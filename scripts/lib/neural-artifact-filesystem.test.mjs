@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
+  linkSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -116,6 +117,30 @@ describe("neural artifact filesystem boundary", () => {
       );
     });
   });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects hard-linked evidence and artifact descendants",
+    () => {
+      withFixture(({ root }) => {
+        const original = join(root, "original.bin");
+        write(original, "shared-inode");
+        const evidence = join(root, "evidence.bin");
+        linkSync(original, evidence);
+        assert.throws(
+          () => inspectContainedRegularFile(root, evidence),
+          /must not be hard-linked/u
+        );
+
+        const model = join(root, "model.mlmodelc");
+        mkdirSync(model);
+        linkSync(original, join(model, "weights.bin"));
+        assert.throws(
+          () => inspectContainedDirectoryTree(root, model),
+          /contains a hard-linked regular file/u
+        );
+      });
+    }
+  );
 
   it("rejects a directory where the artifact contract requires a regular file", () => {
     withFixture(({ root }) => {

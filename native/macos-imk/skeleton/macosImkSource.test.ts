@@ -106,7 +106,7 @@ describe("macOS IMK proof target source", () => {
     expect(existsSync(join(root, "native/macos-imk/skeleton/LekhNeuralTransliterator.swift"))).toBe(false);
     expect(existsSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"))).toBe(true);
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("MLModel(contentsOf:");
-    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("guard !secureInputActive else");
+    expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("guard !secureInputGuard.isActive() else");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("LekhExperimentalNeuralTypingEnabled");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("LEKH_EXPERIMENTAL_NEURAL_TYPING");
     expect(readFileSync(join(root, "native/macos-imk/skeleton/LekhNeuralCandidateService.swift"), "utf8")).toContain("LekhNeuralManifestIdentityPolicy.permits(");
@@ -502,7 +502,9 @@ describe("macOS IMK proof target source", () => {
     expect(controller).toContain("neuralCandidateService.cancelPending()");
     expect(controller).toContain("if secureInputActive() {\n      neuralCandidateService.cancelPending()\n      return\n    }\n    guard nativeMode");
     expect(controller).toContain("secureInputActive: @escaping () -> Bool");
-    expect(controller).toContain("self.secureInputActive = { IsSecureEventInputEnabled() }");
+    expect(controller).toContain("let liveSecureInputActive = { IsSecureEventInputEnabled() }");
+    expect(controller).toContain("self.secureInputActive = liveSecureInputActive");
+    expect(controller).toContain("liveSecureInputActive: liveSecureInputActive");
   });
 
   it("keeps the companion, input menu, and live IMK preferences coherent at word boundaries", () => {

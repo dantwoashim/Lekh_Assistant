@@ -440,7 +440,7 @@ requireText(
 );
 requireText(
   promotionReceiptText,
-  "NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 3",
+  "NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 5",
   "promotion receipt schema must retain the Transformer-CTC rare-scalar evidence graph"
 );
 requireText(
@@ -484,9 +484,19 @@ requireText(
   "production device validation must revalidate the exact memory evidence shape"
 );
 requireText(
+  memoryEvidenceText,
+  "neural-post-export-memory.summary-not-observed",
+  "process-memory summary must be one exact observed device record"
+);
+requireText(
+  memoryEvidenceText,
+  "neural-post-export-memory.summary-not-worst",
+  "process-memory summary must bound every observed device peak"
+);
+requireText(
   deviceMeasurementsText,
-  "neural-device-measurements.memory-mismatch",
-  "production device validation must bind each device to the process-memory summary"
+  "validateCanonicalNeuralMemorySummary(",
+  "production device validation must enforce the canonical worst memory row"
 );
 requireText(
   promoterText,
@@ -500,8 +510,8 @@ requireText(
 );
 requireText(
   promotionReceiptText,
-  "Retained benchmark device memory does not match its ",
-  "promotion receipt verification must reject retained memory tampering"
+  "Retained benchmark process-memory summary is not the exact worst ",
+  "promotion receipt verification must reject retained memory-summary tampering"
 );
 requireText(
   nativeNeuralServiceText,

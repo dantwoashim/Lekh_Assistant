@@ -359,19 +359,45 @@ private func benchmarkNeuralServiceIfRequested() {
     ),
     "Packaged neural service mode does not match the requested benchmark mode; status=\(service.status)"
   )
+  let deterministicExactBypassToken = "dhanyabad"
+  let predictorInvocationsBeforeDeterministicBypass =
+    service.predictorInvocationCount
   var deterministicBypass: [String]?
-  service.candidates(for: "dhanyabad", secureInputActive: false) { deterministicBypass = $0 }
+  service.candidates(
+    for: deterministicExactBypassToken,
+    secureInputActive: false
+  ) { deterministicBypass = $0 }
+  let predictorInvocationsAfterDeterministicBypass =
+    service.predictorInvocationCount
+  let deterministicExactBypassInferenceCount =
+    predictorInvocationsAfterDeterministicBypass -
+    predictorInvocationsBeforeDeterministicBypass
   require(
-    deterministicBypass == [],
+    deterministicBypass == [] &&
+      deterministicExactBypassInferenceCount == 0,
     "Shared deterministic exact tokens must bypass the experimental neural tail"
   )
+  let protectedLatinTokens = [
+    "PostgreSQL", "GitHub", "npm", "SwiftUI", "macOS", "README", "hello"
+  ]
+  let predictorInvocationsBeforeProtectedBypass =
+    service.predictorInvocationCount
   var protectedBypass: [String: [String]] = [:]
-  for token in ["PostgreSQL", "GitHub", "npm", "SwiftUI", "macOS", "README", "hello"] {
+  for token in protectedLatinTokens {
     var candidates: [String]?
     service.candidates(for: token, secureInputActive: false) { candidates = $0 }
     require(candidates == [], "Protected Latin token \(token) must synchronously bypass Core ML")
     protectedBypass[token] = candidates ?? []
   }
+  let predictorInvocationsAfterProtectedBypass =
+    service.predictorInvocationCount
+  let protectedLatinBypassInferenceCount =
+    predictorInvocationsAfterProtectedBypass -
+    predictorInvocationsBeforeProtectedBypass
+  require(
+    protectedLatinBypassInferenceCount == 0,
+    "Protected Latin tokens must make zero predictor invocations"
+  )
 
   let tokens = ["prashasan", "nagarikta", "mantralaya", "sambidhan", "paryatan"]
   let benchmarkWarmupPasses = 1
@@ -439,9 +465,23 @@ private func benchmarkNeuralServiceIfRequested() {
     "Every measured neural request must return safe Devanagari candidates"
   )
 
+  let secureFieldProbeToken = "password"
+  let predictorInvocationsBeforeSecureField =
+    service.predictorInvocationCount
   var secureCandidates: [String]?
-  service.candidates(for: "password", secureInputActive: true) { secureCandidates = $0 }
-  require(secureCandidates == [], "Secure fields must synchronously return no neural candidates")
+  service.candidates(
+    for: secureFieldProbeToken,
+    secureInputActive: true
+  ) { secureCandidates = $0 }
+  let predictorInvocationsAfterSecureField =
+    service.predictorInvocationCount
+  let secureFieldInferenceCount =
+    predictorInvocationsAfterSecureField -
+    predictorInvocationsBeforeSecureField
+  require(
+    secureCandidates == [] && secureFieldInferenceCount == 0,
+    "Secure fields must synchronously return no neural candidates and make zero predictor invocations"
+  )
 
   var latestWinsCompletions: [String] = []
   let burst = ["prashasan", "nagarikta", "mantralaya", "paryatan"]
@@ -507,7 +547,7 @@ private func benchmarkNeuralServiceIfRequested() {
       "macOS": "\(operatingSystem.majorVersion).\(operatingSystem.minorVersion).\(operatingSystem.patchVersion)",
       "architecture": architecture,
       "packagedApp": true,
-      "secureFieldInferenceCount": 0,
+      "secureFieldInferenceCount": secureFieldInferenceCount,
       "p50Ms": p50,
       "p95Ms": p95,
       "p99Ms": p99,
@@ -538,10 +578,35 @@ private func benchmarkNeuralServiceIfRequested() {
       "candidateResultsByToken": candidateResultsByToken,
       "predictions": observed,
       "singleTokenPhraseExpansionRate": 0,
+      "secureFieldProbeToken": secureFieldProbeToken,
       "secureFieldCandidates": secureCandidates ?? [],
+      "secureFieldInferenceCount": secureFieldInferenceCount,
+      "deterministicExactBypassToken":
+        deterministicExactBypassToken,
       "deterministicExactBypassCandidates": deterministicBypass ?? [],
+      "deterministicExactBypassInferenceCount":
+        deterministicExactBypassInferenceCount,
       "protectedLatinBypassCandidates": protectedBypass,
+      "protectedLatinBypassInferenceCount":
+        protectedLatinBypassInferenceCount,
+      "predictorInvocationEvidence": [
+        "beforeDeterministicBypass":
+          predictorInvocationsBeforeDeterministicBypass,
+        "afterDeterministicBypass":
+          predictorInvocationsAfterDeterministicBypass,
+        "beforeProtectedBypass":
+          predictorInvocationsBeforeProtectedBypass,
+        "afterProtectedBypass":
+          predictorInvocationsAfterProtectedBypass,
+        "beforeSecureField":
+          predictorInvocationsBeforeSecureField,
+        "afterSecureField":
+          predictorInvocationsAfterSecureField
+      ],
+      "latestRequestTokens": burst,
+      "latestRequestCompletions": latestWinsCompletions,
       "latestRequestWins": latestWinsCompletions == [burst.last!],
+      "cancelledCompletionCalled": cancelledCompletionCalled,
       "cancelPendingSuppressesCompletion": !cancelledCompletionCalled,
       "notes": [
         "Measures the public async candidate service, including iterative beam decoding and main-queue completion.",

@@ -81,7 +81,7 @@ export function buildNeuralSelectionReport(options) {
   const selectionId = sha256CanonicalJson(selectionIdentity);
 
   return deepFreeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: "passed-neural-model-selection",
     generatedAt,
     suite: "neural-model-selection",
@@ -105,7 +105,7 @@ export function buildNeuralSelectionReport(options) {
  */
 export function validateNeuralSelectionReport(report) {
   requireRecord(report, "Selection report");
-  if (report.schemaVersion !== 1 ||
+  if (report.schemaVersion !== 2 ||
       report.status !== "passed-neural-model-selection" ||
       report.suite !== "neural-model-selection") {
     fail("Selection report has an unsupported schema, suite, or status.");
@@ -154,7 +154,7 @@ function validateCandidates(value) {
       value.length < NEURAL_SELECTION_ALGORITHM.minimumCandidates) {
     fail(
       `Production selection requires at least ` +
-      `${NEURAL_SELECTION_ALGORITHM.minimumCandidates} independently exported candidates.`
+      `${NEURAL_SELECTION_ALGORITHM.minimumCandidates} independently trained candidates.`
     );
   }
   const candidates = value.map((candidate, index) =>
@@ -163,6 +163,8 @@ function validateCandidates(value) {
   const candidateIds = new Set();
   const artifactSets = new Set();
   const exportRuns = new Set();
+  const trainingRuns = new Set();
+  const sourceCheckpoints = new Set();
   for (const candidate of candidates) {
     if (candidateIds.has(candidate.candidateId)) {
       fail(`Duplicate selection candidateId: ${candidate.candidateId}.`);
@@ -179,9 +181,23 @@ function validateCandidates(value) {
         `${candidate.identity.exportRunId}.`
       );
     }
+    if (trainingRuns.has(candidate.identity.trainingRunId)) {
+      fail(
+        `Candidates must have distinct trainingRunId values; duplicate ` +
+        `${candidate.identity.trainingRunId}.`
+      );
+    }
+    if (sourceCheckpoints.has(candidate.identity.sourceCheckpointSha256)) {
+      fail(
+        `Candidates must represent distinct source checkpoints; duplicate ` +
+        `${candidate.identity.sourceCheckpointSha256}.`
+      );
+    }
     candidateIds.add(candidate.candidateId);
     artifactSets.add(candidate.identity.artifactSetSha256);
     exportRuns.add(candidate.identity.exportRunId);
+    trainingRuns.add(candidate.identity.trainingRunId);
+    sourceCheckpoints.add(candidate.identity.sourceCheckpointSha256);
   }
   return candidates;
 }
@@ -215,10 +231,14 @@ function validateCandidate(value, label) {
   requireRecord(value.identity, `${label}.identity`);
   requireExactKeys(value.identity, [
     "artifactSetSha256",
+    "effectiveTrainingConfigSha256",
     "exportReportSha256",
     "exportRunId",
     "manifestSha256",
+    "sourceCheckpointSha256",
+    "trainingReportSha256",
     "trainingRunId",
+    "trainingSeed",
     "vocabSha256"
   ], `${label}.identity`);
   requireRunId(value.identity.trainingRunId, `${label}.identity.trainingRunId`);
@@ -228,11 +248,19 @@ function validateCandidate(value, label) {
   }
   for (const field of [
     "artifactSetSha256",
+    "effectiveTrainingConfigSha256",
     "exportReportSha256",
     "manifestSha256",
+    "sourceCheckpointSha256",
+    "trainingReportSha256",
     "vocabSha256"
   ]) {
     requireSha256(value.identity[field], `${label}.identity.${field}`);
+  }
+  if (!Number.isSafeInteger(value.identity.trainingSeed) ||
+      value.identity.trainingSeed < 0 ||
+      value.identity.trainingSeed > 0xffff_ffff) {
+    fail(`${label}.identity.trainingSeed must be a 32-bit unsigned integer.`);
   }
 
   requireRecord(value.evidence, `${label}.evidence`);
@@ -241,12 +269,14 @@ function validateCandidate(value, label) {
     "benchmarkReport",
     "comparisonPredictions",
     "comparisonReport",
+    "checkpoint",
     "datasetManifest",
     "evaluationReport",
     "exportReport",
     "goldManifest",
     "manifest",
-    "specification"
+    "specification",
+    "trainingReport"
   ], `${label}.evidence`);
   for (const [name, evidence] of Object.entries(value.evidence)) {
     requireRecord(evidence, `${label}.evidence.${name}`);
@@ -353,7 +383,7 @@ function selectionIdentityFor({
   winnerCandidateId
 }) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     algorithm: structuredClone(NEURAL_SELECTION_ALGORITHM),
     comparableBindings: structuredClone(comparableBindings),
     candidates: candidates

@@ -5,6 +5,9 @@ import { performance } from "node:perf_hooks";
 import {
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
+import {
+  inspectNeuralCoreMLMeasurementReport
+} from "./lib/neural-coreml-measurement-provenance.mjs";
 import { validateNeuralDeviceMeasurements } from "./lib/neural-device-measurements.mjs";
 import {
   validateNeuralRuntimePlacementEvidence
@@ -46,9 +49,11 @@ const manifest = descriptor?.manifest ?? null;
 
 let measurements = [];
 let measurementReport = null;
+let measurementEvidence = null;
 if (measurementsPath) {
-  measurementReport = loadMeasurements(measurementsPath);
-  measurements = measurementReport.devices;
+  measurementEvidence = loadMeasurements(measurementsPath);
+  measurementReport = measurementEvidence.report;
+  measurements = measurementEvidence.devices;
 } else if (production) {
   failures.push("Production Phase 5 requires --measurements JSON from real packaged Core ML device runs.");
 } else {
@@ -64,13 +69,14 @@ const summary = {
   p99Ms: p99Values.length ? round(Math.max(...p99Values)) : null,
   targetP99Ms: 50,
   measuredOnDevice: measurements.length > 0,
-  devices: measurements
+  devices: measurements,
+  memory: measurementEvidence?.memory ?? null
 };
 
 const deviceValidation = measurements.length > 0 && descriptor
   ? validateNeuralDeviceMeasurements(measurements, {
       artifactDescriptor: descriptor,
-      memoryEvidence: measurementReport?.memory,
+      memoryEvidence: measurementEvidence?.memory ?? undefined,
       production
     })
   : null;
@@ -130,6 +136,8 @@ finish(status, failures.length === 0 ? 0 : 1, {
   })) ?? [],
   manifest: relative(root, manifestPath),
   measurements: measurementsPath ? relative(root, measurementsPath) : null,
+  measurementsSha256:
+    measurementEvidence?.sourceReportSha256 ?? null,
   performance: summary,
   computePlacement: deviceValidation ? {
     architectures: deviceValidation.architectures,
@@ -166,21 +174,36 @@ function loadMeasurements(pathValue) {
   const path = resolve(root, pathValue);
   if (!existsSync(path)) {
     failures.push(`Missing measurements JSON: ${pathValue}.`);
-    return { devices: [] };
+    return {
+      devices: [],
+      memory: null,
+      report: null,
+      sourceReportSha256: null
+    };
   }
   try {
-    const json = JSON.parse(readFileSync(path, "utf8"));
+    const inspected = inspectNeuralCoreMLMeasurementReport(
+      readFileSync(path),
+      { production }
+    );
+    failures.push(...inspected.issueCodes);
+    const json = inspected.report;
     return {
-      ...json,
-      devices: Array.isArray(json.devices)
+      ...inspected,
+      devices: Array.isArray(json?.devices)
         ? json.devices
-        : Array.isArray(json.measurements)
+        : Array.isArray(json?.measurements)
           ? json.measurements
           : []
     };
   } catch (error) {
     failures.push(`Invalid measurements JSON at ${pathValue}: ${error instanceof Error ? error.message : String(error)}`);
-    return { devices: [] };
+    return {
+      devices: [],
+      memory: null,
+      report: null,
+      sourceReportSha256: null
+    };
   }
 }
 

@@ -39,6 +39,29 @@ gate must remain closed.
 This limitation is tooling and disk capacity, not the missing $99 Developer
 Program membership.
 
+## Current fail-closed provenance status
+
+The JSON summary is not trusted by itself. The verifier now requires an
+in-process provenance capability produced only after safely reopening the
+repository-contained raw `.trace` directory and strict UTF-8 XML export,
+rejecting path indirection and unsafe XML declarations, and recomputing both
+recorded hashes. That capability is deliberately non-serializable: copying its
+fields into JSON does not recreate it.
+
+Artifact custody alone still cannot prove that the summary's process,
+prediction-interval, model-role, and Neural Engine correlations were derived
+from the trace. No real `xctrace` Core ML + Neural Engine XML sample exists in
+the repository, so inventing table names or row semantics would be
+self-attestation under another name. Production Neural Engine claims therefore
+remain fail-closed with
+`neural-runtime-placement.semantic-correlation-unverified`.
+
+Closing this gate requires one versioned export produced by the real Xcode
+workflow below, followed by a fixture-backed parser that derives the required
+correlations from those exact rows and passes the branded capability through
+every production validator. Until that sample and integration exist, the
+validation command must fail and no Neural Engine execution claim is allowed.
+
 ## Required capture
 
 1. Install the current stable Xcode from the Mac App Store after making enough
@@ -90,13 +113,22 @@ Program membership.
    - a nonzero prediction count and observed Neural Engine compute for every
      runtime role.
 
-8. Validate the record:
+8. After the fixture-backed correlation parser and provenance handoff are
+   implemented, validate the record:
 
    ```sh
    node scripts/check-neural-runtime-placement-evidence.mjs \
      --artifact-root data/generated/neural-open-vocab-model/<model-id> \
-     --evidence reports/neural-runtime-placement-evidence.json
+     --evidence reports/neural-runtime-placement-evidence.json \
+     --trace-directory reports/neural-runtime-placement.trace \
+     --trace-export reports/neural-runtime-placement.xml
    ```
+
+   The checker reopens both artifacts inside the repository, rejects symlink
+   indirection, recomputes their exact hashes, and passes a non-serializable
+   provenance capability into the placement validator. Until a fixture-backed
+   semantic parser exists, this command is expected to fail closed rather than
+   accept the hand-authored correlation booleans.
 
 9. Bind that validated record into the candidate-promotion benchmark:
 

@@ -1057,6 +1057,24 @@ private final class FakeNeuralModel: LekhNeuralModelPredicting {
   }
 }
 
+private final class LockedNeuralSecureInputState {
+  private let lock = NSLock()
+  private var active = false
+
+  func setActive(_ value: Bool) {
+    lock.lock()
+    active = value
+    lock.unlock()
+  }
+
+  func isActive() -> Bool {
+    lock.lock()
+    let value = active
+    lock.unlock()
+    return value
+  }
+}
+
 private func neuralArray(
   shape: [Int],
   dataType: MLMultiArrayDataType,
@@ -1240,6 +1258,119 @@ private func verifyCTCRuntime() {
   } catch {
     require(false, "Cancelled CTC runtime raised the wrong failure: \(error)")
   }
+}
+
+private func verifyQueuedSecureTransitionBlocksInference() {
+  let secureState = LockedNeuralSecureInputState()
+  let secureInputGuard = LekhNeuralSecureInputGuard(
+    observedActive: false,
+    liveIsActive: secureState.isActive
+  )
+  require(
+    !secureInputGuard.isActive(),
+    "A nonsecure caller and live state must initially permit queued inference"
+  )
+
+  let runtimeContract = LekhNeuralCTCContract(
+    maxInputLength: 4,
+    outputTimeSteps: 8,
+    vocabularySize: 3,
+    blankTokenId: 0,
+    beamWidth: 4,
+    maximumCandidates: 3
+  )
+  let inputIds = neuralArray(
+    shape: [1, runtimeContract.maxInputLength],
+    dataType: .int32,
+    values: [3, 1, 0, 0]
+  )
+  let model = FakeNeuralModel { _ in
+    neuralProvider([:])
+  }
+  let queue = DispatchQueue(
+    label: "com.lekh.tests.neural-secure-transition"
+  )
+  let workerBlocked = DispatchSemaphore(value: 0)
+  let releaseWorker = DispatchSemaphore(value: 0)
+  let workerFinished = DispatchSemaphore(value: 0)
+
+  queue.async {
+    workerBlocked.signal()
+    releaseWorker.wait()
+    defer { workerFinished.signal() }
+    do {
+      _ = try LekhNeuralCTCRuntime.rank(
+        model: model,
+        contract: runtimeContract,
+        inputIds: inputIds,
+        shouldCancel: secureInputGuard.isActive
+      )
+      require(
+        false,
+        "Inference queued before a secure transition must be cancelled"
+      )
+    } catch LekhNeuralCTCRuntimeFailure.cancelled {
+      // Expected: the live predicate is re-read immediately before prediction.
+    } catch {
+      require(
+        false,
+        "Secure-transition inference raised the wrong failure: \(error)"
+      )
+    }
+  }
+
+  require(
+    workerBlocked.wait(timeout: .now() + 1) == .success,
+    "Secure-transition worker must reach its deterministic queue barrier"
+  )
+  secureState.setActive(true)
+  releaseWorker.signal()
+  require(
+    workerFinished.wait(timeout: .now() + 1) == .success,
+    "Secure-transition worker must finish after the queue barrier opens"
+  )
+  require(
+    model.callCount == 0,
+    "A live secure transition before queued work must make zero model calls"
+  )
+
+  secureState.setActive(false)
+  let transitionDuringPrediction = FakeNeuralModel { _ in
+    secureState.setActive(true)
+    return neuralProvider([:])
+  }
+  do {
+    _ = try LekhNeuralCTCRuntime.rank(
+      model: transitionDuringPrediction,
+      contract: runtimeContract,
+      inputIds: inputIds,
+      shouldCancel: secureInputGuard.isActive
+    )
+    require(
+      false,
+      "A secure transition during prediction must discard model output"
+    )
+  } catch LekhNeuralCTCRuntimeFailure.cancelled {
+    require(
+      transitionDuringPrediction.callCount == 1,
+      "Post-prediction secure cancellation must stop after the active call"
+    )
+  } catch {
+    require(
+      false,
+      "Post-prediction secure transition raised the wrong failure: \(error)"
+    )
+  }
+
+  secureState.setActive(false)
+  let observedSecureInput = LekhNeuralSecureInputGuard(
+    observedActive: true,
+    liveIsActive: secureState.isActive
+  )
+  require(
+    observedSecureInput.isActive(),
+    "The caller's secure observation must remain fail-closed"
+  )
 }
 
 private func splitEncoderOutput(
@@ -2064,11 +2195,11 @@ private func verifyNeuralProductionMemoryPolicy() {
   }
   func validates(
     summary: [String: Any],
-    device: [String: Any]
+    devices: [[String: Any]]
   ) -> Bool {
     LekhNeuralProductionMemoryPolicy.validatesFixture(
       summaryJSON: encoded(summary),
-      deviceJSON: [encoded(device)]
+      deviceJSON: devices.map(encoded)
     )
   }
 
@@ -2079,20 +2210,20 @@ private func verifyNeuralProductionMemoryPolicy() {
     "Production memory policy must retain the absolute 128 MiB ceiling"
   )
   require(
-    validates(summary: boundary, device: boundary),
+    validates(summary: boundary, devices: [boundary]),
     "The inclusive 128 MiB lifetime-peak boundary must pass"
   )
 
   var missing = boundary
   missing.removeValue(forKey: "units")
   require(
-    !validates(summary: missing, device: missing),
+    !validates(summary: missing, devices: [missing]),
     "Missing production memory evidence must fail closed"
   )
 
   let overBudget = evidence(peak: 134_217_729)
   require(
-    !validates(summary: overBudget, device: overBudget),
+    !validates(summary: overBudget, devices: [overBudget]),
     "A lifetime peak one byte over 128 MiB must fail closed"
   )
 
@@ -2100,14 +2231,43 @@ private func verifyNeuralProductionMemoryPolicy() {
   inconsistent["peakIncreaseFromBaselineBytes"] =
     (inconsistent["peakIncreaseFromBaselineBytes"] as! Int) + 1
   require(
-    !validates(summary: inconsistent, device: inconsistent),
+    !validates(summary: inconsistent, devices: [inconsistent]),
     "A memory delta that does not equal peak minus baseline must fail closed"
   )
 
   let mismatchedDevice = evidence(peak: 120 * 1024 * 1024)
   require(
-    !validates(summary: boundary, device: mismatchedDevice),
-    "Production summary and device memory evidence must match exactly"
+    !validates(summary: boundary, devices: [mismatchedDevice]),
+    "Production summary must be one exact observed device row"
+  )
+
+  require(
+    validates(
+      summary: boundary,
+      devices: [mismatchedDevice, boundary]
+    ),
+    "The exact worst observed device row must summarize distinct devices"
+  )
+
+  require(
+    !validates(
+      summary: mismatchedDevice,
+      devices: [mismatchedDevice, boundary]
+    ),
+    "A lower observed device row must not summarize a higher device peak"
+  )
+
+  var syntheticWorst = boundary
+  syntheticWorst["baselinePhysicalFootprintBytes"] =
+    41 * 1024 * 1024
+  syntheticWorst["peakIncreaseFromBaselineBytes"] =
+    87 * 1024 * 1024
+  require(
+    !validates(
+      summary: syntheticWorst,
+      devices: [mismatchedDevice, boundary]
+    ),
+    "A synthetic worst summary not observed on a device must fail closed"
   )
 }
 
@@ -2123,6 +2283,7 @@ verifyNeuralInputAdmissionPolicy()
 verifyNeuralDecoderContract()
 verifyCTCPrefixBeamSearch()
 verifyCTCRuntime()
+verifyQueuedSecureTransitionBlocksInference()
 verifySplitAttentionRuntime()
 verifySplitAttentionManifestContract()
 verifyCTCManifestContract()

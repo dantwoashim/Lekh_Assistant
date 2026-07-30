@@ -21,6 +21,9 @@ import {
 import {
   validateNeuralRuntimePlacementEvidence
 } from "./lib/neural-runtime-placement-evidence.mjs";
+import {
+  validateNeuralSotaRuntimeEvidence
+} from "./lib/neural-sota-runtime-evidence.mjs";
 
 const ROOT = realpathSync(process.cwd());
 const startedAt = performance.now();
@@ -250,6 +253,12 @@ function verifyProductionReadiness() {
     join(ROOT, "reports", "neural-coreml-device-benchmark-production.json"),
     "Production Core ML device benchmark"
   );
+  const runtimeEvidenceValidation = validateNeuralSotaRuntimeEvidence({
+    nativeReport: productionE2E.value,
+    nativeReportSha256: productionE2E.file.sha256,
+    coreMLReport: coreMLBenchmark.value,
+    artifactDescriptor: descriptor
+  });
   if (coreMLBenchmark.value.status !==
         "passed-production-phase5-coreml-benchmark" ||
       coreMLBenchmark.value.productionEligible !== true ||
@@ -257,8 +266,13 @@ function verifyProductionReadiness() {
         descriptor.artifactSetSha256 ||
       coreMLBenchmark.value.computePlacement?.neuralEngineClaimAllowed !== true ||
       !Number.isFinite(coreMLBenchmark.value.performance?.p99Ms) ||
-      coreMLBenchmark.value.performance.p99Ms >= 50) {
-    fail("Production device benchmark is stale, incomplete, or too slow.");
+      coreMLBenchmark.value.performance.p99Ms >= 50 ||
+      !runtimeEvidenceValidation.valid) {
+    fail(
+      "Production device benchmark is stale, incomplete, too slow, or " +
+      "not bound to the exact revalidated native report: " +
+      runtimeEvidenceValidation.issueCodes.join(", ")
+    );
   }
 
   const nativeIntegration = readRequiredJson(
@@ -329,6 +343,8 @@ function verifyProductionReadiness() {
       qualityGate: comparison.value.qualityGate
     },
     packagedPerformance: productionE2E.value.performance,
+    packagedMemory: productionE2E.value.memory,
+    nativeBenchmarkSha256: productionE2E.file.sha256,
     neuralEngineClaimAllowed:
       productionE2E.value.computePlacement.neuralEngineClaimAllowed,
     dataset: {
