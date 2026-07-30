@@ -70,6 +70,7 @@ const summary = {
 const deviceValidation = measurements.length > 0 && descriptor
   ? validateNeuralDeviceMeasurements(measurements, {
       artifactDescriptor: descriptor,
+      memoryEvidence: measurementReport?.memory,
       production
     })
   : null;

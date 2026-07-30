@@ -247,6 +247,61 @@ describe("evidence-bound neural candidate promotion", () => {
     });
   });
 
+  it("fails promotion closed on missing, excessive, or inconsistent memory evidence", () => {
+    for (const mutate of [
+      (benchmark) => {
+        delete benchmark.memory;
+      },
+      (benchmark) => {
+        const memory = postExportMemoryEvidence(134_217_729);
+        benchmark.memory = structuredClone(memory);
+        benchmark.devices[0].memory = structuredClone(memory);
+      },
+      (benchmark) => {
+        benchmark.memory.peakIncreaseFromBaselineBytes += 1;
+        benchmark.devices[0].memory =
+          structuredClone(benchmark.memory);
+      }
+    ]) {
+      withFixture("baseline", (fixture) => {
+        mutate(fixture.benchmark);
+        writeJson(fixture.paths.benchmark, fixture.benchmark);
+        assert.throws(
+          () => promote(fixture),
+          /memory|device evidence is invalid/u
+        );
+        assert.equal(existsProduction(fixture), false);
+      });
+    }
+  });
+
+  it("accepts the inclusive 128 MiB memory boundary", () => {
+    withFixture("baseline", (fixture) => {
+      const result = promote(fixture);
+      const manifest = readJson(result.manifest);
+      const boundary = postExportMemoryEvidence(134_217_728);
+      assert.deepEqual(manifest.performance.memory, boundary);
+      assert.deepEqual(
+        manifest.performance.devices[0].memory,
+        boundary
+      );
+    });
+  });
+
+  it("rejects a benchmark summary/device memory mismatch", () => {
+    withFixture("baseline", (fixture) => {
+      fixture.benchmark.devices[0].memory =
+        postExportMemoryEvidence(100 * 1024 * 1024);
+      writeJson(fixture.paths.benchmark, fixture.benchmark);
+
+      assert.throws(
+        () => promote(fixture),
+        /memory-mismatch|cannot enter the production manifest/u
+      );
+      assert.equal(existsProduction(fixture), false);
+    });
+  });
+
   it("rejects a tampered selection winner or official comparison input", () => {
     withFixture("baseline", (fixture) => {
       const tampered = structuredClone(fixture.selection);
@@ -604,6 +659,36 @@ describe("evidence-bound neural candidate promotion", () => {
       );
     });
   });
+
+  it("rejects rehashed production memory tampering through deterministic reconstruction", () => {
+    withFixture("baseline", (fixture) => {
+      const result = promote(fixture);
+      const manifest = readJson(result.manifest);
+      const changedMemory =
+        postExportMemoryEvidence(100 * 1024 * 1024);
+      manifest.performance.memory = structuredClone(changedMemory);
+      manifest.performance.devices[0].memory =
+        structuredClone(changedMemory);
+      writeJson(result.manifest, manifest);
+
+      const manifestEvidence = inspectContainedRegularFile(
+        fixture.root,
+        result.manifest
+      );
+      const receipt = readJson(result.report);
+      receipt.productionManifest.sha256 = manifestEvidence.sha256;
+      receipt.productionManifest.bytes = manifestEvidence.bytes;
+      writeJson(result.report, receipt);
+
+      assert.throws(
+        () => verifyNeuralProductionPromotionReceipt({
+          repoRoot: fixture.root,
+          productionDirectory: result.productionDir
+        }),
+        /exact deterministic promotion/u
+      );
+    });
+  });
 });
 
 function withFixture(kind, callback) {
@@ -930,6 +1015,7 @@ function buildFixture(root, kind) {
   writeJson(paths.evaluation, evaluation);
   identities.evaluation = inspectContainedRegularFile(root, paths.evaluation);
 
+  const memory = postExportMemoryEvidence();
   const devices = [{
     name: "fixture-mac",
     macOS: "26.0",
@@ -943,6 +1029,7 @@ function buildFixture(root, kind) {
     measurementKind: "full-candidate-generation",
     artifactSetSha256: artifactDescriptor.artifactSetSha256,
     configurationComputeUnits: "all",
+    memory: structuredClone(memory),
     computePlans: Object.fromEntries(
       artifactDescriptor.artifacts.map((artifact) => [
         artifact.role,
@@ -963,6 +1050,7 @@ function buildFixture(root, kind) {
       ...artifactFixture.benchmarkIdentity
     },
     devices: structuredClone(devices),
+    memory: structuredClone(memory),
     performance: {
       p50Ms: 10,
       p95Ms: 20,
@@ -1600,6 +1688,7 @@ function expectedProductionPerformance(benchmark) {
     p99Ms: benchmark.performance.p99Ms,
     targetP99Ms: 50,
     measuredOnDevice: true,
+    memory: structuredClone(benchmark.memory),
     devices: benchmark.devices.map((device) => ({
       name: device.name,
       macOS: device.macOS,
@@ -1610,8 +1699,26 @@ function expectedProductionPerformance(benchmark) {
       p95Ms: device.p95Ms,
       p99Ms: device.p99Ms,
       artifact: device.artifact,
-      measurementKind: device.measurementKind
+      measurementKind: device.measurementKind,
+      memory: structuredClone(device.memory)
     }))
+  };
+}
+
+function postExportMemoryEvidence(
+  lifetimePeakPhysicalFootprintBytes = 128 * 1024 * 1024
+) {
+  const baselinePhysicalFootprintBytes = 40 * 1024 * 1024;
+  return {
+    schemaVersion: 1,
+    measurementKind: "isolated-process-physical-footprint-v1",
+    api: "proc_pid_rusage:RUSAGE_INFO_V4",
+    units: "bytes",
+    baselinePhysicalFootprintBytes,
+    lifetimePeakPhysicalFootprintBytes,
+    peakIncreaseFromBaselineBytes:
+      lifetimePeakPhysicalFootprintBytes -
+      baselinePhysicalFootprintBytes
   };
 }
 

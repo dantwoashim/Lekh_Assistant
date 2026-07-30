@@ -2348,6 +2348,10 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
           performance.p50Ms >= 0, performance.p50Ms < 50,
           performance.p95Ms >= 0, performance.p95Ms < 50,
           performance.p99Ms >= 0, performance.p99Ms < 50,
+          LekhNeuralProductionMemoryPolicy.permits(
+            summary: performance.memory,
+            devices: performance.devices.map(\.memory)
+          ),
           !performance.devices.isEmpty,
           architectures.contains("arm64"),
           performance.devices.allSatisfy({ device in
@@ -2849,9 +2853,21 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       "singleTokenPhraseExpansionRate", "secureFieldInferenceCount"
     ])
     let performance = try childObject(manifest, "performance")
-    try requireExactKeys(performance, [
+    let productionEligible = manifest["productionEligible"] as? Bool == true
+    let legacyPerformanceKeys: Set<String> = [
       "p50Ms", "p95Ms", "p99Ms", "targetP99Ms", "measuredOnDevice", "devices"
-    ])
+    ]
+    try requireExactKeys(
+      performance,
+      productionEligible
+        ? legacyPerformanceKeys.union(["memory"])
+        : legacyPerformanceKeys
+    )
+    if productionEligible {
+      try validateProductionMemoryJSONShape(
+        try childObject(performance, "memory")
+      )
+    }
     guard let devices = performance["devices"] as? [Any], !devices.isEmpty else {
       throw LekhNeuralGateFailure.manifestSchemaInvalid
     }
@@ -2860,13 +2876,21 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
       "p50Ms", "p95Ms", "p99Ms", "artifact"
     ]
     let fullCandidateDeviceKeys = legacyDeviceKeys.union(["measurementKind"])
+    let productionDeviceKeys = fullCandidateDeviceKeys.union(["memory"])
     for value in devices {
       guard let device = value as? [String: Any] else {
         throw LekhNeuralGateFailure.manifestSchemaInvalid
       }
       let keys = Set(device.keys)
-      guard keys == legacyDeviceKeys || keys == fullCandidateDeviceKeys else {
+      guard productionEligible
+        ? keys == productionDeviceKeys
+        : keys == legacyDeviceKeys || keys == fullCandidateDeviceKeys else {
         throw LekhNeuralGateFailure.manifestSchemaInvalid
+      }
+      if productionEligible {
+        try validateProductionMemoryJSONShape(
+          try childObject(device, "memory")
+        )
       }
     }
     if manifest["runtimeModelContract"] as? String == "split-attention-incremental-v1" {
@@ -2974,6 +2998,20 @@ public final class LekhNeuralCandidateService: LekhNeuralCandidateServing {
     try requireExactKeys(try childObject(dataset, "splitSha256"), ["train", "dev", "test"])
     try requireExactKeys(try childObject(vocab, "nativeRuntimePolicy"), [
       "asyncOnly", "neverInvokeInSecureFields", "failOpenRawTypingOnError", "neuralTailOnly"
+    ])
+  }
+
+  private static func validateProductionMemoryJSONShape(
+    _ memory: [String: Any]
+  ) throws {
+    try requireExactKeys(memory, [
+      "schemaVersion",
+      "measurementKind",
+      "api",
+      "units",
+      "baselinePhysicalFootprintBytes",
+      "lifetimePeakPhysicalFootprintBytes",
+      "peakIncreaseFromBaselineBytes"
     ])
   }
 
@@ -3205,6 +3243,69 @@ public enum LekhNeuralManifestIdentityPolicy {
   }
 }
 
+public enum LekhNeuralProductionMemoryPolicy {
+  public static let maximumLifetimePeakPhysicalFootprintBytes: UInt64 =
+    128 * 1024 * 1024
+
+  fileprivate struct Evidence: Decodable, Equatable {
+    let schemaVersion: Int
+    let measurementKind: String
+    let api: String
+    let units: String
+    let baselinePhysicalFootprintBytes: UInt64
+    let lifetimePeakPhysicalFootprintBytes: UInt64
+    let peakIncreaseFromBaselineBytes: UInt64
+  }
+
+  fileprivate static func permits(
+    summary: Evidence?,
+    devices: [Evidence?]
+  ) -> Bool {
+    guard let summary,
+          validates(summary),
+          !devices.isEmpty else {
+      return false
+    }
+    return devices.allSatisfy { device in
+      guard let device else { return false }
+      return validates(device) && device == summary
+    }
+  }
+
+  public static func validatesFixture(
+    summaryJSON: Data,
+    deviceJSON: [Data]
+  ) -> Bool {
+    let decoder = JSONDecoder()
+    guard let summary = try? decoder.decode(
+      Evidence.self,
+      from: summaryJSON
+    ) else {
+      return false
+    }
+    let devices = deviceJSON.map { data in
+      try? decoder.decode(Evidence.self, from: data)
+    }
+    return permits(summary: summary, devices: devices)
+  }
+
+  private static func validates(_ evidence: Evidence) -> Bool {
+    evidence.schemaVersion == 1 &&
+      evidence.measurementKind ==
+        "isolated-process-physical-footprint-v1" &&
+      evidence.api == "proc_pid_rusage:RUSAGE_INFO_V4" &&
+      evidence.units == "bytes" &&
+      evidence.baselinePhysicalFootprintBytes > 0 &&
+      evidence.lifetimePeakPhysicalFootprintBytes >=
+        evidence.baselinePhysicalFootprintBytes &&
+      evidence.lifetimePeakPhysicalFootprintBytes <=
+        maximumLifetimePeakPhysicalFootprintBytes &&
+      evidence.peakIncreaseFromBaselineBytes ==
+        evidence.lifetimePeakPhysicalFootprintBytes -
+        evidence.baselinePhysicalFootprintBytes
+  }
+}
+
 private struct LekhNeuralManifest: Decodable {
   let schemaVersion: Int
   let trainingRunId: String?
@@ -3267,6 +3368,7 @@ private struct LekhNeuralManifest: Decodable {
     let p99Ms: Double
     let targetP99Ms: Double
     let measuredOnDevice: Bool
+    let memory: LekhNeuralProductionMemoryPolicy.Evidence?
     let devices: [Device]
   }
 
@@ -3281,6 +3383,7 @@ private struct LekhNeuralManifest: Decodable {
     let p99Ms: Double
     let artifact: String
     let measurementKind: String?
+    let memory: LekhNeuralProductionMemoryPolicy.Evidence?
   }
 
   struct Hashes: Decodable {

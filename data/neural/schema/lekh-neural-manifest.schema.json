@@ -228,7 +228,7 @@
     "performance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["p50Ms", "p95Ms", "p99Ms", "targetP99Ms", "measuredOnDevice", "devices"],
+      "required": ["p50Ms", "p95Ms", "p99Ms", "targetP99Ms", "measuredOnDevice", "memory", "devices"],
       "properties": {
         "p50Ms": {
           "type": "number",
@@ -251,6 +251,9 @@
         "measuredOnDevice": {
           "const": true
         },
+        "memory": {
+          "$ref": "#/$defs/postExportMemoryEvidence"
+        },
         "devices": {
           "type": "array",
           "minItems": 1,
@@ -267,7 +270,8 @@
               "p95Ms",
               "p99Ms",
               "artifact",
-              "measurementKind"
+              "measurementKind",
+              "memory"
             ],
             "properties": {
               "name": {
@@ -308,6 +312,9 @@
               },
               "measurementKind": {
                 "const": "full-candidate-generation"
+              },
+              "memory": {
+                "$ref": "#/$defs/postExportMemoryEvidence"
               }
             }
           },
@@ -479,6 +486,48 @@
     }
   ],
   "$defs": {
+    "postExportMemoryEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "measurementKind",
+        "api",
+        "units",
+        "baselinePhysicalFootprintBytes",
+        "lifetimePeakPhysicalFootprintBytes",
+        "peakIncreaseFromBaselineBytes"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "measurementKind": {
+          "const": "isolated-process-physical-footprint-v1"
+        },
+        "api": {
+          "const": "proc_pid_rusage:RUSAGE_INFO_V4"
+        },
+        "units": {
+          "const": "bytes"
+        },
+        "baselinePhysicalFootprintBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 134217728
+        },
+        "lifetimePeakPhysicalFootprintBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 134217728
+        },
+        "peakIncreaseFromBaselineBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 134217727
+        }
+      }
+    },
     "reportList": {
       "type": "array",
       "minItems": 1,

@@ -2039,6 +2039,78 @@ private func verifyNeuralManifestIdentityPolicy() {
   )
 }
 
+private func verifyNeuralProductionMemoryPolicy() {
+  func evidence(peak: Int = 128 * 1024 * 1024) -> [String: Any] {
+    let baseline = 40 * 1024 * 1024
+    return [
+      "schemaVersion": 1,
+      "measurementKind":
+        "isolated-process-physical-footprint-v1",
+      "api": "proc_pid_rusage:RUSAGE_INFO_V4",
+      "units": "bytes",
+      "baselinePhysicalFootprintBytes": baseline,
+      "lifetimePeakPhysicalFootprintBytes": peak,
+      "peakIncreaseFromBaselineBytes": peak - baseline
+    ]
+  }
+  func encoded(_ value: [String: Any]) -> Data {
+    guard let data = try? JSONSerialization.data(
+      withJSONObject: value
+    ) else {
+      fputs("FAIL: Memory evidence fixture could not be encoded\n", stderr)
+      exit(1)
+    }
+    return data
+  }
+  func validates(
+    summary: [String: Any],
+    device: [String: Any]
+  ) -> Bool {
+    LekhNeuralProductionMemoryPolicy.validatesFixture(
+      summaryJSON: encoded(summary),
+      deviceJSON: [encoded(device)]
+    )
+  }
+
+  let boundary = evidence()
+  require(
+    LekhNeuralProductionMemoryPolicy
+      .maximumLifetimePeakPhysicalFootprintBytes == 134_217_728,
+    "Production memory policy must retain the absolute 128 MiB ceiling"
+  )
+  require(
+    validates(summary: boundary, device: boundary),
+    "The inclusive 128 MiB lifetime-peak boundary must pass"
+  )
+
+  var missing = boundary
+  missing.removeValue(forKey: "units")
+  require(
+    !validates(summary: missing, device: missing),
+    "Missing production memory evidence must fail closed"
+  )
+
+  let overBudget = evidence(peak: 134_217_729)
+  require(
+    !validates(summary: overBudget, device: overBudget),
+    "A lifetime peak one byte over 128 MiB must fail closed"
+  )
+
+  var inconsistent = boundary
+  inconsistent["peakIncreaseFromBaselineBytes"] =
+    (inconsistent["peakIncreaseFromBaselineBytes"] as! Int) + 1
+  require(
+    !validates(summary: inconsistent, device: inconsistent),
+    "A memory delta that does not equal peak minus baseline must fail closed"
+  )
+
+  let mismatchedDevice = evidence(peak: 120 * 1024 * 1024)
+  require(
+    !validates(summary: boundary, device: mismatchedDevice),
+    "Production summary and device memory evidence must match exactly"
+  )
+}
+
 verifyCandidateStateMachine()
 verifyFourModeContract()
 verifyActiveCompositionWorkBound()
@@ -2055,6 +2127,7 @@ verifySplitAttentionRuntime()
 verifySplitAttentionManifestContract()
 verifyCTCManifestContract()
 verifyNeuralManifestIdentityPolicy()
+verifyNeuralProductionMemoryPolicy()
 print(
   "PASS: native candidate, delimiter, four-mode, neural admission, " +
     "exhaustive CTC decoder oracle, and manifest identity contracts"

@@ -1,4 +1,7 @@
 import { validateNeuralComputePlanEvidence } from "./neural-compute-plan-evidence.mjs";
+import {
+  validateNeuralPostExportMemoryEvidence
+} from "./neural-post-export-memory-evidence.mjs";
 import { basename } from "node:path";
 
 const legacyKeys = Object.freeze([
@@ -46,6 +49,11 @@ export function validateNeuralDeviceMeasurements(devices, context) {
   const issues = [];
   const warnings = [];
   const production = context.production === true;
+  const summaryMemory = context.memoryEvidence;
+  const summaryMemoryValidation =
+    production || summaryMemory !== undefined
+      ? validateNeuralPostExportMemoryEvidence(summaryMemory)
+      : null;
   const architectures = new Set();
   const identities = new Set();
   let neuralEngineCompatibilityIndicated = false;
@@ -56,16 +64,26 @@ export function validateNeuralDeviceMeasurements(devices, context) {
     return result();
   }
 
+  if (summaryMemoryValidation && !summaryMemoryValidation.valid) {
+    issues.push(...summaryMemoryValidation.issueCodes.map((issue) =>
+      `${issue}:summary`
+    ));
+  }
+
   for (const [index, device] of devices.entries()) {
     const label = isRecord(device) && isShortText(device.name) ? device.name : `device-${index}`;
     const hasComputePlan = isRecord(device?.computePlan);
     const hasComputePlans = isRecord(device?.computePlans);
     const fullCandidateMeasurement = device?.measurementKind === "full-candidate-generation";
-    const expectedKeys = hasComputePlans
+    const baseExpectedKeys = hasComputePlans
       ? artifactSetCandidateKeys
       : fullCandidateMeasurement
       ? fullCandidateKeys
       : hasComputePlan ? currentKeys : legacyKeys;
+    const hasMemoryEvidence = Object.hasOwn(device ?? {}, "memory");
+    const expectedKeys = hasMemoryEvidence
+      ? [...baseExpectedKeys, "memory"].sort()
+      : baseExpectedKeys;
     if (!exactKeys(device, expectedKeys)) {
       issues.push(`neural-device-measurements.schema-invalid:${label}`);
       continue;
@@ -94,6 +112,23 @@ export function validateNeuralDeviceMeasurements(devices, context) {
     if (device.packagedApp !== true) {
       if (production) issues.push(`neural-device-measurements.not-packaged:${label}`);
       else warnings.push(`${label} is not a packaged-app measurement.`);
+    }
+
+    if (production && !hasMemoryEvidence) {
+      issues.push(`neural-device-measurements.memory-missing:${label}`);
+    } else if (hasMemoryEvidence) {
+      const memoryValidation =
+        validateNeuralPostExportMemoryEvidence(device.memory);
+      if (!memoryValidation.valid) {
+        issues.push(...memoryValidation.issueCodes.map((issue) =>
+          `${issue}:${label}`
+        ));
+      } else if (
+        summaryMemoryValidation?.valid &&
+        canonicalJson(device.memory) !== canonicalJson(summaryMemory)
+      ) {
+        issues.push(`neural-device-measurements.memory-mismatch:${label}`);
+      }
     }
 
     if (!hasComputePlan && !hasComputePlans) {
@@ -220,4 +255,16 @@ export function validateNeuralDeviceMeasurements(devices, context) {
       production
     });
   }
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort().map((key) =>
+      `${JSON.stringify(key)}:${canonicalJson(value[key])}`
+    ).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }

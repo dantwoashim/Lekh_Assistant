@@ -42,6 +42,8 @@ const requiredFiles = [
   "scripts/lib/neural-rare-scalar-contract.mjs",
   "scripts/lib/neural-rare-scalar-evaluation.mjs",
   "scripts/lib/neural-artifact-filesystem.mjs",
+  "scripts/lib/neural-post-export-memory-evidence.mjs",
+  "scripts/lib/neural-device-measurements.mjs",
   "scripts/lib/neural-production-promotion-receipt.mjs",
   "scripts/check-neural-audit-evidence.mjs",
   "scripts/analyze-neural-output-tokenization.mjs",
@@ -132,6 +134,12 @@ const nativeUnitProbeText = readText(
 );
 const nativeBenchmarkText = readText(
   "scripts/benchmark-neural-native-service.mjs"
+);
+const memoryEvidenceText = readText(
+  "scripts/lib/neural-post-export-memory-evidence.mjs"
+);
+const deviceMeasurementsText = readText(
+  "scripts/lib/neural-device-measurements.mjs"
 );
 const packagedBenchmarkText = readText(
   "scripts/benchmark-neural-packaged-app.mjs"
@@ -456,6 +464,56 @@ requireText(
   "promotion receipt verifier must retain representative Core ML parity evidence"
 );
 requireText(
+  memoryEvidenceText,
+  "maximumLifetimePeakPhysicalFootprintBytes: 128 * 1024 * 1024",
+  "post-export memory policy must retain the absolute 128 MiB lifetime-peak ceiling"
+);
+requireText(
+  memoryEvidenceText,
+  "lifetimePeak >",
+  "post-export memory policy must enforce its inclusive absolute ceiling"
+);
+requireText(
+  memoryEvidenceText,
+  "delta !== lifetimePeak - baseline",
+  "post-export memory policy must bind its arithmetic delta"
+);
+requireText(
+  deviceMeasurementsText,
+  "validateNeuralPostExportMemoryEvidence(device.memory)",
+  "production device validation must revalidate the exact memory evidence shape"
+);
+requireText(
+  deviceMeasurementsText,
+  "neural-device-measurements.memory-mismatch",
+  "production device validation must bind each device to the process-memory summary"
+);
+requireText(
+  promoterText,
+  "memoryEvidence: benchmarkReport.memory",
+  "candidate promotion must revalidate the retained process-memory summary"
+);
+requireText(
+  promoterText,
+  "memory: structuredClone(device?.memory)",
+  "candidate promotion must copy per-device memory into the production manifest"
+);
+requireText(
+  promotionReceiptText,
+  "Retained benchmark device memory does not match its ",
+  "promotion receipt verification must reject retained memory tampering"
+);
+requireText(
+  nativeNeuralServiceText,
+  "LekhNeuralProductionMemoryPolicy.permits(",
+  "native production loading must enforce the process-memory policy"
+);
+requireText(
+  nativeNeuralServiceText,
+  "maximumLifetimePeakPhysicalFootprintBytes: UInt64",
+  "native production loading must own the absolute memory ceiling"
+);
+requireText(
   nativeUnitProbeText,
   "verifyCTCExactOracle()",
   "native unit proof must execute the exhaustive CTC decoder oracle"
@@ -662,6 +720,12 @@ if (schema) {
   assert(property(schema, "languageModelRescorer")?.properties?.source?.const === "none", "schema must bind the absent context rescorer to source=none");
   assert(property(schema, "performance")?.properties?.p99Ms?.exclusiveMaximum === 50, "schema must enforce full-candidate p99 < 50ms");
   assert(property(schema, "performance")?.properties?.targetP99Ms?.const === 50, "schema must bind the 50ms full-candidate budget");
+  assert(
+    property(schema, "performance")?.required?.includes("memory") &&
+      property(schema, "performance")?.properties?.memory?.$ref ===
+        "#/$defs/postExportMemoryEvidence",
+    "schema must require the exact post-export memory summary"
+  );
   assert(property(schema, "performance")?.properties?.devices?.minItems === 1, "schema must require at least one measured packaged device");
   assert(
     JSON.stringify(property(schema, "performance")?.properties?.devices).includes('"const":"arm64"'),
@@ -674,6 +738,25 @@ if (schema) {
   assert(deviceSchema?.properties?.p95Ms?.exclusiveMaximum === 50, "schema must enforce device p95 < 50ms");
   assert(deviceSchema?.properties?.p99Ms?.exclusiveMaximum === 50, "schema must enforce device p99 < 50ms");
   assert(deviceSchema?.properties?.measurementKind?.const === "full-candidate-generation", "schema must require full candidate-generation measurements");
+  assert(
+    deviceSchema?.required?.includes("memory") &&
+      deviceSchema?.properties?.memory?.$ref ===
+        "#/$defs/postExportMemoryEvidence",
+    "schema must require post-export memory evidence on every device"
+  );
+  const memorySchema = schema.$defs?.postExportMemoryEvidence;
+  assert(
+    memorySchema?.additionalProperties === false &&
+      memorySchema?.properties?.schemaVersion?.const === 1 &&
+      memorySchema?.properties?.measurementKind?.const ===
+        "isolated-process-physical-footprint-v1" &&
+      memorySchema?.properties?.api?.const ===
+        "proc_pid_rusage:RUSAGE_INFO_V4" &&
+      memorySchema?.properties?.units?.const === "bytes" &&
+      memorySchema?.properties?.lifetimePeakPhysicalFootprintBytes
+        ?.maximum === 134_217_728,
+    "schema must close the exact memory evidence identity and inclusive 128 MiB peak"
+  );
   assert(
     schema.$defs?.baselineHashes?.required?.includes("vocabMetadata") &&
       schema.$defs?.splitHashes?.required?.includes("vocabMetadata"),

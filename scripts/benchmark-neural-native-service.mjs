@@ -283,8 +283,10 @@ if (production || promotionEvidence) {
   parsed.devices[0].artifactSetSha256 = artifactDescriptor.artifactSetSha256;
   parsed.devices[0].configurationComputeUnits = "all";
   parsed.devices[0].computePlans = computePlans;
+  parsed.devices[0].memory = structuredClone(parsed.memory);
   const validation = validateNeuralDeviceMeasurements(parsed.devices, {
     artifactDescriptor,
+    memoryEvidence: parsed.memory,
     production: true
   });
   if (!validation.valid) {

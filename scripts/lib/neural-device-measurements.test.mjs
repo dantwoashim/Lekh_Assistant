@@ -59,7 +59,22 @@ function measurement(architecture, preferredNeural) {
     p95Ms: 1.5,
     p99Ms: 2,
     packagedApp: true,
-    secureFieldInferenceCount: 0
+    secureFieldInferenceCount: 0,
+    memory: memoryEvidence()
+  };
+}
+
+function memoryEvidence(lifetimePeakPhysicalFootprintBytes = 96 * 1024 * 1024) {
+  const baselinePhysicalFootprintBytes = 40 * 1024 * 1024;
+  return {
+    schemaVersion: 1,
+    measurementKind: "isolated-process-physical-footprint-v1",
+    api: "proc_pid_rusage:RUSAGE_INFO_V4",
+    units: "bytes",
+    baselinePhysicalFootprintBytes,
+    lifetimePeakPhysicalFootprintBytes,
+    peakIncreaseFromBaselineBytes:
+      lifetimePeakPhysicalFootprintBytes - baselinePhysicalFootprintBytes
   };
 }
 
@@ -104,10 +119,12 @@ describe("neural packaged-device measurements", () => {
       p95Ms: 4,
       p99Ms: 5,
       packagedApp: true,
-      secureFieldInferenceCount: 0
+      secureFieldInferenceCount: 0,
+      memory: memoryEvidence()
     };
     const result = validateNeuralDeviceMeasurements([splitDevice], {
       artifactDescriptor,
+      memoryEvidence: memoryEvidence(),
       now,
       production: true
     });
@@ -118,6 +135,7 @@ describe("neural packaged-device measurements", () => {
     delete splitDevice.computePlans.encoder;
     const incomplete = validateNeuralDeviceMeasurements([splitDevice], {
       artifactDescriptor,
+      memoryEvidence: memoryEvidence(),
       now,
       production: true
     });
@@ -130,7 +148,12 @@ describe("neural packaged-device measurements", () => {
     const result = validateNeuralDeviceMeasurements([
       measurement("arm64", true),
       measurement("x86_64", false)
-    ], { manifest, now, production: true });
+    ], {
+      manifest,
+      memoryEvidence: memoryEvidence(),
+      now,
+      production: true
+    });
 
     expect(result.valid).toBe(true);
     expect(result.neuralEngineCompatibilityIndicated).toBe(true);
@@ -150,7 +173,12 @@ describe("neural packaged-device measurements", () => {
     const production = validateNeuralDeviceMeasurements([
       measurement("arm64", false),
       measurement("x86_64", false)
-    ], { manifest, now, production: true });
+    ], {
+      manifest,
+      memoryEvidence: memoryEvidence(),
+      now,
+      production: true
+    });
     expect(production.valid).toBe(false);
     expect(production.issueCodes).toEqual(expect.arrayContaining([
       "neural-device-measurements.neural-engine-compatibility-unproven",
@@ -172,5 +200,84 @@ describe("neural packaged-device measurements", () => {
       "neural-device-measurements.latency-invalid:Mac-arm64",
       "neural-device-measurements.secure-field-inference:Mac-arm64"
     ]));
+  });
+
+  it("fails production closed on missing memory evidence", () => {
+    const device = measurement("arm64", true);
+    delete device.memory;
+    const result = validateNeuralDeviceMeasurements([device], {
+      manifest,
+      memoryEvidence: memoryEvidence(),
+      now,
+      production: true
+    });
+    expect(result.issueCodes).toContain(
+      "neural-device-measurements.memory-missing:Mac-arm64"
+    );
+  });
+
+  it("rejects over-budget and arithmetically inconsistent memory", () => {
+    const overBudget = measurement("arm64", true);
+    overBudget.memory = memoryEvidence(128 * 1024 * 1024 + 1);
+    const overBudgetResult = validateNeuralDeviceMeasurements(
+      [overBudget],
+      {
+        manifest,
+        memoryEvidence: overBudget.memory,
+        now,
+        production: true
+      }
+    );
+    expect(overBudgetResult.issueCodes).toContain(
+      "neural-post-export-memory.ceiling-exceeded:Mac-arm64"
+    );
+
+    const inconsistent = measurement("arm64", true);
+    inconsistent.memory.peakIncreaseFromBaselineBytes += 1;
+    const inconsistentResult = validateNeuralDeviceMeasurements(
+      [inconsistent],
+      {
+        manifest,
+        memoryEvidence: inconsistent.memory,
+        now,
+        production: true
+      }
+    );
+    expect(inconsistentResult.issueCodes).toContain(
+      "neural-post-export-memory.consistency-invalid:Mac-arm64"
+    );
+  });
+
+  it("accepts the inclusive 128 MiB boundary and rejects summary mismatch", () => {
+    const boundary = memoryEvidence(128 * 1024 * 1024);
+    const device = measurement("arm64", true);
+    device.memory = structuredClone(boundary);
+    expect(validateNeuralDeviceMeasurements([device], {
+      manifest,
+      memoryEvidence: boundary,
+      now,
+      production: true
+    }).valid).toBe(true);
+
+    const mismatchedSummary = memoryEvidence(120 * 1024 * 1024);
+    const mismatch = validateNeuralDeviceMeasurements([device], {
+      manifest,
+      memoryEvidence: mismatchedSummary,
+      now,
+      production: true
+    });
+    expect(mismatch.issueCodes).toContain(
+      "neural-device-measurements.memory-mismatch:Mac-arm64"
+    );
+  });
+
+  it("retains explicit development compatibility without memory evidence", () => {
+    const device = measurement("arm64", true);
+    delete device.memory;
+    expect(validateNeuralDeviceMeasurements([device], {
+      manifest,
+      now,
+      production: false
+    }).valid).toBe(true);
   });
 });

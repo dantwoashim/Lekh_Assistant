@@ -38,6 +38,9 @@ import {
 import {
   hasCTCCoreMLParityEvidence
 } from "./neural-ctc-coreml-parity-contract.mjs";
+import {
+  validateNeuralPostExportMemoryEvidence
+} from "./neural-post-export-memory-evidence.mjs";
 
 export const NEURAL_PRODUCTION_PROMOTION_RECEIPT_SCHEMA_VERSION = 3;
 
@@ -1108,24 +1111,47 @@ function productionPerformanceFromBenchmark(benchmarkReport) {
   if (!Array.isArray(sourceDevices) || sourceDevices.length < 1) {
     fail("Benchmark report does not contain device measurements.");
   }
+  const memory = structuredClone(benchmarkReport.memory);
+  const memoryValidation =
+    validateNeuralPostExportMemoryEvidence(memory);
+  if (!memoryValidation.valid) {
+    fail(
+      `Retained benchmark process-memory evidence is invalid: ` +
+      `${memoryValidation.issueCodes.join(", ")}.`
+    );
+  }
   return {
     p50Ms: source.p50Ms,
     p95Ms: source.p95Ms,
     p99Ms: source.p99Ms,
     targetP99Ms: 50,
     measuredOnDevice: true,
-    devices: sourceDevices.map((device) => ({
-      name: device?.name,
-      macOS: device?.macOS,
-      architecture: device?.architecture,
-      packagedApp: device?.packagedApp,
-      secureFieldInferenceCount: device?.secureFieldInferenceCount,
-      p50Ms: device?.p50Ms,
-      p95Ms: device?.p95Ms,
-      p99Ms: device?.p99Ms,
-      artifact: device?.artifact,
-      measurementKind: device?.measurementKind
-    }))
+    memory,
+    devices: sourceDevices.map((device) => {
+      const deviceMemory = structuredClone(device?.memory);
+      const deviceMemoryValidation =
+        validateNeuralPostExportMemoryEvidence(deviceMemory);
+      if (!deviceMemoryValidation.valid ||
+          canonicalJson(deviceMemory) !== canonicalJson(memory)) {
+        fail(
+          "Retained benchmark device memory does not match its " +
+          "process-memory summary."
+        );
+      }
+      return {
+        name: device?.name,
+        macOS: device?.macOS,
+        architecture: device?.architecture,
+        packagedApp: device?.packagedApp,
+        secureFieldInferenceCount: device?.secureFieldInferenceCount,
+        p50Ms: device?.p50Ms,
+        p95Ms: device?.p95Ms,
+        p99Ms: device?.p99Ms,
+        artifact: device?.artifact,
+        measurementKind: device?.measurementKind,
+        memory: deviceMemory
+      };
+    })
   };
 }
 

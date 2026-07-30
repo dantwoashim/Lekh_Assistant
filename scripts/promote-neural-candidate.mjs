@@ -39,6 +39,9 @@ import {
   validateNeuralDeviceMeasurements
 } from "./lib/neural-device-measurements.mjs";
 import {
+  validateNeuralPostExportMemoryEvidence
+} from "./lib/neural-post-export-memory-evidence.mjs";
+import {
   validateNeuralSelectionReport
 } from "./lib/neural-model-selection.mjs";
 import {
@@ -1487,6 +1490,7 @@ function verifyPackagedBenchmarkEvidence({
   }
   const deviceValidation = validateNeuralDeviceMeasurements(devices, {
     artifactDescriptor,
+    memoryEvidence: benchmarkReport.memory,
     production: true
   });
   if (!deviceValidation.valid ||
@@ -1834,6 +1838,15 @@ function productionPerformanceFromBenchmark(benchmarkReport) {
   if (!Array.isArray(sourceDevices) || sourceDevices.length < 1) {
     fail("Benchmark report does not contain device measurements.");
   }
+  const memory = structuredClone(benchmarkReport.memory);
+  const memoryValidation =
+    validateNeuralPostExportMemoryEvidence(memory);
+  if (!memoryValidation.valid) {
+    fail(
+      `Benchmark process-memory evidence is invalid: ` +
+      `${memoryValidation.issueCodes.join(", ")}.`
+    );
+  }
   const devices = sourceDevices.map((device) => {
     const normalized = {
       name: device?.name,
@@ -1845,7 +1858,8 @@ function productionPerformanceFromBenchmark(benchmarkReport) {
       p95Ms: device?.p95Ms,
       p99Ms: device?.p99Ms,
       artifact: device?.artifact,
-      measurementKind: device?.measurementKind
+      measurementKind: device?.measurementKind,
+      memory: structuredClone(device?.memory)
     };
     if (typeof normalized.name !== "string" || normalized.name.length === 0 ||
         typeof normalized.macOS !== "string" || normalized.macOS.length === 0 ||
@@ -1858,7 +1872,9 @@ function productionPerformanceFromBenchmark(benchmarkReport) {
           Number.isFinite(value) && value >= 0 && value < 50
         ) ||
         normalized.p50Ms > normalized.p95Ms ||
-        normalized.p95Ms > normalized.p99Ms) {
+        normalized.p95Ms > normalized.p99Ms ||
+        !validateNeuralPostExportMemoryEvidence(normalized.memory).valid ||
+        canonicalJson(normalized.memory) !== canonicalJson(memory)) {
       fail("Benchmark contains a device row that cannot enter the production manifest.");
     }
     return normalized;
@@ -1872,6 +1888,7 @@ function productionPerformanceFromBenchmark(benchmarkReport) {
     p99Ms,
     targetP99Ms: 50,
     measuredOnDevice: true,
+    memory,
     devices
   };
 }
