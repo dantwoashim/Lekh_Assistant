@@ -125,6 +125,16 @@ npm run neural:remote:bundle -- \
   --config data/neural/training/open-vocab-ctc-transformer-v2.config.json
 ```
 
+If Colab is unavailable, generate the checksum-pinned Kaggle notebook from the
+same bundle report. Kaggle must begin a fresh run and may resume only state
+created inside its own working scope; it must not import a Colab recovery:
+
+```sh
+npm run neural:remote:kaggle:notebook -- \
+  --bundle-report <bundle-report.json> \
+  --output <bundle-name>-Kaggle.ipynb
+```
+
 The remote CUDA phase is training-only. Its authenticated result must be
 imported and the Core ML phase executed separately on macOS:
 
@@ -136,7 +146,7 @@ npm run neural:remote:import -- \
   --publish
 
 npm run neural:remote:export -- \
-  --config data/neural/training/open-vocab-bigru-attention-v1.config.json
+  --config data/neural/training/open-vocab-ctc-transformer-v2.config.json
 ```
 
 Each successful run produces one immutable candidate root containing the

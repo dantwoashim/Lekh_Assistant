@@ -4,9 +4,9 @@ Status: production-candidate workflow.
 
 This workflow moves sustained PyTorch training off the Mac without changing
 the model, dataset, seed, training contract, or qualification gates. A
-checksum-pinned Google Colab notebook trains on an exact CUDA 11.8 toolchain.
-The Mac performs only bundle construction, authenticated result import, and
-the shorter Core ML conversion and parity phase.
+checksum-pinned Google Colab or Kaggle notebook trains on an exact CUDA 11.8
+toolchain. The Mac performs only bundle construction, authenticated result
+import, and the shorter Core ML conversion and parity phase.
 
 No Apple Developer ID is required. A paid Developer ID is relevant to public
 signing and notarization, not to Colab training or local Core ML conversion.
@@ -17,8 +17,9 @@ placement evidence.
 
 The 625 MB uncompressed training inventory is packaged once into an
 approximately 99 MB archive. All epoch-sized forward passes, backpropagation,
-optimizer steps, and CUDA tensor work happen in Colab. The Mac later loads the
-returned checkpoint on CPU and performs a bounded Core ML export.
+optimizer steps, and CUDA tensor work happen on the selected remote GPU. The
+Mac later loads the returned checkpoint on CPU and performs a bounded Core ML
+export.
 
 Each completed epoch is mirrored to
 `MyDrive/Lekh-Neural-Training`. A disconnected Colab runtime therefore resumes
@@ -50,6 +51,12 @@ That FAQ also prohibits using multiple accounts to work around resource or
 usage restrictions. Do not switch accounts to bypass an exhausted quota.
 Wait for the quota to reset or start a separately authenticated run on another
 provider under that provider's normal terms.
+
+Kaggle documents free NVIDIA P100 access and a weekly GPU quota that is
+typically 30 hours, subject to demand:
+[Kaggle GPU usage guide](https://www.kaggle.com/docs/efficient-gpu-usage).
+The Kaggle workflow below is a new authenticated run, not a way to continue a
+Colab checkpoint on different hardware.
 
 ## 1. Build the authenticated bundle
 
@@ -96,6 +103,39 @@ imports from mutating the authenticated extraction and preserves the
 deterministic CUDA contract. Linux warnings that Core ML proxy modules are
 unavailable are expected during the training-only phase; Core ML conversion
 occurs later on macOS.
+
+### Kaggle fresh-run fallback
+
+Use this when Colab is unavailable and a normal Kaggle GPU session is
+available. Generate the notebook from the already-authenticated bundle,
+trusted report, and original Colab notebook:
+
+```sh
+npm run neural:remote:kaggle:notebook -- \
+  --bundle-report <bundle-report.json> \
+  --output <bundle-name>-Kaggle.ipynb
+```
+
+The builder re-verifies the archive, report, original notebook, and verifier
+source before writing deterministic notebook bytes. In Kaggle:
+
+1. Create a private notebook, enable **GPU** and **Internet**, and upload the
+   generated `*-Kaggle.ipynb`.
+2. Add the exact `*.tar.gz` bundle as one private notebook input. Do not add a
+   second copy with the same filename.
+3. Run the four code cells in order. The first invocation starts from epoch
+   zero; later invocations may resume only recovery written under the
+   notebook's dedicated `/kaggle/working/Lekh-Neural-Training-Kaggle` scope.
+4. Download the verified result archive and `LATEST_RESULT.json` from the
+   notebook output.
+
+The Kaggle notebook deliberately cannot import the epoch-six Colab recovery.
+PyTorch does not promise identical results across platforms or hardware, so a
+cross-provider resume would weaken the authenticated run contract:
+[PyTorch reproducibility notes](https://docs.pytorch.org/docs/stable/notes/randomness.html).
+The notebook pins a managed Python 3.11.15 interpreter, PyTorch 2.7.0+cu118,
+CUDA 11.8, and the same closed training bundle. No Google Drive, Colab API,
+account identifier, credential, or external recovery path is embedded.
 
 ## 3. Verify and stage the remote result
 
@@ -160,8 +200,11 @@ not Neural Engine placement proof.
 - Wrong archive or modified bytes: upload verification stops before extraction.
 - Missing GPU, incomplete CUDA dependency closure, or wrong CUDA wheel:
   toolchain verification stops before training.
-- Runtime disconnect: rerun the notebook; the newest valid Drive epoch is
-  restored.
+- Colab runtime disconnect: rerun the notebook; the newest valid Drive epoch
+  is restored.
+- Kaggle runtime retry: rerun the training cell in the same working session;
+  only a valid Kaggle-local epoch can be restored. A new session starts a new
+  run.
 - Different GPU/runtime fingerprint: resume fails closed; use a compatible
   runtime or explicitly restart.
 - Corrupt result or forged metadata: local import refuses publication.
