@@ -1,6 +1,9 @@
 import {
   validateDevanagariWordSequence
 } from "./devanagari-word-sequence.mjs";
+import {
+  normalizeOfficialBenchmarkInput
+} from "./neural-official-benchmark-isolation.mjs";
 
 const BUCKETS = Object.freeze([
   "native-frequent",
@@ -72,7 +75,7 @@ export function scoreOfficialBenchmark(
         typeof row.id !== "string" ||
         row.id.length === 0 ||
         typeof row.input !== "string" ||
-        normalizedInput(row.input).length === 0 ||
+        normalizeOfficialBenchmarkInput(row.input).length === 0 ||
         !Array.isArray(row.acceptable) ||
         row.acceptable.length === 0 ||
         !BUCKETS.includes(row.benchmarkBucket)) {
@@ -83,7 +86,8 @@ export function scoreOfficialBenchmark(
       issues.push(`official-benchmark.id-duplicate:${row.id}`);
       continue;
     }
-    const inputIdentity = normalizedInput(row.input);
+    const inputIdentity =
+      normalizeOfficialBenchmarkInput(row.input);
     if (benchmarkInputs.has(inputIdentity)) {
       issues.push(`official-benchmark.input-duplicate:${row.id}`);
     }
@@ -141,7 +145,10 @@ export function scoreOfficialBenchmark(
       issues.push(`official-benchmark.prediction-id-unknown:${row.id}`);
       continue;
     }
-    if (normalizedInput(row.input) !== normalizedInput(benchmark.input)) {
+    if (
+      normalizeOfficialBenchmarkInput(row.input) !==
+      normalizeOfficialBenchmarkInput(benchmark.input)
+    ) {
       issues.push(`official-benchmark.prediction-input-mismatch:${row.id}`);
     }
     if (options.allowReferenceAnnotations === true &&
@@ -326,11 +333,6 @@ function sameSet(left, right) {
 
 function normalizedText(value) {
   return typeof value === "string" ? value.normalize("NFC") : "";
-}
-
-function normalizedInput(value) {
-  return normalizedText(value).trim().toLocaleLowerCase("en-US")
-    .replace(/\s+/gu, " ");
 }
 
 function round(value) {

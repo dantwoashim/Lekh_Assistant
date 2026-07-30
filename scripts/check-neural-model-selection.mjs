@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -17,6 +18,20 @@ import {
 import {
   validateNeuralRuntimePlacementEvidence
 } from "./lib/neural-runtime-placement-evidence.mjs";
+import {
+  expectedNeuralCandidateExportStatus,
+  validateCanonicalNeuralGoldEvidence
+} from "./lib/neural-production-evidence-policy.mjs";
+import {
+  validateNeuralTrainingCandidateIdentity
+} from "./lib/neural-training-candidate-identity.mjs";
+import {
+  validateRecomputedNeuralGoldEvaluation,
+  validateRecomputedOfficialBenchmarkEvaluation
+} from "./lib/neural-metric-recomputation.mjs";
+import {
+  verifyOfficialBenchmarkTrainingIsolation
+} from "./lib/neural-official-benchmark-isolation.mjs";
 
 const ROOT = realpathSync(process.cwd());
 const startedAt = performance.now();
@@ -181,6 +196,48 @@ function buildVerifiedCandidate(specificationPath, index) {
       `Candidate ${specification.label} runtime artifact`
     );
   }
+  const checkpointEvidence = inspectBoundFile(
+    exportReport.checkpoint,
+    exportReport.checkpointSha256,
+    `Candidate ${specification.label} source checkpoint`,
+    512 * 1024 * 1024
+  );
+  assertWithin(
+    candidateRoot,
+    checkpointEvidence.path,
+    `Candidate ${specification.label} checkpoint`
+  );
+  const trainingReportEvidence = readJsonEvidence(
+    exportReport.trainingReport,
+    `Candidate ${specification.label} training report`
+  );
+  assertWithin(
+    candidateRoot,
+    trainingReportEvidence.file.path,
+    `Candidate ${specification.label} training report`
+  );
+  if (trainingReportEvidence.file.sha256 !==
+      exportReport.trainingReportSha256) {
+    fail(
+      `Candidate ${specification.label} training report bytes do not match ` +
+      "the export identity."
+    );
+  }
+  const trainingIdentityValidation =
+    validateNeuralTrainingCandidateIdentity({
+      manifest,
+      exportReport,
+      trainingReport: trainingReportEvidence.value,
+      checkpointSha256: checkpointEvidence.sha256,
+      trainingReportSha256: trainingReportEvidence.file.sha256
+    });
+  if (!trainingIdentityValidation.valid) {
+    fail(
+      `Candidate ${specification.label} training identity is invalid: ` +
+      `${trainingIdentityValidation.issueCodes.join(", ")}.`
+    );
+  }
+  const trainingIdentity = trainingIdentityValidation.identity;
 
   validateCandidateManifest(manifest, specification.label);
   validateExportReport({
@@ -211,6 +268,7 @@ function buildVerifiedCandidate(specificationPath, index) {
     label: specification.label,
     manifest,
     manifestEvidence: manifestEvidence.file,
+    exportEvidence: exportEvidence.file,
     exportReport,
     comparison,
     descriptor
@@ -225,10 +283,21 @@ function buildVerifiedCandidate(specificationPath, index) {
     datasetManifestEvidence,
     `Candidate ${specification.label} dataset manifest`
   );
+  const datasetSnapshot = exportReport.runInputSnapshot?.dataset;
   if (datasetManifest.datasetContentSha256 !==
-      evaluation.datasetContentSha256) {
+        evaluation.datasetContentSha256 ||
+      manifest.sha256?.trainingDatasetManifest !==
+        datasetManifestEvidence.sha256 ||
+      containedPath(
+        datasetSnapshot?.manifest,
+        `Candidate ${specification.label} dataset snapshot manifest`
+      ) !== datasetManifestEvidence.path ||
+      datasetSnapshot?.manifestSha256 !== datasetManifestEvidence.sha256 ||
+      datasetSnapshot?.contentSha256 !==
+        datasetManifest.datasetContentSha256) {
     fail(
-      `Candidate ${specification.label} dataset content identity is inconsistent.`
+      `Candidate ${specification.label} dataset identity is inconsistent with ` +
+      "the immutable training-run snapshot."
     );
   }
   const goldManifestEvidence = inspectBoundFile(
@@ -240,9 +309,89 @@ function buildVerifiedCandidate(specificationPath, index) {
     goldManifestEvidence,
     `Candidate ${specification.label} gold manifest`
   );
+  if (Object.prototype.hasOwnProperty.call(
+    exportReport.artifactOverrides ?? {},
+    "goldManifest"
+  )) {
+    fail(
+      `Candidate ${specification.label} does not use the canonical production ` +
+      "gold corpus: neural-production.gold-manifest-override-forbidden."
+    );
+  }
+  if (production) {
+    const canonicalGold = validateCanonicalNeuralGoldEvidence({
+      repoRoot: ROOT,
+      manifestPath: goldManifestEvidence.path,
+      manifestSha256: goldManifestEvidence.sha256,
+      corpusSha256: goldManifest.corpusSha256,
+      artifactOverrides: exportReport.artifactOverrides
+    });
+    if (!canonicalGold.valid) {
+      fail(
+        `Candidate ${specification.label} does not use the canonical production ` +
+        `gold corpus: ${canonicalGold.issueCodes.join(", ")}.`
+      );
+    }
+  }
   if (goldManifest.corpusSha256 !== evaluation.goldCorpusSha256) {
     fail(
       `Candidate ${specification.label} gold corpus identity is inconsistent.`
+    );
+  }
+  const goldRows = loadLockedEvaluationRows({
+    manifest: goldManifest,
+    label: `Candidate ${specification.label} gold`
+  });
+  const expectedGoldSuites = lockedSuiteEvidence(goldManifest);
+  if (containedPath(
+    exportReport.goldManifest,
+    `Candidate ${specification.label} export gold manifest`
+  ) !== goldManifestEvidence.path ||
+      exportReport.goldManifestSha256 !== goldManifestEvidence.sha256 ||
+      exportReport.goldCorpusSha256 !== goldManifest.corpusSha256 ||
+      exportReport.goldRows !== goldRows.length ||
+      !deepEqual(exportReport.goldSuites, expectedGoldSuites)) {
+    fail(
+      `Candidate ${specification.label} gold corpus is not the exact locked ` +
+      "corpus bound by the candidate export."
+    );
+  }
+  const goldPredictionsEvidence = inspectBoundFile(
+    evaluation.predictions,
+    evaluation.predictionsSha256,
+    `Candidate ${specification.label} gold predictions`
+  );
+  assertWithin(
+    candidateRoot,
+    goldPredictionsEvidence.path,
+    `Candidate ${specification.label} gold predictions`
+  );
+  const expectedPredictionsBackend = neuralRuntimeContractMetadata(
+    descriptor.runtimeModelContract
+  ).predictionsBackend;
+  if (containedPath(
+    exportReport.predictions,
+    `Candidate ${specification.label} export gold predictions`
+  ) !== goldPredictionsEvidence.path ||
+      exportReport.predictionsSha256 !== goldPredictionsEvidence.sha256 ||
+      exportReport.predictionsBackend !== expectedPredictionsBackend) {
+    fail(
+      `Candidate ${specification.label} gold predictions are not the exact ` +
+      "compiled-artifact output bound by the candidate export."
+    );
+  }
+  const goldMetricReplay = validateRecomputedNeuralGoldEvaluation({
+    report: evaluation,
+    goldRows,
+    predictionRows: parseJsonLineObjects(
+      goldPredictionsEvidence.contents,
+      `Candidate ${specification.label} gold predictions`
+    )
+  });
+  if (!goldMetricReplay.valid) {
+    fail(
+      `Candidate ${specification.label} gold metrics do not match independent ` +
+      `recomputation: ${goldMetricReplay.issueCodes.join(", ")}.`
     );
   }
   const benchmarkManifestEvidence = inspectBoundFile(
@@ -260,11 +409,139 @@ function buildVerifiedCandidate(specificationPath, index) {
       "inconsistent."
     );
   }
+  const benchmarkRows = loadLockedEvaluationRows({
+    manifest: benchmarkManifest,
+    label: `Candidate ${specification.label} official benchmark`
+  });
   const comparisonPredictionsEvidence = inspectBoundFile(
     comparison.predictions,
     comparison.predictionsSha256,
     `Candidate ${specification.label} official benchmark predictions`
   );
+  assertWithin(
+    candidateRoot,
+    comparisonPredictionsEvidence.path,
+    `Candidate ${specification.label} official benchmark predictions`
+  );
+  const expectedOfficialSuites = lockedSuiteEvidence(benchmarkManifest);
+  const expectedPredictionArtifactIdentity =
+    compiledPredictionArtifactIdentity(descriptor);
+  const comparisonBinding = exportReport.comparisonBenchmark;
+  const isolationReplay = verifyOfficialBenchmarkTrainingIsolation({
+    repoRoot: ROOT,
+    datasetManifestPath: datasetManifestEvidence.path,
+    expectedDatasetManifestSha256: datasetManifestEvidence.sha256,
+    officialRows: benchmarkRows
+  });
+  if (!isolationReplay.valid ||
+      !isolationReplay.evidence ||
+      !deepEqual(
+        comparison.benchmarkIsolation,
+        isolationReplay.evidence
+      ) ||
+      !deepEqual(
+        datasetSnapshot?.splits,
+        isolationReplay.comparedSplits
+      )) {
+    fail(
+      `Candidate ${specification.label} official benchmark isolation does not ` +
+      "match an independent rescan of the exact train/dev split bytes: " +
+      `${isolationReplay.issueCodes.join(", ")}.`
+    );
+  }
+  const expectedOfficialSnapshot = {
+    manifest: portable(benchmarkManifestEvidence.path),
+    manifestSha256: benchmarkManifestEvidence.sha256,
+    corpusSha256: benchmarkManifest.corpusSha256,
+    suites: expectedOfficialSuites,
+    rows: benchmarkRows.length,
+    trainingIsolation: isolationReplay.evidence
+  };
+  if (!comparisonBinding ||
+      containedPath(
+        comparisonBinding.manifest,
+        `Candidate ${specification.label} export official manifest`
+      ) !== benchmarkManifestEvidence.path ||
+      comparisonBinding.manifestSha256 !== benchmarkManifestEvidence.sha256 ||
+      comparisonBinding.corpusSha256 !== benchmarkManifest.corpusSha256 ||
+      comparisonBinding.rows !== benchmarkRows.length ||
+      !deepEqual(comparisonBinding.suites, expectedOfficialSuites) ||
+      containedPath(
+        comparisonBinding.predictions,
+        `Candidate ${specification.label} export official predictions`
+      ) !== comparisonPredictionsEvidence.path ||
+      comparisonBinding.predictionsSha256 !==
+        comparisonPredictionsEvidence.sha256 ||
+      comparisonBinding.predictionsBackend !== expectedPredictionsBackend ||
+      !deepEqual(
+        comparisonBinding.predictionArtifactIdentity,
+        expectedPredictionArtifactIdentity
+      ) ||
+      !deepEqual(
+        exportReport.runInputSnapshot?.officialBenchmark,
+        expectedOfficialSnapshot
+      )) {
+    fail(
+      `Candidate ${specification.label} official benchmark evidence is not ` +
+      "the exact locked corpus and compiled-artifact output bound by the export."
+    );
+  }
+  const referenceManifestEvidence = readJsonEvidence(
+    comparison.reference.manifest,
+    `Candidate ${specification.label} reference manifest`
+  );
+  if (referenceManifestEvidence.file.path !==
+        resolve(ROOT, CANONICAL_REFERENCE_MANIFEST) ||
+      referenceManifestEvidence.file.sha256 !==
+        CANONICAL_REFERENCE_MANIFEST_SHA256 ||
+      referenceManifestEvidence.file.sha256 !==
+        comparison.reference.manifestSha256) {
+    fail(
+      `Candidate ${specification.label} reference manifest is not the locked ` +
+      "canonical release."
+    );
+  }
+  const referencePredictionArtifact =
+    referenceManifestEvidence.value.predictionArtifact;
+  const referencePredictionsEvidence = inspectBoundFile(
+    referencePredictionArtifact?.path,
+    referencePredictionArtifact?.sha256,
+    `Candidate ${specification.label} reference predictions`
+  );
+  if (referencePredictionsEvidence.bytes !==
+      referencePredictionArtifact?.bytes) {
+    fail(
+      `Candidate ${specification.label} reference prediction byte count is stale.`
+    );
+  }
+  if (referencePredictionArtifact?.rows !== benchmarkRows.length ||
+      resolve(ROOT, comparison.reference?.predictions ?? "") !==
+        referencePredictionsEvidence.path ||
+      comparison.reference?.predictionsSha256 !==
+        referencePredictionsEvidence.sha256) {
+    fail(
+      `Candidate ${specification.label} reference prediction identity is stale.`
+    );
+  }
+  const officialMetricReplay =
+    validateRecomputedOfficialBenchmarkEvaluation({
+      report: comparison,
+      benchmarkRows,
+      candidatePredictionRows: parseJsonLineObjects(
+        comparisonPredictionsEvidence.contents,
+        `Candidate ${specification.label} official benchmark predictions`
+      ),
+      referencePredictionRows: parseJsonLineObjects(
+        referencePredictionsEvidence.contents,
+        `Candidate ${specification.label} reference predictions`
+      )
+    });
+  if (!officialMetricReplay.valid) {
+    fail(
+      `Candidate ${specification.label} official metrics do not match ` +
+      `independent recomputation: ${officialMetricReplay.issueCodes.join(", ")}.`
+    );
+  }
 
   const trainingRunId = requireRunId(
     manifest.trainingRunId,
@@ -283,6 +560,11 @@ function buildVerifiedCandidate(specificationPath, index) {
     identity: {
       trainingRunId,
       exportRunId,
+      sourceCheckpointSha256: trainingIdentity.sourceCheckpointSha256,
+      trainingReportSha256: trainingIdentity.trainingReportSha256,
+      effectiveTrainingConfigSha256:
+        trainingIdentity.effectiveTrainingConfigSha256,
+      trainingSeed: trainingIdentity.trainingSeed,
       manifestSha256: manifestEvidence.file.sha256,
       exportReportSha256: exportEvidence.file.sha256,
       vocabSha256: vocabularyEvidence.sha256,
@@ -292,6 +574,8 @@ function buildVerifiedCandidate(specificationPath, index) {
       specification: evidenceRecord(specificationEvidence.file),
       manifest: evidenceRecord(manifestEvidence.file),
       exportReport: evidenceRecord(exportEvidence.file),
+      checkpoint: evidenceRecord(checkpointEvidence),
+      trainingReport: evidenceRecord(trainingReportEvidence.file),
       evaluationReport: evidenceRecord(evaluationEvidence.file),
       datasetManifest: evidenceRecord(datasetManifestEvidence),
       goldManifest: evidenceRecord(goldManifestEvidence),
@@ -370,7 +654,10 @@ function validateExportReport({
   exportReportPath,
   descriptor
 }) {
-  if (!String(exportReport.status ?? "").startsWith("passed-") ||
+  const expectedStatus = expectedNeuralCandidateExportStatus(manifest);
+  if ((production
+        ? expectedStatus === null || exportReport.status !== expectedStatus
+        : !String(exportReport.status ?? "").startsWith("passed-")) ||
       exportReport.productionEligible !== false ||
       exportReport.coremlExport?.status !== "passed" ||
       !Array.isArray(exportReport.runtimeArtifactContractIssues) ||
@@ -423,8 +710,15 @@ function validateEvaluationReport({
       evaluation.exportReportSha256 !== exportEvidence.sha256) {
     fail(`Candidate ${label} gold evaluation is not bound to this exact export.`);
   }
-  if (evaluation.artifactIdentity?.manifestSha256 !== manifestEvidence.sha256 ||
-      evaluation.artifactIdentity?.vocabSha256 !== descriptor.vocabSha256) {
+  const expectedArtifactIdentity = {
+    trainingRunId: manifest.trainingRunId,
+    exportRunId: manifest.exportRunId,
+    manifestSha256: manifestEvidence.sha256,
+    vocabSha256: descriptor.vocabSha256,
+    compiledModelSha256: manifest.sha256?.compiledModel ?? null,
+    compiledModels: manifest.sha256?.compiledModels ?? null
+  };
+  if (!deepEqual(evaluation.artifactIdentity, expectedArtifactIdentity)) {
     fail(`Candidate ${label} gold evaluation has a stale artifact identity.`);
   }
   for (const field of [
@@ -455,15 +749,21 @@ function validateBenchmarkReport({
 }) {
   const runtimePlacement = validateNeuralRuntimePlacementEvidence(
     benchmark.computePlacement?.runtimePlacement,
-    { artifactDescriptor: descriptor }
+    {
+      artifactDescriptor: descriptor,
+      requireTraceProvenance: production
+    }
   );
+  const runtimePlacementAccepted = production
+    ? runtimePlacement.neuralEngineClaimAllowed === true
+    : runtimePlacement.valid === true;
   if (benchmark.status !== "passed-candidate-promotion-evidence" ||
       benchmark.proofMode !== "candidate-promotion" ||
       benchmark.singleForwardBenchmarkIsConsumerLatency !== false ||
       !Array.isArray(benchmark.failures) ||
       benchmark.failures.length !== 0 ||
       benchmark.computePlacement?.neuralEngineClaimAllowed !== true ||
-      runtimePlacement.neuralEngineClaimAllowed !== true ||
+      !runtimePlacementAccepted ||
       !benchmark.computePlacement?.architectures?.includes("arm64")) {
     fail(
       `Candidate ${label} has not passed the packaged Apple Silicon Neural ` +
@@ -489,6 +789,7 @@ function validateComparisonReport({
   label,
   manifest,
   manifestEvidence,
+  exportEvidence,
   exportReport,
   comparison,
   descriptor
@@ -505,11 +806,20 @@ function validateComparisonReport({
     );
   }
   assertRunIdentity(label, manifest, comparison, "official benchmark");
+  const expectedArtifactIdentity = {
+    trainingRunId: manifest.trainingRunId,
+    exportRunId: manifest.exportRunId,
+    manifestSha256: manifestEvidence.sha256,
+    vocabSha256: descriptor.vocabSha256,
+    artifactSetSha256: descriptor.artifactSetSha256
+  };
   if (comparison.candidateManifestSha256 !== manifestEvidence.sha256 ||
-      comparison.artifactIdentity?.manifestSha256 !== manifestEvidence.sha256 ||
-      comparison.artifactIdentity?.vocabSha256 !== descriptor.vocabSha256 ||
-      comparison.artifactIdentity?.artifactSetSha256 !==
-        descriptor.artifactSetSha256) {
+      comparison.exportReportSha256 !== exportEvidence.sha256 ||
+      containedPath(
+        comparison.exportReport,
+        `Candidate ${label} official benchmark export report`
+      ) !== exportEvidence.path ||
+      !deepEqual(comparison.artifactIdentity, expectedArtifactIdentity)) {
     fail(`Candidate ${label} official benchmark identity is stale.`);
   }
   if (comparison.benchmarkManifest !==
@@ -527,19 +837,8 @@ function validateComparisonReport({
   const expectedBackend = neuralRuntimeContractMetadata(
     descriptor.runtimeModelContract
   ).predictionsBackend;
-  const expectedPredictionArtifactIdentity = {
-    runtimeModelContract: descriptor.runtimeModelContract,
-    compiledArtifacts: Object.fromEntries(
-      descriptor.artifacts.map((artifact) => [
-        artifact.role,
-        {
-          path: portable(artifact.sourcePath),
-          sha256: artifact.compiledSha256,
-          bytes: artifact.compiledBytes
-        }
-      ])
-    )
-  };
+  const expectedPredictionArtifactIdentity =
+    compiledPredictionArtifactIdentity(descriptor);
   if (comparison.predictionsBackend !== expectedBackend ||
       !deepEqual(
         comparison.predictionArtifactIdentity,
@@ -641,6 +940,34 @@ function validateMetricBucket(value, label) {
     fail(`${label} counts and rates are inconsistent.`);
   }
   return value;
+}
+
+function lockedSuiteEvidence(manifest) {
+  return manifest.suites.map((suite) => ({
+    id: suite.id,
+    path: suite.path,
+    sha256: suite.sha256,
+    rows: suite.rows,
+    ...(suite.benchmarkBucket === undefined
+      ? {}
+      : { benchmarkBucket: suite.benchmarkBucket })
+  }));
+}
+
+function compiledPredictionArtifactIdentity(descriptor) {
+  return {
+    runtimeModelContract: descriptor.runtimeModelContract,
+    compiledArtifacts: Object.fromEntries(
+      descriptor.artifacts.map((artifact) => [
+        artifact.role,
+        {
+          path: portable(artifact.sourcePath),
+          sha256: artifact.compiledSha256,
+          bytes: artifact.compiledBytes
+        }
+      ])
+    )
+  };
 }
 
 function runSourceLineageCompatibilityMode() {
@@ -766,7 +1093,7 @@ function parseEvidenceJson(evidence, label) {
   }
 }
 
-function inspectBoundFile(path, sha256, label) {
+function inspectBoundFile(path, sha256, label, maxBytes = 64 * 1024 * 1024) {
   requireSha256(sha256, `${label} declared SHA-256`);
   const evidence = inspectContainedRegularFile(
     ROOT,
@@ -774,13 +1101,105 @@ function inspectBoundFile(path, sha256, label) {
     {
       label,
       includeContents: true,
-      maxBytes: 64 * 1024 * 1024
+      maxBytes
     }
   );
   if (evidence.sha256 !== sha256) {
     fail(`${label} bytes do not match the declared SHA-256.`);
   }
   return evidence;
+}
+
+function loadLockedEvaluationRows({ manifest, label }) {
+  if (!Array.isArray(manifest?.suites) || manifest.suites.length < 1 ||
+      suiteCorpusSha256(manifest.suites) !== manifest.corpusSha256) {
+    fail(`${label} manifest suite inventory is stale or invalid.`);
+  }
+  const seenSuites = new Set();
+  const seenRows = new Set();
+  const rows = [];
+  for (const suite of manifest.suites) {
+    if (!suite || typeof suite !== "object" ||
+        typeof suite.id !== "string" || suite.id.length === 0 ||
+        seenSuites.has(suite.id) ||
+        typeof suite.path !== "string" || suite.path.length === 0 ||
+        isAbsolute(suite.path) ||
+        suite.path.split(/[\\/]/u).includes("..") ||
+        !Number.isSafeInteger(suite.rows) || suite.rows < 1) {
+      fail(`${label} manifest contains an invalid suite record.`);
+    }
+    seenSuites.add(suite.id);
+    const evidence = inspectBoundFile(
+      suite.path,
+      suite.sha256,
+      `${label} suite ${suite.id}`
+    );
+    const suiteRows = parseJsonLineObjects(
+      evidence.contents,
+      `${label} suite ${suite.id}`
+    );
+    if (suiteRows.length !== suite.rows) {
+      fail(`${label} suite ${suite.id} row count is stale.`);
+    }
+    for (const row of suiteRows) {
+      if (typeof row.id !== "string" || row.id.length === 0 ||
+          seenRows.has(row.id) ||
+          typeof row.input !== "string" || row.input.length === 0) {
+        fail(`${label} contains an invalid or duplicate row identity.`);
+      }
+      seenRows.add(row.id);
+      rows.push({
+        ...row,
+        suiteId: suite.id,
+        suitePath: suite.path,
+        ...(suite.benchmarkBucket === undefined
+          ? {}
+          : { benchmarkBucket: suite.benchmarkBucket })
+      });
+    }
+  }
+  return rows;
+}
+
+function parseJsonLineObjects(contents, label) {
+  const text = contents.toString("utf8");
+  if (!text.endsWith("\n")) {
+    fail(`${label} must end with a newline.`);
+  }
+  const lines = text.slice(0, -1).split("\n");
+  if (lines.length === 0 || lines.some((line) => line.length === 0)) {
+    fail(`${label} contains empty or missing rows.`);
+  }
+  return lines.map((line, index) => {
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch (error) {
+      fail(
+        `${label} row ${index + 1} is invalid JSON: ${errorMessage(error)}`
+      );
+    }
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      fail(`${label} row ${index + 1} must be an object.`);
+    }
+    return row;
+  });
+}
+
+function suiteCorpusSha256(suites) {
+  const hash = createHash("sha256");
+  for (const suite of suites) {
+    for (const [value, terminator] of [
+      [suite?.id, "\0"],
+      [suite?.path, "\0"],
+      [suite?.sha256, "\0"],
+      [suite?.rows, "\n"]
+    ]) {
+      hash.update(String(value));
+      hash.update(terminator);
+    }
+  }
+  return hash.digest("hex");
 }
 
 function assertRunIdentity(label, manifest, report, reportLabel) {

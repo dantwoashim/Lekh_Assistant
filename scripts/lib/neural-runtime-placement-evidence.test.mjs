@@ -1,10 +1,25 @@
+import { createHash } from "node:crypto";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  inspectContainedDirectoryTree
+} from "./neural-artifact-filesystem.mjs";
 import {
   NEURAL_RUNTIME_PLACEMENT_WORKLOAD_CONTRACT,
   NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY,
   validateNeuralPlacementCaptureReport,
   validateNeuralRuntimePlacementEvidence
 } from "./neural-runtime-placement-evidence.mjs";
+import {
+  inspectNeuralRuntimeTraceProvenance
+} from "./neural-runtime-trace-provenance.mjs";
 
 describe("observed Neural Engine runtime placement evidence", () => {
   it("keeps placement capture at exactly one plus eight passes", () => {
@@ -22,7 +37,7 @@ describe("observed Neural Engine runtime placement evidence", () => {
     ).toBe(40);
   });
 
-  it("accepts an exact split-artifact Instruments trace summary", () => {
+  it("rejects a hand-authored Instruments trace summary without provenance", () => {
     const descriptor = splitDescriptor();
     const result = validateNeuralRuntimePlacementEvidence(
       evidence(descriptor),
@@ -32,10 +47,49 @@ describe("observed Neural Engine runtime placement evidence", () => {
       }
     );
 
-    expect(result).toEqual({
-      valid: true,
-      issueCodes: [],
-      neuralEngineClaimAllowed: true
+    expect(result.valid).toBe(false);
+    expect(result.neuralEngineClaimAllowed).toBe(false);
+    expect(result.issueCodes).toEqual([
+      "neural-runtime-placement.provenance-unverified"
+    ]);
+  });
+
+  it("binds safe raw artifacts but fails closed pending schema derivation", () => {
+    withTraceFixture(({ root, traceDirectory, traceExport }) => {
+      const descriptor = splitDescriptor();
+      const value = evidence(descriptor);
+      const traceSha256 = inspectContainedDirectoryTree(
+        root,
+        traceDirectory
+      ).sha256;
+      const traceExportBytes = Buffer.from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+        "<trace-query-result/>"
+      );
+      const traceExportSha256 = createHash("sha256")
+        .update(traceExportBytes)
+        .digest("hex");
+      value.capture.traceSha256 = traceSha256;
+      value.capture.traceExportSha256 = traceExportSha256;
+      const traceProvenance = inspectNeuralRuntimeTraceProvenance({
+        repoRoot: root,
+        traceDirectory,
+        traceExport,
+        expectedTraceSha256: traceSha256,
+        expectedTraceExportSha256: traceExportSha256
+      });
+
+      const result = validateNeuralRuntimePlacementEvidence(value, {
+        artifactDescriptor: descriptor,
+        now: new Date("2026-07-29T00:00:00Z"),
+        traceProvenance
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.neuralEngineClaimAllowed).toBe(false);
+      expect(result.issueCodes).toEqual([
+        "neural-runtime-placement.semantic-correlation-unverified"
+      ]);
     });
   });
 
@@ -136,7 +190,7 @@ describe("observed Neural Engine runtime placement evidence", () => {
     });
   }
 
-  it("accepts the single-model role branch", () => {
+  it("validates the single-model role branch before provenance closes it", () => {
     const descriptor = {
       manifestSha256: "1".repeat(64),
       vocabSha256: "2".repeat(64),
@@ -148,13 +202,17 @@ describe("observed Neural Engine runtime placement evidence", () => {
         compiledSha256: "4".repeat(64)
       }]
     };
-    expect(validateNeuralRuntimePlacementEvidence(
+    const result = validateNeuralRuntimePlacementEvidence(
       evidence(descriptor),
       {
         artifactDescriptor: descriptor,
         now: new Date("2026-07-29T00:00:00Z")
       }
-    ).valid).toBe(true);
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issueCodes).toEqual([
+      "neural-runtime-placement.provenance-unverified"
+    ]);
   });
 
   it("accepts a capture report for the exact native probe schedule", () => {
@@ -326,4 +384,31 @@ function captureReport() {
       )
     )
   };
+}
+
+function withTraceFixture(callback) {
+  const parent = mkdtempSync(join(tmpdir(), "lekh-placement-evidence-"));
+  const root = join(parent, "repo");
+  const traceDirectory = join(root, "evidence", "session.trace");
+  const traceExport = join(root, "evidence", "session.xml");
+  mkdirSync(root);
+  writeFixtureFile(
+    join(traceDirectory, "Data", "events.bin"),
+    "events"
+  );
+  writeFixtureFile(
+    traceExport,
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+      "<trace-query-result/>"
+  );
+  try {
+    callback({ root, traceDirectory, traceExport });
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+}
+
+function writeFixtureFile(path, contents) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, contents);
 }

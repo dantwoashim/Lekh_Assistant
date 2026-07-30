@@ -22,6 +22,10 @@ import {
   scoreOfficialBenchmark
 } from "./lib/neural-official-benchmark.mjs";
 import {
+  normalizeOfficialBenchmarkInput,
+  verifyOfficialBenchmarkTrainingIsolation
+} from "./lib/neural-official-benchmark-isolation.mjs";
+import {
   isCTCFinitePathDecoderPolicy
 } from "./lib/neural-ctc-finite-path-contract.mjs";
 import {
@@ -175,6 +179,24 @@ function evaluate() {
       CANONICAL_BENCHMARK_MANIFEST_SHA256) {
     fail("Canonical official benchmark manifest bytes are not the locked v1 release.");
   }
+  const datasetSnapshot = exportReport.runInputSnapshot?.dataset;
+  const recomputedIsolation =
+    verifyOfficialBenchmarkTrainingIsolation({
+      repoRoot: ROOT,
+      datasetManifestPath: datasetSnapshot?.manifest,
+      expectedDatasetManifestSha256:
+        manifest.sha256?.trainingDatasetManifest,
+      officialRows: benchmarkRows
+    });
+  if (!recomputedIsolation.valid ||
+      recomputedIsolation.overlappingInputCount !== 0 ||
+      !recomputedIsolation.evidence) {
+    fail(
+      "Official benchmark train/dev leakage recomputation failed: " +
+      recomputedIsolation.issueCodes.join(", ")
+    );
+  }
+  validateDatasetSnapshot(datasetSnapshot, recomputedIsolation);
   const predictionEvidence = readTextEvidence(
     predictionsPath,
     "Candidate official benchmark predictions",
@@ -186,7 +208,8 @@ function evaluate() {
     benchmarkManifest: benchmarkEvidence.value,
     predictionEvidence,
     benchmarkRows,
-    descriptor
+    descriptor,
+    recomputedIsolation
   });
   const predictions = parseJsonLines(
     predictionEvidence.contents,
@@ -270,8 +293,20 @@ function evaluate() {
     benchmarkManifest: portable(benchmarkManifestPath),
     benchmarkManifestSha256: benchmarkEvidence.file.sha256,
     benchmarkCorpusSha256: benchmarkEvidence.value.corpusSha256,
-    benchmarkIsolation:
-      exportReport.comparisonBenchmark.trainingIsolation,
+    benchmarkIsolation: structuredClone(
+      recomputedIsolation.evidence
+    ),
+    benchmarkIsolationVerification: {
+      recomputedFromDatasetSplits: true,
+      normalizationPolicy:
+        recomputedIsolation.normalizationPolicy,
+      datasetManifest: structuredClone(
+        recomputedIsolation.datasetManifest
+      ),
+      comparedSplits: structuredClone(
+        recomputedIsolation.comparedSplits
+      )
+    },
     predictions: portable(predictionsPath),
     predictionsSha256: predictionEvidence.sha256,
     predictionsBackend:
@@ -367,7 +402,8 @@ function validateCandidateComparisonBinding({
   benchmarkManifest,
   predictionEvidence,
   benchmarkRows,
-  descriptor
+  descriptor,
+  recomputedIsolation
 }) {
   const binding = exportReport.comparisonBenchmark;
   if (!binding || typeof binding !== "object" || Array.isArray(binding)) {
@@ -400,15 +436,7 @@ function validateCandidateComparisonBinding({
   const isolation = binding.trainingIsolation;
   const snapshot = exportReport.runInputSnapshot;
   const snapshotOfficial = snapshot?.officialBenchmark;
-  const expectedIsolation = {
-    policy: "official-benchmark-inputs-absent-from-train-and-dev-v1",
-    benchmarkInputSha256: officialBenchmarkInputSha256(benchmarkRows),
-    comparedSplitSha256: {
-      train: snapshot?.dataset?.splits?.train?.sha256,
-      dev: snapshot?.dataset?.splits?.dev?.sha256
-    },
-    overlappingInputCount: 0
-  };
+  const expectedIsolation = recomputedIsolation.evidence;
   const expectedSnapshotOfficial = {
     manifest: portable(benchmarkEvidence.path),
     manifestSha256: benchmarkEvidence.sha256,
@@ -452,6 +480,31 @@ function validateCandidateComparisonBinding({
       "Official predictions are not bound to the exact compiled candidate " +
       "artifact set."
     );
+  }
+}
+
+function validateDatasetSnapshot(snapshot, recomputedIsolation) {
+  const expectedManifest = recomputedIsolation.datasetManifest;
+  const expectedSplits = recomputedIsolation.comparedSplits;
+  if (!isRecord(snapshot) ||
+      !expectedManifest ||
+      resolve(ROOT, String(snapshot.manifest ?? "")) !==
+        resolve(ROOT, expectedManifest.path) ||
+      snapshot.manifestSha256 !== expectedManifest.sha256 ||
+      snapshot.contentSha256 !== expectedManifest.contentSha256 ||
+      !isRecord(snapshot.splits)) {
+    fail(
+      "Candidate export dataset snapshot is stale for the independently " +
+      "verified dataset manifest."
+    );
+  }
+  for (const split of ["train", "dev"]) {
+    if (!deepEqual(snapshot.splits[split], expectedSplits[split])) {
+      fail(
+        `Candidate export dataset ${split} snapshot is stale for the ` +
+        "independently verified split bytes."
+      );
+    }
   }
 }
 
@@ -523,7 +576,8 @@ function loadBenchmarkRows(manifest, manifestEvidence) {
       fail(`Official benchmark suite ${suite.id} row count changed.`);
     }
     for (const row of suiteRows) {
-      const inputIdentity = normalizedInput(row?.input);
+      const inputIdentity =
+        normalizeOfficialBenchmarkInput(row?.input);
       if (!isRecord(row) || typeof row.id !== "string" || row.id.length === 0 ||
           rowIds.has(row.id) || inputIdentity.length === 0 ||
           normalizedInputs.has(inputIdentity)) {
@@ -600,24 +654,6 @@ function benchmarkCorpusSha256(suites) {
     }
   }
   return hash.digest("hex");
-}
-
-function officialBenchmarkInputSha256(rows) {
-  const hash = createHash("sha256");
-  for (const row of rows) {
-    hash.update(String(row.id));
-    hash.update("\0");
-    hash.update(normalizedInput(row.input));
-    hash.update("\n");
-  }
-  return hash.digest("hex");
-}
-
-function normalizedInput(value) {
-  return typeof value === "string"
-    ? value.normalize("NFC").trim().toLocaleLowerCase("en-US")
-      .replace(/\s+/gu, " ")
-    : "";
 }
 
 function deepEqual(left, right) {

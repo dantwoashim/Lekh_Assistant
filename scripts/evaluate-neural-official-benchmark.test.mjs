@@ -44,6 +44,15 @@ describe("official benchmark evaluator CLI", () => {
       assert.equal(report.metrics.overall.top1Accuracy, 1);
       assert.equal(report.qualityGate.passed, true);
       assert.equal(report.artifactIdentity.artifactSetSha256.length, 64);
+      assert.equal(
+        report.benchmarkIsolationVerification
+          .recomputedFromDatasetSplits,
+        true
+      );
+      assert.equal(
+        report.benchmarkIsolationVerification.datasetManifest.sha256,
+        fixture.datasetManifestEvidence.sha256
+      );
     });
   });
 
@@ -78,6 +87,35 @@ describe("official benchmark evaluator CLI", () => {
       assert.equal(result.status, 1);
       assert.ok(readJson(fixture.report).failures.some((failure) =>
         /training-isolation proof/u.test(failure)
+      ));
+    });
+  });
+
+  it("rejects a rehashed zero-overlap claim when train bytes contain an official input", () => {
+    withFixture((fixture) => {
+      injectRehashedTrainingLeakage(fixture);
+      const result = run(fixture);
+      assert.equal(result.status, 1);
+      const report = readJson(fixture.report);
+      assert.equal(report.productionEligible, false);
+      assert.ok(report.failures.some((failure) =>
+        /leakage recomputation failed/u.test(failure) &&
+        /overlap-detected/u.test(failure)
+      ));
+    });
+  });
+
+  it("rejects train bytes changed without a matching dataset manifest", () => {
+    withFixture((fixture) => {
+      write(
+        fixture.trainSplit,
+        `${readFileSync(fixture.trainSplit, "utf8")}` +
+          `${JSON.stringify(datasetRow("train", "tampered"))}\n`
+      );
+      const result = run(fixture);
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /split-identity-invalid:train/u.test(failure)
       ));
     });
   });
@@ -154,6 +192,15 @@ function buildFixture(root) {
   const compiled = join(candidate, "LekhNeuralTransliterator.mlmodelc");
   const predictions = join(candidate, "official-predictions.jsonl");
   const exportReport = join(candidate, "export-report.json");
+  const datasetRoot = join(
+    root,
+    "data",
+    "generated",
+    "neural-open-vocab"
+  );
+  const trainSplit = join(datasetRoot, "train.jsonl");
+  const devSplit = join(datasetRoot, "dev.jsonl");
+  const datasetManifest = join(datasetRoot, "manifest.json");
   const benchmarkRoot = join(
     root,
     "data",
@@ -202,6 +249,44 @@ function buildFixture(root) {
   const benchmarkRows = suites.flatMap((suite) =>
     readJsonLines(join(root, suite.path))
   );
+  writeJsonLines(trainSplit, [
+    datasetRow("train", "kathmandu"),
+    datasetRow("train", "pokhara")
+  ]);
+  writeJsonLines(devSplit, [
+    datasetRow("dev", "biratnagar")
+  ]);
+  const splitEvidence = {
+    train: inspectContainedRegularFile(root, trainSplit),
+    dev: inspectContainedRegularFile(root, devSplit)
+  };
+  writeJson(datasetManifest, {
+    schemaVersion: 2,
+    datasetContentSha256: sha256("fixture-dataset-content"),
+    splitFiles: {
+      train: portable(root, trainSplit),
+      dev: portable(root, devSplit)
+    },
+    counts: {
+      train: 2,
+      dev: 1
+    },
+    bytes: {
+      train: splitEvidence.train.bytes,
+      dev: splitEvidence.dev.bytes
+    },
+    sha256: {
+      train: splitEvidence.train.sha256,
+      dev: splitEvidence.dev.sha256
+    },
+    cleaningPolicy: {
+      normalizeInput: "trim lowercase NFC collapse-whitespace"
+    }
+  });
+  const datasetManifestEvidence = inspectContainedRegularFile(
+    root,
+    datasetManifest
+  );
   const candidateRows = benchmarkRows.map((row) => ({
     id: row.id,
     input: row.input,
@@ -226,8 +311,8 @@ function buildFixture(root) {
   const trainingRunId = "a".repeat(32);
   const exportRunId = "b".repeat(32);
   const splitSha256 = {
-    train: "c".repeat(64),
-    dev: "d".repeat(64)
+    train: splitEvidence.train.sha256,
+    dev: splitEvidence.dev.sha256
   };
   const suiteEvidence = suites.map((suite) => ({
     id: suite.id,
@@ -258,7 +343,8 @@ function buildFixture(root) {
     modelBytes: compiledEvidence.bytes,
     sha256: {
       vocabMetadata: vocabularyEvidence.sha256,
-      compiledModel: compiledEvidence.sha256
+      compiledModel: compiledEvidence.sha256,
+      trainingDatasetManifest: datasetManifestEvidence.sha256
     }
   });
   const manifestEvidence = inspectContainedRegularFile(root, manifest);
@@ -279,9 +365,23 @@ function buildFixture(root) {
     artifactOverrides: {},
     runInputSnapshot: {
       dataset: {
+        manifest: portable(root, datasetManifest),
+        manifestSha256: datasetManifestEvidence.sha256,
+        contentSha256:
+          readJson(datasetManifest).datasetContentSha256,
         splits: {
-          train: { sha256: splitSha256.train },
-          dev: { sha256: splitSha256.dev }
+          train: {
+            path: portable(root, trainSplit),
+            sha256: splitEvidence.train.sha256,
+            bytes: splitEvidence.train.bytes,
+            rows: 2
+          },
+          dev: {
+            path: portable(root, devSplit),
+            sha256: splitEvidence.dev.sha256,
+            bytes: splitEvidence.dev.bytes,
+            rows: 1
+          }
         }
       },
       officialBenchmark: {
@@ -323,7 +423,12 @@ function buildFixture(root) {
     exportReport,
     benchmarkManifest,
     referenceManifest,
-    report
+    report,
+    manifest,
+    trainSplit,
+    devSplit,
+    datasetManifest,
+    datasetManifestEvidence
   };
 }
 
@@ -416,6 +521,85 @@ function officialBenchmarkInputSha256(rows) {
   return hash.digest("hex");
 }
 
+function injectRehashedTrainingLeakage(fixture) {
+  const benchmark = readJson(fixture.benchmarkManifest);
+  const officialRows = benchmark.suites.flatMap((suite) =>
+    readJsonLines(join(fixture.root, suite.path))
+  );
+  const leakedInput = officialRows[0].input;
+  const trainRows = [
+    datasetRow("train", "kathmandu"),
+    datasetRow("train", leakedInput)
+  ];
+  writeJsonLines(fixture.trainSplit, trainRows);
+  const trainEvidence = inspectContainedRegularFile(
+    fixture.root,
+    fixture.trainSplit
+  );
+  const devEvidence = inspectContainedRegularFile(
+    fixture.root,
+    fixture.devSplit
+  );
+
+  const datasetManifest = readJson(fixture.datasetManifest);
+  datasetManifest.counts.train = trainRows.length;
+  datasetManifest.bytes.train = trainEvidence.bytes;
+  datasetManifest.sha256.train = trainEvidence.sha256;
+  writeJson(fixture.datasetManifest, datasetManifest);
+  const datasetManifestEvidence = inspectContainedRegularFile(
+    fixture.root,
+    fixture.datasetManifest
+  );
+
+  const manifest = readJson(fixture.manifest);
+  manifest.sha256.trainingDatasetManifest =
+    datasetManifestEvidence.sha256;
+  writeJson(fixture.manifest, manifest);
+  const manifestEvidence = inspectContainedRegularFile(
+    fixture.root,
+    fixture.manifest
+  );
+
+  const trainingIsolation = {
+    policy: "official-benchmark-inputs-absent-from-train-and-dev-v1",
+    benchmarkInputSha256: officialBenchmarkInputSha256(officialRows),
+    comparedSplitSha256: {
+      train: trainEvidence.sha256,
+      dev: devEvidence.sha256
+    },
+    overlappingInputCount: 0
+  };
+  const exportReport = readJson(fixture.exportReport);
+  exportReport.manifestSha256 = manifestEvidence.sha256;
+  exportReport.runInputSnapshot.dataset.manifestSha256 =
+    datasetManifestEvidence.sha256;
+  exportReport.runInputSnapshot.dataset.splits.train = {
+    path: portable(fixture.root, fixture.trainSplit),
+    sha256: trainEvidence.sha256,
+    bytes: trainEvidence.bytes,
+    rows: trainRows.length
+  };
+  exportReport.runInputSnapshot.dataset.splits.dev = {
+    path: portable(fixture.root, fixture.devSplit),
+    sha256: devEvidence.sha256,
+    bytes: devEvidence.bytes,
+    rows: 1
+  };
+  exportReport.runInputSnapshot.officialBenchmark.trainingIsolation =
+    trainingIsolation;
+  exportReport.comparisonBenchmark.trainingIsolation =
+    trainingIsolation;
+  writeJson(fixture.exportReport, exportReport);
+}
+
+function datasetRow(split, input) {
+  return {
+    schemaVersion: 1,
+    split,
+    input
+  };
+}
+
 function copyRelativeEvidence(root, relativePath) {
   const target = join(root, relativePath);
   mkdirSync(dirname(target), { recursive: true });
@@ -436,6 +620,10 @@ function write(path, contents) {
 
 function writeJson(path, value) {
   write(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function writeJsonLines(path, rows) {
+  write(path, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
 }
 
 function readJson(path) {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   copyFileSync,
   mkdirSync,
@@ -20,6 +21,13 @@ import {
   resolveNeuralArtifactDescriptor
 } from "./lib/neural-artifact-descriptor.mjs";
 import {
+  recomputeNeuralGoldEvaluationEvidence,
+  recomputeOfficialBenchmarkEvaluationEvidence
+} from "./lib/neural-metric-recomputation.mjs";
+import {
+  verifyOfficialBenchmarkTrainingIsolation
+} from "./lib/neural-official-benchmark-isolation.mjs";
+import {
   NEURAL_RUNTIME_PLACEMENT_WORKLOAD_IDENTITY
 } from "./lib/neural-runtime-placement-evidence.mjs";
 
@@ -30,13 +38,12 @@ const checker = join(
 );
 const sourceRoot = process.cwd();
 const DATASET_CONTENT_SHA = "1".repeat(64);
-const GOLD_CORPUS_SHA = "2".repeat(64);
+const GOLD_CORPUS_SHA =
+  "d0cb6cef6df9f54b2adb25b4251ef24f4c93679a1c48005a50a0ac6c6519952b";
 const BENCHMARK_CORPUS_SHA =
   "149d44c4e8832b91908c4bccfb67e60abcdf8ed99a1d873dc60ef7d0a130744a";
 const BENCHMARK_MANIFEST_SHA =
   "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f";
-const REFERENCE_MANIFEST_SHA =
-  "c3bd96c57a322455026df920dab74dc214113bb2a33aa67f6420805b195c52c6";
 
 describe("neural model-selection CLI evidence graph", () => {
   it("verifies two complete candidate graphs and publishes one immutable winner", () => {
@@ -109,6 +116,99 @@ describe("neural model-selection CLI evidence graph", () => {
       ));
     });
   });
+
+  it("keeps production selection closed without verified raw trace provenance", () => {
+    withFixture((fixture) => {
+      const result = runSelection(fixture, { production: true });
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /Neural Engine benchmark/u.test(failure)
+      ));
+    });
+  });
+
+  it("rejects a forged passed-prefix candidate export status", () => {
+    withFixture((fixture) => {
+      const exportReport = readJson(fixture.candidates[0].exportReportPath);
+      exportReport.status = "passed-forged-candidate";
+      writeJson(fixture.candidates[0].exportReportPath, exportReport);
+
+      const result = runSelection(fixture);
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /exact|immutable Core ML export/u.test(failure)
+      ));
+    });
+  });
+
+  it("rejects a gold-manifest override even when its hashes are refreshed", () => {
+    withFixture((fixture) => {
+      const candidate = fixture.candidates[0];
+      const exportReport = readJson(candidate.exportReportPath);
+      exportReport.artifactOverrides.goldManifest = {
+        configured: "data/neural/gold/manifest.v3.json",
+        effective: "data/neural/gold/manifest.v3.json",
+        source: "command-line"
+      };
+      writeJson(candidate.exportReportPath, exportReport);
+      const exportEvidence = inspectContainedRegularFile(
+        fixture.root,
+        candidate.exportReportPath
+      );
+      const evaluation = readJson(candidate.evaluationPath);
+      evaluation.exportReportSha256 = exportEvidence.sha256;
+      writeJson(candidate.evaluationPath, evaluation);
+      const comparison = readJson(candidate.comparisonPath);
+      comparison.exportReportSha256 = exportEvidence.sha256;
+      writeJson(candidate.comparisonPath, comparison);
+
+      const result = runSelection(fixture);
+      assert.equal(result.status, 1);
+      const report = readJson(fixture.report);
+      assert.ok(
+        report.failures.some((failure) =>
+          /gold-manifest-override-forbidden/u.test(failure)
+        ),
+        JSON.stringify(report.failures)
+      );
+    });
+  });
+
+  it("rejects a rehashed gold report with forged production metrics", () => {
+    withFixture((fixture) => {
+      const candidate = fixture.candidates[0];
+      const evaluation = readJson(candidate.evaluationPath);
+      evaluation.metrics.tailTop1Accuracy = 0.99;
+      writeJson(candidate.evaluationPath, evaluation);
+
+      const result = runSelection(fixture);
+
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /neural-evaluation-replay\.report-metrics-mismatch/u.test(failure)
+      ));
+    });
+  });
+
+  it("rejects a rehashed official report with another candidate's metrics", () => {
+    withFixture((fixture) => {
+      const baseline = readJson(fixture.candidates[0].comparisonPath);
+      const ctc = readJson(fixture.candidates[1].comparisonPath);
+      baseline.metrics = structuredClone(ctc.metrics);
+      baseline.metricsByTargetLength =
+        structuredClone(ctc.metricsByTargetLength);
+      baseline.qualityGate = structuredClone(ctc.qualityGate);
+      writeJson(fixture.candidates[0].comparisonPath, baseline);
+
+      const result = runSelection(fixture);
+
+      assert.equal(result.status, 1);
+      assert.ok(readJson(fixture.report).failures.some((failure) =>
+        /official-benchmark-replay\.report-(metrics|metricsByTargetLength|qualityGate)-mismatch/u
+          .test(failure)
+      ));
+    });
+  });
 });
 
 function withFixture(callback) {
@@ -121,13 +221,13 @@ function withFixture(callback) {
     const baseline = buildCandidate(root, shared, {
       label: "baseline",
       runSeed: "a",
-      officialTop1Hits: 1
+      officialTop1Misses: 1
     });
     const ctc = buildCandidate(root, shared, {
       label: "ctc",
       kind: "ctc",
       runSeed: "c",
-      officialTop1Hits: 3
+      officialTop1Misses: 0
     });
     callback({
       root,
@@ -147,7 +247,20 @@ function buildSharedEvidence(root) {
     "neural-open-vocab",
     "manifest.json"
   );
-  const goldManifest = join(root, "data", "neural", "gold", "manifest.json");
+  const datasetTrain = join(
+    root,
+    "data",
+    "generated",
+    "neural-open-vocab",
+    "train.jsonl"
+  );
+  const datasetDev = join(
+    root,
+    "data",
+    "generated",
+    "neural-open-vocab",
+    "dev.jsonl"
+  );
   const benchmarkManifest = join(
     root,
     "data",
@@ -156,30 +269,119 @@ function buildSharedEvidence(root) {
     "aksharantar-nepali-test-v1",
     "manifest.json"
   );
+  const referenceManifest = join(
+    root,
+    "data",
+    "neural",
+    "benchmarks",
+    "indicxlit-v1",
+    "manifest.json"
+  );
+  writeJsonLines(datasetTrain, [{
+    schemaVersion: 1,
+    split: "train",
+    input: "fixture-training-only-input"
+  }]);
+  writeJsonLines(datasetDev, [{
+    schemaVersion: 1,
+    split: "dev",
+    input: "fixture-development-only-input"
+  }]);
+  const datasetSplitEvidence = {
+    train: inspectContainedRegularFile(root, datasetTrain),
+    dev: inspectContainedRegularFile(root, datasetDev)
+  };
   writeJson(datasetManifest, {
     schemaVersion: 2,
-    datasetContentSha256: DATASET_CONTENT_SHA
+    datasetContentSha256: DATASET_CONTENT_SHA,
+    splitFiles: {
+      train: portable(root, datasetTrain),
+      dev: portable(root, datasetDev)
+    },
+    counts: {
+      train: 1,
+      dev: 1
+    },
+    bytes: {
+      train: datasetSplitEvidence.train.bytes,
+      dev: datasetSplitEvidence.dev.bytes
+    },
+    sha256: {
+      train: datasetSplitEvidence.train.sha256,
+      dev: datasetSplitEvidence.dev.sha256
+    },
+    cleaningPolicy: {
+      normalizeInput: "trim lowercase NFC collapse-whitespace"
+    }
   });
-  writeJson(goldManifest, {
-    schemaVersion: 2,
-    corpusSha256: GOLD_CORPUS_SHA,
-    suites: []
-  });
-  mkdirSync(dirname(benchmarkManifest), { recursive: true });
+  const datasetEvidence = inspectContainedRegularFile(
+    root,
+    datasetManifest
+  );
+  const canonicalGoldManifest = join(
+    root,
+    "data",
+    "neural",
+    "gold",
+    "manifest.v3.json"
+  );
+  mkdirSync(dirname(canonicalGoldManifest), { recursive: true });
   copyFileSync(
-    join(
-      sourceRoot,
-      "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
-    ),
-    benchmarkManifest
+    join(sourceRoot, "data/neural/gold/manifest.v3.json"),
+    canonicalGoldManifest
+  );
+  copyRelativeEvidence(
+    root,
+    "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json"
+  );
+  copyRelativeEvidence(
+    root,
+    "data/neural/benchmarks/indicxlit-v1/manifest.json"
+  );
+  const goldManifest = readJson(canonicalGoldManifest);
+  const officialManifest = readJson(benchmarkManifest);
+  const reference = readJson(referenceManifest);
+  const goldRows = materializeLockedSuiteRows(root, goldManifest);
+  const benchmarkRows = materializeLockedSuiteRows(
+    root,
+    officialManifest
+  );
+  const isolationReplay = verifyOfficialBenchmarkTrainingIsolation({
+    repoRoot: root,
+    datasetManifestPath: datasetManifest,
+    expectedDatasetManifestSha256: datasetEvidence.sha256,
+    officialRows: benchmarkRows
+  });
+  assert.equal(
+    isolationReplay.valid,
+    true,
+    isolationReplay.issueCodes.join(", ")
+  );
+  copyRelativeEvidence(root, reference.predictionArtifact.path);
+  const referencePredictions = join(
+    root,
+    reference.predictionArtifact.path
   );
   return {
     datasetManifest,
-    datasetEvidence: inspectContainedRegularFile(root, datasetManifest),
-    goldManifest,
-    goldEvidence: inspectContainedRegularFile(root, goldManifest),
+    datasetEvidence,
+    datasetSplitEvidence,
+    datasetSplits: isolationReplay.comparedSplits,
+    trainingIsolation: isolationReplay.evidence,
+    goldManifest: canonicalGoldManifest,
+    goldEvidence: inspectContainedRegularFile(root, canonicalGoldManifest),
+    goldRows,
     benchmarkManifest,
-    benchmarkEvidence: inspectContainedRegularFile(root, benchmarkManifest)
+    benchmarkEvidence: inspectContainedRegularFile(root, benchmarkManifest),
+    benchmarkRows,
+    referenceManifest,
+    referenceEvidence: inspectContainedRegularFile(root, referenceManifest),
+    referencePredictions,
+    referencePredictionEvidence: inspectContainedRegularFile(
+      root,
+      referencePredictions
+    ),
+    referencePredictionRows: readJsonLines(referencePredictions)
   };
 }
 
@@ -204,6 +406,12 @@ function buildCandidate(root, shared, options) {
     "LekhNeuralTransliterator.mlmodelc"
   );
   const exportReportPath = join(candidateRoot, "export-report.json");
+  const checkpointPath = join(candidateRoot, "checkpoint.pt");
+  const trainingReportPath = join(candidateRoot, "training-report.json");
+  const goldPredictions = join(
+    candidateRoot,
+    "gold-predictions.jsonl"
+  );
   const comparisonPredictions = join(
     candidateRoot,
     "official-benchmark-predictions.jsonl"
@@ -234,8 +442,10 @@ function buildCandidate(root, shared, options) {
     tokenization: "unicode-scalar-character"
   }));
   write(join(compiledModel, "model.bin"), `compiled-${options.label}`);
+  write(checkpointPath, `checkpoint-${options.label}`);
   const vocabularyEvidence = inspectContainedRegularFile(root, vocabularyPath);
   const compiledEvidence = inspectContainedDirectoryTree(root, compiledModel);
+  const checkpointEvidence = inspectContainedRegularFile(root, checkpointPath);
   const trainingRunId = options.runSeed.repeat(32);
   const exportRunId = String.fromCharCode(options.runSeed.charCodeAt(0) + 1)
     .repeat(32);
@@ -257,6 +467,8 @@ function buildCandidate(root, shared, options) {
     trainingSources: ["ai4bharat-aksharantar-nepali"],
     modelBytes: compiledEvidence.bytes,
     sha256: {
+      sourceCheckpoint: checkpointEvidence.sha256,
+      trainingDatasetManifest: shared.datasetEvidence.sha256,
       vocabMetadata: vocabularyEvidence.sha256,
       compiledModel: compiledEvidence.sha256
     }
@@ -277,15 +489,12 @@ function buildCandidate(root, shared, options) {
     vocabPath: vocabularyPath
   });
   const splitSha256 = {
-    train: "4".repeat(64),
-    dev: "5".repeat(64)
+    train: shared.datasetSplitEvidence.train.sha256,
+    dev: shared.datasetSplitEvidence.dev.sha256
   };
-  const trainingIsolation = {
-    policy: "official-benchmark-inputs-absent-from-train-and-dev-v1",
-    benchmarkInputSha256: "6".repeat(64),
-    comparedSplitSha256: splitSha256,
-    overlappingInputCount: 0
-  };
+  const trainingIsolation = structuredClone(
+    shared.trainingIsolation
+  );
   const predictionArtifactIdentity = {
     runtimeModelContract: descriptor.runtimeModelContract,
     compiledArtifacts: {
@@ -296,6 +505,92 @@ function buildCandidate(root, shared, options) {
       }
     }
   };
+  const effectiveTrainingConfig = {
+    trainingRun: {
+      seed: options.runSeed.charCodeAt(0)
+    }
+  };
+  const effectiveTrainingConfigCanonicalJson =
+    JSON.stringify(effectiveTrainingConfig);
+  const effectiveTrainingConfigSha256 = createHash("sha256")
+    .update(effectiveTrainingConfigCanonicalJson)
+    .digest("hex");
+  const trainingReport = {
+    status: "passed-training-checkpoint",
+    trainingComplete: true,
+    modelId: manifest.selectedArtifact,
+    trainingRunId,
+    checkpoint: portable(root, checkpointPath),
+    checkpointSha256: checkpointEvidence.sha256,
+    effectiveTrainingConfig,
+    effectiveTrainingConfigCanonicalJson,
+    effectiveTrainingConfigSha256
+  };
+  writeJson(trainingReportPath, trainingReport);
+  const trainingReportEvidence = inspectContainedRegularFile(
+    root,
+    trainingReportPath
+  );
+  const goldPredictionRows = shared.goldRows.map((row) => ({
+    id: row.id,
+    input: row.input,
+    candidates: row.expectedAction === "no-neural-candidate"
+      ? []
+      : [firstAcceptedTarget(row)]
+  }));
+  writeJsonLines(goldPredictions, goldPredictionRows);
+  const goldPredictionEvidence = inspectContainedRegularFile(
+    root,
+    goldPredictions
+  );
+  const officialPredictionRows = shared.benchmarkRows.map(
+    (row, index) => {
+      const target = firstAcceptedTarget(row);
+      return {
+        id: row.id,
+        input: row.input,
+        candidates: index < options.officialTop1Misses
+          ? ["गलत", target]
+          : [target]
+      };
+    }
+  );
+  writeJsonLines(comparisonPredictions, officialPredictionRows);
+  const comparisonPredictionEvidence = inspectContainedRegularFile(
+    root,
+    comparisonPredictions
+  );
+  const goldReplay = recomputeNeuralGoldEvaluationEvidence({
+    goldRows: shared.goldRows,
+    predictionRows: goldPredictionRows
+  });
+  assert.equal(
+    goldReplay.valid,
+    true,
+    goldReplay.issueCodes.join(", ")
+  );
+  const officialReplay = recomputeOfficialBenchmarkEvaluationEvidence({
+    benchmarkRows: shared.benchmarkRows,
+    candidatePredictionRows: officialPredictionRows,
+    referencePredictionRows: shared.referencePredictionRows
+  });
+  assert.equal(
+    officialReplay.valid,
+    true,
+    officialReplay.issueCodes.join(", ")
+  );
+  const goldSuites = lockedSuiteEvidence(readJson(shared.goldManifest));
+  const officialSuites = lockedSuiteEvidence(
+    readJson(shared.benchmarkManifest)
+  );
+  const officialBenchmarkSnapshot = {
+    manifest: portable(root, shared.benchmarkManifest),
+    manifestSha256: shared.benchmarkEvidence.sha256,
+    corpusSha256: BENCHMARK_CORPUS_SHA,
+    suites: officialSuites,
+    rows: shared.benchmarkRows.length,
+    trainingIsolation
+  };
   const exportReport = {
     status: ctc
       ? "passed-open-vocab-ctc-transformer-candidate"
@@ -305,21 +600,41 @@ function buildCandidate(root, shared, options) {
     runtimeArtifactContractIssues: [],
     trainingRunId,
     exportRunId,
+    effectiveTrainingConfigSha256,
+    checkpoint: portable(root, checkpointPath),
+    checkpointSha256: checkpointEvidence.sha256,
+    trainingReport: portable(root, trainingReportPath),
+    trainingReportSha256: trainingReportEvidence.sha256,
     modelId: manifest.selectedArtifact,
+    predictions: portable(root, goldPredictions),
+    predictionsSha256: goldPredictionEvidence.sha256,
+    predictionsBackend: descriptor.predictionsBackend,
+    goldManifest: portable(root, shared.goldManifest),
+    goldManifestSha256: shared.goldEvidence.sha256,
+    goldCorpusSha256: GOLD_CORPUS_SHA,
+    goldSuites,
+    goldRows: shared.goldRows.length,
     artifactOverrides: {},
     runInputSnapshot: {
       dataset: {
-        splits: {
-          train: { sha256: splitSha256.train },
-          dev: { sha256: splitSha256.dev }
-        }
+        manifest: portable(root, shared.datasetManifest),
+        manifestSha256: shared.datasetEvidence.sha256,
+        contentSha256: DATASET_CONTENT_SHA,
+        splits: structuredClone(shared.datasetSplits)
       },
-      officialBenchmark: {
-        trainingIsolation
-      }
+      officialBenchmark: officialBenchmarkSnapshot
     },
     comparisonBenchmark: {
-      trainingIsolation
+      manifest: portable(root, shared.benchmarkManifest),
+      manifestSha256: shared.benchmarkEvidence.sha256,
+      corpusSha256: BENCHMARK_CORPUS_SHA,
+      suites: officialSuites,
+      rows: shared.benchmarkRows.length,
+      trainingIsolation,
+      predictions: portable(root, comparisonPredictions),
+      predictionsSha256: comparisonPredictionEvidence.sha256,
+      predictionsBackend: descriptor.predictionsBackend,
+      predictionArtifactIdentity
     },
     manifest: portable(root, manifestPath),
     manifestSha256: manifestEvidence.sha256
@@ -336,30 +651,33 @@ function buildCandidate(root, shared, options) {
     vocabSha256: vocabularyEvidence.sha256,
     artifactSetSha256: descriptor.artifactSetSha256
   };
+  const evaluationArtifactIdentity = {
+    trainingRunId,
+    exportRunId,
+    manifestSha256: manifestEvidence.sha256,
+    vocabSha256: vocabularyEvidence.sha256,
+    compiledModelSha256: manifest.sha256.compiledModel,
+    compiledModels: null
+  };
   const evaluation = {
     status: "passed-production-phase5-evaluation",
     production: true,
     productionEligible: true,
-    predictionValidation: {
-      exactCoverage: true,
-      metricsReportable: true
-    },
     failures: [],
     trainingRunId,
     exportRunId,
     candidateManifestSha256: manifestEvidence.sha256,
     exportReportSha256: exportEvidence.sha256,
-    artifactIdentity,
+    artifactIdentity: evaluationArtifactIdentity,
     datasetManifest: portable(root, shared.datasetManifest),
     datasetManifestSha256: shared.datasetEvidence.sha256,
     datasetContentSha256: DATASET_CONTENT_SHA,
     goldManifest: portable(root, shared.goldManifest),
     goldManifestSha256: shared.goldEvidence.sha256,
     goldCorpusSha256: GOLD_CORPUS_SHA,
-    metrics: {
-      tailTop1Accuracy: 0.91,
-      tailTop3Accuracy: 0.98
-    }
+    predictions: portable(root, goldPredictions),
+    predictionsSha256: goldPredictionEvidence.sha256,
+    ...replayReportFields(goldReplay)
   };
   writeJson(evaluationPath, evaluation);
   const benchmark = {
@@ -380,41 +698,21 @@ function buildCandidate(root, shared, options) {
     }
   };
   writeJson(benchmarkPath, benchmark);
-  write(
-    comparisonPredictions,
-    [
-      {
-        id: "official-native",
-        input: "nepal",
-        candidates: ["नेपाल"]
-      },
-      {
-        id: "official-indian",
-        input: "niraj",
-        candidates: ["निरज"]
-      },
-      {
-        id: "official-foreign",
-        input: "rohan",
-        candidates: ["रोहन"]
-      }
-    ].map((row) => JSON.stringify(row)).join("\n") + "\n"
-  );
-  const predictionEvidence = inspectContainedRegularFile(
-    root,
-    comparisonPredictions
-  );
-  const top1Hits = options.officialTop1Hits;
+  const {
+    reference: officialReference,
+    ...officialReplayFields
+  } = replayReportFields(officialReplay);
   const comparison = {
     schemaVersion: 1,
     status: "passed-official-benchmark-evaluation",
     suite: "neural-official-benchmark-evaluation",
     productionEligible: true,
     failures: [],
-    qualityGate: { passed: true },
     trainingRunId,
     exportRunId,
     candidateManifestSha256: manifestEvidence.sha256,
+    exportReport: portable(root, exportReportPath),
+    exportReportSha256: exportEvidence.sha256,
     artifactIdentity,
     benchmarkManifest:
       "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
@@ -422,35 +720,17 @@ function buildCandidate(root, shared, options) {
     benchmarkCorpusSha256: BENCHMARK_CORPUS_SHA,
     benchmarkIsolation: trainingIsolation,
     predictions: portable(root, comparisonPredictions),
-    predictionsSha256: predictionEvidence.sha256,
+    predictionsSha256: comparisonPredictionEvidence.sha256,
     predictionsBackend: descriptor.predictionsBackend,
     predictionArtifactIdentity,
-    predictionRows: 3,
-    distinctInputCount: 3,
     reference: {
-      manifest: "data/neural/benchmarks/indicxlit-v1/manifest.json",
-      manifestSha256: REFERENCE_MANIFEST_SHA
+      manifest: portable(root, shared.referenceManifest),
+      manifestSha256: shared.referenceEvidence.sha256,
+      predictions: portable(root, shared.referencePredictions),
+      predictionsSha256: shared.referencePredictionEvidence.sha256,
+      ...officialReference
     },
-    metrics: {
-      overall: metric(3, top1Hits, 3),
-      byBucket: {
-        "native-frequent": metric(
-          1,
-          top1Hits >= 1 ? 1 : 0,
-          1
-        ),
-        "indian-name": metric(
-          1,
-          top1Hits >= 2 ? 1 : 0,
-          1
-        ),
-        "foreign-name": metric(
-          1,
-          top1Hits >= 3 ? 1 : 0,
-          1
-        )
-      }
-    }
+    ...officialReplayFields
   };
   writeJson(comparisonPath, comparison);
   writeJson(specificationPath, {
@@ -463,16 +743,24 @@ function buildCandidate(root, shared, options) {
   });
   return {
     specificationPath,
+    evaluationPath,
+    exportReportPath,
+    checkpointPath,
+    trainingReportPath,
+    goldPredictions,
     comparisonPath,
     comparisonPredictions,
     exportRunId
   };
 }
 
-function runSelection(fixture) {
+function runSelection(fixture, options = {}) {
+  const productionArgs = options.production === true
+    ? ["--production"]
+    : [];
   return spawnSync(process.execPath, [
     checker,
-    "--production",
+    ...productionArgs,
     "--candidate-spec",
     fixture.candidates[0].specificationPath,
     "--candidate-spec",
@@ -483,20 +771,6 @@ function runSelection(fixture) {
     cwd: fixture.root,
     encoding: "utf8"
   });
-}
-
-function metric(rows, top1Hits, top3Hits) {
-  return {
-    rows,
-    top1Hits,
-    top3Hits,
-    top1Accuracy: round(top1Hits / rows),
-    top3Accuracy: round(top3Hits / rows)
-  };
-}
-
-function round(value) {
-  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function runtimePlacementEvidence(descriptor) {
@@ -570,8 +844,70 @@ function writeJson(path, value) {
   write(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function writeJsonLines(path, rows) {
+  write(path, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function readJsonLines(path) {
+  return readFileSync(path, "utf8")
+    .split(/\r?\n/u)
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line));
+}
+
+function materializeLockedSuiteRows(root, manifest) {
+  return manifest.suites.flatMap((suite) => {
+    copyRelativeEvidence(root, suite.path);
+    return readJsonLines(join(root, suite.path)).map((row) => ({
+      ...row,
+      suiteId: suite.id,
+      suitePath: suite.path,
+      ...(suite.benchmarkBucket === undefined
+        ? {}
+        : { benchmarkBucket: suite.benchmarkBucket })
+    }));
+  });
+}
+
+function lockedSuiteEvidence(manifest) {
+  return manifest.suites.map((suite) => ({
+    id: suite.id,
+    path: suite.path,
+    sha256: suite.sha256,
+    rows: suite.rows,
+    ...(suite.benchmarkBucket === undefined
+      ? {}
+      : { benchmarkBucket: suite.benchmarkBucket })
+  }));
+}
+
+function copyRelativeEvidence(root, path) {
+  const destination = join(root, path);
+  mkdirSync(dirname(destination), { recursive: true });
+  copyFileSync(join(sourceRoot, path), destination);
+}
+
+function firstAcceptedTarget(row) {
+  const acceptable = row.acceptable ?? row.expected;
+  assert.ok(
+    Array.isArray(acceptable) &&
+    typeof acceptable[0] === "string" &&
+    acceptable[0].length > 0
+  );
+  return acceptable[0];
+}
+
+function replayReportFields(replay) {
+  const {
+    valid: _valid,
+    issueCodes: _issueCodes,
+    ...fields
+  } = replay;
+  return structuredClone(fields);
 }
 
 function portable(root, path) {

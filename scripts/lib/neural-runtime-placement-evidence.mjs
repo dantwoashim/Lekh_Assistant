@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import {
+  matchNeuralRuntimeTraceProvenance
+} from "./neural-runtime-trace-provenance.mjs";
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const GENERATED_AT_PATTERN =
@@ -106,6 +109,9 @@ export function validateNeuralRuntimePlacementEvidence(
   context = {}
 ) {
   const issues = [];
+  const requireTraceProvenance =
+    context.requireTraceProvenance !== false;
+  let traceProvenanceVerified = false;
   const addIssue = (code) => {
     if (!issues.includes(code)) issues.push(code);
   };
@@ -149,6 +155,19 @@ export function validateNeuralRuntimePlacementEvidence(
   ) {
     addIssue("neural-runtime-placement.capture-invalid");
   }
+  if (requireTraceProvenance) {
+    const provenance = matchNeuralRuntimeTraceProvenance(
+      context.traceProvenance,
+      {
+        traceSha256: evidence.capture?.traceSha256,
+        traceExportSha256: evidence.capture?.traceExportSha256
+      }
+    );
+    traceProvenanceVerified = provenance.valid;
+    if (!provenance.valid) {
+      addIssue(provenance.issueCode);
+    }
+  }
   if (
     !exactKeys(evidence.correlation, CORRELATION_KEYS) ||
     Object.values(evidence.correlation).some((value) => value !== true)
@@ -185,7 +204,10 @@ export function validateNeuralRuntimePlacementEvidence(
     return Object.freeze({
       valid: issues.length === 0,
       issueCodes: Object.freeze([...issues].sort(compareText)),
-      neuralEngineClaimAllowed: issues.length === 0
+      neuralEngineClaimAllowed:
+        issues.length === 0 &&
+        requireTraceProvenance &&
+        traceProvenanceVerified
     });
   }
 }

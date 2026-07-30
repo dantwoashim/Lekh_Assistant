@@ -14,6 +14,13 @@ import {
 import {
   hasCTCCoreMLParityEvidence
 } from "./lib/neural-ctc-coreml-parity-contract.mjs";
+import {
+  expectedNeuralCandidateExportStatus,
+  validateCanonicalNeuralGoldEvidence
+} from "./lib/neural-production-evidence-policy.mjs";
+import {
+  NEURAL_GOLD_PRODUCTION_THRESHOLDS
+} from "./lib/neural-metric-recomputation.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
@@ -96,11 +103,11 @@ if (metrics) {
 }
 
 if (production && metrics) {
-  requireMinimum("tailTop1Accuracy", metrics.tailTop1Accuracy, 0.88);
-  requireMinimum("tailTop3Accuracy", metrics.tailTop3Accuracy, 0.96);
-  requireMinimum("chatConventionTop1Accuracy", metrics.chatConventionTop1Accuracy, 0.92);
-  requireMinimum("chatConventionTop3Accuracy", metrics.chatConventionTop3Accuracy, 0.98);
-  requireMinimum("namesTop3Accuracy", metrics.namesTop3Accuracy, 0.90);
+  for (const [metric, minimum] of Object.entries(
+    NEURAL_GOLD_PRODUCTION_THRESHOLDS
+  )) {
+    requireMinimum(metric, metrics[metric], minimum);
+  }
 }
 
 const status = failures.length === 0
@@ -221,7 +228,8 @@ function bindExportEvidence() {
       trainingRunId === exportRunId) {
     failures.push("Evaluation requires distinct valid trainingRunId/exportRunId values from the candidate export report.");
   }
-  if (!String(exportReport.status ?? "").startsWith("passed-") ||
+  if ((!production &&
+        !String(exportReport.status ?? "").startsWith("passed-")) ||
       exportReport.productionEligible !== false) {
     failures.push("Evaluation requires an immutable passed candidate export report with productionEligible=false.");
   }
@@ -281,6 +289,26 @@ function bindExportEvidence() {
   }
   const candidateManifest = readJsonIfExists(candidateManifestPath, "candidate manifest");
   const candidateManifestSha256 = sha256File(candidateManifestPath);
+  if (production) {
+    const expectedStatus =
+      expectedNeuralCandidateExportStatus(candidateManifest);
+    if (expectedStatus === null ||
+        exportReport.status !== expectedStatus ||
+        exportReport.modelId !== candidateManifest?.selectedArtifact) {
+      failures.push(
+        "Production evaluation requires the exact export status for the " +
+        "candidate model and architecture."
+      );
+    }
+    const canonicalGold = validateCanonicalNeuralGoldEvidence({
+      repoRoot: root,
+      manifestPath: goldManifestPath,
+      manifestSha256: goldManifestSha256,
+      corpusSha256: goldManifest.corpusSha256,
+      artifactOverrides: exportReport.artifactOverrides
+    });
+    failures.push(...canonicalGold.issueCodes);
+  }
   if (exportReport.manifestSha256 !== candidateManifestSha256 ||
       candidateManifest?.trainingRunId !== trainingRunId ||
       candidateManifest?.exportRunId !== exportRunId ||
