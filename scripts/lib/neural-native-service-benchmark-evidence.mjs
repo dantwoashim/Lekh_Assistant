@@ -1,3 +1,7 @@
+import {
+  validateNeuralPostExportMemoryEvidence
+} from "./neural-post-export-memory-evidence.mjs";
+
 export const NEURAL_NATIVE_SERVICE_BENCHMARK_CONTRACT = deepFreeze({
   orderedTokens: [
     "prashasan",
@@ -93,6 +97,10 @@ export function validateNeuralNativeServiceBenchmarkReport(report) {
   if (performanceStructureInvalid || !performanceMatchesSamples) {
     addIssue("neural-native-service-benchmark.performance-invalid");
   }
+
+  const memoryValidation =
+    validateNeuralPostExportMemoryEvidence(report?.memory);
+  for (const issue of memoryValidation.issueCodes) addIssue(issue);
 
   return Object.freeze({
     valid: issues.length === 0,

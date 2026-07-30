@@ -147,6 +147,30 @@ describe("full native neural-service benchmark evidence", () => {
         value.performance.p99Ms = 1.1;
       },
       "neural-native-service-benchmark.performance-invalid"
+    ],
+    [
+      "missing memory evidence",
+      (value) => {
+        delete value.memory;
+      },
+      "neural-post-export-memory.schema-invalid"
+    ],
+    [
+      "inconsistent memory delta",
+      (value) => {
+        value.memory.peakIncreaseFromBaselineBytes += 1;
+      },
+      "neural-post-export-memory.consistency-invalid"
+    ],
+    [
+      "memory above the inclusive ceiling",
+      (value) => {
+        value.memory.lifetimePeakPhysicalFootprintBytes = 134_217_729;
+        value.memory.peakIncreaseFromBaselineBytes =
+          value.memory.lifetimePeakPhysicalFootprintBytes -
+          value.memory.baselinePhysicalFootprintBytes;
+      },
+      "neural-post-export-memory.ceiling-exceeded"
     ]
   ]) {
     it(`rejects ${label}`, () => {
@@ -255,6 +279,15 @@ function validReport() {
       contract.orderedTokens.length * contract.measuredPasses,
     targetP95Ms: contract.targetP95Ms,
     performance: { p50Ms: 1, p95Ms: 1, p99Ms: 1 },
+    memory: {
+      schemaVersion: 1,
+      measurementKind: "isolated-process-physical-footprint-v1",
+      api: "proc_pid_rusage:RUSAGE_INFO_V4",
+      units: "bytes",
+      baselinePhysicalFootprintBytes: 40 * 1024 * 1024,
+      lifetimePeakPhysicalFootprintBytes: 96 * 1024 * 1024,
+      peakIncreaseFromBaselineBytes: 56 * 1024 * 1024
+    },
     byTokenMs: Object.fromEntries(
       contract.orderedTokens.map((token) => [
         token,
@@ -285,7 +318,16 @@ const payload = {
       .map((token) => [token, [1, 1]])
   ),
   targetP95Ms: 50,
-  performance: { p50Ms: 1, p95Ms: 1, p99Ms: 1 }
+  performance: { p50Ms: 1, p95Ms: 1, p99Ms: 1 },
+  memory: {
+    schemaVersion: 1,
+    measurementKind: "isolated-process-physical-footprint-v1",
+    api: "proc_pid_rusage:RUSAGE_INFO_V4",
+    units: "bytes",
+    baselinePhysicalFootprintBytes: 41943040,
+    lifetimePeakPhysicalFootprintBytes: 100663296,
+    peakIncreaseFromBaselineBytes: 58720256
+  }
 };
 mkdirSync(dirname(reportPath), { recursive: true });
 writeFileSync(reportPath, JSON.stringify(payload));

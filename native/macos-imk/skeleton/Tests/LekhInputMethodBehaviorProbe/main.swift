@@ -1,7 +1,16 @@
 import AppKit
+import Darwin
 import Foundation
 import InputMethodKit
 import LekhInputMethod
+
+private let neuralBenchmarkRequested =
+  ProcessInfo.processInfo.environment["LEKH_NEURAL_BENCH_BUNDLE"] != nil
+if neuralBenchmarkRequested {
+  benchmarkNeuralServiceIfRequested()
+  print("native-neural-service-benchmark=passed")
+  exit(EXIT_SUCCESS)
+}
 
 private let skeletonDirectory = URL(fileURLWithPath: #filePath)
   .deletingLastPathComponent()
@@ -309,6 +318,7 @@ private func dumpCandidateDiagnosticsIfRequested() {
 private func benchmarkNeuralServiceIfRequested() {
   guard let bundlePath = ProcessInfo.processInfo.environment["LEKH_NEURAL_BENCH_BUNDLE"],
         let bundle = Bundle(path: bundlePath) else {
+    require(false, "Packaged neural benchmark bundle is missing or invalid")
     return
   }
   let production = ProcessInfo.processInfo.environment["LEKH_NEURAL_BENCH_PRODUCTION"] == "1"
@@ -327,6 +337,7 @@ private func benchmarkNeuralServiceIfRequested() {
     fflush(stdout)
     Thread.sleep(forTimeInterval: 20)
   }
+  let baselineMemory = sampleNeuralBenchmarkProcessMemory()
   let initializationStarted = DispatchTime.now().uptimeNanoseconds
   let service = LekhNeuralCandidateService(bundle: bundle)
   let initializationMilliseconds = Double(
@@ -443,6 +454,25 @@ private func benchmarkNeuralServiceIfRequested() {
   RunLoop.current.run(until: Date().addingTimeInterval(0.05))
   require(!cancelledCompletionCalled, "cancelPending must suppress stale neural completions")
 
+  let completedMemory = sampleNeuralBenchmarkProcessMemory()
+  require(
+    completedMemory.lifetimePeakPhysicalFootprintBytes >=
+      baselineMemory.physicalFootprintBytes,
+    "Lifetime peak physical footprint must not be below the pre-service baseline"
+  )
+  let memoryEvidence: [String: Any] = [
+    "schemaVersion": 1,
+    "measurementKind": "isolated-process-physical-footprint-v1",
+    "api": "proc_pid_rusage:RUSAGE_INFO_V4",
+    "units": "bytes",
+    "baselinePhysicalFootprintBytes": baselineMemory.physicalFootprintBytes,
+    "lifetimePeakPhysicalFootprintBytes":
+      completedMemory.lifetimePeakPhysicalFootprintBytes,
+    "peakIncreaseFromBaselineBytes":
+      completedMemory.lifetimePeakPhysicalFootprintBytes -
+      baselineMemory.physicalFootprintBytes
+  ]
+
   print(
     "native-neural-service-e2e p50-ms=\(p50) " +
       "p95-ms=\(p95) p99-ms=\(p99) " +
@@ -488,6 +518,7 @@ private func benchmarkNeuralServiceIfRequested() {
       "steadyStateSamples": steadyState.count,
       "targetP95Ms": 50,
       "performance": ["p50Ms": p50, "p95Ms": p95, "p99Ms": p99],
+      "memory": memoryEvidence,
       "devices": [device],
       "byTokenMs": steadyStateByToken,
       "predictions": observed,
@@ -515,6 +546,29 @@ private func benchmarkNeuralServiceIfRequested() {
       require(false, "Packaged neural benchmark could not publish fresh report evidence: \(error)")
     }
   }
+}
+
+private struct NeuralBenchmarkProcessMemory {
+  let physicalFootprintBytes: UInt64
+  let lifetimePeakPhysicalFootprintBytes: UInt64
+}
+
+private func sampleNeuralBenchmarkProcessMemory() -> NeuralBenchmarkProcessMemory {
+  var usage = rusage_info_v4()
+  let result = withUnsafeMutablePointer(to: &usage) { pointer in
+    pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { buffer in
+      proc_pid_rusage(getpid(), RUSAGE_INFO_V4, buffer)
+    }
+  }
+  require(
+    result == 0,
+    "proc_pid_rusage RUSAGE_INFO_V4 failed with errno=\(errno)"
+  )
+  return NeuralBenchmarkProcessMemory(
+    physicalFootprintBytes: usage.ri_phys_footprint,
+    lifetimePeakPhysicalFootprintBytes:
+      usage.ri_lifetime_max_phys_footprint
+  )
 }
 
 private func assertRomanizedCompositionShowsSafeTargetPreviewUntilCommit() {
@@ -2139,7 +2193,6 @@ assertMultipleNativeControllersRemainIndependent()
 assertActiveCompositionWorkBoundIsLossless()
 assertDeterministicHotPathP99()
 dumpCandidateDiagnosticsIfRequested()
-benchmarkNeuralServiceIfRequested()
 print("native-typing-behavior=passed")
 
 for suffix in ["", "-wal", "-shm"] {
