@@ -36,6 +36,21 @@ from scripts.lib.neural_remote_artifacts import (  # noqa: E402
     verify_closed_archive,
     verify_extracted_tree,
 )
+from scripts.lib.neural_remote_candidate_profile import (  # noqa: E402
+    CANONICAL_PROFILE,
+    CANONICAL_PROFILE_ID,
+    CTC_CONFIG,
+    CTC_MODEL_ID,
+    CTC_TRAINER,
+    PROFILES,
+    SEED_43_PROFILE_ID,
+    CandidateProfile,
+    CandidateProfileError,
+    candidate_override_argv,
+    require_profile_bundle_identity,
+    resolve_candidate_profile,
+    validate_profiled_trainer_args,
+)
 
 MAX_REMOTE_CHECKPOINT_BYTES = 128 * 1024 * 1024
 CANONICAL_CANDIDATE_PARENT = (
@@ -153,6 +168,15 @@ def parse_args() -> argparse.Namespace:
             "backup before publishing the verified CUDA result."
         ),
     )
+    parser.add_argument(
+        "--candidate-profile",
+        choices=tuple(sorted(PROFILES)),
+        default=CANONICAL_PROFILE_ID,
+        help=(
+            "Use the exact canonical candidate contract or the finite "
+            "seed-43 challenger contract."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -160,6 +184,13 @@ def main() -> int:
     args = parse_args()
     try:
         bundle_report = read_bundle_report(args.bundle_report)
+        candidate_profile = resolve_candidate_profile(
+            args.candidate_profile
+        )
+        require_profile_bundle_identity(
+            candidate_profile,
+            bundle_report,
+        )
         verification = verify_closed_archive(
             args.archive,
             expected_kind=RESULT_KIND,
@@ -195,6 +226,7 @@ def main() -> int:
             extracted,
             manifest,
             bundle_report,
+            candidate_profile=candidate_profile,
         )
         publication = {
             "published": False,
@@ -213,6 +245,7 @@ def main() -> int:
             "bundleId": bundle_report["bundleId"],
             "resultId": result_id,
             "modelId": manifest["modelId"],
+            "candidateProfile": candidate_profile.profile_id,
             "trainingRunId": manifest["trainingRunId"],
             "resultArchive": str(Path(args.archive).resolve()),
             "resultArchiveSha256": verification["archiveSha256"],
@@ -223,6 +256,14 @@ def main() -> int:
                     ".tmp/neural-seq2seq-venv/bin/python "
                     "scripts/export-neural-remote-training-result.py "
                     f"--config {manifest['trainingConfig']}"
+                    + (
+                        ""
+                        if candidate_profile is CANONICAL_PROFILE
+                        else (
+                            " --candidate-profile "
+                            f"{candidate_profile.profile_id}"
+                        )
+                    )
                 )
                 if publication["published"]
                 else (
@@ -233,7 +274,12 @@ def main() -> int:
         }
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
-    except (NeuralRemoteArtifactError, OSError, SystemExit) as error:
+    except (
+        CandidateProfileError,
+        NeuralRemoteArtifactError,
+        OSError,
+        SystemExit,
+    ) as error:
         print(
             json.dumps(
                 {
@@ -310,6 +356,8 @@ def validate_extracted_result(
     extracted: Path,
     manifest: dict[str, Any],
     bundle_report: dict[str, Any],
+    *,
+    candidate_profile: CandidateProfile = CANONICAL_PROFILE,
 ) -> dict[str, Any]:
     extracted_manifest = verify_extracted_tree(
         extracted,
@@ -357,11 +405,21 @@ def validate_extracted_result(
         [
             "--config",
             str(ROOT / config_relative),
+            *candidate_override_argv(
+                candidate_profile,
+                root=ROOT,
+                model_id=manifest["modelId"],
+            ),
             "--training-device",
             "cpu",
             "--skip-train",
         ],
         {},
+    )
+    validate_profiled_trainer_args(
+        candidate_profile,
+        trainer_args,
+        root=ROOT,
     )
     if trainer_args.model_id != manifest["modelId"]:
         raise NeuralRemoteArtifactError(
@@ -435,6 +493,9 @@ def validate_extracted_result(
             ),
             report=report,
             manifest=manifest,
+            expected_artifact_overrides=(
+                trainer_args.artifact_overrides
+            ),
         )
     local_snapshot = trainer.capture_run_input_snapshot(
         trainer_args,
@@ -609,7 +670,8 @@ def validate_training_report(
             != trainer_args.effective_training_config_sha256
         or report.get("effectiveArtifactInputsSha256")
             != trainer_args.effective_artifact_inputs_sha256
-        or report.get("artifactOverrides") != {}
+        or report.get("artifactOverrides")
+            != trainer_args.artifact_overrides
     ):
         raise NeuralRemoteArtifactError(
             "Remote training report fails deterministic CUDA provenance."
@@ -797,7 +859,13 @@ def validate_training_only_export_report(
     *,
     report: dict[str, Any],
     manifest: dict[str, Any],
+    expected_artifact_overrides: dict[str, Any] | None = None,
 ) -> None:
+    expected_overrides = (
+        {}
+        if expected_artifact_overrides is None
+        else expected_artifact_overrides
+    )
     if (
         export_report.get("status")
             != "passed-training-candidate-coreml-export-skipped"
@@ -815,7 +883,7 @@ def validate_training_only_export_report(
         }
         or export_report.get("executionTopology")
             != "training-only-no-coreml-v1"
-        or export_report.get("artifactOverrides") != {}
+        or export_report.get("artifactOverrides") != expected_overrides
         or export_report.get("productionEligible") is not False
     ):
         raise NeuralRemoteArtifactError(

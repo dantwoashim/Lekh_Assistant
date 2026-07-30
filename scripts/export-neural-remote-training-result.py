@@ -38,6 +38,16 @@ from scripts.lib.neural_ctc_terminal_decoder import (  # noqa: E402
     install_terminal_safe_ctc_decoder,
     new_ctc_decoder_audit_state,
 )
+from scripts.lib.neural_remote_candidate_profile import (  # noqa: E402
+    CANONICAL_PROFILE_ID,
+    CTC_MODEL_ID,
+    PROFILES,
+    SEED_43_PROFILE_ID,
+    CandidateProfileError,
+    candidate_override_argv,
+    resolve_candidate_profile,
+    validate_profiled_trainer_args,
+)
 
 
 DEFAULT_CONFIG = CTC_TRANSFORMER_CONFIG
@@ -68,6 +78,15 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--config", default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--candidate-profile",
+        choices=tuple(sorted(PROFILES)),
+        default=CANONICAL_PROFILE_ID,
+        help=(
+            "Export the canonical candidate or the exact seed-43 "
+            "challenger sibling."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -84,6 +103,9 @@ def main() -> int:
             raise NeuralRemoteArtifactError(
                 f"Unsupported remote export config: {config_relative}"
             )
+        candidate_profile = resolve_candidate_profile(
+            args.candidate_profile
+        )
         verify_toolchain()
         trainer = import_trainer(config_relative)
         precision_policy, expected_conversion_calls = (
@@ -93,11 +115,21 @@ def main() -> int:
             [
                 "--config",
                 str(ROOT / config_relative),
+                *candidate_override_argv(
+                    candidate_profile,
+                    root=ROOT,
+                    model_id=CTC_MODEL_ID,
+                ),
                 "--training-device",
                 "cpu",
                 "--skip-train",
             ],
             {},
+        )
+        validate_profiled_trainer_args(
+            candidate_profile,
+            trainer_args,
+            root=ROOT,
         )
         with enforce_coreml_compute_precision_policy(
             trainer,
@@ -164,6 +196,8 @@ def main() -> int:
                     "schemaVersion": 1,
                     "status": "passed-neural-remote-coreml-export",
                     "modelId": export_report["modelId"],
+                    "candidateProfile": candidate_profile.profile_id,
+                    "candidateRoot": str(trainer_args.out_dir),
                     "trainingRunId": export_report["trainingRunId"],
                     "exportRunId": export_report["exportRunId"],
                     "executionTopology": export_report[
@@ -209,6 +243,7 @@ def main() -> int:
         )
         return 0
     except (
+        CandidateProfileError,
         RuntimeError,
         NeuralRemoteArtifactError,
         OSError,
