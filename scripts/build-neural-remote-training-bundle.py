@@ -29,11 +29,6 @@ from scripts.lib.neural_remote_notebook import (  # noqa: E402
 )
 
 
-DEFAULT_CONFIG = (
-    "data/neural/training/open-vocab-bigru-attention-v1.config.json"
-)
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -41,7 +36,14 @@ def parse_args() -> argparse.Namespace:
             "gold suites, and official benchmark for remote CUDA training."
         )
     )
-    parser.add_argument("--config", default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--config",
+        required=True,
+        help=(
+            "Repository-relative training config. This is required so a "
+            "costly remote run can never select an obsolete model by default."
+        ),
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,

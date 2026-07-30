@@ -121,7 +121,8 @@ closed remote bundle and run the checksum-pinned Colab notebook instead:
 
 ```sh
 npm run neural:remote:test
-npm run neural:remote:bundle
+npm run neural:remote:bundle -- \
+  --config data/neural/training/open-vocab-ctc-transformer-v2.config.json
 ```
 
 The remote CUDA phase is training-only. Its authenticated result must be

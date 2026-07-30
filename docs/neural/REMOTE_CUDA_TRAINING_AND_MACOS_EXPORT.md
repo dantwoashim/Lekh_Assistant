@@ -46,6 +46,10 @@ PyTorch publishes CUDA 11.8 as an official 2.7.0 wheel target:
 Colab documents that free GPU types and runtime availability are not
 guaranteed:
 [Colab FAQ](https://research.google.com/colaboratory/faq.html).
+That FAQ also prohibits using multiple accounts to work around resource or
+usage restrictions. Do not switch accounts to bypass an exhausted quota.
+Wait for the quota to reset or start a separately authenticated run on another
+provider under that provider's normal terms.
 
 ## 1. Build the authenticated bundle
 
@@ -55,6 +59,7 @@ From the repository root:
 npm run neural:remote:test
 
 npm run neural:remote:bundle -- \
+  --config data/neural/training/open-vocab-ctc-transformer-v2.config.json \
   --output-dir .tmp/neural-remote-training
 ```
 
