@@ -379,6 +379,7 @@ private func benchmarkNeuralServiceIfRequested() {
   let benchmarkIterations = benchmarkWarmupPasses + benchmarkMeasuredPasses
   var samples: [UInt64] = []
   var steadyStateByToken: [String: [Double]] = [:]
+  var candidateResultsByToken: [String: [[String]]] = [:]
   var observed: [String: [String]] = [:]
   for iteration in 0..<benchmarkIterations {
     for token in tokens {
@@ -389,6 +390,7 @@ private func benchmarkNeuralServiceIfRequested() {
         samples.append(elapsed)
         if iteration >= benchmarkWarmupPasses {
           steadyStateByToken[token, default: []].append(Double(elapsed) / 1_000_000)
+          candidateResultsByToken[token, default: []].append(candidates)
         }
         observed[token] = candidates
         completed = true
@@ -417,12 +419,24 @@ private func benchmarkNeuralServiceIfRequested() {
   let p99 = percentile(0.99)
   require(p95 < 50, "End-to-end packaged neural service p95 must stay below 50 ms; observed=\(p95) ms")
   require(p99 < 50, "End-to-end packaged neural service p99 must stay below 50 ms; observed=\(p99) ms")
+  let measuredCandidateResults = tokens.flatMap {
+    candidateResultsByToken[$0] ?? []
+  }
   require(
-    observed.values.flatMap { $0 }.allSatisfy { candidate in
-      candidate.unicodeScalars.allSatisfy { !CharacterSet.whitespacesAndNewlines.contains($0) } &&
-        candidate.range(of: #"[A-Za-z]"#, options: .regularExpression) == nil
+    measuredCandidateResults.count ==
+      tokens.count * benchmarkMeasuredPasses,
+    "Every measured native-service request must retain its candidate result"
+  )
+  require(
+    measuredCandidateResults.allSatisfy { candidates in
+      !candidates.isEmpty &&
+        candidates.count <= 4 &&
+        Set(candidates).count == candidates.count &&
+        candidates.allSatisfy {
+          LekhDevanagariOutputSequence.analyze($0).terminable
+        }
     },
-    "Neural tail candidates must remain single-token and target-script-only"
+    "Every measured neural request must return safe Devanagari candidates"
   )
 
   var secureCandidates: [String]?
@@ -521,6 +535,7 @@ private func benchmarkNeuralServiceIfRequested() {
       "memory": memoryEvidence,
       "devices": [device],
       "byTokenMs": steadyStateByToken,
+      "candidateResultsByToken": candidateResultsByToken,
       "predictions": observed,
       "singleTokenPhraseExpansionRate": 0,
       "secureFieldCandidates": secureCandidates ?? [],

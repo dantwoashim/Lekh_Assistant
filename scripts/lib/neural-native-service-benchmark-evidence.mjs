@@ -1,6 +1,9 @@
 import {
   validateNeuralPostExportMemoryEvidence
 } from "./neural-post-export-memory-evidence.mjs";
+import {
+  validateDevanagariWordSequence
+} from "./devanagari-word-sequence.mjs";
 
 export const NEURAL_NATIVE_SERVICE_BENCHMARK_CONTRACT = deepFreeze({
   orderedTokens: [
@@ -66,6 +69,46 @@ export function validateNeuralNativeServiceBenchmarkReport(report) {
     );
   if (!sampleStreamsValid) {
     addIssue("neural-native-service-benchmark.samples-invalid");
+  }
+
+  const candidateResultsValid =
+    isRecord(report?.candidateResultsByToken) &&
+    deepEqual(
+      Object.keys(report.candidateResultsByToken).sort(compareText),
+      expectedTokens
+    ) &&
+    contract.orderedTokens.every((token) => {
+      const results = report.candidateResultsByToken[token];
+      return Array.isArray(results) &&
+        results.length === contract.measuredPasses &&
+        results.every(
+          (candidates) =>
+            Array.isArray(candidates) &&
+            candidates.length >= 1 &&
+            candidates.length <= 4 &&
+            new Set(candidates).size === candidates.length &&
+            candidates.every(
+              (candidate) =>
+                typeof candidate === "string" &&
+                validateDevanagariWordSequence(candidate).valid
+            )
+        );
+    });
+  const finalPredictionsMatch =
+    candidateResultsValid &&
+    isRecord(report?.predictions) &&
+    deepEqual(
+      Object.keys(report.predictions).sort(compareText),
+      expectedTokens
+    ) &&
+    contract.orderedTokens.every((token) =>
+      deepEqual(
+        report.predictions[token],
+        report.candidateResultsByToken[token].at(-1)
+      )
+    );
+  if (!candidateResultsValid || !finalPredictionsMatch) {
+    addIssue("neural-native-service-benchmark.candidates-invalid");
   }
 
   const performanceKeys = ["p50Ms", "p95Ms", "p99Ms"];

@@ -171,6 +171,38 @@ describe("full native neural-service benchmark evidence", () => {
           value.memory.baselinePhysicalFootprintBytes;
       },
       "neural-post-export-memory.ceiling-exceeded"
+    ],
+    [
+      "all-empty candidate generation",
+      (value) => {
+        for (const token of value.workloadTokens) {
+          value.candidateResultsByToken[token] =
+            value.candidateResultsByToken[token].map(() => []);
+          value.predictions[token] = [];
+        }
+      },
+      "neural-native-service-benchmark.candidates-invalid"
+    ],
+    [
+      "one earlier failed candidate request",
+      (value) => {
+        value.candidateResultsByToken.prashasan[3] = [];
+      },
+      "neural-native-service-benchmark.candidates-invalid"
+    ],
+    [
+      "unsafe candidate result",
+      (value) => {
+        value.candidateResultsByToken.prashasan[0] = ["latin"];
+      },
+      "neural-native-service-benchmark.candidates-invalid"
+    ],
+    [
+      "final prediction inconsistent with measured results",
+      (value) => {
+        value.predictions.prashasan = ["नेपाल"];
+      },
+      "neural-native-service-benchmark.candidates-invalid"
     ]
   ]) {
     it(`rejects ${label}`, () => {
@@ -288,6 +320,18 @@ function validReport() {
       lifetimePeakPhysicalFootprintBytes: 96 * 1024 * 1024,
       peakIncreaseFromBaselineBytes: 56 * 1024 * 1024
     },
+    candidateResultsByToken: Object.fromEntries(
+      contract.orderedTokens.map((token) => [
+        token,
+        Array.from(
+          { length: contract.measuredPasses },
+          () => ["नेपाली"]
+        )
+      ])
+    ),
+    predictions: Object.fromEntries(
+      contract.orderedTokens.map((token) => [token, ["नेपाली"]])
+    ),
     byTokenMs: Object.fromEntries(
       contract.orderedTokens.map((token) => [
         token,
@@ -327,7 +371,15 @@ const payload = {
     baselinePhysicalFootprintBytes: 41943040,
     lifetimePeakPhysicalFootprintBytes: 100663296,
     peakIncreaseFromBaselineBytes: 58720256
-  }
+  },
+  candidateResultsByToken: Object.fromEntries(
+    ["prashasan", "nagarikta", "mantralaya", "sambidhan", "paryatan"]
+      .map((token) => [token, Array.from({ length: 2 }, () => ["नेपाली"])])
+  ),
+  predictions: Object.fromEntries(
+    ["prashasan", "nagarikta", "mantralaya", "sambidhan", "paryatan"]
+      .map((token) => [token, ["नेपाली"]])
+  )
 };
 mkdirSync(dirname(reportPath), { recursive: true });
 writeFileSync(reportPath, JSON.stringify(payload));
