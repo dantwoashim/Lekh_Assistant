@@ -24,7 +24,9 @@ export.
 Each completed epoch is mirrored to
 `MyDrive/Lekh-Neural-Training`. A disconnected Colab runtime therefore resumes
 from the newest authenticated epoch instead of repeating completed work. Only
-the two newest recovery generations are retained.
+the two newest recovery generations are retained. The authenticated epoch-six
+trajectory and its strict limitations are recorded in
+[CTC_TRANSFORMER_RECOVERY_CHECKPOINT_2026-07-30.md](CTC_TRANSFORMER_RECOVERY_CHECKPOINT_2026-07-30.md).
 
 ## Exact execution profiles
 
