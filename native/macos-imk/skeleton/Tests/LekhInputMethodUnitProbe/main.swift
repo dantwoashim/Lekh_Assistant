@@ -711,6 +711,66 @@ private func verifyCTCPrefixBeamSearch() {
       finiteOnly == [[1]],
       "A zero-probability CTC prefix must never become a candidate"
     )
+
+    let finalPruneCrowding = try LekhNeuralCTCPrefixBeamSearch.rank(
+      logits: [[-4, 2, 9]],
+      blankTokenId: 0,
+      beamWidth: 1,
+      maximumCandidates: 1,
+      permitsSequence: { $0 == [1] }
+    )
+    require(
+      finalPruneCrowding == [[1]],
+      "A non-terminable final prefix must not consume the valid n-best beam"
+    )
+
+    let scalarTokens = ["<ctc-blank>", "क", "्", "\u{200D}"]
+    let pendingJoinerCrowding = try LekhNeuralCTCPrefixBeamSearch.rank(
+      logits: [
+        [-8, 9, -8, -8],
+        [-8, -8, 9, -8],
+        [0, -8, -8, 9]
+      ],
+      blankTokenId: 0,
+      beamWidth: 1,
+      maximumCandidates: 1,
+      permitsToken: { prefix, tokenId in
+        guard scalarTokens.indices.contains(tokenId),
+              tokenId != 0 else { return false }
+        let text = prefix.map { scalarTokens[$0] }.joined()
+        return LekhDevanagariOutputSequence.analyze(
+          text + scalarTokens[tokenId]
+        ).validPrefix
+      },
+      permitsSequence: { prefix in
+        LekhDevanagariOutputSequence.analyze(
+          prefix.map { scalarTokens[$0] }.joined()
+        ).terminable
+      }
+    )
+    require(
+      pendingJoinerCrowding == [[1, 2]],
+      "A pending Devanagari joiner must not crowd out the terminal virama word"
+    )
+
+    var boundedTerminalChecks = 0
+    let wideFinalRow = [-100.0] + (1...100).map {
+      Double(100 - $0)
+    }
+    let boundedTerminalScan = try LekhNeuralCTCPrefixBeamSearch.rank(
+      logits: [wideFinalRow],
+      blankTokenId: 0,
+      beamWidth: 8,
+      maximumCandidates: 4,
+      permitsSequence: { _ in
+        boundedTerminalChecks += 1
+        return true
+      }
+    )
+    require(
+      boundedTerminalScan.count == 4 && boundedTerminalChecks == 8,
+      "Final eligibility must stop scanning after one complete beam"
+    )
   } catch {
     require(false, "CTC prefix-beam fixtures failed: \(error)")
   }
@@ -749,6 +809,7 @@ private func verifyCTCPrefixBeamSearch() {
 
 private func verifyCTCExactOracle() {
   var matrixCount = 0
+  var terminalMatrixCount = 0
   for seed in 0..<96 {
     let vocabularySize = 2 + seed % 3
     let timeSteps = 1 + (seed / 3) % 4
@@ -783,11 +844,42 @@ private func verifyCTCExactOracle() {
         "Swift CTC exhaustive-oracle seed \(seed) failed: \(error)"
       )
     }
+    let expectedTerminal = expected.filter {
+      guard let finalToken = $0.last else { return false }
+      return finalToken % 2 == 1
+    }
+    do {
+      let observedTerminal = try LekhNeuralCTCPrefixBeamSearch.rank(
+        logits: logits,
+        blankTokenId: 0,
+        beamWidth: 64,
+        maximumCandidates: 64,
+        permitsSequence: {
+          guard let finalToken = $0.last else { return false }
+          return finalToken % 2 == 1
+        }
+      )
+      require(
+        observedTerminal == expectedTerminal,
+        "Swift terminal-safe CTC oracle diverged at seed \(seed): " +
+          "expected \(expectedTerminal), observed \(observedTerminal)"
+      )
+    } catch {
+      require(
+        false,
+        "Swift terminal-safe exhaustive-oracle seed \(seed) failed: \(error)"
+      )
+    }
     matrixCount += 1
+    terminalMatrixCount += 1
   }
   require(
     matrixCount == 96,
     "Swift CTC exhaustive oracle must cover exactly 96 matrices"
+  )
+  require(
+    terminalMatrixCount == 96,
+    "Swift terminal-safe CTC oracle must cover exactly 96 matrices"
   )
 }
 

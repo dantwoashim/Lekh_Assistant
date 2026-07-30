@@ -277,14 +277,18 @@ class RemoteCoreMLExporterTests(unittest.TestCase):
             expected_conversion_calls=expected_calls,
         )
 
-    def test_ctc_export_filters_sequences_without_a_finite_path(self) -> None:
+    def test_ctc_export_installs_terminal_safe_finite_decoder(self) -> None:
         trainer = FakeCTCTrainer()
         original_decoder = trainer.ctc_prefix_beam_search
         original_export = trainer.export_coreml
 
         with EXPORTER.enforce_ctc_finite_path_decoder(trainer) as state:
             candidates = trainer.ctc_prefix_beam_search(
-                SimpleNamespace(shape=(2, 2))
+                np.asarray([[-4.0, 2.0, 9.0]], dtype=np.float64),
+                blank_id=0,
+                beam_width=1,
+                maximum_candidates=1,
+                sequence_permitted=lambda prefix: prefix == (1,),
             )
             export = trainer.export_coreml(
                 object(),
@@ -293,10 +297,10 @@ class RemoteCoreMLExporterTests(unittest.TestCase):
             )
 
         self.assertEqual(candidates, [[1]])
-        self.assertEqual(
-            state,
-            {"decodeCalls": 1, "filteredSequences": 1},
-        )
+        self.assertEqual(state["decodeCalls"], 1)
+        self.assertEqual(state["finalEligibilityChecks"], 2)
+        self.assertEqual(state["finalIneligiblePrefixes"], 1)
+        self.assertEqual(state["nonFinitePrefixesPruned"], 0)
         self.assertEqual(
             export["finitePathDecoderPolicy"],
             EXPORTER.CTC_FINITE_PATH_DECODER_POLICY,
@@ -312,10 +316,13 @@ class RemoteCoreMLExporterTests(unittest.TestCase):
         )
 
     def test_ctc_export_requires_decoder_policy_and_execution(self) -> None:
+        exercised = EXPORTER.new_ctc_decoder_audit_state()
+        exercised["decodeCalls"] = 1
+        exercised["finalEligibilityChecks"] = 1
         with self.assertRaisesRegex(RuntimeError, "record"):
             EXPORTER.validate_ctc_finite_path_decoder_evidence(
                 {"coremlExport": {"status": "passed"}},
-                {"decodeCalls": 1, "filteredSequences": 0},
+                exercised,
             )
         with self.assertRaisesRegex(RuntimeError, "exercise"):
             EXPORTER.validate_ctc_finite_path_decoder_evidence(
@@ -326,7 +333,7 @@ class RemoteCoreMLExporterTests(unittest.TestCase):
                             EXPORTER.CTC_FINITE_PATH_DECODER_POLICY,
                     }
                 },
-                {"decodeCalls": 0, "filteredSequences": 0},
+                EXPORTER.new_ctc_decoder_audit_state(),
             )
 
     def test_ctc_export_replays_exact_representative_parity_suite(

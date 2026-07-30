@@ -32,6 +32,12 @@ from scripts.lib.neural_ctc_coreml_parity import (  # noqa: E402
     enforce_ctc_representative_coreml_parity,
     validate_ctc_representative_parity_evidence,
 )
+from scripts.lib.neural_ctc_terminal_decoder import (  # noqa: E402
+    AUDIT_KEYS as CTC_DECODER_AUDIT_KEYS,
+    CTC_FINITE_PATH_DECODER_POLICY,
+    install_terminal_safe_ctc_decoder,
+    new_ctc_decoder_audit_state,
+)
 
 
 DEFAULT_CONFIG = CTC_TRANSFORMER_CONFIG
@@ -53,14 +59,6 @@ CTC_COREML_COMPUTE_PRECISION_POLICY = {
     "neuralEngineEligible": True,
     "purpose": "ane-eligible-production-candidate",
 }
-CTC_FINITE_PATH_DECODER_POLICY = {
-    "schemaVersion": 1,
-    "policyId": "ctc-finite-path-only-v1",
-    "rule": "repeat-aware-required-time-steps<=logit-time-steps",
-    "purpose": "exclude-zero-probability-prefixes",
-}
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -357,57 +355,16 @@ def enforce_coreml_compute_precision_policy(
 def enforce_ctc_finite_path_decoder(
     trainer: Any,
 ) -> Iterator[dict[str, int]]:
-    """Exclude prefixes that have no finite CTC alignment path.
+    """Install finite-path and terminal-safe decoding during local export.
 
     The authenticated remote trainer remains byte-for-byte unchanged. This
-    export-only boundary wraps its decoder so a mathematically impossible
-    prefix retained during beam bookkeeping can never enter local prediction
-    evidence.
+    export-only boundary replaces its decoder in memory so mathematically
+    impossible prefixes are removed and final sequence eligibility is applied
+    before the last beam truncation. A non-terminable high-score prefix can
+    therefore never crowd a valid lower-score candidate out of evidence.
     """
-    original_decoder = trainer.ctc_prefix_beam_search
     original_export_coreml = trainer.export_coreml
-    state = {"decodeCalls": 0, "filteredSequences": 0}
-
-    def finite_paths_only(
-        logits: Any,
-        *decoder_args: Any,
-        **decoder_kwargs: Any,
-    ) -> list[list[int]]:
-        shape = getattr(logits, "shape", None)
-        if (
-            not isinstance(shape, tuple)
-            or len(shape) != 2
-            or type(shape[0]) is not int
-            or shape[0] < 1
-        ):
-            raise RuntimeError(
-                "CTC finite-path decoder received an invalid logit tensor."
-            )
-        sequences = original_decoder(
-            logits,
-            *decoder_args,
-            **decoder_kwargs,
-        )
-        if not isinstance(sequences, list):
-            raise RuntimeError("CTC decoder returned an invalid sequence set.")
-        filtered: list[list[int]] = []
-        for sequence in sequences:
-            if not isinstance(sequence, list):
-                raise RuntimeError(
-                    "CTC decoder returned an invalid token sequence."
-                )
-            try:
-                required_steps = trainer.ctc_required_time_steps(sequence)
-            except (TypeError, ValueError) as error:
-                raise RuntimeError(
-                    "CTC decoder returned an invalid token sequence."
-                ) from error
-            if required_steps <= shape[0]:
-                filtered.append(sequence)
-            else:
-                state["filteredSequences"] += 1
-        state["decodeCalls"] += 1
-        return filtered
+    state = new_ctc_decoder_audit_state()
 
     def export_coreml_with_decoder_evidence(
         *export_args: Any,
@@ -427,13 +384,15 @@ def enforce_ctc_finite_path_decoder(
             ),
         }
 
-    trainer.ctc_prefix_beam_search = finite_paths_only
     trainer.export_coreml = export_coreml_with_decoder_evidence
     try:
-        yield state
+        with install_terminal_safe_ctc_decoder(
+            trainer,
+            audit_state=state,
+        ):
+            yield state
     finally:
         trainer.export_coreml = original_export_coreml
-        trainer.ctc_prefix_beam_search = original_decoder
 
 
 def validate_ctc_finite_path_decoder_evidence(
@@ -451,10 +410,15 @@ def validate_ctc_finite_path_decoder_evidence(
         )
     if (
         not isinstance(decoder_state, dict)
+        or set(decoder_state) != CTC_DECODER_AUDIT_KEYS
         or type(decoder_state.get("decodeCalls")) is not int
         or decoder_state["decodeCalls"] < 1
-        or type(decoder_state.get("filteredSequences")) is not int
-        or decoder_state["filteredSequences"] < 0
+        or type(decoder_state.get("finalEligibilityChecks")) is not int
+        or decoder_state["finalEligibilityChecks"] < 1
+        or type(decoder_state.get("finalIneligiblePrefixes")) is not int
+        or decoder_state["finalIneligiblePrefixes"] < 0
+        or type(decoder_state.get("nonFinitePrefixesPruned")) is not int
+        or decoder_state["nonFinitePrefixesPruned"] < 0
     ):
         raise RuntimeError(
             "CTC export did not exercise the finite-path decoder boundary."

@@ -28,6 +28,7 @@ const requiredFiles = [
   "data/neural/eval/ctc-rare-output-scalar-probes-v1.json",
   "scripts/train-open-vocab-ctc-transformer.py",
   "scripts/lib/neural_ctc_transformer.py",
+  "scripts/lib/neural_ctc_terminal_decoder.py",
   "scripts/lib/neural-ctc-alignment-audit.mjs",
   "scripts/lib/neural-ctc-finite-path-contract.mjs",
   "scripts/lib/neural-ctc-coreml-parity-contract.mjs",
@@ -99,6 +100,9 @@ const remoteExporterText = readText(
 );
 const coreMLParityExporterText = readText(
   "scripts/lib/neural_ctc_coreml_parity.py"
+);
+const terminalSafeCTCDecoderText = readText(
+  "scripts/lib/neural_ctc_terminal_decoder.py"
 );
 const officialBenchmarkText = readText(
   "scripts/lib/neural-official-benchmark.mjs"
@@ -239,9 +243,19 @@ requireText(
   "remote macOS export must default to the active Transformer-CTC candidate"
 );
 requireText(
+  terminalSafeCTCDecoderText,
+  '"policyId": "ctc-finite-terminal-path-v2"',
+  "CTC export must use the closed finite-path and terminal-prune policy"
+);
+requireText(
+  terminalSafeCTCDecoderText,
+  '"sequence-eligibility-before-final-beam-truncation"',
+  "CTC decoder must apply final sequence eligibility before n-best truncation"
+);
+requireText(
   remoteExporterText,
-  '"policyId": "ctc-finite-path-only-v1"',
-  "remote macOS export must exclude zero-probability CTC prefixes"
+  "install_terminal_safe_ctc_decoder",
+  "remote macOS export must install the terminal-safe decoder boundary"
 );
 requireText(
   coreMLParityExporterText,
@@ -275,8 +289,38 @@ requireText(
 );
 requireText(
   rareScalarGeneratorText,
-  '"policyId": "ctc-finite-path-only-v1"',
-  "rare-scalar evidence must exclude zero-probability CTC prefixes"
+  "install_terminal_safe_ctc_decoder",
+  "rare-scalar evidence must use the terminal-safe finite-path decoder"
+);
+requireText(
+  nativeNeuralServiceText,
+  "let isFinalTimeStep = timeStep == logits.count - 1",
+  "native CTC decoding must identify the final beam boundary"
+);
+requireText(
+  nativeNeuralServiceText,
+  "(entry.key.isEmpty || !permitsSequence(entry.key))",
+  "native CTC decoding must apply eligibility before final beam truncation"
+);
+requireText(
+  nativeUnitProbeText,
+  "finalPruneCrowding",
+  "native CTC probes must cover final-beam crowding"
+);
+requireText(
+  nativeUnitProbeText,
+  "pendingJoinerCrowding",
+  "native CTC probes must cover a real non-terminable Devanagari prefix"
+);
+requireText(
+  nativeUnitProbeText,
+  "boundedTerminalChecks == 8",
+  "native CTC probes must bound ordinary final eligibility work"
+);
+requireText(
+  nativeUnitProbeText,
+  "terminalMatrixCount == 96",
+  "native CTC probes must replay the terminal-safe exhaustive oracle"
 );
 requireText(
   officialBenchmarkText,

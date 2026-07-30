@@ -23,7 +23,7 @@ describe("CTC finite-path decoder contract", () => {
     assert.equal(
       isCTCFinitePathDecoderPolicy({
         ...CTC_FINITE_PATH_DECODER_POLICY,
-        rule: "target-length-only"
+        finalPruneRule: "filter-after-truncation"
       }),
       false
     );

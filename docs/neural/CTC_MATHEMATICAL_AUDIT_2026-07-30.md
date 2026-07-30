@@ -80,6 +80,63 @@ each full path contains exactly one value from every time step; the omitted
 per-time-step log-softmax normalizers are therefore the same constant for
 every complete path and cannot change sequence ranking.
 
+## Terminal-eligibility audit
+
+A second adversarial review found an ordering defect in both copies of the
+constrained decoder. Prefix grammar was enforced during expansion, but final
+sequence eligibility was checked only **after** the last beam had already
+been truncated. A high-scoring valid prefix that was not terminable—most
+concretely, a Devanagari sequence ending in a pending joiner—could occupy one
+of the final beam slots and then be discarded. A lower-scoring terminable
+candidate outside that truncated set would never be returned.
+
+The minimal proof uses a one-step, three-class matrix with beam width one.
+Class `2` has the highest score but is declared non-terminable; class `1` is
+the highest eligible sequence. Truncate-then-filter returns no candidate.
+Eligibility-before-truncation correctly returns `[1]`.
+
+This ordering follows the semantics of constrained n-best decoding:
+
+- PyTorch's official TorchAudio guide describes lexicon constraints as
+  restricting expansion so only allowed outputs can be generated, while the
+  beam retains the highest-scoring hypotheses.
+- The official decoder API defines `nbest` as the number of best decodings
+  returned and `beam_size` as the hypotheses retained during search.
+- Flashlight is the production decoder underlying that official API.
+
+The repository therefore makes the following explicit inference from those
+contracts: final eligibility is part of the candidate search space and must
+be applied before the final n-best beam is truncated, not after it.
+
+Primary sources:
+
+- [PyTorch CTC decoder tutorial](https://docs.pytorch.org/audio/2.8.0/tutorials/asr_inference_with_ctc_decoder_tutorial.html)
+- [PyTorch `ctc_decoder` API](https://docs.pytorch.org/audio/main/generated/torchaudio.models.decoder.ctc_decoder.html)
+- [Flashlight paper](https://proceedings.mlr.press/v162/kahn22a.html)
+
+The fix is deliberately split to preserve the authenticated epoch-6 recovery:
+
+- native Swift applies `permitsSequence` inside the final beam before
+  `beamWidth` truncation;
+- the local macOS export installs
+  `scripts/lib/neural_ctc_terminal_decoder.py` in memory without modifying
+  either authenticated training source;
+- rare-scalar Core ML prediction installs the same decoder, preventing an
+  evaluation/runtime semantic split;
+- closed export evidence is upgraded to
+  `ctc-finite-terminal-path-v2`, which requires both finite paths and
+  sequence eligibility before final beam truncation.
+
+The new Python implementation matches an independent exhaustive constrained
+oracle on 96 deterministic matrices. Native Swift independently matches 96
+terminal-constrained exhaustive rankings in addition to its original 96
+unconstrained matrices. Both implementations also pass the narrow beam-width
+one crowding regression that the unpruned exhaustive suites cannot expose.
+The final eligibility scan sorts once and stops as soon as one complete beam
+of valid hypotheses is collected; a 101-class regression proves that the
+ordinary all-valid case performs exactly eight terminal checks for beam width
+eight rather than checking every expansion.
+
 This matches the original CTC definition: a label's probability is the sum of
 all paths collapsing to it, repeated adjacent labels collapse, and a blank is
 required to express two consecutive copies of the same label:
@@ -112,7 +169,8 @@ Three boundaries now enforce the same finite-path rule:
    score is not finite.
 2. The local Core ML export wrapper filters decoded token sequences unless
    their repeat-aware required time is no greater than the logit time
-   dimension. It records `ctc-finite-path-only-v1` in export evidence.
+   dimension, and applies terminal eligibility before final beam truncation.
+   It records `ctc-finite-terminal-path-v2` in export evidence.
 3. Rare-scalar prediction generation applies the same rule before writing
    evidence.
 
@@ -149,6 +207,10 @@ The low-heat verification set for this increment is:
 native Swift LekhInputMethodUnitProbe passed, including a separate 96-matrix
 exhaustive CTC path oracle
 1,200 exact brute-force CTC oracle matrices passed finite ranking
+7 terminal-safe compatibility decoder tests passed, including 96 constrained
+exhaustive matrices and the one-slot final-crowding counterexample
+native Swift passed another 96 terminal-constrained exhaustive matrices and
+the same one-slot final-crowding counterexample
 ```
 
 No local model training, Core ML conversion, or full-corpus scan ran during

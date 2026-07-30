@@ -472,7 +472,7 @@ public enum LekhNeuralCTCPrefixBeamSearch {
       )
     ]
 
-    for row in logits {
+    for (timeStep, row) in logits.enumerated() {
       guard !shouldCancel() else {
         throw LekhNeuralCTCPrefixBeamSearchFailure.cancelled
       }
@@ -531,10 +531,30 @@ public enum LekhNeuralCTCPrefixBeamSearch {
         }
       }
 
-      beams = next
+      let isFinalTimeStep = timeStep == logits.count - 1
+      let ranked = next
+        .filter { entry in
+          let score = logAdd(
+            entry.value.blank,
+            entry.value.nonBlank
+          )
+          return score.isFinite
+        }
         .sorted(by: ranksBefore)
-        .prefix(beamWidth)
-        .map { (prefix: $0.key, probability: $0.value) }
+      var selected: [(prefix: [Int], probability: ProbabilityPair)] = []
+      selected.reserveCapacity(beamWidth)
+      for entry in ranked {
+        if isFinalTimeStep &&
+            (entry.key.isEmpty || !permitsSequence(entry.key)) {
+          continue
+        }
+        selected.append((
+          prefix: entry.key,
+          probability: entry.value
+        ))
+        if selected.count == beamWidth { break }
+      }
+      beams = selected
     }
 
     guard !shouldCancel() else {
@@ -549,8 +569,7 @@ public enum LekhNeuralCTCPrefixBeamSearch {
       }
       .filter {
         !$0.prefix.isEmpty &&
-          $0.score.isFinite &&
-          permitsSequence($0.prefix)
+          $0.score.isFinite
       }
       .sorted {
         if $0.score != $1.score { return $0.score > $1.score }

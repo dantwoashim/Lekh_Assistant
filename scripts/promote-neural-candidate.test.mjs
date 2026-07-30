@@ -38,6 +38,9 @@ import {
   CTC_COREML_PARITY_POLICY
 } from "./lib/neural-ctc-coreml-parity-contract.mjs";
 import {
+  CTC_FINITE_PATH_DECODER_POLICY
+} from "./lib/neural-ctc-finite-path-contract.mjs";
+import {
   computeNeuralProductionPromotionId,
   verifyNeuralProductionPromotionReceipt
 } from "./lib/neural-production-promotion-receipt.mjs";
@@ -1312,12 +1315,8 @@ function buildRareScalarEvidenceFixture({
     exportRunId: EXPORT_RUN_ID,
     productionEligible: false,
     predictionsBackend: "coreml-compiled-transformer-ctc",
-    finitePathDecoderPolicy: {
-      schemaVersion: 1,
-      policyId: "ctc-finite-path-only-v1",
-      rule: "repeat-aware-required-time-steps<=logit-time-steps",
-      purpose: "exclude-zero-probability-prefixes"
-    },
+    finitePathDecoderPolicy:
+      structuredClone(CTC_FINITE_PATH_DECODER_POLICY),
     contract: {
       path: portable(root, paths.rareScalarContract),
       sha256: identities.rareScalarContract.sha256,
@@ -1480,12 +1479,8 @@ function buildCTCArtifacts(root, candidate, checkpointSha256) {
       coremlExport: {
         ...artifact.exportFields.coremlExport,
         runtimeModelContract: "single-transformer-ctc-v1",
-        finitePathDecoderPolicy: {
-          schemaVersion: 1,
-          policyId: "ctc-finite-path-only-v1",
-          rule: "repeat-aware-required-time-steps<=logit-time-steps",
-          purpose: "exclude-zero-probability-prefixes"
-        },
+        finitePathDecoderPolicy:
+          structuredClone(CTC_FINITE_PATH_DECODER_POLICY),
         sourceCheckpointSha256: checkpointSha256,
         ...ctcCoreMLParityEvidence()
       }

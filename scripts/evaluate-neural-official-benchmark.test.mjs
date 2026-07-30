@@ -21,6 +21,9 @@ import {
   CTC_COREML_PARITY_CASE_IDS,
   CTC_COREML_PARITY_POLICY
 } from "./lib/neural-ctc-coreml-parity-contract.mjs";
+import {
+  CTC_FINITE_PATH_DECODER_POLICY
+} from "./lib/neural-ctc-finite-path-contract.mjs";
 
 const evaluator = join(
   process.cwd(),
@@ -264,12 +267,8 @@ function buildFixture(root) {
     productionEligible: false,
     coremlExport: {
       status: "passed",
-      finitePathDecoderPolicy: {
-        schemaVersion: 1,
-        policyId: "ctc-finite-path-only-v1",
-        rule: "repeat-aware-required-time-steps<=logit-time-steps",
-        purpose: "exclude-zero-probability-prefixes"
-      },
+      finitePathDecoderPolicy:
+        structuredClone(CTC_FINITE_PATH_DECODER_POLICY),
       ...ctcCoreMLParityEvidence()
     },
     runtimeArtifactContractIssues: [],

@@ -23,8 +23,16 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, BinaryIO, Callable, Iterable, Iterator
 
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.lib.neural_ctc_terminal_decoder import (  # noqa: E402
+    CTC_FINITE_PATH_DECODER_POLICY,
+    install_terminal_safe_ctc_decoder,
+)
+
+
 TRAINER_PATH = ROOT / "scripts" / "train-open-vocab-ctc-transformer.py"
 DEFAULT_CONFIG = (
     ROOT
@@ -55,14 +63,6 @@ RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 ROMAN_INPUT_PATTERN = re.compile(r"^[a-z]+$")
 MAX_JSON_BYTES = 16 * 1024 * 1024
-CTC_FINITE_PATH_DECODER_POLICY = {
-    "schemaVersion": 1,
-    "policyId": "ctc-finite-path-only-v1",
-    "rule": "repeat-aware-required-time-steps<=logit-time-steps",
-    "purpose": "exclude-zero-probability-prefixes",
-}
-
-
 class RareScalarGenerationError(RuntimeError):
     """Raised when post-export rare-scalar evidence cannot be trusted."""
 
@@ -451,18 +451,19 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                 expected_compiled_sha256=file_hashes["compiled model"],
             )
         )
-        rows = build_prediction_rows(
-            contract,
-            lambda text: finite_path_candidates(
-                trainer.decode_compiled_ctc_candidates(
-                    backend,
-                    text,
-                    checkpoint,
-                    trainer_args,
+        with install_terminal_safe_ctc_decoder(trainer):
+            rows = build_prediction_rows(
+                contract,
+                lambda text: finite_path_candidates(
+                    trainer.decode_compiled_ctc_candidates(
+                        backend,
+                        text,
+                        checkpoint,
+                        trainer_args,
+                    ),
+                    trainer_args.output_time_steps,
                 ),
-                trainer_args.output_time_steps,
-            ),
-        )
+            )
         predictions_bytes = "".join(
             json.dumps(
                 row,

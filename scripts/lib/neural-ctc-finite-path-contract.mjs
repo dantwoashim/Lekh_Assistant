@@ -1,14 +1,18 @@
 export const CTC_FINITE_PATH_DECODER_POLICY = Object.freeze({
-  schemaVersion: 1,
-  policyId: "ctc-finite-path-only-v1",
-  rule: "repeat-aware-required-time-steps<=logit-time-steps",
-  purpose: "exclude-zero-probability-prefixes"
+  schemaVersion: 2,
+  policyId: "ctc-finite-terminal-path-v2",
+  finitePathRule:
+    "repeat-aware-required-time-steps<=logit-time-steps",
+  finalPruneRule:
+    "sequence-eligibility-before-final-beam-truncation",
+  purpose: "return-ranked-finite-terminable-candidates"
 });
 
 const POLICY_KEYS = Object.freeze([
+  "finalPruneRule",
+  "finitePathRule",
   "policyId",
   "purpose",
-  "rule",
   "schemaVersion"
 ]);
 
@@ -20,6 +24,9 @@ export function isCTCFinitePathDecoderPolicy(value) {
       JSON.stringify(POLICY_KEYS) &&
     value.schemaVersion === CTC_FINITE_PATH_DECODER_POLICY.schemaVersion &&
     value.policyId === CTC_FINITE_PATH_DECODER_POLICY.policyId &&
-    value.rule === CTC_FINITE_PATH_DECODER_POLICY.rule &&
+    value.finitePathRule ===
+      CTC_FINITE_PATH_DECODER_POLICY.finitePathRule &&
+    value.finalPruneRule ===
+      CTC_FINITE_PATH_DECODER_POLICY.finalPruneRule &&
     value.purpose === CTC_FINITE_PATH_DECODER_POLICY.purpose;
 }
