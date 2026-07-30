@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "status": "recoverable-incomplete-remote-training",
+  "modelId": "lekh-open-vocab-ctc-transformer-v2",
+  "trainingConfig": "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
+  "bundle": {
+    "bundleId": "abc8ecfb2bfbcf3201cc2ad741b8c7ca98714882d25e93a0c38b900b3f136296",
+    "archiveName": "lekh-neural-lekh-open-vocab-ctc-transformer-v2-cuda-training-abc8ecfb2bfbcf32.tar.gz",
+    "archiveSha256": "b5968bad47dbeda072e213ee9e649ba5d14645f62e938a4524fae977d6684628",
+    "archiveBytes": 99316415,
+    "manifestSha256": "d6df5e38ec525ceb17c9001f1cd26ce06f7c6987a1bd90b620341d1b16026df7",
+    "fileCount": 26,
+    "uncompressedInputBytes": 625668859,
+    "datasetContentSha256": "15909aac528fa0f2fb590e62981b0a0035422aa2673f9de4c7bc47ba2e778599",
+    "goldCorpusSha256": "d0cb6cef6df9f54b2adb25b4251ef24f4c93679a1c48005a50a0ac6c6519952b",
+    "officialBenchmarkCorpusSha256": "149d44c4e8832b91908c4bccfb67e60abcdf8ed99a1d873dc60ef7d0a130744a"
+  },
+  "recovery": {
+    "provider": "google-colab",
+    "status": "complete-epoch-recovery-generation",
+    "completedEpoch": 6,
+    "generation": "epoch-000006-ebcb07a2530ae38a",
+    "recoveryId": "ebcb07a2530ae38ad5c3846e58b17318fec63e6bbe0ddccb4bdfcc0420330afc",
+    "trainingRunId": "f4bcc9d75eca4fe78a6cb928063a2d2b",
+    "createdByExportRunId": "b5ade35206664b0babb8b28f44ee4a0b",
+    "stateFile": ".training-recovery.b5ade35206664b0babb8b28f44ee4a0b.6.pt",
+    "stateSha256": "020cd22d76f8b102b752e85504836c720bff73e758d8932ce992b5620525651d",
+    "stateBytes": 76648555,
+    "downloadArchiveSha256": "13a37d8d31e2854b4b372fbd4a0bed390c2403a96740f092c22645d1131cc5ab",
+    "downloadArchiveBytes": 70390038
+  },
+  "files": [
+    {
+      "bytes": 51706595,
+      "path": "data/generated/neural-open-vocab/dev.jsonl",
+      "role": "dataset-dev",
+      "sha256": "f9d61ee53def5e931cccf8a6fa233f6c41f139bcc1acdf648d264bff4491ae18"
+    },
+    {
+      "bytes": 7521,
+      "path": "data/generated/neural-open-vocab/manifest.json",
+      "role": "dataset-manifest",
+      "sha256": "0ebe69836574c52582babe443385bdfcc4aed01fbbeea9d92110a0ce4784e041"
+    },
+    {
+      "bytes": 53071321,
+      "path": "data/generated/neural-open-vocab/test.jsonl",
+      "role": "dataset-test",
+      "sha256": "c1814d4fe776804cd59aa97960130f5d3d48b823a535b176a0e2f6ad116393fa"
+    },
+    {
+      "bytes": 518262288,
+      "path": "data/generated/neural-open-vocab/train.jsonl",
+      "role": "dataset-train",
+      "sha256": "82290380846b8743651abfa121a17b21833cc0cf6a1f92ef4cec498b5c223167"
+    },
+    {
+      "bytes": 406118,
+      "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/foreign-names.jsonl",
+      "role": "official-benchmark-suite",
+      "sha256": "3f920b20ca30c9cd6d22ac6fa809c5dea261dbab59e6dda63cd1330c286031b3"
+    },
+    {
+      "bytes": 584624,
+      "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/indian-names.jsonl",
+      "role": "official-benchmark-suite",
+      "sha256": "70004bac0af45cab25908fbcb6e7d15939099dd7c16e3c41c25ee6ef0ec242b3"
+    },
+    {
+      "bytes": 2389,
+      "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/manifest.json",
+      "role": "official-benchmark-manifest",
+      "sha256": "d492040eeb6ddd2883fee50d0f03c051e20a08d1f469da00679b66751136781f"
+    },
+    {
+      "bytes": 1105838,
+      "path": "data/neural/benchmarks/aksharantar-nepali-test-v1/native-frequent.jsonl",
+      "role": "official-benchmark-suite",
+      "sha256": "90620f225711febc5b9255983e6a3f682df3fc0973b27accde5b96896d66a071"
+    },
+    {
+      "bytes": 3176,
+      "path": "data/neural/gold/adversarial-neural-tail-gold.v1.jsonl",
+      "role": "gold-suite",
+      "sha256": "2dd7aefd45886b77787a59d1bbdcafe131d095bd7445e3cd20179dad817260f3"
+    },
+    {
+      "bytes": 2332,
+      "path": "data/neural/gold/ambiguity-gold.v1.jsonl",
+      "role": "gold-suite",
+      "sha256": "50e64b458693e1a90c8ff2c969ee8a7607cf321f36d41146c9dca0a165ab35e6"
+    },
+    {
+      "bytes": 3463,
+      "path": "data/neural/gold/chat-convention-token-only-gold.v2.jsonl",
+      "role": "gold-suite",
+      "sha256": "24485f88cbe8a50a1147f99185a3b93ae352084a6bd105d188225baa6f67eacb"
+    },
+    {
+      "bytes": 3634,
+      "path": "data/neural/gold/manifest.v3.json",
+      "role": "gold-manifest",
+      "sha256": "41c9247b8553363b0432342264eba0e9f2ba6ac0d75dea123e94c3d604006c59"
+    },
+    {
+      "bytes": 2796,
+      "path": "data/neural/gold/names-gold.v1.jsonl",
+      "role": "gold-suite",
+      "sha256": "ebd2da468871f0fb85dd33f29d7114e78cd5cba155117323736b0487f253db0c"
+    },
+    {
+      "bytes": 2722,
+      "path": "data/neural/gold/non-nepali-pass-through-gold.v1.jsonl",
+      "role": "gold-suite",
+      "sha256": "09042082cf373ef294385859f31754ac82ce239a91f5316dd373130749cc5d0d"
+    },
+    {
+      "bytes": 2660,
+      "path": "data/neural/gold/protected-token-gold.v1.jsonl",
+      "role": "gold-suite",
+      "sha256": "38b3358912b2e07d288f10687829849966f996f1113a7c12b474271dfce9719c"
+    },
+    {
+      "bytes": 5259,
+      "path": "data/neural/gold/romanized-nepali-token-gold.v1.jsonl",
+      "role": "gold-suite",
+      "sha256": "08d20114d3f6e893f696cbfd4ae424ee5c9c89d538594d27898056a7d34e8532"
+    },
+    {
+      "bytes": 5446,
+      "path": "data/neural/training/open-vocab-ctc-transformer-v2.config.json",
+      "role": "training-config",
+      "sha256": "2cafefef4d741712ca435291eb38fdc100e12072ccb2c07b0d69746d6392e7cd"
+    },
+    {
+      "bytes": 615,
+      "path": "requirements/neural-open-vocab-cu118.lock",
+      "role": "cuda-python-requirements",
+      "sha256": "fbe52f947522fdcc2421180f6733ecdf42a85719b48db12545a6f2181fa21dbb"
+    },
+    {
+      "bytes": 453,
+      "path": "requirements/neural-open-vocab.lock",
+      "role": "python-requirements",
+      "sha256": "5f92025c8eb3796998777b9ec0f6908d8b6e66c319c417c1999f430165183af4"
+    },
+    {
+      "bytes": 5934,
+      "path": "scripts/check-neural-open-vocab-toolchain.py",
+      "role": "toolchain-verifier",
+      "sha256": "6913f959d0ca9083a651021fd3d89d2785f4a4921e745446d6eecb73b668a95d"
+    },
+    {
+      "bytes": 15954,
+      "path": "scripts/lib/neural_ctc_transformer.py",
+      "role": "trainer-dependency",
+      "sha256": "eee3df5ecbf7b156f3dfc75ac721bfe5676834bf582a70ac4fe83bf79cf8d637"
+    },
+    {
+      "bytes": 43109,
+      "path": "scripts/lib/neural_remote_artifacts.py",
+      "role": "archive-contract",
+      "sha256": "e94273b8321491e77845cba18397114d7d34d4165d016dc800e763f628953bcd"
+    },
+    {
+      "bytes": 31114,
+      "path": "scripts/run-neural-remote-training.py",
+      "role": "remote-runner",
+      "sha256": "0cf3c478e60500710c51a93b82fc0675e572588b4e513e4d09bf64c83384accc"
+    },
+    {
+      "bytes": 139342,
+      "path": "scripts/train-open-vocab-ctc-transformer.py",
+      "role": "trainer",
+      "sha256": "7a6739f5d72eb3e280cadaa520aa5ea163aee91818ee0149189fb782f364a2c2"
+    },
+    {
+      "bytes": 252264,
+      "path": "scripts/train-open-vocab-seq2seq-transliterator.py",
+      "role": "trainer-dependency",
+      "sha256": "ff481b931b5070952089a1beaea99491a88d069a7461ccc3e2c7fe7d7266e12c"
+    },
+    {
+      "bytes": 1892,
+      "path": "scripts/verify-neural-remote-training-bundle.py",
+      "role": "bundle-verifier",
+      "sha256": "6ebe4e2a4578891b0bcb8dd8e0535dc7fd5c028e578c06b5bbfa5701cff064b3"
+    }
+  ]
+}
