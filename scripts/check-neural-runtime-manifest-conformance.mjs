@@ -348,8 +348,28 @@ function verifyDecoderContract() {
   }
   require(
     Array.isArray(decoderContract.sequenceCases) &&
-      decoderContract.sequenceCases.length >= 22,
+      decoderContract.sequenceCases.length >= 35,
     "Decoder contract must retain its cross-language grammar cases."
+  );
+  const grammarOracle = decoderContract.productionGrammarOracle;
+  require(
+    grammarOracle?.id === "ctc-output-vocabulary-cartesian-prefixes-v1" &&
+      grammarOracle?.enumeration ===
+        "ordered-cartesian-product-depth-1-through-3" &&
+      grammarOracle?.serialization ===
+        "utf8-value-tab-validPrefix-bit-tab-terminable-bit-tab-comma-joined-issueCodes-lf" &&
+      grammarOracle?.maxDepth === 3 &&
+      grammarOracle?.sequenceCount === 278_915 &&
+      grammarOracle?.validPrefixCount === 181_035 &&
+      grammarOracle?.terminableCount === 181_035 &&
+      /^[a-f0-9]{64}$/.test(grammarOracle?.sha256 ?? "") &&
+      Array.isArray(grammarOracle?.tokens) &&
+      grammarOracle.tokens.length === 65 &&
+      new Set(grammarOracle.tokens).size === grammarOracle.tokens.length &&
+      grammarOracle.tokens.every(
+        (token) => typeof token === "string" && [...token].length === 1
+      ),
+    "Decoder contract must retain the exhaustive production-vocabulary grammar oracle."
   );
   require(
     Array.isArray(decoderContract.ctcCases) &&

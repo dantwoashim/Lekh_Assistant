@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import math
@@ -285,6 +286,72 @@ class TrainerContractTests(unittest.TestCase):
                 },
                 case["value"],
             )
+        oracle = fixture["productionGrammarOracle"]
+        alignment_audit = TRAINER.read_json(
+            TRAINER.ROOT /
+            "data/neural/audits/ctc-transformer-v2-alignment-v1.json"
+        )
+        audited_tokens = sorted(
+            (
+                item["token"]
+                for item in alignment_audit["trainingVocabulary"]["output"]["tokens"]
+            ),
+            key=ord,
+        )
+        self.assertEqual(
+            oracle["id"],
+            "ctc-output-vocabulary-cartesian-prefixes-v1",
+        )
+        self.assertEqual(
+            oracle["enumeration"],
+            "ordered-cartesian-product-depth-1-through-3",
+        )
+        self.assertEqual(
+            oracle["serialization"],
+            "utf8-value-tab-validPrefix-bit-tab-terminable-bit-tab-"
+            "comma-joined-issueCodes-lf",
+        )
+        self.assertEqual(oracle["maxDepth"], 3)
+        self.assertEqual(oracle["tokens"], audited_tokens)
+        digest = hashlib.sha256()
+        sequence_count = 0
+        valid_prefix_count = 0
+        terminable_count = 0
+
+        def visit(prefix: str, depth: int) -> None:
+            nonlocal sequence_count, valid_prefix_count, terminable_count
+            if depth > 0:
+                analysis = TRAINER.analyze_devanagari_output_sequence(prefix)
+                digest.update(
+                    (
+                        f"{prefix}\t{int(analysis['validPrefix'])}\t"
+                        f"{int(analysis['terminable'])}\t"
+                        f"{','.join(analysis['issueCodes'])}\n"
+                    ).encode("utf-8")
+                )
+                sequence_count += 1
+                valid_prefix_count += int(analysis["validPrefix"])
+                terminable_count += int(analysis["terminable"])
+            if depth == oracle["maxDepth"]:
+                return
+            for token in oracle["tokens"]:
+                visit(prefix + token, depth + 1)
+
+        visit("", 0)
+        self.assertEqual(
+            {
+                "sequenceCount": sequence_count,
+                "validPrefixCount": valid_prefix_count,
+                "terminableCount": terminable_count,
+                "sha256": digest.hexdigest(),
+            },
+            {
+                "sequenceCount": oracle["sequenceCount"],
+                "validPrefixCount": oracle["validPrefixCount"],
+                "terminableCount": oracle["terminableCount"],
+                "sha256": oracle["sha256"],
+            },
+        )
         for case in fixture["cases"]:
             def predict(prefix: list[int], _step: int) -> TRAINER.np.ndarray:
                 return TRAINER.np.asarray(case["logitsByPrefix"][",".join(map(str, prefix))], dtype=TRAINER.np.float64)

@@ -16,6 +16,8 @@ const requiredFiles = [
   "docs/neural/TRANSFORMER_CTC_COREML_RESEARCH_REVIEW_2026-07-29.md",
   "docs/neural/CTC_MATHEMATICAL_AUDIT_2026-07-30.md",
   "docs/neural/COREML_CONVERSION_PARITY_AUDIT_2026-07-30.md",
+  "docs/neural/DEVANAGARI_GRAMMAR_PARITY_AUDIT_2026-07-30.md",
+  "contracts/neural-decoder/v2/lekh-neural-decoder.v2.json",
   "data/neural/schema/lekh-neural-manifest.schema.json",
   "data/neural/eval/README.md",
   "data/neural/training/open-vocab-seq2seq-v1.config.json",
@@ -27,8 +29,11 @@ const requiredFiles = [
   "data/neural/audits/output-tokenization-analysis-v1.json",
   "data/neural/eval/ctc-rare-output-scalar-probes-v1.json",
   "scripts/train-open-vocab-ctc-transformer.py",
+  "scripts/train-open-vocab-seq2seq-transliterator.test.py",
   "scripts/lib/neural_ctc_transformer.py",
   "scripts/lib/neural_ctc_terminal_decoder.py",
+  "scripts/lib/devanagari-word-sequence.mjs",
+  "scripts/lib/devanagari-word-sequence.test.mjs",
   "scripts/lib/neural-ctc-alignment-audit.mjs",
   "scripts/lib/neural-ctc-finite-path-contract.mjs",
   "scripts/lib/neural-ctc-coreml-parity-contract.mjs",
@@ -104,6 +109,12 @@ const coreMLParityExporterText = readText(
 const terminalSafeCTCDecoderText = readText(
   "scripts/lib/neural_ctc_terminal_decoder.py"
 );
+const devanagariGrammarTestText = readText(
+  "scripts/lib/devanagari-word-sequence.test.mjs"
+);
+const pythonTrainerTestText = readText(
+  "scripts/train-open-vocab-seq2seq-transliterator.test.py"
+);
 const officialBenchmarkText = readText(
   "scripts/lib/neural-official-benchmark.mjs"
 );
@@ -134,6 +145,12 @@ const artifactFilesystemText = readText(
 );
 const packageJson = readJson("package.json");
 const schema = readJson("data/neural/schema/lekh-neural-manifest.schema.json");
+const decoderContract = readJson(
+  "contracts/neural-decoder/v2/lekh-neural-decoder.v2.json"
+);
+const ctcAlignmentAudit = readJson(
+  "data/neural/audits/ctc-transformer-v2-alignment-v1.json"
+);
 const historicalTokenizationAnalysis = readJson(
   "data/neural/audits/output-tokenization-analysis-v1.json"
 );
@@ -160,6 +177,38 @@ if (historicalTokenizationAnalysis) {
   );
 }
 
+if (decoderContract && ctcAlignmentAudit) {
+  const oracle = decoderContract.productionGrammarOracle;
+  const auditedOutputTokens = (
+    ctcAlignmentAudit.trainingVocabulary?.output?.tokens ?? []
+  )
+    .map(({ token }) => token)
+    .sort((left, right) => left.codePointAt(0) - right.codePointAt(0));
+  assert(
+    oracle?.id === "ctc-output-vocabulary-cartesian-prefixes-v1" &&
+      oracle?.enumeration ===
+        "ordered-cartesian-product-depth-1-through-3" &&
+      oracle?.serialization ===
+        "utf8-value-tab-validPrefix-bit-tab-terminable-bit-tab-comma-joined-issueCodes-lf" &&
+      oracle?.maxDepth === 3 &&
+      oracle?.sequenceCount === 278_915 &&
+      oracle?.validPrefixCount === 181_035 &&
+      oracle?.terminableCount === 181_035 &&
+      oracle?.sha256 ===
+        "91c9d9f1918a96927b0a0e0c4a31ded1619553efac5ce585117dd9774995632e",
+    "decoder contract must freeze the exhaustive production-vocabulary grammar oracle"
+  );
+  assert(
+    JSON.stringify(oracle?.tokens) === JSON.stringify(auditedOutputTokens),
+    "grammar oracle tokens must exactly match the locked CTC training output vocabulary"
+  );
+  assert(
+    Array.isArray(decoderContract.sequenceCases) &&
+      decoderContract.sequenceCases.length >= 35,
+    "decoder contract must retain the Unicode-derived cross-language edge cases"
+  );
+}
+
 requireText(specText, "lekh-open-vocab-seq2seq-v1", "spec must define the baseline artifact id");
 requireText(specText, "lekh-open-vocab-bigru-attention-v1", "spec must define the split-attention artifact id");
 requireText(specText, "lekh-open-vocab-ctc-transformer-v2", "spec must define the Transformer-CTC artifact id");
@@ -180,6 +229,22 @@ requireText(
   "COREML_CONVERSION_PARITY_AUDIT_2026-07-30.md",
   "spec must link the current Core ML conversion parity audit"
 );
+requireText(
+  specText,
+  "DEVANAGARI_GRAMMAR_PARITY_AUDIT_2026-07-30.md",
+  "spec must link the current Devanagari grammar parity audit"
+);
+for (const [text, label] of [
+  [devanagariGrammarTestText, "JavaScript grammar test"],
+  [pythonTrainerTestText, "Python trainer test"],
+  [nativeUnitProbeText, "native Swift unit probe"]
+]) {
+  requireText(
+    text,
+    "ctc-output-vocabulary-cartesian-prefixes-v1",
+    `${label} must verify the frozen production-vocabulary grammar oracle`
+  );
+}
 requireText(specText, "models/macos/LekhNeuralTransliterator.production", "spec must name the atomic production directory");
 requireText(specText, "artifactSetSha256", "spec must define the runtime artifact-set identity");
 requireText(

@@ -91,7 +91,12 @@ public enum LekhDevanagariOutputSequence {
       pendingJoiner = false
     }
 
-    if value != value.precomposedStringWithCanonicalMapping {
+    // Swift String equality is canonical-equivalence aware, so comparing the
+    // two Strings would incorrectly treat a non-NFC scalar sequence as equal
+    // to its NFC form. Compare Unicode scalars to enforce byte-stable output.
+    if scalars != Array(
+      value.precomposedStringWithCanonicalMapping.unicodeScalars
+    ) {
       issue("not-nfc")
     }
 

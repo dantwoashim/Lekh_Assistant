@@ -11,6 +11,8 @@ The latest executable mathematical review is
 [Transformer-CTC mathematical audit, 2026-07-30](CTC_MATHEMATICAL_AUDIT_2026-07-30.md).
 The compiled-model numerical proof is recorded in
 [Core ML conversion parity audit, 2026-07-30](COREML_CONVERSION_PARITY_AUDIT_2026-07-30.md).
+The cross-runtime Unicode scalar-order proof is recorded in
+[Devanagari grammar parity audit, 2026-07-30](DEVANAGARI_GRAMMAR_PARITY_AUDIT_2026-07-30.md).
 
 ## Product boundary
 

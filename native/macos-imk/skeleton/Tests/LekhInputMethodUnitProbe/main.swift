@@ -1,5 +1,6 @@
 import AppKit
 import CoreML
+import CryptoKit
 import Foundation
 import LekhInputMethod
 
@@ -482,9 +483,22 @@ private struct NeuralDecoderFixture: Decodable {
   let tokenization: String
   let outputSequenceValidation: String
   let maxSteps: String
+  let productionGrammarOracle: ProductionGrammarOracle
   let sequenceCases: [SequenceCase]
   let ctcCases: [CTCDecoderCase]
   let cases: [DecoderCase]
+
+  struct ProductionGrammarOracle: Decodable {
+    let id: String
+    let enumeration: String
+    let serialization: String
+    let maxDepth: Int
+    let sequenceCount: Int
+    let validPrefixCount: Int
+    let terminableCount: Int
+    let sha256: String
+    let tokens: [String]
+  }
 
   struct SequenceCase: Decodable {
     let value: String
@@ -548,6 +562,53 @@ private func verifyNeuralDecoderContract() {
       "Swift sequence grammar diverged from shared fixture \(item.value): \(analysis)"
     )
   }
+
+  let oracle = fixture.productionGrammarOracle
+  require(
+    oracle.id == "ctc-output-vocabulary-cartesian-prefixes-v1" &&
+      oracle.enumeration == "ordered-cartesian-product-depth-1-through-3" &&
+      oracle.serialization ==
+        "utf8-value-tab-validPrefix-bit-tab-terminable-bit-tab-comma-joined-issueCodes-lf" &&
+      oracle.maxDepth == 3,
+    "Production grammar oracle metadata must remain frozen"
+  )
+  require(
+    Set(oracle.tokens).count == oracle.tokens.count &&
+      oracle.tokens.allSatisfy { $0.unicodeScalars.count == 1 } &&
+      oracle.tokens.map { $0.unicodeScalars.first!.value } ==
+        oracle.tokens.map { $0.unicodeScalars.first!.value }.sorted(),
+    "Production grammar oracle tokens must be unique, scalar, and code-point ordered"
+  )
+  var grammarHasher = SHA256()
+  var grammarSequenceCount = 0
+  var grammarValidPrefixCount = 0
+  var grammarTerminableCount = 0
+  func visitGrammarPrefix(_ prefix: String, depth: Int) {
+    if depth > 0 {
+      let analysis = LekhDevanagariOutputSequence.analyze(prefix)
+      let line = "\(prefix)\t\(analysis.validPrefix ? 1 : 0)\t" +
+        "\(analysis.terminable ? 1 : 0)\t\(analysis.issueCodes.joined(separator: ","))\n"
+      grammarHasher.update(data: Data(line.utf8))
+      grammarSequenceCount += 1
+      if analysis.validPrefix { grammarValidPrefixCount += 1 }
+      if analysis.terminable { grammarTerminableCount += 1 }
+    }
+    guard depth < oracle.maxDepth else { return }
+    for token in oracle.tokens {
+      visitGrammarPrefix(prefix + token, depth: depth + 1)
+    }
+  }
+  visitGrammarPrefix("", depth: 0)
+  let grammarDigest = grammarHasher.finalize()
+    .map { String(format: "%02x", $0) }
+    .joined()
+  require(
+    grammarSequenceCount == oracle.sequenceCount &&
+      grammarValidPrefixCount == oracle.validPrefixCount &&
+      grammarTerminableCount == oracle.terminableCount &&
+      grammarDigest == oracle.sha256,
+    "Swift grammar diverged from the exhaustive production-vocabulary oracle"
+  )
 
   for item in fixture.cases {
     let maxSteps = max(0, item.maxOutputLength - 1)
