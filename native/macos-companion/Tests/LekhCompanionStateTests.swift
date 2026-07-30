@@ -158,7 +158,150 @@ private struct LekhCompanionStateTests {
       "a validated healthy snapshot must expose its ghost evidence"
     )
 
-    print("LekhCompanionStateTests passed: authoritative lifecycle truth table")
+    testNeuralRuntimeAssetContracts()
+
+    print("LekhCompanionStateTests passed: authoritative lifecycle truth table and neural asset contracts")
+  }
+
+  private static func testNeuralRuntimeAssetContracts() {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory
+      .appendingPathComponent("lekh-companion-neural-\(UUID().uuidString)", isDirectory: true)
+    let resources = root.appendingPathComponent("Resources", isDirectory: true)
+    let vocabulary = resources.appendingPathComponent("LekhNeuralTransliterator.vocab.json")
+    let singleModel = resources.appendingPathComponent(
+      "LekhNeuralTransliterator.mlmodelc",
+      isDirectory: true
+    )
+    defer { try? fileManager.removeItem(at: root) }
+
+    do {
+      try fileManager.createDirectory(at: resources, withIntermediateDirectories: true)
+      try Data("{}".utf8).write(to: vocabulary, options: .atomic)
+      try fileManager.createDirectory(
+        at: resources.appendingPathComponent("WrongNeuralModel.mlmodelc", isDirectory: true),
+        withIntermediateDirectories: true
+      )
+    } catch {
+      fatalError("could not create neural asset test fixture: \(error)")
+    }
+
+    let ctcManifest: [String: Any] = [
+      "selectedArtifact": "lekh-open-vocab-ctc-transformer-v2",
+      "runtimeModelContract": "single-transformer-ctc-v1"
+    ]
+    check(
+      !LekhCompanionModel.neuralRuntimeAssetsPresent(
+        manifest: ctcManifest,
+        resources: resources,
+        vocabulary: vocabulary
+      ),
+      "CTC assets must require the canonical compiled-model bundle name"
+    )
+
+    do {
+      try fileManager.createDirectory(at: singleModel, withIntermediateDirectories: true)
+    } catch {
+      fatalError("could not create canonical neural model fixture: \(error)")
+    }
+    check(
+      LekhCompanionModel.neuralRuntimeAssetsPresent(
+        manifest: ctcManifest,
+        resources: resources,
+        vocabulary: vocabulary
+      ),
+      "the exact single-transformer CTC package must be recognized"
+    )
+    check(
+      !LekhCompanionModel.neuralRuntimeAssetsPresent(
+        manifest: [
+          "selectedArtifact": "lekh-open-vocab-ctc-transformer-v2",
+          "runtimeModelContract": "split-attention-incremental-v1"
+        ],
+        resources: resources,
+        vocabulary: vocabulary
+      ),
+      "the CTC artifact must reject a mismatched runtime contract"
+    )
+    check(
+      !LekhCompanionModel.neuralRuntimeAssetsPresent(
+        manifest: [
+          "selectedArtifact": "lekh-open-vocab-ctc-transformer-v2",
+          "runtimeModelContract": "single-transformer-ctc-v1",
+          "compiledModels": ["encoder": [:]]
+        ],
+        resources: resources,
+        vocabulary: vocabulary
+      ),
+      "the single-model CTC contract must reject split-model metadata"
+    )
+
+    check(
+      LekhCompanionModel.neuralRuntimeAssetsPresent(
+        manifest: ["selectedArtifact": "lekh-open-vocab-seq2seq-v1"],
+        resources: resources,
+        vocabulary: vocabulary
+      ),
+      "legacy single-model packages must remain recognized"
+    )
+    check(
+      !LekhCompanionModel.neuralRuntimeAssetsPresent(
+        manifest: [
+          "selectedArtifact": "lekh-open-vocab-seq2seq-v1",
+          "runtimeModelContract": "single-transformer-ctc-v1"
+        ],
+        resources: resources,
+        vocabulary: vocabulary
+      ),
+      "legacy packages must still reject runtime-contract metadata"
+    )
+
+    let encoderName = "LekhNeuralTransliteratorEncoder.mlmodelc"
+    let decoderName = "LekhNeuralTransliteratorDecoderStep.mlmodelc"
+    do {
+      try fileManager.createDirectory(
+        at: resources.appendingPathComponent(encoderName, isDirectory: true),
+        withIntermediateDirectories: true
+      )
+      try fileManager.createDirectory(
+        at: resources.appendingPathComponent(decoderName, isDirectory: true),
+        withIntermediateDirectories: true
+      )
+    } catch {
+      fatalError("could not create split neural model fixtures: \(error)")
+    }
+    let splitManifest: [String: Any] = [
+      "selectedArtifact": "lekh-open-vocab-bigru-attention-v1",
+      "runtimeModelContract": "split-attention-incremental-v1",
+      "compiledModels": [
+        "encoder": ["compiledModel": "/staging/\(encoderName)"],
+        "decoderStep": ["compiledModel": "/staging/\(decoderName)"]
+      ]
+    ]
+    check(
+      LekhCompanionModel.neuralRuntimeAssetsPresent(
+        manifest: splitManifest,
+        resources: resources,
+        vocabulary: vocabulary
+      ),
+      "the exact split-attention package must remain recognized"
+    )
+    check(
+      !LekhCompanionModel.neuralRuntimeAssetsPresent(
+        manifest: [
+          "selectedArtifact": "lekh-open-vocab-bigru-attention-v1",
+          "runtimeModelContract": "split-attention-incremental-v1",
+          "compiledModels": [
+            "encoder": ["compiledModel": "/staging/\(encoderName)"],
+            "decoderStep": ["compiledModel": "/staging/\(decoderName)"],
+            "unexpected": ["compiledModel": "/staging/Unexpected.mlmodelc"]
+          ]
+        ],
+        resources: resources,
+        vocabulary: vocabulary
+      ),
+      "the split-attention package must still reject extra model roles"
+    )
   }
 
   private static func check(

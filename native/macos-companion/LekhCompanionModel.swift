@@ -857,7 +857,7 @@ final class LekhCompanionModel: ObservableObject {
     )
   }
 
-  nonisolated private static func neuralRuntimeAssetsPresent(
+  nonisolated static func neuralRuntimeAssetsPresent(
     manifest: [String: Any]?,
     resources: URL,
     vocabulary: URL
@@ -869,6 +869,21 @@ final class LekhCompanionModel: ObservableObject {
     }
     if selectedArtifact == "lekh-open-vocab-seq2seq-v1" {
       guard manifest["runtimeModelContract"] == nil else { return false }
+      return FileManager.default.fileExists(
+        atPath: resources
+          .appendingPathComponent(
+            "LekhNeuralTransliterator.mlmodelc",
+            isDirectory: true
+          )
+          .path
+      )
+    }
+    if selectedArtifact == "lekh-open-vocab-ctc-transformer-v2" {
+      guard manifest["runtimeModelContract"] as? String ==
+              "single-transformer-ctc-v1",
+            manifest["compiledModels"] == nil else {
+        return false
+      }
       return FileManager.default.fileExists(
         atPath: resources
           .appendingPathComponent(
