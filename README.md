@@ -104,9 +104,7 @@ End users do **not** need Node.js, npm, or a developer toolchain.
 1. [Download `Lekh-Keyboard-Test-Installer.zip`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/Lekh-Keyboard-Test-Installer.zip).
 2. In Finder, double-click the ZIP once. Keep the extracted **Lekh Keyboard
    Test Installer** folder intact.
-3. Open that folder. Control-click or right-click
-   **Lekh Keyboard Test Installer.app**, choose **Open**, then click **Open**
-   again.
+3. Open that folder. Control-click or right-click `Lekh Keyboard Test Installer.app`, choose Open, then click Open again.
 4. Wait for the success message and click **OK**.
 5. Save your work, log out of your Mac, and log back in. macOS can cache a
    newly installed unsigned input method.
