@@ -55,4 +55,4 @@ Published installer hashes:
 
 No Windows ARM64 installer is represented as shippable. Its native build and
 tests pass in CI, while the installer lifecycle limitation is documented in
-`KNOWN_LIMITATIONS.md` and deferred as `BACKLOG_V2.md` item `V2-093`.
+`KNOWN_LIMITATIONS.md` and deferred beyond v1.0.

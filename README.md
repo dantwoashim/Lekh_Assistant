@@ -299,8 +299,6 @@ claims:
 Explore the evidence:
 
 - [Current CI workflow](https://github.com/dantwoashim/Lekh_Assistant/actions/workflows/ci.yml)
-- [v1.0 state of build](STATE_OF_BUILD.md)
-- [Final v1.0 adversarial review](ADVERSARIAL_REVIEW_FINAL_V1.md)
 - [macOS unsigned-install walkthrough](C2_MACOS_UNSIGNED_INSTALL_WALKTHROUGH.md)
 - [Traditional / Preeti corpus result](C3_TRADITIONAL_PREETI_CORPUS_RESULTS.md)
 - [Known limitations](KNOWN_LIMITATIONS.md)

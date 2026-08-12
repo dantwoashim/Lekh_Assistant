@@ -27,7 +27,7 @@ existing final audit failed because neither
 `data/layouts/traditional-ltk-compatible.json` nor
 `data/layouts/traditional-standard.json` exists. C3 therefore applies a
 **Beta** label to every user-visible Traditional mode. Experienced-typist
-validation remains `BACKLOG_V2.md` item `V2-015` and does not block v1.0.
+validation remains outside the v1.0 release scope.
 
 Focused deterministic tests were also run:
 

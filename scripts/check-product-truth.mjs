@@ -7,11 +7,11 @@ const checks = [
   {
     file: "README.md",
     needles: [
-      "The Electron/browser demo is **not** the keyboard app.",
-      "The companion app is **not** the keyboard app.",
-      "Preeti to Unicode is a side utility",
-      "Windows: TSF text service.",
-      "macOS: InputMethodKit input method."
+      "The macOS keyboard is the InputMethodKit input method.",
+      "The Windows keyboard is the TSF text service.",
+      "The companion configures and supports the keyboard; it is not the keyboard.",
+      "The Electron/browser surface is a development and demonstration surface;",
+      "Preeti-to-Unicode conversion is a side utility, not the main typing path."
     ]
   },
   {

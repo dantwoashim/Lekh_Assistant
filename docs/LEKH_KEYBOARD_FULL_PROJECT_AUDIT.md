@@ -44,7 +44,7 @@ This follow-up pass closed or tightened several repo-executable issues from the 
 | Traditional final gate | `npm run audit:traditional-layout:final` now fails until verified final layout files exist. The normal development audit still passes the honest pending scaffold. |
 | Windows IPC freeze risk | Windows TSF IPC client source uses overlapped named-pipe read/write with bounded timeout and cancellation. |
 | Daemon IPC hardening | JSONL IPC has a 64KB line cap, named-pipe sockets have idle timeout, and oversized payloads return a recoverable IPC error. |
-| Docs hygiene | Historical completion and validation narratives were moved to `docs/archive/generated-history/`; active status lives in `docs/CURRENT_PRODUCTION_READINESS_STATUS.md` and `docs/ENGINE_QUALITY_SCORECARD.md`. |
+| Docs hygiene | Historical completion narratives were removed; active status lives in `docs/CURRENT_PRODUCTION_READINESS_STATUS.md` and `docs/ENGINE_QUALITY_SCORECARD.md`. |
 
 Remaining launch blockers are still real: Windows TSF must be built/tested on Windows, macOS IMK/XPC must be installed and tested in target apps, Traditional physical layout needs human/source-of-truth validation, signed installers need certificates, and pilot feedback must be collected with consent.
 
@@ -419,7 +419,7 @@ Remaining release/security blockers:
 
 ## 17. Complete Issue Register
 
-Open Noble-plan rows: 0; active v1 rows: 8; moved to [`BACKLOG_V2.md`](../BACKLOG_V2.md): 15; this historical register no longer defines release scope.
+Open Noble-plan rows: 0; active v1 rows: 8; deferred beyond v1: 15. This historical register no longer defines release scope.
 
 | ID | Severity | Area | Status | Evidence | Exact fix |
 | --- | --- | --- | --- | --- | --- |

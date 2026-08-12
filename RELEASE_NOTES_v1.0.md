@@ -75,10 +75,8 @@ Windows:
 
 Detailed receipts:
 
-- [STATE_OF_BUILD.md](STATE_OF_BUILD.md)
 - [C2 macOS unsigned-install walkthrough](C2_MACOS_UNSIGNED_INSTALL_WALKTHROUGH.md)
 - [C3 Traditional / Preeti corpus results](C3_TRADITIONAL_PREETI_CORPUS_RESULTS.md)
-- [Mid-mission P0 review](ADVERSARIAL_REVIEW_MID_V1.md)
 
 ## Important limitations
 

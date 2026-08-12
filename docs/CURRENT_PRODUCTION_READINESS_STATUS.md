@@ -1,6 +1,7 @@
 # Current Production Readiness Status
 
-Status: superseded on 2026-07-18 by the finite v1.0 release mission and [`STATE_OF_BUILD.md`](../STATE_OF_BUILD.md); all non-v1 Noble-plan work is frozen in [`BACKLOG_V2.md`](../BACKLOG_V2.md).
+Status: historical readiness snapshot. Current release details live in
+[`RELEASE_NOTES_v1.0.md`](../RELEASE_NOTES_v1.0.md).
 
 Updated: 2026-07-17
 
