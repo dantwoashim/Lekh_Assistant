@@ -28,11 +28,9 @@ constexpr std::size_t kMaximumConnections = lekh::ipc::kMaximumActiveConnections
 constexpr std::size_t kWorkerCount = 8;
 static_assert(kMaximumConnections > kWorkerCount + 1);
 constexpr std::size_t kQueueCapacity = kMaximumConnections - kWorkerCount - 1;
+constexpr DWORD kTransportCompletionGraceMilliseconds = 15;
+constexpr DWORD kStartupWarmBudgetMilliseconds = 4500;
 using Deadline = std::chrono::steady_clock::time_point;
-
-bool isProtocolNegotiation(const std::string& request) {
-  return request.find("\"type\":\"protocol.negotiate\"") != std::string::npos;
-}
 
 class UniqueHandle final {
 public:
@@ -333,12 +331,35 @@ std::uint64_t epochMilliseconds() {
   ).count());
 }
 
+DWORD deadlineClassBudget(lekh::tsf::RequestDeadlineClass deadlineClass) {
+  return deadlineClass == lekh::tsf::RequestDeadlineClass::Control
+    ? kControlDeadlineMilliseconds
+    : kHotPathDeadlineMilliseconds;
+}
+
+std::optional<Deadline> operationDeadlineFor(const lekh::tsf::RequestTiming& timing) {
+  const DWORD classBudget = deadlineClassBudget(timing.deadlineClass);
+  std::uint64_t budget = classBudget;
+  if (timing.hasValidDeadline) {
+    const std::uint64_t now = epochMilliseconds();
+    if (timing.deadlineAt <= now) return std::nullopt;
+    budget = std::min<std::uint64_t>(budget, timing.deadlineAt - now);
+  }
+  if (budget == 0) return std::nullopt;
+  return std::chrono::steady_clock::now() + std::chrono::milliseconds(budget);
+}
+
+Deadline responseDeadlineFor(Deadline operationDeadline) {
+  return operationDeadline + std::chrono::milliseconds(kTransportCompletionGraceMilliseconds);
+}
+
 bool verifyBackendReadiness(lekh::pipe::DaemonBackend& backend) {
-  constexpr DWORD readinessTimeoutMs = 5000;
+  constexpr DWORD readinessTimeoutMs = kControlDeadlineMilliseconds;
   const std::uint64_t sentAt = epochMilliseconds();
+  const std::wstring clientInstanceId = L"windows-broker-startup-" + std::to_wstring(GetCurrentProcessId());
   const lekh::tsf::RequestMetadata metadata = {
     L"broker_startup",
-    L"windows-broker-startup-" + std::to_wstring(GetCurrentProcessId()),
+    clientInstanceId,
     1,
     sentAt,
     sentAt + readinessTimeoutMs
@@ -349,26 +370,61 @@ bool verifyBackendReadiness(lekh::pipe::DaemonBackend& backend) {
   const std::optional<std::string> response = backend.request(utf8 + "\n", readinessTimeoutMs);
   if (!response) return false;
   const std::wstring wideResponse = fromUtf8(*response);
-  return !wideResponse.empty() && lekh::tsf::parseProtocolNegotiationResponse(wideResponse, metadata).has_value();
+  const std::optional<lekh::tsf::NegotiatedProtocol> negotiated = !wideResponse.empty()
+    ? lekh::tsf::parseProtocolNegotiationResponse(wideResponse, metadata)
+    : std::nullopt;
+  if (!negotiated) return false;
+
+  const std::uint64_t warmSentAt = epochMilliseconds();
+  const lekh::tsf::RequestMetadata warmMetadata = {
+    L"broker_warm",
+    clientInstanceId,
+    2,
+    warmSentAt,
+    warmSentAt + readinessTimeoutMs
+  };
+  const std::wstring warmRequest = lekh::tsf::makeEngineWarmRequest(warmMetadata, kStartupWarmBudgetMilliseconds);
+  const std::string warmUtf8 = toUtf8(warmRequest);
+  if (warmUtf8.empty()) return false;
+  const std::optional<std::string> warmResponse = backend.request(warmUtf8 + "\n", readinessTimeoutMs);
+  if (!warmResponse) return false;
+  const std::wstring wideWarmResponse = fromUtf8(*warmResponse);
+  return !wideWarmResponse.empty() && lekh::tsf::parseEngineWarmResponse(
+    wideWarmResponse,
+    warmMetadata,
+    negotiated->serverInstanceId
+  );
 }
 
 void serveClient(HANDLE pipe, lekh::pipe::DaemonBackend& backend) {
-  const auto acceptedAt = std::chrono::steady_clock::now();
-  const Deadline hotPathDeadline = acceptedAt +
-    std::chrono::milliseconds(kHotPathDeadlineMilliseconds);
-  const Deadline requestReadDeadline = acceptedAt +
-    std::chrono::milliseconds(kControlDeadlineMilliseconds);
+  const Deadline requestReadDeadline = std::chrono::steady_clock::now() +
+    std::chrono::milliseconds(kControlDeadlineMilliseconds + kTransportCompletionGraceMilliseconds);
   const std::optional<std::string> request = readClientFrame(pipe, requestReadDeadline);
-  const Deadline operationDeadline = request && isProtocolNegotiation(*request)
-    ? std::chrono::steady_clock::now() + std::chrono::milliseconds(kControlDeadlineMilliseconds)
-    : hotPathDeadline;
-  const std::optional<DWORD> backendTimeout = remainingMilliseconds(operationDeadline);
-  bool responseWritten = false;
-  if (request && backendTimeout) {
-    const std::optional<std::string> response = backend.request(*request + "\n", *backendTimeout);
-    responseWritten = response && writeClientFrame(pipe, *response, operationDeadline);
+  if (!request) {
+    closeConnectedPipe(pipe);
+    return;
   }
-  if (responseWritten) FlushFileBuffers(pipe);
+
+  const std::wstring wideRequest = fromUtf8(*request);
+  const lekh::tsf::RequestTiming timing = wideRequest.empty()
+    ? lekh::tsf::RequestTiming{}
+    : lekh::tsf::inspectRequestTiming(wideRequest);
+  const std::optional<Deadline> operationDeadline = operationDeadlineFor(timing);
+  if (!operationDeadline) {
+    closeConnectedPipe(pipe);
+    return;
+  }
+
+  const std::optional<DWORD> backendTimeout = remainingMilliseconds(*operationDeadline);
+  if (backendTimeout) {
+    const std::optional<std::string> response = backend.request(*request + "\n", *backendTimeout);
+    if (response && writeClientFrame(pipe, *response, responseDeadlineFor(*operationDeadline))) {
+      // DisconnectNamedPipe discards reply bytes that the client has not read yet.
+      // Draining here keeps short-lived Node and TSF clients from seeing a
+      // successful write as ERROR_BROKEN_PIPE before their response arrives.
+      FlushFileBuffers(pipe);
+    }
+  }
   closeConnectedPipe(pipe);
 }
 

@@ -147,6 +147,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify formatting and types on Windows
+        run: npm run format:check && npm run typecheck
+
       - name: Build and test Windows TSF service
         shell: pwsh
         run: |
@@ -161,6 +164,9 @@ jobs:
 
       - name: Verify IPC contract
         run: npm run check:ipc-schema
+
+      - name: Verify portable typing policy guards on Windows
+        run: npm run check:experimental-passive-commit && npm run check:composition-work-bound
 
       - name: Verify Windows packaging contract
         if: matrix.architecture == 'x64'

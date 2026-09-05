@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-18T10:14:52.758Z",
+  "generatedAt": "2026-08-24T15:44:47.440Z",
   "exactCommand": "npx vite-node scripts/benchmark-composition-work-bound.ts --write",
   "benchmark": "LocalKeyboardEngine composition work bound",
   "canonicalBoundUtf16CodeUnits": 128,
@@ -18,23 +18,23 @@
     "validation": "Untimed real-engine probes require a proofread hint, a trained-model candidate, semantic SHA-256 candidate IDs, candidates, and exact-bound acceptance before samples are accepted."
   },
   "runtime": {
-    "node": "v24.14.0",
-    "v8": "13.6.233.17-node.41",
-    "platform": "darwin",
-    "osRelease": "25.2.0",
-    "architecture": "arm64",
-    "cpuModel": "Apple M4",
-    "logicalCpuCount": 10,
-    "totalMemoryBytes": 17179869184,
-    "freeMemoryBytesAtReport": 1745436672
+    "node": "v25.2.1",
+    "v8": "14.1.146.11-node.14",
+    "platform": "win32",
+    "osRelease": "10.0.26200",
+    "architecture": "x64",
+    "cpuModel": "11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz",
+    "logicalCpuCount": 8,
+    "totalMemoryBytes": 12510060544,
+    "freeMemoryBytesAtReport": 4812201984
   },
-  "durationMs": 25650.533,
+  "durationMs": 34698.928,
   "sourceIntegrity": {
     "data/engine/lekh-engine-contract.v1.json": "e7cd4469a3152f778a71e05abc09d17f6393ad988fc82e190a6c4de3031b61ea",
     "data/engine/lekh-experimental-passive-commit.schema.json": "dd589f3543f261ac011cd5eef564df52d8827701e5f6887438917c16781f9a26",
     "data/engine/lekh-experimental-passive-commit.v1.json": "64f79e018b72d2ada63c72d57a6ecb384214ac3efc92ff22af48e4c884867ddf",
     "data/engine/lekh-token-candidates.v1.json": "cdaf7b070a09b04b0f6e6b696603082243d3bcacd94e88633ceb65c464bd43f2",
-    "scripts/benchmark-composition-work-bound.ts": "8d54ecdd0a795bcac044a616efeb07a1bd111a5e743c8188440f964d66790ca0",
+    "scripts/benchmark-composition-work-bound.ts": "534afc28c1a95e4281b115be4e1ec8d3a69c45372a0948b03a41205cda0c7966",
     "src/core/dictionary/loadSeedWords.ts": "54573e69b2706e8d3dab5c72f32bf3a872224be6941753833132407c8b22a3df",
     "src/core/dictionary/nepaliHunspell.ts": "2632cb0101b4264d88c0701ebd4118f9f0c569f1b08b75e41adfd402103f358d",
     "src/core/dictionary/nspell.d.ts": "224d501a74ee25a6a6b6d060b5bae012ab9d29192b58dcd81455c55f9a859d80",
@@ -51,7 +51,7 @@
     "src/engine/classify/preeti.ts": "264a5909081c8703a3c4535877a9cfbc78943eae983290a11c7ccc4f50ef3878",
     "src/engine/index.ts": "623d337dfae6763ac6227e3899ed6187eaab085ce159e3d8f0427c3ffaafb2c6",
     "src/engine/keyboard/cache.ts": "27201e63359696d57307c597c7962e17f79c4977d41c01203299ac556d892764",
-    "src/engine/keyboard/candidates.ts": "8d783af8b7ea37146fbfb08dd834cb8d65367d1edb1e815cd4166a9e570b0c3e",
+    "src/engine/keyboard/candidates.ts": "4d6464f6839ed3f946b8227e935a29ff169ed9fb0aba3f12c14853092b07de27",
     "src/engine/keyboard/commit.ts": "eaab1d91d77b09c48806dbf26d8514de114d0432d8469e67dda888de091f84f5",
     "src/engine/keyboard/composition.ts": "a8cdbea9bdc99f407419bffb3003fd032980d9fb4c32137cbb8b40fb1dbd79ee",
     "src/engine/keyboard/contextPredictor.ts": "8b189d04ae9e4d1a79c88041c60bb78599decfc6970fc9e184445fe0ec58933e",
@@ -59,20 +59,20 @@
     "src/engine/keyboard/errors.ts": "ae588544637761643dfb7608b544302fb210598e3af11cbf0a78cb0f297a2b10",
     "src/engine/keyboard/followups.ts": "5209990a71656243e311948a6c7aa9124dfd59af94ca64131da1f91cf5de1365",
     "src/engine/keyboard/helpers.ts": "98318f86e78b965acfe9e273a54b5c47d4d59458b27558361ca0b7f622fd2025",
-    "src/engine/keyboard/index.ts": "e0cb00ec13e2b7a1d08fd3b072ecd7abec89c64b61d82c02c6acc84a4066e2f6",
-    "src/engine/keyboard/memory.ts": "7fd34995de8c3377d4719431096b1207f3bd655ab9904c193b14982557fb30d3",
-    "src/engine/keyboard/modes.ts": "45df7d540942cbfb20f8b582f5edf8cdb6b8d8d5826ac75cc1773b0648001db3",
+    "src/engine/keyboard/index.ts": "c0d1617bd453fd5659c788d66057f68be726467e9fd4ff41fbffecb81915fb27",
+    "src/engine/keyboard/memory.ts": "a62b62b69b16225dc8fea0c93484b05ccc41b6aec0e04e873201e2c7f287b244",
+    "src/engine/keyboard/modes.ts": "4310554e969f9790106ddfd56f1f1a9318630d01a2e9150981ad5acd9fba5737",
     "src/engine/keyboard/ngramLanguageModel.ts": "2cea33bdd64003daa5be065d4d30a924301683df4f91b7a61d03731f3f6a8764",
     "src/engine/keyboard/passiveCommit.ts": "59f19ead3e5e155dd32ef8b4456fd9c28ef0238da50a8f7ffb42ca764662a9f5",
     "src/engine/keyboard/proofHints.ts": "c01fa918610467f5f39aba52f9e59d2640b2696a10eeb73676ed52f40315307c",
     "src/engine/keyboard/ranges.ts": "691d52d97a4ad0761a7f8991c675cd4d61de3cb12c3caf15f6b85b4f3239c573",
     "src/engine/keyboard/romanizationTolerance.ts": "d6e1a3472044f4d62f07e369c3dc6c8bceeaa0caafd6be5d3e5dfa561d415854",
     "src/engine/keyboard/runtimePacks.ts": "236a261e94766565cb3090ebee3b1f0e17e9a943c6d59b0e4528c70be3380eb5",
-    "src/engine/keyboard/session.ts": "9013afd5088b772e25a206c3c868aa2684da12ec15ce73758d7cf37bfd5227c0",
+    "src/engine/keyboard/session.ts": "00bbd52059751d5374a566d9ff45e0d8bb3922cae1e545ca2a183b047211313b",
     "src/engine/keyboard/smartTransforms.ts": "b6796c2fcd8d9c987cf396f11f1779d9498908bd233e345983a73e6b050448a3",
-    "src/engine/keyboard/storage.ts": "1b8f302e05cd156c098f66c636293cd930f7df894f9063303eaa1fefc4e85892",
+    "src/engine/keyboard/storage.ts": "871af47d2360f567300abc1af820c349078891c2038d8b78f1beabbfc0a9d61b",
     "src/engine/keyboard/suggest.ts": "347a0ceed067f4b14eacf9234089837639dc96a28959359c8a6b1443eb8b8b00",
-    "src/engine/keyboard/types.ts": "44b3d295aa2a4ee0c22f685daf9960bced2f4b086a6db90d587c23e22a8c06bc",
+    "src/engine/keyboard/types.ts": "c28ee186985e69f4d0ac7b4383bf889a41a637e88783e7f3a072f2ab10bc0cf6",
     "src/engine/keyboard/warm.ts": "aab79b0b86cd597d22ed4fbf303a3b445d06ba2ae4c11dd04d8a4c9c63dacdb1",
     "src/engine/lattice/build.ts": "a6b4b6e4a08fcd178456add753329b730b8996e589e155c15fc3e14fa4115e6c",
     "src/engine/lattice/index.ts": "7f86680acc98d47d5fd3ffcec51c0b55cc9c2bc5e3b9e986ab797338f546d4c3",
@@ -100,8 +100,9 @@
     "src/engine/lexicon/normalize.ts": "65890bd9f3ceb8674add81bdd311f3b23eb60a5caa0a10175c82fbba882913dd",
     "src/engine/lexicon/sourceRegistry.ts": "f1b0c8d2d9b8916dfbc3c32f556e1a87473ed7b259e82ad22f6fbebea312d367",
     "src/engine/lexicon/types.ts": "1649f3e139266add280353dfeff55f5525cccba938f8a37c66ef6c96c8f2712c",
-    "src/engine/memory/index.ts": "9fb38e0cbe41c6cc000aad7b4b3fa91982c4a650b1d270cf099efda87e2b84ca",
-    "src/engine/memory/migrate.ts": "1f3c68b0c5648bd5003ad867fcc17e2ff41b2aebf42fb64b7d7ae679c17ef575",
+    "src/engine/memory/importNormalization.ts": "949a713ea97339c0cdc4a68a41024e40c3c1e6650393bb16ae2c183b9e0d1731",
+    "src/engine/memory/index.ts": "947df8226a68f40d4bdd075f414dee89bf9d4c50a67853d40e29c52d76e825d9",
+    "src/engine/memory/migrate.ts": "a09c584773e59057a463db0068c24c12683bdc3395357f96d35a0f1c802a1263",
     "src/engine/memory/scoring.ts": "60e9636cd8db023a5ba95d6bd4aec23704b5110756b52db445481826661fa239",
     "src/engine/memory/storage.ts": "bc173a5b18306a8d7ede07965044ffc5601467c2d67f35813cf60e9370f4e866",
     "src/engine/memory/types.ts": "13ee268c8cd29104aa16d72dc49c9ea196d26e179a6a81a27c35ca801c85dc59",
@@ -185,32 +186,32 @@
         {
           "batch": 1,
           "samples": 1000,
-          "p50Ms": 0.162,
-          "p95Ms": 0.186,
-          "p99Ms": 0.356,
-          "maxMs": 0.606
+          "p50Ms": 0.354,
+          "p95Ms": 0.692,
+          "p99Ms": 0.938,
+          "maxMs": 1.745
         },
         {
           "batch": 2,
           "samples": 1000,
-          "p50Ms": 0.159,
-          "p95Ms": 0.182,
-          "p99Ms": 0.202,
-          "maxMs": 0.588
+          "p50Ms": 0.36,
+          "p95Ms": 0.705,
+          "p99Ms": 0.842,
+          "maxMs": 1.667
         },
         {
           "batch": 3,
           "samples": 1000,
-          "p50Ms": 0.159,
-          "p95Ms": 0.178,
-          "p99Ms": 0.203,
-          "maxMs": 0.493
+          "p50Ms": 0.353,
+          "p95Ms": 0.712,
+          "p99Ms": 0.783,
+          "maxMs": 1.826
         }
       ],
-      "p50Ms": 0.16,
-      "p95Ms": 0.181,
-      "p99Ms": 0.254,
-      "maxMs": 0.606,
+      "p50Ms": 0.356,
+      "p95Ms": 0.705,
+      "p99Ms": 0.871,
+      "maxMs": 1.826,
       "pipelineAssertions": {
         "exactBoundAccepted": true,
         "candidatesObserved": true,
@@ -225,32 +226,32 @@
         {
           "batch": 1,
           "samples": 1000,
-          "p50Ms": 0.203,
-          "p95Ms": 0.226,
-          "p99Ms": 0.264,
-          "maxMs": 0.71
+          "p50Ms": 0.446,
+          "p95Ms": 0.826,
+          "p99Ms": 1.087,
+          "maxMs": 1.779
         },
         {
           "batch": 2,
           "samples": 1000,
-          "p50Ms": 0.2,
-          "p95Ms": 0.212,
-          "p99Ms": 0.318,
-          "maxMs": 0.583
+          "p50Ms": 0.443,
+          "p95Ms": 0.821,
+          "p99Ms": 0.985,
+          "maxMs": 1.679
         },
         {
           "batch": 3,
           "samples": 1000,
-          "p50Ms": 0.198,
-          "p95Ms": 0.21,
-          "p99Ms": 0.293,
-          "maxMs": 0.459
+          "p50Ms": 0.451,
+          "p95Ms": 0.691,
+          "p99Ms": 1.017,
+          "maxMs": 1.835
         }
       ],
-      "p50Ms": 0.2,
-      "p95Ms": 0.218,
-      "p99Ms": 0.294,
-      "maxMs": 0.71,
+      "p50Ms": 0.447,
+      "p95Ms": 0.798,
+      "p99Ms": 1.047,
+      "maxMs": 1.835,
       "pipelineAssertions": {
         "exactBoundAccepted": true,
         "candidatesObserved": true,
@@ -265,32 +266,32 @@
         {
           "batch": 1,
           "samples": 1000,
-          "p50Ms": 0.25,
-          "p95Ms": 0.274,
-          "p99Ms": 0.403,
-          "maxMs": 0.633
+          "p50Ms": 0.538,
+          "p95Ms": 0.929,
+          "p99Ms": 1.523,
+          "maxMs": 4.837
         },
         {
           "batch": 2,
           "samples": 1000,
-          "p50Ms": 0.261,
-          "p95Ms": 0.284,
-          "p99Ms": 0.373,
-          "maxMs": 0.607
+          "p50Ms": 0.493,
+          "p95Ms": 0.92,
+          "p99Ms": 1.262,
+          "maxMs": 2.026
         },
         {
           "batch": 3,
           "samples": 1000,
-          "p50Ms": 0.261,
-          "p95Ms": 0.287,
-          "p99Ms": 0.338,
-          "maxMs": 0.536
+          "p50Ms": 0.52,
+          "p95Ms": 0.93,
+          "p99Ms": 1.161,
+          "maxMs": 2.229
         }
       ],
-      "p50Ms": 0.255,
-      "p95Ms": 0.283,
-      "p99Ms": 0.403,
-      "maxMs": 0.633,
+      "p50Ms": 0.518,
+      "p95Ms": 0.926,
+      "p99Ms": 1.375,
+      "maxMs": 4.837,
       "pipelineAssertions": {
         "exactBoundAccepted": true,
         "candidatesObserved": true,
@@ -305,32 +306,32 @@
         {
           "batch": 1,
           "samples": 1000,
-          "p50Ms": 0.43,
-          "p95Ms": 0.453,
-          "p99Ms": 0.617,
-          "maxMs": 1.158
+          "p50Ms": 0.958,
+          "p95Ms": 2.028,
+          "p99Ms": 2.173,
+          "maxMs": 2.996
         },
         {
           "batch": 2,
           "samples": 1000,
-          "p50Ms": 0.427,
-          "p95Ms": 0.446,
-          "p99Ms": 0.595,
-          "maxMs": 1.015
+          "p50Ms": 0.917,
+          "p95Ms": 1.436,
+          "p99Ms": 1.862,
+          "maxMs": 2.516
         },
         {
           "batch": 3,
           "samples": 1000,
-          "p50Ms": 0.421,
-          "p95Ms": 0.44,
-          "p99Ms": 0.591,
-          "maxMs": 0.76
+          "p50Ms": 0.908,
+          "p95Ms": 1.424,
+          "p99Ms": 1.897,
+          "maxMs": 2.602
         }
       ],
-      "p50Ms": 0.426,
-      "p95Ms": 0.448,
-      "p99Ms": 0.602,
-      "maxMs": 1.158,
+      "p50Ms": 0.927,
+      "p95Ms": 1.755,
+      "p99Ms": 2.087,
+      "maxMs": 2.996,
       "pipelineAssertions": {
         "exactBoundAccepted": true,
         "candidatesObserved": true,

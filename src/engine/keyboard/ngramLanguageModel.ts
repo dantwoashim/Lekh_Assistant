@@ -63,7 +63,7 @@ export function inlineCompletionForSession(session: KeyboardSession, primary?: C
     candidate: nextWord,
     confidence: nextWord.confidence,
     source: "ngram-lm",
-    acceptKeys: ["Tab", "Enter"]
+    acceptKeys: ["Tab", "ArrowRight"]
   };
 }
 
@@ -106,7 +106,7 @@ function activeCandidateInlineCompletion(session: KeyboardSession, primary?: Can
     },
     confidence: primary.confidence,
     source: "active-candidate",
-    acceptKeys: ["Tab", "Enter"]
+    acceptKeys: ["Tab", "ArrowRight"]
   };
 }
 

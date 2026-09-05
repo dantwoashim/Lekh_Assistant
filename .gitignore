@@ -36,4 +36,6 @@ data/keyboard-corpus/generated/**
 data/keyboard-corpus/curated/**
 data/keyboard-corpus/review/**/review_queue.jsonl
 native/**/.build/
+native/windows-tsf/skeleton/build/
+native/windows-tsf/skeleton/build-*/
 submission/Lekh Keyboard Test Installer/

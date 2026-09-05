@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("x64", "ARM64")]
+  [ValidateSet("x64", "x86", "ARM64")]
   [string]$Architecture = "x64",
   [switch]$SkipTests
 )
@@ -8,10 +8,15 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$BuildDirectoryName = if ($Architecture -eq "x64") { "build" } else { "build-$Architecture" }
+$CMakeArchitecture = if ($Architecture -eq "x86") { "Win32" } else { $Architecture }
+$BuildDirectoryName = switch ($Architecture) {
+  "x64" { "build" }
+  "x86" { "build-Win32" }
+  default { "build-$Architecture" }
+}
 $BuildDir = Join-Path $Root $BuildDirectoryName
 
-cmake -S $Root -B $BuildDir -A $Architecture -DBUILD_TESTING=ON
+cmake -S $Root -B $BuildDir -A $CMakeArchitecture -DBUILD_TESTING=ON
 if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed." }
 
 cmake --build $BuildDir --config Release

@@ -17,6 +17,13 @@ extern HMODULE g_module;
 namespace {
 
 constexpr std::size_t kMaximumFrameBytes = lekh::ipc::kMaximumFrameBytes;
+constexpr DWORD kTransportCompletionGraceMilliseconds = 15;
+
+DWORD transportTimeout(DWORD protocolTimeout) {
+  return protocolTimeout > MAXDWORD - kTransportCompletionGraceMilliseconds
+    ? MAXDWORD
+    : protocolTimeout + kTransportCompletionGraceMilliseconds;
+}
 
 std::string toUtf8(const std::wstring& value) {
   if (value.empty()) return "";
@@ -182,8 +189,9 @@ LekhIpcClient::LekhIpcClient(std::wstring pipeName)
 
 std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine, DWORD timeoutMs) const {
   if (pipeName_.empty()) return std::nullopt;
+  const DWORD boundedTransportTimeout = transportTimeout(timeoutMs);
   const ULONGLONG startedAt = GetTickCount64();
-  if (!WaitNamedPipeW(pipeName_.c_str(), timeoutMs)) return std::nullopt;
+  if (!WaitNamedPipeW(pipeName_.c_str(), boundedTransportTimeout)) return std::nullopt;
 
   HANDLE pipe = CreateFileW(
     pipeName_.c_str(),
@@ -211,13 +219,13 @@ std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine,
     return std::nullopt;
   }
   const DWORD bytesToWrite = static_cast<DWORD>(payload.size());
-  const std::optional<DWORD> writeTimeout = remainingTimeout(startedAt, timeoutMs);
+  const std::optional<DWORD> writeTimeout = remainingTimeout(startedAt, boundedTransportTimeout);
   if (!writeTimeout || !writeFileWithTimeout(pipe, payload.data(), bytesToWrite, *writeTimeout)) {
     CloseHandle(pipe);
     return std::nullopt;
   }
 
-  const std::optional<std::string> response = readLineWithDeadline(pipe, startedAt, timeoutMs);
+  const std::optional<std::string> response = readLineWithDeadline(pipe, startedAt, boundedTransportTimeout);
   CloseHandle(pipe);
   if (!response || response->empty()) return std::nullopt;
 

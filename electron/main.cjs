@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require("electron");
 const { existsSync } = require("node:fs");
 const { execFile, spawn } = require("node:child_process");
 const { createHash, createPublicKey, verify: verifySignature } = require("node:crypto");
@@ -10,16 +10,25 @@ const {
   BoundedSerialTaskQueue,
   validatePreferencePatch
 } = require("./preference-write-queue.cjs");
+const {
+  inspectWindowsRegistration,
+  probeWindowsBroker,
+  readWindowsPreferences,
+  readWindowsStartupRegistration,
+  registerWindowsTsfElevated,
+  windowsApplicationIdentifier,
+  writeWindowsPreferencePatch,
+  writeWindowsStartupRegistration
+} = require("./windows-native.cjs");
 
 const isDevServer = Boolean(process.env.LEKH_COMPANION_DEV_SERVER);
 const startsInBackground = process.platform === "win32" && process.argv.includes("--background");
 const execFileAsync = promisify(execFile);
 const nativePreferenceDomain = "com.lekh.inputmethod.LekhKeyboard";
 const nativeBundlePath = path.join(homedir(), "Library", "Input Methods", "Lekh Keyboard.app");
-const windowsTsfClsid = "{3F04E1EA-7D90-47E1-865B-11D6F13D0301}";
 const nativePreferenceKeys = new Map([
   ["inlinePreviewEnabled", ["LekhInlinePreviewEnabled", true]],
-  ["customCandidatePanelEnabled", ["LekhCustomCandidatePanelEnabled", true]],
+  ["customCandidatePanelEnabled", ["LekhCustomCandidatePanelEnabled", false]],
   ["proofreadAsYouTypeEnabled", ["LekhProofreadAsYouTypeEnabled", true]],
   ["smartPunctuationEnabled", ["LekhSmartPunctuationEnabled", true]],
   ["personalizationEnabled", ["LekhPersonalizationEnabled", true]],
@@ -52,6 +61,11 @@ let verifiedUpdate = null;
 let settingsOpenRequestedBeforeReady = false;
 let preferenceQuitDrainStarted = false;
 let preferenceQuitDrainComplete = false;
+let windowsTray = null;
+let pipeBrokerGeneration = 0;
+let explainedWindowsBackgroundBehavior = false;
+let windowsStartupRegistrationEnabled = false;
+const windowsAuthenticodeStatusCache = new Map();
 
 function createWindow({ showWhenReady = true } = {}) {
   const window = new BrowserWindow({
@@ -60,18 +74,34 @@ function createWindow({ showWhenReady = true } = {}) {
     minWidth: 760,
     minHeight: 600,
     title: "Lekh Keyboard Companion",
-    backgroundColor: "#ececec",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#222224" : "#f3f3f3",
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      spellcheck: false,
       webSecurity: true
     }
   });
 
   if (showWhenReady) window.once("ready-to-show", () => window.show());
+  window.once("closed", () => {
+    if (
+      process.platform === "win32"
+      && !applicationIsQuitting
+      && !explainedWindowsBackgroundBehavior
+      && windowsTray
+    ) {
+      explainedWindowsBackgroundBehavior = true;
+      windowsTray.displayBalloon({
+        title: "Lekh Keyboard is still running",
+        content: "The typing service stays available. Open Settings from the Lekh tray icon.",
+        respectQuietTime: true
+      });
+    }
+  });
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) shell.openExternal(url);
     return { action: "deny" };
@@ -139,14 +169,33 @@ if (!ownsPrimaryInstance) {
       settingsOpenRequestedBeforeReady = true;
     }
   });
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    lockDownRendererPermissions();
     installApplicationMenu();
     registerCompanionIpc();
     startWindowsPipeBrokerIfAvailable();
+    if (process.platform === "win32" && app.isPackaged) {
+      windowsStartupRegistrationEnabled = await readWindowsStartupRegistration(process.execPath);
+    }
+    createWindowsTray();
     if (!startsInBackground || settingsOpenRequestedBeforeReady) createWindow();
     settingsOpenRequestedBeforeReady = false;
     app.on("activate", showCompanionWindow);
+  }).catch((error) => {
+    dialog.showErrorBox(
+      "Lekh Keyboard could not start",
+      error instanceof Error ? error.message : "The companion could not initialize."
+    );
+    app.quit();
   });
+}
+
+function lockDownRendererPermissions() {
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false);
+  });
+  session.defaultSession.setDevicePermissionHandler(() => false);
 }
 
 function installApplicationMenu() {
@@ -237,7 +286,7 @@ function registerCompanionIpc() {
   });
 
   ipcMain.handle("lekh:preferences:read", async () => {
-    if (process.platform === "win32") return defaultCompanionPreferences();
+    if (process.platform === "win32") return readWindowsPreferences();
     const settings = {};
     await Promise.all(Array.from(nativePreferenceKeys.entries()).map(async ([publicKey, [nativeKey, fallback]]) => {
       const value = await readDefaults(nativePreferenceDomain, nativeKey);
@@ -252,15 +301,16 @@ function registerCompanionIpc() {
   });
 
   ipcMain.handle("lekh:preferences:update", async (_event, patch) => {
-    if (process.platform === "win32") {
-      throw new Error("Windows native preference integration is not yet available.");
-    }
     const validatedPatch = validatePreferencePatch(patch, {
       booleanKeys: nativeBooleanPreferenceKeys,
       nativeModes,
       maximumExcludedApplications
     });
-    return preferenceWriteQueue.enqueue(() => writeNativePreferencePatch(validatedPatch));
+    return preferenceWriteQueue.enqueue(() => (
+      process.platform === "win32"
+        ? writeWindowsPreferencePatch(validatedPatch)
+        : writeNativePreferencePatch(validatedPatch)
+    ));
   });
 
   ipcMain.handle("lekh:open-keyboard-settings", async () => {
@@ -289,6 +339,24 @@ function registerCompanionIpc() {
   });
 
   ipcMain.handle("lekh:privacy:choose-excluded-applications", async () => {
+    if (process.platform === "win32") {
+      const result = await dialog.showOpenDialog({
+        title: "Never personalize in these applications",
+        defaultPath: process.env.ProgramFiles || process.env.LOCALAPPDATA,
+        buttonLabel: "Exclude applications",
+        filters: [{ name: "Windows applications", extensions: ["exe"] }],
+        properties: ["openFile", "multiSelections", "dontAddToRecent"]
+      });
+      if (result.canceled) return [];
+      return result.filePaths.slice(0, 25).flatMap((applicationPath) => {
+        const identifier = windowsApplicationIdentifier(applicationPath);
+        if (!identifier) return [];
+        return [{
+          bundleIdentifier: identifier,
+          displayName: path.basename(applicationPath, path.extname(applicationPath))
+        }];
+      });
+    }
     if (process.platform !== "darwin") return [];
     const result = await dialog.showOpenDialog({
       title: "Never learn in these applications",
@@ -314,6 +382,39 @@ function registerCompanionIpc() {
       });
     }
     return applications;
+  });
+
+  ipcMain.handle("lekh:windows:repair", async () => {
+    if (process.platform !== "win32") throw new Error("Windows repair is available only on Windows.");
+    const tsfPath = windowsTsfBundlePath();
+    if (!tsfPath) throw new Error("The packaged Windows text service is missing.");
+    const compatibilityDllPath = expectedWindowsX86TsfBundlePath();
+    if (compatibilityDllPath && !existsSync(compatibilityDllPath)) {
+      throw new Error("The packaged 32-bit Windows text service is missing.");
+    }
+    await registerWindowsTsfElevated(tsfPath, { compatibilityDllPath });
+    await restartWindowsPipeBroker();
+    const health = await waitForWindowsBrokerHealth();
+    const status = await windowsNativeStatus();
+    if (!status.registered) throw new Error("Windows did not retain the repaired text-service registration.");
+    if (!health.healthy) throw new Error("The text service was repaired, but its local broker did not become ready.");
+    return { ok: true, status };
+  });
+
+  ipcMain.handle("lekh:windows:restart-service", async () => {
+    if (process.platform !== "win32") throw new Error("The Windows typing service is not available on this platform.");
+    await restartWindowsPipeBroker();
+    const health = await waitForWindowsBrokerHealth();
+    return { ok: health.healthy };
+  });
+
+  ipcMain.handle("lekh:windows:set-startup", async (_event, enabled) => {
+    if (process.platform !== "win32" || !app.isPackaged || typeof enabled !== "boolean") {
+      throw new Error("Run-at-sign-in can be changed only by the installed Windows companion.");
+    }
+    await setWindowsStartupEnabled(enabled);
+    rebuildWindowsTrayMenu();
+    return { ok: true, enabled: windowsStartupRegistrationEnabled };
   });
 
   ipcMain.handle("lekh:updates:check", async () => {
@@ -411,32 +512,49 @@ async function writeNativePreferencePatch(patch) {
   return { ok: true };
 }
 
-function defaultCompanionPreferences() {
-  return {
-    nativeTypingMode: "romanized-traditional",
-    inlinePreviewEnabled: true,
-    customCandidatePanelEnabled: true,
-    proofreadAsYouTypeEnabled: true,
-    smartPunctuationEnabled: true,
-    personalizationEnabled: false,
-    nextWordPredictionEnabled: true,
-    excludedApplicationBundleIdentifiers: []
-  };
-}
-
 async function windowsNativeStatus() {
   const tsfPath = windowsTsfBundlePath();
-  const registered = await isWindowsTsfRegistered();
+  const compatibilityDllPath = expectedWindowsX86TsfBundlePath();
+  const installed = Boolean(tsfPath && (!compatibilityDllPath || existsSync(compatibilityDllPath)));
+  const [registration, broker, startupEnabled] = await Promise.all([
+    tsfPath
+      ? inspectWindowsRegistration(tsfPath, { compatibilityDllPath })
+      : Promise.resolve({
+        registered: false,
+        pathMatches: false,
+        valid: false,
+        issues: ["missing-native-artifact"]
+      }),
+    pipeBrokerProcess ? probeWindowsBroker() : Promise.resolve({
+      healthy: false,
+      latencyMs: 0,
+      reason: "service-process-not-running"
+    }),
+    app.isPackaged ? readWindowsStartupRegistration(process.execPath) : Promise.resolve(false)
+  ]);
+  windowsStartupRegistrationEnabled = startupEnabled;
   return {
     platform: process.platform,
-    installed: Boolean(tsfPath),
-    version: tsfPath ? app.getVersion() : null,
-    enabled: registered,
+    installed,
+    version: installed ? app.getVersion() : null,
+    enabled: registration.valid && broker.healthy,
     // The companion has no reliable cross-process proof of the foreground TSF
     // profile. Never turn registration into a false "active now" claim.
     selected: false,
     bundlePath: tsfPath,
-    releaseSigned: tsfPath ? await isWindowsAuthenticodeSigned(tsfPath) : null
+    releaseSigned: tsfPath ? await isWindowsAuthenticodeSigned(tsfPath) : null,
+    registered: registration.valid,
+    registrationPathMatches: registration.pathMatches,
+    registrationIssues: registration.issues,
+    compatibilityRegistered: registration.compatibilityRegistered,
+    compatibilityPathMatches: registration.compatibilityPathMatches,
+    serviceHealthy: broker.healthy,
+    serviceLatencyMs: broker.latencyMs,
+    serviceIssue: broker.reason,
+    serviceProcessRunning: Boolean(pipeBrokerProcess && !pipeBrokerProcess.killed),
+    startupEnabled,
+    startupCanChange: app.isPackaged,
+    repairAvailable: Boolean(installed && !registration.valid)
   };
 }
 
@@ -448,31 +566,27 @@ function windowsTsfBundlePath() {
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
-async function isWindowsTsfRegistered() {
-  try {
-    await execFileAsync("reg.exe", [
-      "query",
-      `HKCU\\Software\\Classes\\CLSID\\${windowsTsfClsid}`
-    ], { timeout: 3000, windowsHide: true });
-    return true;
-  } catch {
-    return false;
-  }
+function expectedWindowsX86TsfBundlePath() {
+  if (process.arch === "ia32") return null;
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "native", "windows-tsf", "build-x86", "bin", "Release", "LekhTextService.dll")
+    : path.join(__dirname, "..", "native", "windows-tsf", "skeleton", "build-Win32", "bin", "Release", "LekhTextService.dll");
 }
 
 async function isWindowsAuthenticodeSigned(target) {
-  try {
-    const { stdout } = await execFileAsync("powershell.exe", [
+  if (!windowsAuthenticodeStatusCache.has(target)) {
+    const check = execFileAsync("powershell.exe", [
       "-NoProfile",
       "-NonInteractive",
       "-Command",
       "(Get-AuthenticodeSignature -LiteralPath $args[0]).Status",
       target
-    ], { timeout: 5000, windowsHide: true });
-    return stdout.trim() === "Valid";
-  } catch {
-    return false;
+    ], { timeout: 5000, windowsHide: true })
+      .then(({ stdout }) => stdout.trim() === "Valid")
+      .catch(() => false);
+    windowsAuthenticodeStatusCache.set(target, check);
   }
+  return windowsAuthenticodeStatusCache.get(target);
 }
 
 async function isDeveloperIdSigned(target = process.execPath) {
@@ -573,6 +687,68 @@ function parseDefaultsArray(value) {
     .filter((line) => /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(line));
 }
 
+function createWindowsTray() {
+  if (process.platform !== "win32" || windowsTray) return;
+  const iconPath = path.join(__dirname, "..", "build", "icon.ico");
+  const icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) {
+    console.error(`Windows tray icon is unavailable: ${iconPath}`);
+    return;
+  }
+  windowsTray = new Tray(icon);
+  windowsTray.setToolTip("Lekh Keyboard");
+  windowsTray.on("click", showCompanionWindow);
+  windowsTray.on("double-click", showCompanionWindow);
+  rebuildWindowsTrayMenu();
+}
+
+function rebuildWindowsTrayMenu() {
+  if (!windowsTray) return;
+  windowsTray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: "Open Lekh Settings",
+      click: showCompanionWindow
+    },
+    {
+      label: "Windows language & keyboard settings",
+      click: () => void shell.openExternal("ms-settings:regionlanguage")
+    },
+    { type: "separator" },
+    {
+      label: "Run at sign-in",
+      type: "checkbox",
+      checked: windowsStartupRegistrationEnabled,
+      enabled: app.isPackaged,
+      click: (item) => {
+        void setWindowsStartupEnabled(item.checked).then(() => {
+          rebuildWindowsTrayMenu();
+        }).catch((error) => {
+          console.error("Could not change Lekh run-at-sign-in state.", error);
+        });
+      }
+    },
+    {
+      label: "Restart typing service",
+      click: () => void restartWindowsPipeBroker().catch((error) => {
+        console.error("Could not restart the Lekh typing service.", error);
+      })
+    },
+    { type: "separator" },
+    {
+      label: "Exit Lekh Keyboard",
+      click: () => app.quit()
+    }
+  ]));
+}
+
+async function setWindowsStartupEnabled(enabled) {
+  if (process.platform !== "win32" || !app.isPackaged || typeof enabled !== "boolean") {
+    throw new Error("Run-at-sign-in can be changed only by the installed Windows companion.");
+  }
+  const result = await writeWindowsStartupRegistration(enabled, process.execPath);
+  windowsStartupRegistrationEnabled = result.enabled;
+}
+
 async function readPlistValue(key) {
   try {
     const plistPath = path.join(nativeBundlePath, "Contents", "Info.plist");
@@ -609,12 +785,15 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", (event) => {
   applicationIsQuitting = true;
+  pipeBrokerGeneration += 1;
   if (pipeBrokerRestartTimer) clearTimeout(pipeBrokerRestartTimer);
   if (pipeBrokerStableTimer) clearTimeout(pipeBrokerStableTimer);
   pipeBrokerRestartTimer = null;
   pipeBrokerStableTimer = null;
   if (pipeBrokerProcess && !pipeBrokerProcess.killed) pipeBrokerProcess.kill();
   pipeBrokerProcess = null;
+  if (windowsTray) windowsTray.destroy();
+  windowsTray = null;
 
   preferenceWriteQueue.close();
   if (preferenceQuitDrainComplete || preferenceWriteQueue.pendingCount === 0) {
@@ -641,6 +820,7 @@ app.on("before-quit", (event) => {
 
 function startWindowsPipeBrokerIfAvailable() {
   if (process.platform !== "win32" || applicationIsQuitting || pipeBrokerProcess) return;
+  const generation = pipeBrokerGeneration;
   const nativeBuildDirectory = process.arch === "arm64" ? "build-ARM64" : "build";
   const daemonPath = app.isPackaged
     ? path.join(process.resourcesPath, "native", "daemon", "lekh-keyboard-daemon.mjs")
@@ -669,7 +849,7 @@ function startWindowsPipeBrokerIfAvailable() {
     if (pipeBrokerStableTimer) clearTimeout(pipeBrokerStableTimer);
     pipeBrokerStableTimer = null;
     if (pipeBrokerProcess === broker) pipeBrokerProcess = null;
-    if (applicationIsQuitting) return;
+    if (applicationIsQuitting || generation !== pipeBrokerGeneration) return;
     const retryDelays = [250, 1000, 4000, 15_000, 60_000];
     const retryIndex = Math.min(pipeBrokerRestartAttempts, retryDelays.length - 1);
     const delay = retryDelays[retryIndex];
@@ -682,4 +862,34 @@ function startWindowsPipeBrokerIfAvailable() {
   };
   broker.once("error", handleStoppedBroker);
   broker.once("exit", handleStoppedBroker);
+}
+
+async function restartWindowsPipeBroker() {
+  if (process.platform !== "win32" || applicationIsQuitting) {
+    throw new Error("The Windows typing service cannot be restarted now.");
+  }
+  pipeBrokerGeneration += 1;
+  if (pipeBrokerRestartTimer) clearTimeout(pipeBrokerRestartTimer);
+  if (pipeBrokerStableTimer) clearTimeout(pipeBrokerStableTimer);
+  pipeBrokerRestartTimer = null;
+  pipeBrokerStableTimer = null;
+  const broker = pipeBrokerProcess;
+  pipeBrokerProcess = null;
+  pipeBrokerRestartAttempts = 0;
+  if (broker && !broker.killed) broker.kill();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  startWindowsPipeBrokerIfAvailable();
+}
+
+async function waitForWindowsBrokerHealth(timeoutMs = 8000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastHealth = { healthy: false, latencyMs: 0, reason: "service-process-not-running" };
+  do {
+    if (pipeBrokerProcess && !pipeBrokerProcess.killed) {
+      lastHealth = await probeWindowsBroker({ timeoutMs: 1000 });
+      if (lastHealth.healthy) return lastHealth;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  } while (Date.now() < deadline);
+  return lastHealth;
 }

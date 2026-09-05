@@ -5,6 +5,8 @@ Status: historical readiness snapshot. Current release details live in
 
 Updated: 2026-07-17
 
+> **Superseded Windows snapshot:** the Windows implementation statements below describe the 2026-07-17 revision and are no longer current. The 2026-08-24 Windows status is in [`WINDOWS_NATIVE_IMPLEMENTATION_REPORT.md`](./WINDOWS_NATIVE_IMPLEMENTATION_REPORT.md) and [`WINDOWS_RELEASE_BUILD.md`](./WINDOWS_RELEASE_BUILD.md).
+
 Evidence basis: reviewed source revision `12af2d686479f61fb50b147e4995842516e47b83` and the locally generated build 177 archive. Build 176 is superseded and does not contain these fixes.
 
 ## Current decision

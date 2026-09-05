@@ -5,7 +5,7 @@ import { isWellFormedUtf16 } from "../util/utf16";
 export interface CompositionMutation {
   text: string;
   caret: number;
-  command?: "commit-raw" | "cancel" | "expand-candidates" | "pass-through";
+  command?: "commit-raw" | "cancel" | "pass-through";
   warning?: string;
 }
 
@@ -77,7 +77,7 @@ export function applyKeyToComposition(input: string, caret: number, key: Keyboar
   }
 
   if (safeKey === "Tab") {
-    return { text: input, caret, command: "expand-candidates" };
+    return { text: input, caret, command: "pass-through" };
   }
 
   if (safeKey === " ") {

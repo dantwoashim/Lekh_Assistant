@@ -40,7 +40,7 @@ function walk(path) {
   const stat = statSync(path);
   if (stat.isDirectory()) {
     const name = path.split(/[\\/]/).pop();
-    if (skipNames.has(name)) return;
+    if (skipNames.has(name) || name === "build" || name?.startsWith("build-")) return;
     for (const entry of readdirSync(path)) walk(join(path, entry));
     return;
   }

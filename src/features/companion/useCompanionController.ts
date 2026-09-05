@@ -22,6 +22,8 @@ export interface CompanionNotice {
   tone: CompanionNoticeTone;
 }
 
+export type WindowsAction = "repair" | "restart" | "startup";
+
 type PreferenceKey = keyof LekhNativePreferences;
 type PreferenceValue = LekhNativePreferences[PreferenceKey];
 
@@ -74,6 +76,7 @@ export function useCompanionController() {
   const [notice, setNotice] = useState<CompanionNotice | null>(null);
   const [updateStatus, setUpdateStatus] = useState<LekhUpdateStatus | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
+  const [windowsActionBusy, setWindowsActionBusy] = useState<WindowsAction | null>(null);
   const [manualIdentifier, setManualIdentifierState] = useState("");
   const [applicationNames, setApplicationNames] = useState<Record<string, string>>({});
   const [demoSequence, setDemoSequence] = useState(0);
@@ -92,6 +95,7 @@ export function useCompanionController() {
   const statusGenerationRef = useRef(0);
   const preferencesGenerationRef = useRef(0);
   const updateGenerationRef = useRef(0);
+  const windowsActionBusyRef = useRef<WindowsAction | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const copy = copyByLocale[locale];
 
@@ -235,8 +239,13 @@ export function useCompanionController() {
   }, [refresh]);
 
   useEffect(() => {
-    if (state.kind !== "ready" || state.status.selected) return;
-    const interval = window.setInterval(() => void refresh(), 4000);
+    if (state.kind !== "ready") return;
+    const isWindows = window.lekhDesktop?.platform === "win32";
+    const needsRefresh = isWindows
+      ? !state.status.registered || !state.status.serviceHealthy
+      : !state.status.selected;
+    if (!needsRefresh) return;
+    const interval = window.setInterval(() => void refresh(), isWindows ? 6000 : 4000);
     return () => window.clearInterval(interval);
   }, [refresh, state]);
 
@@ -497,6 +506,68 @@ export function useCompanionController() {
     }
   }
 
+  async function repairWindowsInstallation() {
+    const bridge = window.lekhDesktop;
+    if (!bridge || !mountedRef.current || windowsActionBusyRef.current) return;
+    windowsActionBusyRef.current = "repair";
+    setWindowsActionBusy("repair");
+    try {
+      const result = await bridge.repairWindowsInstallation();
+      if (!mountedRef.current) return;
+      if (!result.ok) throw new Error("Windows registration repair failed.");
+      authoritativeStatusRef.current = result.status;
+      publishReadyState();
+      showNotice(copy.windows.repairSucceeded, "success");
+      await refresh();
+    } catch {
+      if (mountedRef.current) showNotice(copy.windows.actionFailed, "error");
+    } finally {
+      windowsActionBusyRef.current = null;
+      if (mountedRef.current) setWindowsActionBusy(null);
+    }
+  }
+
+  async function restartWindowsService() {
+    const bridge = window.lekhDesktop;
+    if (!bridge || !mountedRef.current || windowsActionBusyRef.current) return;
+    windowsActionBusyRef.current = "restart";
+    setWindowsActionBusy("restart");
+    try {
+      const result = await bridge.restartWindowsService();
+      if (!result.ok) throw new Error("Windows typing service restart failed.");
+      if (!mountedRef.current) return;
+      showNotice(copy.windows.restartSucceeded, "success");
+      await refresh();
+    } catch {
+      if (mountedRef.current) showNotice(copy.windows.actionFailed, "error");
+    } finally {
+      windowsActionBusyRef.current = null;
+      if (mountedRef.current) setWindowsActionBusy(null);
+    }
+  }
+
+  async function setWindowsStartup(enabled: boolean) {
+    const bridge = window.lekhDesktop;
+    if (!bridge || !mountedRef.current || windowsActionBusyRef.current) return;
+    windowsActionBusyRef.current = "startup";
+    setWindowsActionBusy("startup");
+    try {
+      const result = await bridge.setWindowsStartupEnabled(enabled);
+      if (!result.ok) throw new Error("Windows run-at-sign-in update failed.");
+      if (!mountedRef.current) return;
+      showNotice(
+        result.enabled ? copy.windows.startupEnabled : copy.windows.startupDisabled,
+        "success"
+      );
+      await refresh();
+    } catch {
+      if (mountedRef.current) showNotice(copy.windows.actionFailed, "error");
+    } finally {
+      windowsActionBusyRef.current = null;
+      if (mountedRef.current) setWindowsActionBusy(null);
+    }
+  }
+
   return {
     activeSection,
     addManualIdentifier,
@@ -514,17 +585,21 @@ export function useCompanionController() {
     notice,
     pendingPreferences,
     refresh,
+    repairWindowsInstallation,
     replayDemo: () => {
       if (mountedRef.current) setDemoSequence((value) => value + 1);
     },
     saveExcludedApplications,
+    restartWindowsService,
     setManualIdentifier: (value: string) => {
       if (mountedRef.current) setManualIdentifierState(value);
     },
     state,
+    setWindowsStartup,
     updateBusy,
     updateMode,
     updatePreference,
-    updateStatus
+    updateStatus,
+    windowsActionBusy
   };
 }

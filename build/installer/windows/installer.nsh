@@ -48,6 +48,13 @@
     Quit
 
   lekh_tsf_dll_found:
+    IfFileExists "$INSTDIR\resources\native\windows-tsf\build-x86\bin\Release\LekhTextService.dll" lekh_x86_tsf_dll_found
+      DetailPrint "Required 32-bit Lekh TSF DLL is missing; 32-bit applications would not support the keyboard."
+      MessageBox MB_OK|MB_ICONSTOP "Lekh Keyboard could not be installed because its 32-bit Windows text service is missing." /SD IDOK
+      SetErrorLevel 1
+      Quit
+
+  lekh_x86_tsf_dll_found:
     IfFileExists "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhPipeBroker.exe" lekh_pipe_broker_found
       DetailPrint "Required Lekh named-pipe broker is missing; refusing an unprotected keyboard install."
       MessageBox MB_OK|MB_ICONSTOP "Lekh Keyboard could not be installed because its secure native IPC broker is missing. Rebuild the installer and try again." /SD IDOK
@@ -72,22 +79,62 @@
     Quit
 
   lekh_tsf_registration_complete:
+    DetailPrint "Registering 32-bit Lekh TSF support for legacy Windows applications."
+    ClearErrors
+    ExecWait '"$WINDIR\SysWOW64\regsvr32.exe" /s "$INSTDIR\resources\native\windows-tsf\build-x86\bin\Release\LekhTextService.dll"' $1
+    IfErrors lekh_x86_tsf_registration_failed
+    !insertmacro lekhInstallPhase "register-x86-tsf-exit-$1"
+    IntCmp $1 0 lekh_all_tsf_registration_complete lekh_x86_tsf_registration_failed lekh_x86_tsf_registration_failed
+
+  lekh_x86_tsf_registration_failed:
+    DetailPrint "32-bit Lekh TSF registration failed with exit code $1; rolling back 64-bit registration."
+    ExecWait '"$WINDIR\Sysnative\regsvr32.exe" /u /s "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll"'
+    MessageBox MB_OK|MB_ICONSTOP "Lekh Keyboard could not register support for 32-bit Windows applications. Installation was rolled back." /SD IDOK
+    SetErrorLevel 1
+    Quit
+
+  lekh_all_tsf_registration_complete:
     !insertmacro lekhInstallPhase "tsf-registered"
-    DetailPrint "Lekh TSF text service registered successfully."
+    DetailPrint "Lekh 64-bit and 32-bit TSF text services registered successfully."
 
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "LekhKeyboardCompanion" '"$INSTDIR\Lekh Keyboard Companion.exe" --background'
 
   DetailPrint "Starting the Lekh keyboard service in the background."
   !insertmacro lekhInstallPhase "starting-companion"
   ClearErrors
-  ExecWait '"$SYSDIR\cmd.exe" /D /C start "" /B "$INSTDIR\Lekh Keyboard Companion.exe" --background' $0
-  IfErrors lekh_companion_start_failed
-  !insertmacro lekhInstallPhase "start-companion-exit-$0"
-  IntCmp $0 0 lekh_companion_started lekh_companion_start_failed lekh_companion_start_failed
+  ; The installer is elevated for machine-wide TSF registration. Launch the
+  ; companion through electron-builder's original-user UAC bridge so the
+  ; per-user pipe, preferences, and startup process belong to the desktop user.
+  !insertmacro UAC_AsUser_ExecShell "" "$INSTDIR\Lekh Keyboard Companion.exe" "--background" "$INSTDIR" SW_HIDE
+    IfErrors lekh_companion_start_failed
+    !insertmacro lekhInstallPhase "start-companion-requested"
+    Goto lekh_wait_for_runtime
+
+  lekh_wait_for_runtime:
+    StrCpy $2 0
+  lekh_runtime_probe:
+    Sleep 500
+    nsProcess::_FindProcess /NOUNLOAD "${APP_EXECUTABLE_FILENAME}"
+    Pop $3
+    nsProcess::_FindProcess /NOUNLOAD "LekhPipeBroker.exe"
+    Pop $4
+    ${If} $3 == 0
+    ${AndIf} $4 == 0
+      nsProcess::_Unload
+      Goto lekh_companion_started
+    ${EndIf}
+    IntOp $2 $2 + 1
+    IntCmp $2 20 lekh_runtime_start_failed lekh_runtime_probe lekh_runtime_start_failed
+
+  lekh_runtime_start_failed:
+    nsProcess::_Unload
+    DetailPrint "Lekh background runtime did not become healthy within 10 seconds."
+    Goto lekh_companion_start_failed
 
   lekh_companion_start_failed:
     DetailPrint "Lekh background service could not be started; rolling back native registration."
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "LekhKeyboardCompanion"
+    ExecWait '"$WINDIR\SysWOW64\regsvr32.exe" /u /s "$INSTDIR\resources\native\windows-tsf\build-x86\bin\Release\LekhTextService.dll"'
     ExecWait '"$WINDIR\Sysnative\regsvr32.exe" /u /s "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll"'
     MessageBox MB_OK|MB_ICONSTOP "Lekh Keyboard was installed but its background typing service could not start. Installation was rolled back." /SD IDOK
     SetErrorLevel 1
@@ -111,4 +158,9 @@
     DetailPrint "Unregistering Lekh TSF text service."
     ExecWait '"$WINDIR\Sysnative\regsvr32.exe" /u /s "$INSTDIR\resources\native\windows-tsf\build\bin\Release\LekhTextService.dll"' $0
     DetailPrint "Lekh TSF unregister exit code: $0"
+
+  IfFileExists "$INSTDIR\resources\native\windows-tsf\build-x86\bin\Release\LekhTextService.dll" 0 +4
+    DetailPrint "Unregistering 32-bit Lekh TSF text service."
+    ExecWait '"$WINDIR\SysWOW64\regsvr32.exe" /u /s "$INSTDIR\resources\native\windows-tsf\build-x86\bin\Release\LekhTextService.dll"' $1
+    DetailPrint "Lekh 32-bit TSF unregister exit code: $1"
 !macroend

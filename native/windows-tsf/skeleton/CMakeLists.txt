@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(LekhTextService LANGUAGES CXX)
+project(LekhTextService LANGUAGES CXX RC)
 
 if(NOT WIN32)
   message(FATAL_ERROR "LekhTextService is a Windows TSF DLL and must be built on Windows with MSVC.")
@@ -27,6 +27,10 @@ add_library(LekhPipeSecurity STATIC
 
 add_library(LekhDaemonBackend STATIC
   LekhDaemonBackend.cpp
+)
+
+add_library(LekhWindowsPreferences STATIC
+  WindowsPreferences.cpp
 )
 
 target_compile_features(LekhTsfProtocol PUBLIC cxx_std_20)
@@ -73,15 +77,28 @@ target_compile_definitions(LekhDaemonBackend PRIVATE
 )
 target_include_directories(LekhDaemonBackend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(LekhDaemonBackend PRIVATE LekhPipeSecurity bcrypt)
+target_compile_features(LekhWindowsPreferences PUBLIC cxx_std_20)
+target_compile_definitions(LekhWindowsPreferences PRIVATE
+  UNICODE
+  _UNICODE
+  WIN32_LEAN_AND_MEAN
+  NOMINMAX
+  _WIN32_WINNT=0x0A00
+)
+target_include_directories(LekhWindowsPreferences PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(LekhWindowsPreferences PRIVATE advapi32)
 
 add_library(LekhTextService SHARED
+  CandidateAccessibility.cpp
   CandidateWindow.cpp
   ClassFactory.cpp
+  DisplayAttributes.cpp
   DllMain.cpp
   InputScopeGuids.cpp
   IpcClient.cpp
   LekhTextService.cpp
   LekhTextService.def
+  LekhTextService.rc
   Register.cpp
   TsfEditSession.cpp
 )
@@ -100,6 +117,7 @@ target_link_libraries(LekhTextService PRIVATE
   LekhTsfProtocol
   LekhPipeServerIdentity
   LekhWindowsIdentity
+  LekhWindowsPreferences
   ole32
   oleaut32
   uuid
@@ -107,6 +125,7 @@ target_link_libraries(LekhTextService PRIVATE
   gdi32
   shlwapi
   user32
+  uiautomationcore
 )
 
 add_executable(LekhPipeBroker WIN32
@@ -136,6 +155,7 @@ if(MSVC)
   target_compile_options(LekhPipeServerIdentity PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhPipeSecurity PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhDaemonBackend PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
+  target_compile_options(LekhWindowsPreferences PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhTextService PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   target_compile_options(LekhPipeBroker PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
 endif()
@@ -182,7 +202,15 @@ if(BUILD_TESTING)
     _WIN32_WINNT=0x0A00
   )
   target_include_directories(LekhTsfInjectionTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(LekhTsfInjectionTests PRIVATE LekhCandidateState ole32 oleaut32 uuid)
+  target_link_libraries(
+    LekhTsfInjectionTests PRIVATE
+    LekhCandidateState
+    LekhTsfProtocol
+    ole32
+    oleaut32
+    uuid
+    user32
+  )
   if(MSVC)
     target_compile_options(LekhTsfInjectionTests PRIVATE /W4 /WX /permissive- /utf-8 /sdl)
   endif()

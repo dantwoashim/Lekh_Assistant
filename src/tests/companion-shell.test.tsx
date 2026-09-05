@@ -68,6 +68,9 @@ function installBridge({
     openKeyboardSettings: vi.fn().mockResolvedValue({ ok: true }),
     revealInputMethod: vi.fn().mockResolvedValue({ ok: true, error: null }),
     chooseExcludedApplications: vi.fn().mockResolvedValue(chosenApplications),
+    repairWindowsInstallation: vi.fn().mockResolvedValue({ ok: true, status }),
+    restartWindowsService: vi.fn().mockResolvedValue({ ok: true }),
+    setWindowsStartupEnabled: vi.fn().mockResolvedValue({ ok: true, enabled: true }),
     checkForUpdates: vi.fn().mockResolvedValue({ status: "current", message: "Lekh is up to date." }),
     downloadVerifiedUpdate: vi.fn().mockResolvedValue({ ok: true, version: "0.1.0" })
   };
@@ -117,7 +120,11 @@ describe("companion settings shell", () => {
     await screen.findByRole("heading", { name: "Finish words without losing your flow" });
     const ghostSwitch = screen.getByRole("switch", { name: "Ghost suggestions" });
     expect(ghostSwitch).toBeChecked();
-    expect(screen.getByText("Space always keeps exactly what you typed.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Space accepts the visible suggestion. Shift+Space keeps exactly what you typed."
+      )
+    ).toBeInTheDocument();
     await user.click(ghostSwitch);
     await waitFor(() => expect(bridge.updatePreferences).toHaveBeenCalledWith({ inlinePreviewEnabled: false }));
     expect(await screen.findByRole("status")).toHaveTextContent("Saved on this device");
@@ -177,30 +184,79 @@ describe("companion settings shell", () => {
     expect(screen.getByText(/never include typed text/)).toBeInTheDocument();
   });
 
-  it("keeps the Windows fallback honest when native settings are not connected", async () => {
+  it("exposes connected Windows preferences, verified modes, and privacy exclusions", async () => {
     const bridge = installBridge({
       platform: "win32",
+      chosenApplications: [{ bundleIdentifier: "win32.exe:notepad.exe", displayName: "Notepad" }],
       status: {
         platform: "win32",
-        installed: false,
-        enabled: false,
+        installed: true,
+        enabled: true,
         selected: false,
-        version: null,
-        bundlePath: null,
-        releaseSigned: null
+        version: "0.1.0",
+        bundlePath: "C:\\Program Files\\Lekh Keyboard\\LekhTextService.dll",
+        releaseSigned: false,
+        registered: true,
+        registrationPathMatches: true,
+        registrationIssues: [],
+        serviceHealthy: true,
+        serviceLatencyMs: 4,
+        serviceIssue: null,
+        serviceProcessRunning: true,
+        startupEnabled: true,
+        startupCanChange: true,
+        repairAvailable: false
       }
     });
     const user = userEvent.setup();
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Native Windows keyboard unavailable" })).toBeInTheDocument();
-    expect(screen.getByText("Windows native typing is still in validation")).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Ghost suggestions" })).toBeDisabled();
+    expect(await screen.findByRole("heading", { name: "Lekh is ready on Windows" })).toBeInTheDocument();
+    expect(screen.getByText("Built to stay out of your way")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Ghost suggestions" })).toBeEnabled();
+    expect(within(screen.getByRole("radiogroup", { name: "Choose how you write" })).getAllByRole("radio")).toHaveLength(2);
     await user.click(screen.getByRole("button", { name: "Open Keyboard Settings" }));
     expect(bridge.openKeyboardSettings).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole("button", { name: "Privacy" }));
-    expect(screen.queryByRole("button", { name: "Choose Applications…" })).not.toBeInTheDocument();
-    expect(screen.getByText(/not connected to the Windows text service/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Choose Applications…" }));
+    await waitFor(() => expect(bridge.updatePreferences).toHaveBeenCalledWith({
+      excludedApplicationBundleIdentifiers: ["win32.exe:notepad.exe"]
+    }));
+    expect(screen.getByText("Notepad")).toBeInTheDocument();
+  });
+
+  it("offers an explicit UAC repair when Windows registration is missing", async () => {
+    const registrationStatus: LekhNativeStatus = {
+      platform: "win32",
+      installed: true,
+      enabled: false,
+      selected: false,
+      version: "0.1.0",
+      bundlePath: "C:\\Program Files\\Lekh Keyboard\\LekhTextService.dll",
+      releaseSigned: false,
+      registered: false,
+      registrationPathMatches: false,
+      registrationIssues: ["com-registration-missing"],
+      serviceHealthy: true,
+      serviceLatencyMs: 3,
+      serviceIssue: null,
+      serviceProcessRunning: true,
+      startupEnabled: true,
+      startupCanChange: true,
+      repairAvailable: true
+    };
+    const bridge = installBridge({ platform: "win32", status: registrationStatus });
+    vi.mocked(bridge.repairWindowsInstallation).mockResolvedValue({
+      ok: true,
+      status: { ...registrationStatus, enabled: true, registered: true, registrationPathMatches: true, registrationIssues: [] }
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Finish Windows keyboard setup" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Repair keyboard" }));
+    await waitFor(() => expect(bridge.repairWindowsInstallation).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("status")).toHaveTextContent("Windows keyboard registration repaired");
   });
 });

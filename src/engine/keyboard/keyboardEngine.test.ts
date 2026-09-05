@@ -346,7 +346,10 @@ describe("KeyboardEngine session API", () => {
     engine.updateComposition(sessionId, "swasthya", 8);
     expect(engine.processKeyStroke(sessionId, key("Backspace")).compositionText).toBe("swasthy");
     expect(engine.processKeyStroke(sessionId, key("Delete")).compositionText).toBe("swasthy");
-    expect(engine.processKeyStroke(sessionId, key("Tab")).shouldShowCandidateUI).toBe(true);
+    const acceptedGhost = engine.processKeyStroke(sessionId, key("Tab"));
+    expect(acceptedGhost.action).toBe("commit");
+    expect(acceptedGhost.committedText).toBe("स्वास्थ्य");
+    engine.updateComposition(sessionId, "swasthy", 7);
     const spaceCommit = engine.processKeyStroke(sessionId, key(" "));
     expect(spaceCommit.action).toBe("commit");
     expect(spaceCommit.committedText).toBe("swasthy ");
@@ -358,6 +361,11 @@ describe("KeyboardEngine session API", () => {
     expect(emptyEnter.committedText).toBeUndefined();
     expect(emptyEnter.compositionText).toBe("");
     expect(engine.processKeyStroke(sessionId, key("Escape")).action).toBe("cancel");
+
+    engine.updateComposition(sessionId, "swas", 4);
+    const rightAcceptedGhost = engine.processKeyStroke(sessionId, key("ArrowRight"));
+    expect(rightAcceptedGhost.action).toBe("commit");
+    expect(rightAcceptedGhost.committedText).toBe("स्वास्थ्य");
 
     engine.updateComposition(sessionId, "swasthya", 8);
     const committed = engine.processKeyStroke(sessionId, key("Enter"));

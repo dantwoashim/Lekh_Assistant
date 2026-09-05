@@ -211,8 +211,13 @@ export function romanizedCandidates(
     ...(keyboardPrefixCandidates.length > 0 ? [] : activeRomanizedHelperCompletionCandidates(trimmed, input.length, context)),
     ...romanizedHelperCandidates(trimmed, context)
   ];
-  const memoryCandidates = session ? keyboardMemoryCandidates(trimmed, memoryEntries, session) : [];
-  const blockedTexts = session ? keyboardBlockedCandidateTexts(trimmed, memoryEntries) : new Set<string>();
+  const personalizationEnabled = context?.enablePersonalization !== false;
+  const memoryCandidates = session && personalizationEnabled
+    ? keyboardMemoryCandidates(trimmed, memoryEntries, session)
+    : [];
+  const blockedTexts = session && personalizationEnabled
+    ? keyboardBlockedCandidateTexts(trimmed, memoryEntries)
+    : new Set<string>();
   const activeTokenSafe = (candidate: Candidate) =>
     trimmed.includes(" ") ||
     /^[@:]{2}/.test(trimmed) ||
@@ -257,6 +262,7 @@ function traditionalUpdate(session: KeyboardSession, start: number): CandidateUp
       : [])
   ]);
   const primary = unicodeCandidates[0];
+  const displayText = primary?.text ?? session.compositionText;
   const inlineCompletion = inlineCompletionForSession(session, primary);
   return {
     sessionId: session.sessionId,
@@ -264,7 +270,7 @@ function traditionalUpdate(session: KeyboardSession, start: number): CandidateUp
     surface: surfaceForMode(session.mode),
     action: hasLatinInput(session.compositionText) ? "passThrough" : "compose",
     compositionText: session.compositionText,
-    displayText: primary?.text ?? session.compositionText,
+    displayText,
     caret: session.caret,
     candidates: unicodeCandidates,
     ...(primary ? { primary } : {}),

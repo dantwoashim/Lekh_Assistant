@@ -262,7 +262,7 @@ function validateTypingContext(value: unknown, path: string, errors: string[]): 
   rejectUnexpectedKeys(record, [
     "appId", "appName", "fieldType", "leftTextWindow", "rightTextWindow", "locale", "activeDomains",
     "preserveEnglish", "secureInput", "mode", "layoutId", "enabledSurfaces", "showRomanizedLabels",
-    "enableNextWordPrediction"
+    "enableNextWordPrediction", "enablePersonalization"
   ], path, errors);
 
   for (const key of ["appId", "appName", "rightTextWindow", "locale", "layoutId"] as const) {
@@ -288,7 +288,7 @@ function validateTypingContext(value: unknown, path: string, errors: string[]): 
       record.enabledSurfaces.some((surface) => typeof surface !== "string" || !Object.hasOwn(SUGGESTION_SURFACES, surface))) {
     errors.push(`${path}.enabledSurfaces must contain only known suggestion surfaces.`);
   }
-  for (const key of ["showRomanizedLabels", "enableNextWordPrediction"] as const) {
+  for (const key of ["showRomanizedLabels", "enableNextWordPrediction", "enablePersonalization"] as const) {
     if (key in record) requireBoolean(record[key], `${path}.${key}`, errors);
   }
 }

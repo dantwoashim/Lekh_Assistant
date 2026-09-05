@@ -41,6 +41,7 @@ export function defaultTypingContext(mode: KeyboardMode = "romanized"): TypingCo
     mode,
     enabledSurfaces,
     showRomanizedLabels: false,
+    enablePersonalization: true,
     enableNextWordPrediction: true
   };
 }
@@ -62,6 +63,6 @@ export function isSecureContext(context: TypingContext): boolean {
 }
 
 export function isLearningAllowedContext(context: TypingContext): boolean {
-  return !isSecureContext(context) &&
+  return context.enablePersonalization !== false && !isSecureContext(context) &&
     (context.fieldType === "normal" || context.fieldType === "search");
 }

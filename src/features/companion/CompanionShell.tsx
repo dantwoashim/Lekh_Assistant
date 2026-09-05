@@ -1,24 +1,25 @@
-import {
-  Activity,
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  ChevronRight,
-  CloudDownload,
-  Command,
-  FolderOpen,
-  Info,
-  Keyboard,
-  Languages,
-  LockKeyhole,
-  Plus,
-  RefreshCw,
-  Settings,
-  ShieldCheck,
-  Sparkles,
-  Trash2,
-  WifiOff
-} from "lucide-react";
+import { ArrowClockwiseIcon as RefreshCw } from "@phosphor-icons/react/ArrowClockwise";
+import { ArrowRightIcon as ArrowRight } from "@phosphor-icons/react/ArrowRight";
+import { CaretRightIcon as ChevronRight } from "@phosphor-icons/react/CaretRight";
+import { CheckCircleIcon as CheckCircle2 } from "@phosphor-icons/react/CheckCircle";
+import { CheckIcon as Check } from "@phosphor-icons/react/Check";
+import { CloudArrowDownIcon as CloudDownload } from "@phosphor-icons/react/CloudArrowDown";
+import { CommandIcon as Command } from "@phosphor-icons/react/Command";
+import { FolderOpenIcon as FolderOpen } from "@phosphor-icons/react/FolderOpen";
+import { GearIcon as Settings } from "@phosphor-icons/react/Gear";
+import { InfoIcon as Info } from "@phosphor-icons/react/Info";
+import { KeyboardIcon as Keyboard } from "@phosphor-icons/react/Keyboard";
+import { LockKeyIcon as LockKeyhole } from "@phosphor-icons/react/LockKey";
+import { PlusIcon as Plus } from "@phosphor-icons/react/Plus";
+import { PowerIcon as Power } from "@phosphor-icons/react/Power";
+import { PulseIcon as Activity } from "@phosphor-icons/react/Pulse";
+import { ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
+import { SparkleIcon as Sparkles } from "@phosphor-icons/react/Sparkle";
+import { TranslateIcon as Languages } from "@phosphor-icons/react/Translate";
+import { TrashIcon as Trash2 } from "@phosphor-icons/react/Trash";
+import { WifiSlashIcon as WifiOff } from "@phosphor-icons/react/WifiSlash";
+import { WindowsLogoIcon as WindowsLogo } from "@phosphor-icons/react/WindowsLogo";
+import { WrenchIcon as Wrench } from "@phosphor-icons/react/Wrench";
 import { type ReactNode, useEffect, useLayoutEffect } from "react";
 
 import {
@@ -106,14 +107,18 @@ export function CompanionShell() {
     notice,
     pendingPreferences,
     refresh,
+    repairWindowsInstallation,
     replayDemo,
+    restartWindowsService,
     saveExcludedApplications,
     setManualIdentifier,
+    setWindowsStartup,
     state,
     updateBusy,
     updateMode,
     updatePreference,
-    updateStatus
+    updateStatus,
+    windowsActionBusy
   } = useCompanionController();
 
   useEffect(() => {
@@ -127,25 +132,68 @@ export function CompanionShell() {
 
   const status = state.kind === "ready" ? state.status : null;
   const preferences = state.kind === "ready" ? state.preferences : null;
-  const phase = activationPhase(status);
-  const isWindowsFallback = window.lekhDesktop?.platform === "win32";
-  const activation = (isWindowsFallback ? copy.windowsActivation : copy.activation)[phase];
+  const isWindows = window.lekhDesktop?.platform === "win32";
+  const phase = isWindows
+    ? !status?.installed
+      ? "missing"
+      : !status.registered
+        ? "installed"
+        : !status.serviceHealthy
+          ? "enabled"
+          : "selected"
+    : activationPhase(status);
+  const activation = (isWindows ? copy.windowsActivation : copy.activation)[phase];
   const ghostEnabled = preferences?.inlinePreviewEnabled ?? false;
   const excludedApplications = preferences?.excludedApplicationBundleIdentifiers ?? [];
   const [sectionTitle, sectionSubtitle] = copy.sections[activeSection];
-  const controlsDisabled = state.kind !== "ready" || !status?.installed || isWindowsFallback;
-  const completedActivationSteps = phase === "selected" ? 3 : phase === "enabled" ? 2 : phase === "installed" ? 1 : 0;
-  const activationSteps = isWindowsFallback ? copy.windowsActivationSteps : copy.activationSteps;
+  const controlsDisabled = state.kind !== "ready" || !status?.installed;
+  const completedActivationSteps = isWindows
+    ? Number(Boolean(status?.installed)) + Number(Boolean(status?.registered)) + Number(Boolean(status?.serviceHealthy))
+    : phase === "selected" ? 3 : phase === "enabled" ? 2 : phase === "installed" ? 1 : 0;
+  const activationSteps = isWindows ? copy.windowsActivationSteps : copy.activationSteps;
+  const availableModes = isWindows ? modeOrder.slice(0, 2) : modeOrder;
+  const advancedPreferences = isWindows
+    ? advancedPreferenceOrder.filter((key) => key === "customCandidatePanelEnabled" || key === "nextWordPredictionEnabled")
+    : advancedPreferenceOrder;
+  const preview = isWindows ? {
+    title: copy.windows.previewTitle,
+    body: copy.windows.previewBody,
+    off: copy.windows.previewOff,
+    try: copy.windows.previewTry,
+    typedLabel: copy.windows.previewTypedLabel,
+    hint: copy.windows.previewHint,
+    safety: copy.windows.previewSafety
+  } : {
+    title: copy.ghostTitle,
+    body: copy.ghostBody,
+    off: copy.ghostOff,
+    try: copy.ghostTry,
+    typedLabel: copy.ghostTypedLabel,
+    hint: copy.ghostHint,
+    safety: copy.spaceSafety
+  };
+  const shortcuts = isWindows ? copy.windows.shortcuts : copy.shortcuts;
 
   function activationAction() {
-    if (isWindowsFallback) return void window.lekhDesktop?.openKeyboardSettings();
+    if (isWindows) {
+      if (!status?.installed) return void window.lekhDesktop?.revealInputMethod();
+      if (!status.registered) return void repairWindowsInstallation();
+      if (!status.serviceHealthy) return void restartWindowsService();
+      return void window.lekhDesktop?.openKeyboardSettings();
+    }
     if (phase === "missing") return void window.lekhDesktop?.revealInputMethod();
     if (phase === "enabled") return void refresh();
     return void window.lekhDesktop?.openKeyboardSettings();
   }
 
-  const activationActionLabel = isWindowsFallback
-    ? copy.keyboardSettings
+  const activationActionLabel = isWindows
+    ? !status?.installed
+      ? copy.revealInstallation
+      : !status.registered
+        ? windowsActionBusy === "repair" ? copy.windows.repairing : copy.windows.repair
+        : !status.serviceHealthy
+          ? windowsActionBusy === "restart" ? copy.windows.restarting : copy.windows.restart
+          : copy.keyboardSettings
     : phase === "missing"
       ? copy.showInputMethodsFolder
       : phase === "enabled"
@@ -153,7 +201,7 @@ export function CompanionShell() {
         : copy.keyboardSettings;
 
   return (
-    <div className="companion-shell" lang={locale} aria-busy={state.kind === "loading"}>
+    <div className={`companion-shell ${isWindows ? "companion-shell--windows" : ""}`} lang={locale} aria-busy={state.kind === "loading"}>
       <aside className="companion-sidebar">
         <div className="companion-brand">
           <div className="companion-mark" aria-hidden="true">ले</div>
@@ -177,7 +225,7 @@ export function CompanionShell() {
               aria-controls={`companion-${section}-page`}
               onClick={() => chooseSection(section)}
             >
-              <Icon size={17} strokeWidth={1.9} aria-hidden="true" />
+              <Icon size={18} weight={activeSection === section ? "fill" : "regular"} aria-hidden="true" />
               <span>{copy.sections[section][0]}</span>
             </button>
           ))}
@@ -225,7 +273,7 @@ export function CompanionShell() {
 
         {state.kind === "loading" ? (
           <section className="companion-state-card" aria-live="polite">
-            <span className="state-spinner" aria-hidden="true" />
+            <div className="state-skeleton" aria-hidden="true"><span /><span /><span /></div>
             <h2>{copy.loadingTitle}</h2>
             <p>{copy.loadingBody}</p>
           </section>
@@ -245,7 +293,7 @@ export function CompanionShell() {
             <section className={`activation-card activation-card--${phase}`} aria-labelledby="activation-title">
               <div className="activation-summary">
                 <span className="activation-icon" aria-hidden="true">
-                  {phase === "selected" ? <CheckCircle2 size={23} /> : <Keyboard size={22} />}
+                  {phase === "selected" ? <CheckCircle2 size={23} weight="fill" /> : phase === "enabled" && isWindows ? <Wrench size={22} /> : <Keyboard size={22} />}
                 </span>
                 <div>
                   <div className="activation-heading-row">
@@ -257,11 +305,11 @@ export function CompanionShell() {
                 </div>
               </div>
               <div className="activation-actions">
-                <button type="button" className="button button--primary" onClick={activationAction}>
+                <button type="button" className="button button--primary" disabled={Boolean(windowsActionBusy)} onClick={activationAction}>
                   {activationActionLabel}
                   <ArrowRight size={14} aria-hidden="true" />
                 </button>
-                {phase === "enabled" ? (
+                {phase === "enabled" && !isWindows ? (
                   <button type="button" className="button button--quiet" onClick={() => void window.lekhDesktop?.openKeyboardSettings()}>
                     {copy.keyboardSettings}
                   </button>
@@ -277,7 +325,7 @@ export function CompanionShell() {
               </ol>
             </section>
 
-            {isWindowsFallback ? (
+            {isWindows ? (
               <aside className="platform-truth-note" role="note">
                 <Info size={17} aria-hidden="true" />
                 <div><strong>{copy.windowsValidationTitle}</strong><p>{copy.windowsValidationBody}</p></div>
@@ -286,9 +334,9 @@ export function CompanionShell() {
 
             <section className="experience-card" aria-labelledby="ghost-title">
               <div className="experience-copy">
-                <div className="eyebrow"><Sparkles size={14} aria-hidden="true" /> {copy.ghostTry}</div>
-                <h2 id="ghost-title">{copy.ghostTitle}</h2>
-                <p>{ghostEnabled ? copy.ghostBody : copy.ghostOff}</p>
+                <div className="eyebrow"><Sparkles size={14} weight="fill" aria-hidden="true" /> {preview.try}</div>
+                <h2 id="ghost-title">{preview.title}</h2>
+                <p>{ghostEnabled ? preview.body : preview.off}</p>
               </div>
               <Switch
                 checked={ghostEnabled}
@@ -297,13 +345,13 @@ export function CompanionShell() {
                 onChange={(checked) => void updatePreference("inlinePreviewEnabled", checked)}
               />
               <div className={`ghost-stage ${ghostEnabled ? "" : "is-disabled"}`}>
-                <div className="ghost-stage__label">{copy.ghostTypedLabel}</div>
+                <div className="ghost-stage__label">{preview.typedLabel}</div>
                 <div className="ghost-word" key={demoSequence} aria-label="स्वास्थ्य">
-                  <span>स्वा</span><span>स्थ्य</span>
+                  {isWindows ? <span>स्वास्थ्य</span> : <><span>स्वा</span><span>स्थ्य</span></>}
                 </div>
                 <div className="ghost-acceptance">
-                  <span><kbd>Tab</kbd><span className="key-or">or</span><kbd>→</kbd></span>
-                  <small>{copy.ghostHint}</small>
+                  {isWindows ? <span><kbd>Space</kbd></span> : <span><kbd>Tab</kbd><span className="key-or">or</span><kbd>→</kbd></span>}
+                  <small>{preview.hint}</small>
                 </div>
                 <button
                   type="button"
@@ -315,7 +363,7 @@ export function CompanionShell() {
                   {copy.replay}
                 </button>
               </div>
-              <div className="safety-note"><ShieldCheck size={15} aria-hidden="true" /> {copy.spaceSafety}</div>
+              <div className="safety-note"><ShieldCheck size={15} aria-hidden="true" /> {preview.safety}</div>
             </section>
 
             <section className="companion-card mode-card" aria-labelledby="mode-title">
@@ -324,10 +372,10 @@ export function CompanionShell() {
                   <h2 id="mode-title">{copy.chooseMode}</h2>
                   <p>{copy.chooseModeBody}</p>
                 </div>
-                <Command size={19} aria-hidden="true" />
+                {isWindows ? <WindowsLogo size={19} weight="fill" aria-hidden="true" /> : <Command size={19} aria-hidden="true" />}
               </div>
               <div className="mode-grid" role="radiogroup" aria-labelledby="mode-title">
-                {modeOrder.map((mode) => {
+                {availableModes.map((mode) => {
                   const modeCopy = copy.modes[mode];
                   const selected = preferences!.nativeTypingMode === mode;
                   return (
@@ -355,13 +403,13 @@ export function CompanionShell() {
                   );
                 })}
               </div>
-              <p className="mode-shortcut"><Command size={14} aria-hidden="true" /> {copy.modeMenuShortcut}</p>
+              <p className="mode-shortcut">{isWindows ? <WindowsLogo size={14} weight="fill" aria-hidden="true" /> : <Command size={14} aria-hidden="true" />} {isWindows ? copy.windows.modeMenuShortcut : copy.modeMenuShortcut}</p>
             </section>
 
             <section className="companion-card shortcut-card" aria-labelledby="quick-guide-title">
               <h2 id="quick-guide-title">{copy.quickGuide}</h2>
               <div className="shortcut-grid">
-                {copy.shortcuts.map(([keys, title, description]) => (
+                {shortcuts.map(([keys, title, description]) => (
                   <div className="shortcut-item" key={keys}>
                     <kbd>{keys}</kbd>
                     <span><strong>{title}</strong><small>{description}</small></span>
@@ -377,7 +425,7 @@ export function CompanionShell() {
                 <ChevronRight className="disclosure-chevron" size={17} aria-hidden="true" />
               </summary>
               <div className="preference-list">
-                {advancedPreferenceOrder.map((key) => (
+                {advancedPreferences.map((key) => (
                   <SettingRow
                     key={key}
                     title={copy.preferences[key][0]}
@@ -425,12 +473,7 @@ export function CompanionShell() {
                   onChange={(checked) => void updatePreference("personalizationEnabled", checked)}
                 />
               </div>
-              {isWindowsFallback ? (
-                <div className="platform-truth-note platform-truth-note--inside" role="note">
-                  <Info size={17} aria-hidden="true" /><p>{copy.exclusionsUnavailable}</p>
-                </div>
-              ) : (
-                <>
+              <>
                   <div className="excluded-header">
                     <div><h2>{copy.neverLearn}</h2><p>{copy.neverLearnBody}</p></div>
                     <button type="button" className="button button--secondary" disabled={controlsDisabled} onClick={() => void chooseExcludedApplications()}>
@@ -461,12 +504,12 @@ export function CompanionShell() {
                     <div className="excluded-empty"><ShieldCheck size={18} aria-hidden="true" />{copy.noExcludedApps}</div>
                   )}
                   <details className="bundle-identifier-entry">
-                    <summary>{copy.advancedBundleTitle}<ChevronRight size={14} aria-hidden="true" /></summary>
+                    <summary>{isWindows ? copy.windows.identifierTitle : copy.advancedBundleTitle}<ChevronRight size={14} aria-hidden="true" /></summary>
                     <form onSubmit={(event) => {
                       event.preventDefault();
                       addManualIdentifier();
                     }}>
-                      <label className="sr-only" htmlFor="bundle-identifier">{copy.advancedBundleTitle}</label>
+                      <label className="sr-only" htmlFor="bundle-identifier">{isWindows ? copy.windows.identifierTitle : copy.advancedBundleTitle}</label>
                       <input
                         id="bundle-identifier"
                         type="text"
@@ -475,14 +518,13 @@ export function CompanionShell() {
                         spellCheck={false}
                         value={manualIdentifier}
                         disabled={controlsDisabled}
-                        placeholder={copy.bundleIdentifierPlaceholder}
+                        placeholder={isWindows ? copy.windows.identifierPlaceholder : copy.bundleIdentifierPlaceholder}
                         onChange={(event) => setManualIdentifier(event.currentTarget.value)}
                       />
                       <button type="submit" className="button button--secondary" disabled={controlsDisabled || manualIdentifier.trim().length === 0}>{copy.add}</button>
                     </form>
                   </details>
-                </>
-              )}
+              </>
             </section>
           </div>
         ) : null}
@@ -492,10 +534,10 @@ export function CompanionShell() {
             <section className="update-hero" aria-labelledby="updates-title">
               <span className="update-hero__icon" aria-hidden="true"><CloudDownload size={25} /></span>
               <div>
-                <h2 id="updates-title">{copy.updateTitle}</h2>
-                <p>{updateStatus?.message ?? copy.updateBody}</p>
+                <h2 id="updates-title">{isWindows ? copy.windows.updateTitle : copy.updateTitle}</h2>
+                <p>{isWindows ? copy.windows.updateBody : updateStatus?.message ?? copy.updateBody}</p>
               </div>
-              <div className="update-actions">
+              {!isWindows ? <div className="update-actions">
                 <button type="button" className="button button--primary" disabled={updateBusy} onClick={() => void checkForUpdates()}>
                   {updateBusy ? <span className="button-spinner" aria-hidden="true" /> : <RefreshCw size={14} aria-hidden="true" />}
                   {updateBusy ? copy.checking : copy.checkForUpdates}
@@ -505,11 +547,11 @@ export function CompanionShell() {
                     {copy.downloadAndVerify}
                   </button>
                 ) : null}
-              </div>
+              </div> : null}
             </section>
 
             <section className="update-safety-grid">
-              {copy.updateSafety.map(([title, description], index) => (
+              {(isWindows ? copy.windows.updateSafety : copy.updateSafety).map(([title, description], index) => (
                 <article key={title}><span>{index + 1}</span><div><h2>{title}</h2><p>{description}</p></div></article>
               ))}
             </section>
@@ -527,10 +569,23 @@ export function CompanionShell() {
                   label={copy.signature}
                   value={<span className={status?.releaseSigned ? "signature-ok" : "signature-development"}>{status?.releaseSigned ? copy.signatureVerified : copy.developmentBuild}</span>}
                 />
+                {isWindows ? <>
+                  <Metric label={copy.windows.registrationLabel} value={<span className={status?.registered ? "signature-ok" : "signature-development"}>{status?.registered ? copy.windows.ready : copy.windows.needsAttention}</span>} />
+                  <Metric label={copy.windows.serviceLabel} value={<span className={status?.serviceHealthy ? "signature-ok" : "signature-development"}>{status?.serviceHealthy ? copy.windows.ready : copy.windows.needsAttention}</span>} />
+                  <Metric label={copy.windows.startupLabel} value={status?.startupEnabled ? copy.windows.ready : copy.windows.needsAttention} />
+                  <Metric label={copy.windows.serviceLatency} value={status?.serviceHealthy ? `${status.serviceLatencyMs ?? 0} ms` : "—"} />
+                </> : null}
               </dl>
               <div className="diagnostic-actions">
                 <button type="button" className="button button--secondary" onClick={() => void refresh()}><RefreshCw size={14} />{copy.refresh}</button>
                 <button type="button" className="button button--secondary" onClick={() => void window.lekhDesktop?.revealInputMethod()}><FolderOpen size={14} />{copy.revealInstallation}</button>
+                {isWindows ? <>
+                  {!status?.registered && status?.repairAvailable ? (
+                    <button type="button" className="button button--secondary" disabled={Boolean(windowsActionBusy)} onClick={() => void repairWindowsInstallation()}><Wrench size={14} />{windowsActionBusy === "repair" ? copy.windows.repairing : copy.windows.repair}</button>
+                  ) : null}
+                  <button type="button" className="button button--secondary" disabled={Boolean(windowsActionBusy) || !status?.installed} onClick={() => void restartWindowsService()}><Power size={14} />{windowsActionBusy === "restart" ? copy.windows.restarting : copy.windows.restart}</button>
+                  <button type="button" className="button button--secondary" disabled={Boolean(windowsActionBusy) || !status?.startupCanChange} onClick={() => void setWindowsStartup(!status?.startupEnabled)}><WindowsLogo size={14} weight="fill" />{status?.startupEnabled ? copy.windows.stopRunAtSignIn : copy.windows.runAtSignIn}</button>
+                </> : null}
               </div>
             </section>
           </div>

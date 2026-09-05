@@ -1,104 +1,38 @@
 # Windows Native Implementation Report
 
-Generated: 2026-06-08
+Generated: 2026-08-24
 
-Status: `blocked-native-environment`
+Status: `engineering-ready-unsigned`; public production release remains blocked by Authenticode and physical host/pilot validation.
 
-## 2026-06-08 Environment Evidence
+The canonical build, install, recovery, and release instructions are in [`WINDOWS_RELEASE_BUILD.md`](./WINDOWS_RELEASE_BUILD.md).
 
-Repo-executable native scaffold tests:
+## Implemented
 
-```bash
-npm run test:native-scaffold
-```
+- Native Windows TSF text service for Nepali with real composition, commit, cancel, display attributes, context-bound candidate placement, keyboard/pointer selection, and UI Automation semantics.
+- 64-bit and 32-bit TSF DLLs for 64-bit Windows and compatibility applications.
+- Machine-wide COM/TSF registration with rollback, modern-app capability, embedded profile icon, and per-user profile enablement without silently changing the default keyboard.
+- Secure/unknown-context pass-through, bounded typed IPC, per-logon-session protected named pipe, exact broker-process verification, and no key consumption until the equivalent host edit succeeds.
+- Native broker plus contained local daemon with bounded startup/restart behavior.
+- Windows companion for two verified modes, privacy-first learning controls, per-application exclusions, diagnostics, one-UAC repair, run-at-sign-in, tray recovery, and local diagnostic export.
+- Fail-closed NSIS packaging, dual-architecture registration/unregistration, Electron ASAR integrity, a complete nine-fuse policy, and unsigned/signed release modes.
 
-Result on 2026-06-08: passed, covering IPC message contracts, daemon dispatcher behavior, and native storage JSON-file stores.
+## Verified Locally on Windows
 
-Windows TSF build environment check:
+- MSVC x64 and Win32 builds with `/W4 /WX /sdl`.
+- Native protocol, candidate-state, TSF injection, COM lifetime, pipe ACL, server-identity, and daemon-backend tests.
+- TypeScript typecheck, 50 Vitest files, production UI build, IPC schema, passive-commit exclusion, and composition work-bound checks.
+- Unsigned x64 NSIS package containing both TSF architectures, native broker, daemon, and companion.
+- Packaged executable fuse-wire verification and a live background launch/broker protocol-negotiation smoke test.
+- Dependency audit reports zero known npm vulnerabilities at the time of this report.
 
-```bash
-cmake --version
-```
+## Not Yet Claimed
 
-Result on 2026-06-08: blocked in this environment because `cmake` is not installed and this host is not a Windows TSF host with Visual Studio/MSBuild. The exact Windows dev build path below remains the required next action on a Windows machine.
+- The development installer is unsigned and will trigger normal Windows publisher warnings.
+- This run did not mutate machine-wide registration because the current shell is not elevated.
+- Notepad, Office, Chromium, VS Code, 32-bit host, touch, DPI, high-contrast, Narrator, sleep/resume, upgrade, and clean uninstall still require the physical release matrix.
+- ARM64 build support exists in CI, but ARM64 packaging is not a supported public release until independently validated.
+- “World-class” remains a usability outcome to prove with real Nepali typists, not a label established by automated tests.
 
-## What Exists
+## Release Decision
 
-- Build-ready TSF DLL source under `native/windows-tsf/skeleton`.
-- CMake target: `LekhTextService`.
-- COM DLL exports:
-  - `DllGetClassObject`
-  - `DllCanUnloadNow`
-  - `DllRegisterServer`
-  - `DllUnregisterServer`
-- TSF interfaces:
-  - `ITfTextInputProcessor`
-  - `ITfTextInputProcessorEx`
-  - `ITfKeyEventSink`
-- Per-user COM registration under `HKCU\Software\Classes`.
-- TSF language profile registration for Nepali.
-- Named-pipe IPC client for the local daemon, deriving a per-user name such as `\\.\pipe\LekhKeyboard-{SID}` and failing open if the current-user SID cannot be resolved. Production code accepts neither an environment-selected pipe nor a shared fallback name; controlled tests inject an explicit pipe through the client/server constructors.
-- 50 ms hot-path timeout and pass-through fallback when the daemon is unavailable.
-- Key-eating is disabled by default and must be explicitly enabled with `LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING` after daemon/commit behavior is validated on Windows.
-- Dev daemon dispatcher and JSONL CLI in `native/daemon/src`.
-- IPC schema validation exists through `npm run check:ipc-schema`.
-
-## What Is Not Claimed
-
-This is not yet a proven production Windows release. The source is build-ready, but it has not been compiled, registered, installed, and host-tested on a Windows machine in this execution environment.
-
-## External Blocker Proof
-
-The current execution environment is macOS/Linux-style Node/Vite workspace execution, not a Windows TSF host. A real TSF text service requires Windows COM/TSF registration, app-host testing, and a Windows code-signing/install path. Those cannot be completed inside this repo execution without a Windows native test machine and certificate.
-
-## Exact Dev Build Path
-
-On Windows with Visual Studio Build Tools and CMake:
-
-```powershell
-cd native\windows-tsf\skeleton
-.\build.ps1
-.\register-dev.ps1
-```
-
-Expected proof-spike artifact:
-
-- `build\bin\Release\LekhTextService.dll`
-
-Manual smoke:
-
-1. Start daemon: `npm run daemon:dev`
-2. Register TSF: `.\register-dev.ps1`
-3. Enable `Lekh Keyboard Nepali` in Windows language/input settings.
-4. Test Notepad, Word, Chrome, Edge, VS Code, Excel, and one government web form.
-5. Unregister: `.\unregister-dev.ps1`
-
-## Required Production Implementation Steps
-
-1. Build and register the TSF DLL on Windows.
-2. Validate the named-pipe daemon bridge with the host-app test matrix.
-3. Complete marked-text/candidate UI behavior after Windows host validation identifies app-specific TSF behavior.
-4. Detect password/secure input scope and disable memory/proofread/suggestions.
-5. Run test matrix:
-   - Notepad
-   - Word
-   - Chrome
-   - Edge
-   - VS Code
-   - Excel
-   - government web form
-6. Build signed NSIS `.exe` installer and verify uninstall cleanup.
-
-## Owner / Action / Status
-
-| Item | Owner | Status | Next action |
-| --- | --- | --- | --- |
-| Windows TSF native build machine | engineering | blocked-native-environment | Run CMake proof spike on Windows. |
-| Code-signing certificate | product/release | blocked-external | Acquire Windows code-signing certificate. |
-| TSF COM registration | engineering | ready-for-windows-validation | Run `register-dev.ps1` on Windows. |
-| Host-app test matrix | QA/engineering | blocked-native-environment | Run after the TSF DLL registers locally. |
-| Signed installer | release | blocked-external | Build after certificate and TSF validation. |
-
-## Launch Readiness
-
-Windows is not production-launch-ready. It is ready for native Windows proof-spike implementation and validation once the external/native blockers are resolved.
+The Windows implementation is ready for signed release-candidate testing. It is not yet justified as a public production release until the external evidence gates in [`WINDOWS_RELEASE_BUILD.md`](./WINDOWS_RELEASE_BUILD.md) pass.

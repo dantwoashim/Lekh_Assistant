@@ -381,8 +381,59 @@ bool parseCandidateList(
   return !shouldShow->boolean || !output.empty();
 }
 
+bool parseInlineCompletion(const JsonValue& payload, EngineDecision& decision) {
+  const JsonValue* value = anyMember(payload, L"inlineCompletion");
+  if (!value) return true;
+  if (value->type != JsonType::Object) return false;
+
+  const JsonValue* text = member(*value, L"text", JsonType::String);
+  const JsonValue* displayText = member(*value, L"displayText", JsonType::String);
+  const JsonValue* candidate = member(*value, L"candidate", JsonType::Object);
+  const JsonValue* confidence = member(*value, L"confidence", JsonType::Number);
+  const JsonValue* source = member(*value, L"source", JsonType::String);
+  const JsonValue* acceptKeys = member(*value, L"acceptKeys", JsonType::Array);
+  const JsonValue* candidateId = candidate ? member(*candidate, L"id", JsonType::String) : nullptr;
+  const JsonValue* candidateText = candidate ? member(*candidate, L"text", JsonType::String) : nullptr;
+  if (!text || text->string.empty() || text->string.size() > 16384 ||
+      !displayText || displayText->string.empty() || displayText->string.size() > 16384 ||
+      !candidateId || candidateId->string.empty() || candidateId->string.size() > 256 ||
+      !candidateText || candidateText->string != text->string ||
+      !confidence || confidence->number < 0 || confidence->number > 1 ||
+      !source || (source->string != L"active-candidate" && source->string != L"ngram-lm") ||
+      !acceptKeys || acceptKeys->array.empty() || acceptKeys->array.size() > 2) {
+    return false;
+  }
+
+  std::set<std::wstring> keys;
+  for (const JsonValue& key : acceptKeys->array) {
+    if (key.type != JsonType::String || (key.string != L"Tab" && key.string != L"ArrowRight") ||
+        !keys.insert(key.string).second) {
+      return false;
+    }
+  }
+  decision.inlineCompletionText = text->string;
+  decision.inlineCompletionDisplayText = displayText->string;
+  return true;
+}
+
 const wchar_t* commandType(SessionCommand command) {
   return command == SessionCommand::Cancel ? L"session.cancel" : L"session.end";
+}
+
+bool supportedMode(const std::wstring& mode) {
+  return mode == L"romanized-romanized" || mode == L"romanized-traditional" ||
+    mode == L"traditional-traditional" || mode == L"traditional-romanized";
+}
+
+std::wstring enabledSurfaces(const BeginSessionOptions& options, const std::wstring& mode) {
+  if (mode == L"romanized-romanized") return L"[\"romanized-to-romanized\"]";
+  if (mode == L"traditional-romanized") return L"[\"traditional-to-romanized-helper\"]";
+  if (mode == L"traditional-traditional") {
+    return options.proofreadAsYouTypeEnabled
+      ? L"[\"traditional-to-unicode\",\"traditional-to-traditional-proofread\"]"
+      : L"[\"traditional-to-unicode\"]";
+  }
+  return L"[\"romanized-to-unicode\"]";
 }
 
 std::optional<JsonValue> parseResponse(const std::wstring& response) {
@@ -392,6 +443,42 @@ std::optional<JsonValue> parseResponse(const std::wstring& response) {
 
 } // namespace
 
+RequestTiming inspectRequestTiming(const std::wstring& request) {
+  RequestTiming timing;
+  const std::optional<JsonValue> root = parseResponse(request);
+  if (!root || root->type != JsonType::Object) return timing;
+
+  const JsonValue* type = member(*root, L"type", JsonType::String);
+  if (type) {
+    static const std::set<std::wstring> controlTypes = {
+      L"protocol.negotiate",
+      L"health.check",
+      L"engine.warm",
+      L"session.cancel",
+      L"session.end",
+      L"session.setMode",
+      L"session.setLayout",
+      L"suggestions.get",
+      L"proofHints.get",
+      L"dictionary.lookup",
+      L"memory.learn",
+      L"diagnostics.getMetrics",
+      L"engine.shutdown"
+    };
+    if (controlTypes.find(type->string) != controlTypes.end()) {
+      timing.deadlineClass = RequestDeadlineClass::Control;
+    }
+  }
+
+  const JsonValue* deadline = member(*root, L"deadlineAt", JsonType::Number);
+  if (deadline && deadline->number >= 0 && deadline->number <= kMaximumSafeJsonInteger &&
+      std::floor(deadline->number) == deadline->number) {
+    timing.deadlineAt = static_cast<std::uint64_t>(deadline->number);
+    timing.hasValidDeadline = true;
+  }
+  return timing;
+}
+
 std::wstring makeProtocolNegotiationRequest(const RequestMetadata& metadata) {
   const std::wstring prefix = requestPrefix(metadata, L"protocol.negotiate");
   if (prefix.empty()) return L"";
@@ -399,14 +486,24 @@ std::wstring makeProtocolNegotiationRequest(const RequestMetadata& metadata) {
     std::to_wstring(lekh::ipc::kSchemaVersion) + L"]}}";
 }
 
-std::wstring makeBeginSessionRequest(const RequestMetadata& metadata) {
+std::wstring makeEngineWarmRequest(const RequestMetadata& metadata, std::uint32_t timeoutMs) {
+  const std::wstring prefix = requestPrefix(metadata, L"engine.warm");
+  if (prefix.empty() || timeoutMs == 0 || timeoutMs > 60000) return L"";
+  return prefix + L"{\"timeoutMs\":" + std::to_wstring(timeoutMs) + L"}}";
+}
+
+std::wstring makeBeginSessionRequest(const RequestMetadata& metadata, const BeginSessionOptions& options) {
   const std::wstring prefix = requestPrefix(metadata, L"session.begin");
   if (prefix.empty()) return L"";
+  const std::wstring mode = supportedMode(options.mode) ? options.mode : L"romanized-traditional";
+  const bool traditionalInput = mode == L"traditional-traditional" || mode == L"traditional-romanized";
   return prefix + L"{\"context\":{\"fieldType\":\"normal\",\"leftTextWindow\":\"\",\"rightTextWindow\":\"\"," +
     L"\"locale\":\"ne-NP\",\"activeDomains\":[],\"preserveEnglish\":true,\"secureInput\":false," +
-    L"\"mode\":\"romanized-traditional\",\"layoutId\":\"lekh-romanized\"," +
-    L"\"enabledSurfaces\":[\"romanized-to-unicode\"],\"showRomanizedLabels\":true," +
-    L"\"enableNextWordPrediction\":false}}}";
+    L"\"mode\":\"" + escapeJson(mode) + L"\",\"layoutId\":\"" +
+    (traditionalInput ? L"traditional-ltk-compatible.pending" : L"lekh-romanized") + L"\"," +
+    L"\"enabledSurfaces\":" + enabledSurfaces(options, mode) + L",\"showRomanizedLabels\":true," +
+    L"\"enablePersonalization\":" + boolJson(options.personalizationEnabled) + L"," +
+    L"\"enableNextWordPrediction\":" + boolJson(options.nextWordPredictionEnabled) + L"}}}";
 }
 
 std::wstring makeProcessKeyRequest(
@@ -456,6 +553,18 @@ std::wstring makeSessionRequest(
     L"\",\"sessionEpoch\":" + std::to_wstring(session.sessionEpoch) + L"}}";
 }
 
+std::wstring makeMemoryLearnRequest(
+  const RequestMetadata& metadata,
+  const SessionHandle& session,
+  std::uint64_t commitEpoch
+) {
+  const std::wstring prefix = requestPrefix(metadata, L"memory.learn");
+  if (prefix.empty() || session.sessionId.empty() || session.sessionEpoch == 0 || commitEpoch == 0) return L"";
+  return prefix + L"{\"sessionId\":\"" + escapeJson(session.sessionId) +
+    L"\",\"sessionEpoch\":" + std::to_wstring(session.sessionEpoch) +
+    L",\"commitEpoch\":" + std::to_wstring(commitEpoch) + L"}}";
+}
+
 std::optional<NegotiatedProtocol> parseProtocolNegotiationResponse(
   const std::wstring& response,
   const RequestMetadata& request
@@ -471,6 +580,20 @@ std::optional<NegotiatedProtocol> parseProtocolNegotiationResponse(
     return std::nullopt;
   }
   return NegotiatedProtocol{payloadServer->string, lekh::ipc::kSchemaVersion};
+}
+
+bool parseEngineWarmResponse(
+  const std::wstring& response,
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId
+) {
+  const std::optional<JsonValue> root = parseResponse(response);
+  if (!root || !hasExactEnvelope(*root, request, L"engine.warm", expectedServerInstanceId)) return false;
+  const JsonValue* payload = member(*root, L"payload", JsonType::Object);
+  const JsonValue* ready = payload ? member(*payload, L"ready", JsonType::Boolean) : nullptr;
+  const JsonValue* partial = payload ? member(*payload, L"partial", JsonType::Boolean) : nullptr;
+  const JsonValue* unavailable = payload ? member(*payload, L"unavailableModules", JsonType::Array) : nullptr;
+  return ready && ready->boolean && partial && !partial->boolean && unavailable && unavailable->array.empty();
 }
 
 std::optional<SessionHandle> parseBeginSessionResponse(
@@ -517,7 +640,8 @@ std::optional<EngineDecision> parseProcessKeyResponse(
   decision.compositionText = composition->string;
   decision.displayText = display->string;
   decision.caret = static_cast<std::size_t>(caret->number);
-  if (!payload || !parseCandidateList(*payload, decision.candidates, decision.shouldShowCandidateUi)) {
+  if (!payload || !parseCandidateList(*payload, decision.candidates, decision.shouldShowCandidateUi) ||
+      !parseInlineCompletion(*payload, decision)) {
     return std::nullopt;
   }
   if (action->string == L"passThrough" || action->string == L"errorFallback") {
@@ -569,6 +693,7 @@ std::optional<EngineDecision> parseCommitCandidateResponse(
     }
     decision.action = EngineAction::Commit;
     decision.committedText = committed->string;
+    decision.commitEpoch = static_cast<std::uint64_t>(commitEpoch->number);
   } else if (action->string == L"compose") {
     if (!committed->string.empty() || !matchesSafeInteger(commitEpoch, 0)) return std::nullopt;
     decision.action = EngineAction::Compose;
@@ -600,6 +725,22 @@ bool parseSessionResponse(
     JsonType::Boolean
   ) : nullptr;
   return acknowledged && acknowledged->boolean;
+}
+
+bool parseMemoryLearnResponse(
+  const std::wstring& response,
+  const RequestMetadata& request,
+  const std::wstring& expectedServerInstanceId,
+  const SessionHandle& expectedSession
+) {
+  const std::optional<JsonValue> root = parseResponse(response);
+  if (!root || !hasExactEnvelope(*root, request, L"memory.learn", expectedServerInstanceId) ||
+      !hasSessionEpoch(*root, expectedSession.sessionEpoch)) {
+    return false;
+  }
+  const JsonValue* payload = member(*root, L"payload", JsonType::Object);
+  const JsonValue* learned = payload ? member(*payload, L"learned", JsonType::Boolean) : nullptr;
+  return learned != nullptr;
 }
 
 } // namespace lekh::tsf

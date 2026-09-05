@@ -14,7 +14,8 @@ export interface CompanionStorage {
   setItem(key: string, value: string): void;
 }
 
-const applicationIdentifierPattern = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+const macApplicationIdentifierPattern = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+const windowsApplicationIdentifierPattern = /^win32\.exe:[^<>:"/\\|?*\u0000-\u001F]{1,180}\.exe$/iu;
 const localeStorageKey = "lekh.companion.locale";
 const sectionStorageKey = "lekh.companion.section";
 
@@ -84,6 +85,11 @@ export function activationPhase(status: LekhNativeStatus | null): ActivationPhas
 }
 
 export function friendlyApplicationIdentifier(identifier: string): string {
+  if (windowsApplicationIdentifierPattern.test(identifier)) {
+    return identifier.slice("win32.exe:".length, -".exe".length)
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
+  }
   const parts = identifier.split(".");
   const finalPart = parts[parts.length - 1] ?? identifier;
   return finalPart.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ");
@@ -91,5 +97,8 @@ export function friendlyApplicationIdentifier(identifier: string): string {
 
 export function normalizeApplicationIdentifiers(identifiers: readonly string[]): string[] | null {
   const unique = Array.from(new Set(identifiers.map((item) => item.trim()).filter(Boolean)));
-  return unique.every((item) => applicationIdentifierPattern.test(item)) ? unique : null;
+  return unique.every((item) => (
+    macApplicationIdentifierPattern.test(item)
+    || windowsApplicationIdentifierPattern.test(item)
+  )) ? unique : null;
 }

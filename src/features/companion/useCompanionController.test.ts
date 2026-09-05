@@ -74,6 +74,9 @@ function installBridge() {
     openKeyboardSettings: vi.fn().mockResolvedValue({ ok: true }),
     revealInputMethod: vi.fn().mockResolvedValue({ ok: true, error: null }),
     chooseExcludedApplications: vi.fn().mockResolvedValue([]),
+    repairWindowsInstallation: vi.fn().mockResolvedValue({ ok: true, status }),
+    restartWindowsService: vi.fn().mockResolvedValue({ ok: true }),
+    setWindowsStartupEnabled: vi.fn().mockResolvedValue({ ok: true, enabled: true }),
     checkForUpdates: vi.fn().mockResolvedValue({ status: "current", message: "Current" }),
     downloadVerifiedUpdate: vi.fn().mockResolvedValue({ ok: true, version: "0.1.0" })
   };
@@ -104,7 +107,7 @@ describe("companion controller", () => {
   });
 
   it("survives blocked storage and reports failed persistence without blanking", async () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
       throw new DOMException("blocked", "SecurityError");
     });
     const bridge = installBridge();
@@ -116,7 +119,7 @@ describe("companion controller", () => {
     expect(bridge.getStatus).toHaveBeenCalledOnce();
 
     vi.restoreAllMocks();
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
       throw new DOMException("blocked", "SecurityError");
     });
     let persisted = true;
@@ -298,7 +301,10 @@ describe("companion controller", () => {
       refreshPromise = result.current.refresh();
     });
     await waitFor(() => expect(bridge.getStatus).toHaveBeenCalledOnce());
-    failedStatus.reject(new Error("native status unavailable"));
+    await act(async () => {
+      failedStatus.reject(new Error("native status unavailable"));
+      await Promise.resolve();
+    });
 
     await waitFor(() => {
       expect(result.current.state).toEqual({
@@ -306,10 +312,15 @@ describe("companion controller", () => {
         reason: "readFailure"
       });
     });
-    refreshPreferences.resolve(copyPreferences(preferences));
-    await refreshPromise;
+    await act(async () => {
+      refreshPreferences.resolve(copyPreferences(preferences));
+      await refreshPromise;
+    });
 
-    write.resolve({ ok: true });
+    await act(async () => {
+      write.resolve({ ok: true });
+      await Promise.resolve();
+    });
     await waitFor(() => expect(bridge.readPreferences).toHaveBeenCalledTimes(2));
     reconciledPreferences.resolve(copyPreferences(preferences, {
       inlinePreviewEnabled: false

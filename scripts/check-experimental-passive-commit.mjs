@@ -117,7 +117,7 @@ for (const directory of ["src", "native", "electron", "scripts"]) {
     const sourceText = readFileSync(path, "utf8");
     if (!["experimentalPassiveCommitPolicyId", "EXPERIMENTAL_ENGINE_AUTHORITY", "createExperimentalKeyboardEngineForPolicyTests"]
       .some((identifier) => sourceText.includes(identifier))) continue;
-    const localPath = relative(root, path);
+    const localPath = relative(root, path).replaceAll("\\", "/");
     requireValue(trustedActivationConsumers.has(localPath),
       `experimental passive-commit authority escaped its closed construction/test files: ${localPath}`);
   }

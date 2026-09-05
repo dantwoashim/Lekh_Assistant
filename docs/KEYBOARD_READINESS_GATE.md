@@ -1,5 +1,7 @@
 # Keyboard Readiness Gate
 
+Windows status refreshed: 2026-08-24. Older macOS and language-data rows retain their original evidence basis. See [`WINDOWS_RELEASE_BUILD.md`](./WINDOWS_RELEASE_BUILD.md) for the authoritative Windows release gate.
+
 Status values: `complete`, `partial`, `blocked-external`, `blocked-human`, `blocked-native-environment`, `pending`.
 
 ## Engineering Foundation Gate
@@ -27,20 +29,22 @@ Status values: `complete`, `partial`, `blocked-external`, `blocked-human`, `bloc
 
 | Requirement | Status |
 | --- | --- |
-| Windows TSF skeleton/docs | complete |
+| Windows TSF implementation/docs | complete-local |
 | macOS IMK skeleton/docs | complete |
 | IPC contract | complete |
 | daemon lifecycle | complete |
 | fallback behavior | complete |
-| native implementation tested | blocked-native-environment |
+| Windows native automated implementation tests | complete-local |
+| Windows physical host matrix | pending |
 
 ## Release Gate
 
 | Requirement | Status |
 | --- | --- |
-| real Windows/macOS native testing | blocked-native-environment |
+| real Windows/macOS physical host testing | pending |
 | signing/notarization | blocked-external |
-| installer tested | pending |
+| Windows unsigned package/runtime smoke | complete-local |
+| elevated clean install/upgrade/uninstall matrix | pending |
 | pilot feedback collected | blocked-human |
 | privacy review complete | pending |
 | crash handling tested | pending |
@@ -48,7 +52,7 @@ Status values: `complete`, `partial`, `blocked-external`, `blocked-human`, `bloc
 
 ## Final Status
 
-Prompt 1 production-foundation status: partial-complete. The repo has a stable foundation path, smoke/full verification split, native scaffolds, and honest release gates. Native production release is not complete and remains blocked by platform testing, signing/notarization, verified Traditional layout data, and pilot feedback.
+The engineering foundation is substantially implemented. Native public release remains blocked by physical host testing, signing/notarization, authoritative Traditional layout data, and pilot feedback.
 
 ## Evidence Required Before Public Release
 

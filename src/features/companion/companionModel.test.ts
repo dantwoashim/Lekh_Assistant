@@ -44,11 +44,17 @@ describe("companion presentation model", () => {
     ])).toEqual(["com.microsoft.VSCode", "org.mozilla.firefox"]);
     expect(normalizeApplicationIdentifiers(["com.example.Editor", "not a bundle id"])).toBeNull();
     expect(normalizeApplicationIdentifiers(["com..Editor"])).toBeNull();
+    expect(normalizeApplicationIdentifiers([
+      "win32.exe:notepad.exe",
+      "WIN32.EXE:Code.exe"
+    ])).toEqual(["win32.exe:notepad.exe", "WIN32.EXE:Code.exe"]);
+    expect(normalizeApplicationIdentifiers(["win32.exe:C:\\Windows\\notepad.exe"])).toBeNull();
   });
 
   it("turns a bundle identifier into a readable fallback name", () => {
     expect(friendlyApplicationIdentifier("com.microsoft.VSCode")).toBe("VSCode");
     expect(friendlyApplicationIdentifier("org.example.my-editor_app")).toBe("my editor app");
+    expect(friendlyApplicationIdentifier("win32.exe:visual-studio-code.exe")).toBe("Visual Studio Code");
   });
 
   it("restores only supported locale and section values", () => {

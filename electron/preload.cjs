@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld("lekhDesktop", {
   openKeyboardSettings: () => ipcRenderer.invoke("lekh:open-keyboard-settings"),
   revealInputMethod: () => ipcRenderer.invoke("lekh:reveal-input-method"),
   chooseExcludedApplications: () => ipcRenderer.invoke("lekh:privacy:choose-excluded-applications"),
+  repairWindowsInstallation: () => ipcRenderer.invoke("lekh:windows:repair"),
+  restartWindowsService: () => ipcRenderer.invoke("lekh:windows:restart-service"),
+  setWindowsStartupEnabled: (enabled) => ipcRenderer.invoke("lekh:windows:set-startup", enabled),
   checkForUpdates: () => ipcRenderer.invoke("lekh:updates:check"),
   downloadVerifiedUpdate: () => ipcRenderer.invoke("lekh:updates:download")
 });

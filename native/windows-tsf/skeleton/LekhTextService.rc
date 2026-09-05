@@ -1,0 +1,4 @@
+#include "ResourceIds.h"
+
+// The profile points Windows at this DLL resource for the input switcher.
+IDI_LEKH_IME ICON "../../../build/icon.ico"

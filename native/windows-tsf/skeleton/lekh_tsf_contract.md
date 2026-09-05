@@ -6,12 +6,15 @@ The TSF DLL is deliberately thin. It:
 
 - registers `ITfKeyEventSink` through `ITfKeystrokeMgr`;
 - observes document and context focus through `ITfThreadMgrEventSink`;
-- classifies the selected range through `GUID_PROP_INPUTSCOPE`;
-- suppresses password, private, password/PIN, secure-mode, and unclassified contexts;
+- classifies the selected range through `GUID_PROP_INPUTSCOPE` and honors the keyboard-disabled and empty-context TSF compartments;
+- suppresses password, private, password/PIN, secure-mode, disabled, empty, and unclassified contexts;
 - begins a real daemon session with `session.begin` after a context is classified safe;
 - sends bounded `session.processKeyStroke` requests over the per-user named pipe;
 - requires the response ID, type, version, success flag, session ID, action, and action payload to match;
 - applies compose, commit, and cancel decisions only inside a synchronous read/write `ITfEditSession`;
+- marks owned composition text with a theme-safe TSF input display attribute and clears it before commit, cancel, or forced finish;
+- anchors an owned, non-activating candidate popup to the active TSF composition rectangle;
+- exposes numbered keyboard selection, pointer selection, Windows light-dismiss events, and the required UI Automation candidate semantics;
 - ends the daemon session when TSF focus, document, context, or service activation changes.
 
 No engine, transliteration, ranking, dictionary, or learning logic lives in the DLL.
@@ -26,7 +29,7 @@ No engine, transliteration, ranking, dictionary, or learning logic lives in the 
 
 Malformed, mismatched, late, failed, or timed-out responses pass through. A rejected edit session passes through. If text was inserted but the host rejected composition ownership and rollback also failed, that key is consumed to avoid duplicating the already-inserted text, and the context is suppressed until focus changes.
 
-Only Latin letter keys translated through the active Windows keyboard layout are admitted without an active composition. Translation uses the non-mutating `ToUnicodeEx` mode so probing a dead key cannot alter host keyboard state. Space, Backspace, Enter, and Escape are admitted only while the DLL owns a composition. Tab, Delete, digits, navigation, system shortcuts, Ctrl/Alt/Windows shortcuts, and candidate shortcuts remain pass-through until their native behavior is implemented.
+Only Latin letter keys translated through the active Windows keyboard layout are admitted without an active composition. Translation uses the non-mutating `ToUnicodeEx` mode so probing a dead key cannot alter host keyboard state. Space, Backspace, Enter, and Escape are admitted only while the DLL owns a composition. When a host-rendered ghost completion is visibly active, Tab or Right Arrow accepts it; without a visible ghost those keys remain pass-through. While the optional candidate panel is visible, Up/Down, 1-8, Space, and Enter perform explicit candidate actions. Delete, unrelated navigation, system shortcuts, and ordinary Ctrl/Alt/Windows shortcuts remain pass-through.
 
 The deterministic vertical slice is enabled by default for v1 and remains fail-closed in secure or unclassified contexts.
 
@@ -47,10 +50,9 @@ No surrounding text is sent by this slice. A session begins with empty left/righ
 
 ## Still required before production
 
-- native candidate UI and candidate selection;
-- TSF display attributes;
 - surrounding-context extraction with explicit privacy minimization;
 - composition ownership/focus testing in every target host;
-- Windows x64 and ARM64 CI artifacts;
+- a completed Windows 11 x64 physical host, Narrator, DPI, high-contrast, touch, and 32-bit compatibility matrix;
+- an independently validated ARM64 installer before ARM64 can be shipped;
 - signed binaries and a validated installer;
-- accessibility, high-DPI, multi-monitor, sleep/resume, crash-recovery, and upgrade testing.
+- sleep/resume, crash-recovery, and upgrade testing on clean physical machines.

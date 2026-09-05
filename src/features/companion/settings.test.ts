@@ -51,7 +51,8 @@ describe("companion settings model", () => {
     expect(context.showRomanizedLabels).toBe(true);
     expect(context.enabledSurfaces).toContain("romanized-to-romanized");
     expect(context.enabledSurfaces).toContain("traditional-to-traditional-proofread");
-    expect(context.secureInput).toBe(true);
+    expect(context.secureInput).toBe(false);
+    expect(context.enablePersonalization).toBe(false);
     expect(context.layoutId).toBe("traditional-ltk-compatible.pending");
   });
 });

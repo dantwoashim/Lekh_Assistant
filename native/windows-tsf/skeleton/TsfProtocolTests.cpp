@@ -48,11 +48,45 @@ int main() {
     negotiateMetadata
   ), "split server identity accepted");
 
+  const RequestMetadata warmMetadata = request(L"warm_1", 2, 43, 5043);
+  const std::wstring warmRequest = makeEngineWarmRequest(warmMetadata, 5000);
+  require(warmRequest.find(L"\"type\":\"engine.warm\"") != std::wstring::npos, "warm type missing");
+  require(warmRequest.find(L"\"timeoutMs\":5000") != std::wstring::npos, "warm timeout missing");
+  const std::wstring warmResponse =
+    L"{\"id\":\"warm_1\",\"type\":\"engine.warm\",\"version\":2,\"ok\":true,"
+    L"\"serverInstanceId\":\"server-1\",\"requestSequence\":2,"
+    L"\"payload\":{\"ready\":true,\"partial\":false,\"loadedModules\":[],"
+    L"\"unavailableModules\":[],\"warmTimeMs\":10,\"warnings\":[]}}";
+  require(parseEngineWarmResponse(warmResponse, warmMetadata, L"server-1"), "valid warm response rejected");
+  require(!parseEngineWarmResponse(warmResponse, warmMetadata, L"server-2"), "mismatched warm server accepted");
+  require(!parseEngineWarmResponse(
+    L"{\"id\":\"warm_1\",\"type\":\"engine.warm\",\"version\":2,\"ok\":true,"
+    L"\"serverInstanceId\":\"server-1\",\"requestSequence\":2,"
+    L"\"payload\":{\"ready\":false,\"partial\":true,\"loadedModules\":[],"
+    L"\"unavailableModules\":[\"dictionary\"],\"warmTimeMs\":10,\"warnings\":[]}}",
+    warmMetadata,
+    L"server-1"
+  ), "partial engine warm-up was accepted as broker readiness");
+  require(makeEngineWarmRequest(warmMetadata, 0).empty(), "zero warm timeout was serialized");
+  const RequestTiming warmTiming = inspectRequestTiming(warmRequest);
+  require(warmTiming.deadlineClass == RequestDeadlineClass::Control &&
+          warmTiming.hasValidDeadline && warmTiming.deadlineAt == warmMetadata.deadlineAt,
+    "engine.warm did not retain its control deadline and absolute envelope deadline");
+
   const RequestMetadata beginMetadata = request(L"begin_\"1", 2);
   const std::wstring begin = makeBeginSessionRequest(beginMetadata);
   require(begin.find(L"begin_\\\"1") != std::wstring::npos, "request id was not escaped");
   require(begin.find(L"\"leftTextWindow\":\"\"") != std::wstring::npos, "begin request must not send surrounding text");
   require(begin.find(L"\"secureInput\":false") != std::wstring::npos, "safe context was not explicit");
+  const std::wstring configuredBegin = makeBeginSessionRequest(beginMetadata, {
+    L"romanized-romanized", true, true, false
+  });
+  require(configuredBegin.find(L"\"mode\":\"romanized-romanized\"") != std::wstring::npos,
+    "configured Windows mode was not serialized");
+  require(configuredBegin.find(L"\"enablePersonalization\":true") != std::wstring::npos,
+    "personalization preference was not serialized");
+  require(configuredBegin.find(L"\"enableNextWordPrediction\":false") != std::wstring::npos,
+    "next-word preference was not serialized");
 
   const RequestMetadata beginResponseMetadata = request(L"begin_1", 2);
   const std::wstring beginResponse =
@@ -80,6 +114,10 @@ int main() {
   const RequestMetadata keyMetadata = request(L"key_1", 3, 88, 138);
   const SessionHandle expectedSession{L"session-1", 7};
   const std::wstring process = makeProcessKeyRequest(keyMetadata, expectedSession, key);
+  const RequestTiming processTiming = inspectRequestTiming(process);
+  require(processTiming.deadlineClass == RequestDeadlineClass::HotPath &&
+          processTiming.hasValidDeadline && processTiming.deadlineAt == keyMetadata.deadlineAt,
+    "process-key request did not retain its hot-path absolute deadline");
   require(process.find(L"\"sessionEpoch\":7") != std::wstring::npos, "session epoch missing");
   require(process.find(L"\"key\":\"k\"") != std::wstring::npos, "logical key missing");
   require(process.find(L"\"shift\":true") != std::wstring::npos, "shift state missing");
@@ -92,10 +130,17 @@ int main() {
     L"\"payload\":{\"sessionId\":\"session-1\",\"action\":\"compose\",\"compositionText\":\"ka\","
     L"\"displayText\":\"\\u0915\\u093e\",\"caret\":2,\"candidates\":[{\"id\":\"ka-1\","
     L"\"text\":\"\\u0915\\u093e\",\"label\":\"ka\",\"type\":\"word\",\"confidence\":0.9,"
-    L"\"reason\":[],\"shortcut\":\"1\"}],\"shouldShowCandidateUI\":true}}";
+    L"\"reason\":[],\"shortcut\":\"1\"}],\"inlineCompletion\":{\"text\":\"\\u0915\\u093e\","
+    L"\"displayText\":\"  \\u0915\\u093e\",\"contextText\":\"\",\"candidate\":{\"id\":\"ka-1-inline\","
+    L"\"text\":\"\\u0915\\u093e\",\"type\":\"word\",\"confidence\":0.9,\"reason\":[]},"
+    L"\"confidence\":0.9,\"source\":\"active-candidate\",\"acceptKeys\":[\"Tab\",\"ArrowRight\"]},"
+    L"\"shouldShowCandidateUI\":true}}";
   const auto compose = parseProcessKeyResponse(composeResponse, keyMetadata, L"server-1", expectedSession);
   require(compose && compose->action == EngineAction::Compose, "valid compose response rejected");
   require(compose->displayText == L"\u0915\u093e", "escaped Unicode was not decoded");
+  require(compose->inlineCompletionText == L"\u0915\u093e" &&
+      compose->inlineCompletionDisplayText == L"  \u0915\u093e",
+    "inline completion was not parsed for host-native rendering");
   require(compose->shouldShowCandidateUi && compose->candidates.size() == 1, "candidate list was not parsed");
   require(compose->candidates[0].id == L"ka-1" && compose->candidates[0].text == L"\u0915\u093e" &&
     compose->candidates[0].label == L"ka" && compose->candidates[0].shortcut == L"1",
@@ -152,12 +197,30 @@ int main() {
     L"\"committedText\":\"\\u0915\\u093e\",\"commitEpoch\":1,\"consumedRange\":[0,2],"
     L"\"followupCandidates\":[],\"memoryRecorded\":false,\"schemaVersion\":1}}";
   const auto selected = parseCommitCandidateResponse(selectResponse, selectMetadata, L"server-1", expectedSession);
-  require(selected && selected->action == EngineAction::Commit && selected->committedText == L"\u0915\u093e",
+  require(selected && selected->action == EngineAction::Commit && selected->committedText == L"\u0915\u093e" &&
+      selected->commitEpoch == 1,
     "valid candidate commit response rejected");
   require(!parseCommitCandidateResponse(selectResponse, selectMetadata, L"server-1", {L"session-1", 8}),
     "stale candidate commit epoch accepted");
   require(makeCommitCandidateRequest(selectMetadata, expectedSession, L"").empty(),
     "empty candidate identifier was serialized");
+
+  const RequestMetadata learnMetadata = request(L"learn_1", 6, 100, 150);
+  const std::wstring learnRequest = makeMemoryLearnRequest(learnMetadata, expectedSession, 1);
+  require(learnRequest.find(L"\"type\":\"memory.learn\"") != std::wstring::npos,
+    "memory confirmation type missing");
+  require(learnRequest.find(L"\"commitEpoch\":1") != std::wstring::npos,
+    "memory confirmation commit epoch missing");
+  require(parseMemoryLearnResponse(
+    L"{\"id\":\"learn_1\",\"type\":\"memory.learn\",\"version\":2,\"ok\":true,"
+    L"\"serverInstanceId\":\"server-1\",\"requestSequence\":6,\"sessionEpoch\":7,"
+    L"\"payload\":{\"learned\":true}}",
+    learnMetadata,
+    L"server-1",
+    expectedSession
+  ), "valid memory confirmation response rejected");
+  require(makeMemoryLearnRequest(learnMetadata, expectedSession, 0).empty(),
+    "zero commit epoch was serialized");
 
   const RequestMetadata endMetadata = request(L"end_1", 6, 99, 149);
   const std::wstring endRequest = makeSessionRequest(endMetadata, expectedSession, SessionCommand::End);
@@ -173,6 +236,16 @@ int main() {
 
   RequestMetadata invalidDeadline = request(L"invalid", 7, 100, 99);
   require(makeBeginSessionRequest(invalidDeadline).empty(), "invalid deadline metadata was serialized");
+  const RequestTiming malformedTiming = inspectRequestTiming(L"{not-json");
+  require(malformedTiming.deadlineClass == RequestDeadlineClass::HotPath &&
+          !malformedTiming.hasValidDeadline,
+    "malformed public request escaped the bounded hot-path default");
+  const RequestTiming unknownTiming = inspectRequestTiming(
+    L"{\"type\":\"future.message\",\"deadlineAt\":123}"
+  );
+  require(unknownTiming.deadlineClass == RequestDeadlineClass::HotPath &&
+          unknownTiming.hasValidDeadline && unknownTiming.deadlineAt == 123,
+    "unknown request type escaped the bounded hot-path class");
 
   std::cout << "TSF protocol v2 tests passed\n";
   return 0;

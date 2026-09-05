@@ -146,6 +146,11 @@ describe("main-process preference validation", () => {
       nativeTypingMode: "traditional-traditional",
       excludedApplicationBundleIdentifiers: ["com.example.Editor"]
     });
+    expect(validatePreferencePatch({
+      excludedApplicationBundleIdentifiers: ["win32.exe:notepad.exe"]
+    }, options)).toEqual({
+      excludedApplicationBundleIdentifiers: ["win32.exe:notepad.exe"]
+    });
   });
 
   it("rejects unknown, malformed, duplicate, and oversized values atomically", () => {

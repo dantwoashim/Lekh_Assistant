@@ -98,6 +98,18 @@ class LocalKeyboardEngine implements KeyboardEngine {
     if (isSecureContext(session.context)) {
       return withAction(this.refresh(sessionId), "passThrough", "Secure/uncertain field: native key passed through without composition.");
     }
+    if (isInlineAcceptanceKey(key) && session.compositionText.length > 0) {
+      const update = this.refresh(sessionId);
+      const completion = update.inlineCompletion;
+      if (completion?.acceptKeys.includes(key.key as "Tab" | "ArrowRight")) {
+        const candidate = update.candidates.find((item) => item.text === completion.text);
+        if (candidate) {
+          const commitResult = this.commitCandidate(sessionId, candidate.id, { learning: "disabled" });
+          return withCommit(this.refresh(sessionId), commitResult, commitResult.committedText);
+        }
+      }
+      return withAction(update, "passThrough");
+    }
     if (isCandidateShortcutKey(key) && session.compositionText.length > 0) {
       const update = this.refresh(sessionId);
       const candidate = update.candidates.find((item) => item.shortcut === key.key);
@@ -142,9 +154,6 @@ class LocalKeyboardEngine implements KeyboardEngine {
     const update = this.refresh(sessionId);
     if (mutation.warning) {
       return withAction(update, "compose", mutation.warning);
-    }
-    if (mutation.command === "expand-candidates") {
-      return { ...update, action: "compose", shouldShowCandidateUI: true };
     }
     return update;
   }
@@ -423,6 +432,7 @@ class LocalKeyboardEngine implements KeyboardEngine {
       activeDomains: context.activeDomains,
       enabledSurfaces: context.enabledSurfaces,
       showRomanizedLabels: context.showRomanizedLabels ?? false,
+      enablePersonalization: context.enablePersonalization ?? true,
       enableNextWordPrediction: context.enableNextWordPrediction ?? false,
       warnings: session.warnings
     });
@@ -464,6 +474,11 @@ class LocalKeyboardEngine implements KeyboardEngine {
 function isCandidateShortcutKey(key: KeyboardKeyEvent): boolean {
   if (key.modifiers?.ctrl || key.modifiers?.alt || key.modifiers?.meta) return false;
   return /^[1-9]$/.test(typeof key.key === "string" ? key.key : "");
+}
+
+function isInlineAcceptanceKey(key: KeyboardKeyEvent): boolean {
+  if (key.modifiers?.ctrl || key.modifiers?.alt || key.modifiers?.meta || key.modifiers?.shift) return false;
+  return key.key === "Tab" || key.key === "ArrowRight";
 }
 
 function unknownSessionUpdate(sessionId: SessionId, input: string, cursor: number): CandidateUpdate {

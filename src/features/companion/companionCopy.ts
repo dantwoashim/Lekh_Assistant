@@ -94,7 +94,39 @@ export type CompanionCopy = {
   updateSafety: Array<[string, string]>;
   windowsValidationTitle: string;
   windowsValidationBody: string;
-  exclusionsUnavailable: string;
+  windows: {
+    repair: string;
+    repairing: string;
+    restart: string;
+    restarting: string;
+    runAtSignIn: string;
+    stopRunAtSignIn: string;
+    repairSucceeded: string;
+    restartSucceeded: string;
+    startupEnabled: string;
+    startupDisabled: string;
+    actionFailed: string;
+    previewTitle: string;
+    previewBody: string;
+    previewOff: string;
+    previewTry: string;
+    previewTypedLabel: string;
+    previewHint: string;
+    previewSafety: string;
+    shortcuts: Array<[string, string, string]>;
+    modeMenuShortcut: string;
+    identifierTitle: string;
+    identifierPlaceholder: string;
+    updateTitle: string;
+    updateBody: string;
+    updateSafety: Array<[string, string]>;
+    registrationLabel: string;
+    serviceLabel: string;
+    startupLabel: string;
+    ready: string;
+    needsAttention: string;
+    serviceLatency: string;
+  };
 };
 
 export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
@@ -108,7 +140,7 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
       updates: ["Updates & diagnostics", "Keep this device healthy and current."]
     },
     unavailableNoBridge: "These controls are available only in the Lekh companion app.",
-    unavailableReadFailure: "Lekh could not read the native keyboard status on this Mac.",
+    unavailableReadFailure: "Lekh could not read the native keyboard status on this device.",
     loadingTitle: "Checking your keyboard",
     loadingBody: "Reading the installed input source and local preferences…",
     retry: "Try Again",
@@ -116,7 +148,7 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
     saved: "Saved on this device",
     savedMode: "Mode saved. It applies the next time Lekh activates.",
     saveError: "That change could not be saved. Your previous setting was restored.",
-    excludedSaved: "Privacy exclusions saved on this Mac.",
+    excludedSaved: "Privacy exclusions saved on this device.",
     excludedError: "Use a complete bundle identifier, such as com.example.Editor.",
     signedFeedFailed: "The signed update feed could not be verified.",
     updateVerified: (version) => `Verified Lekh ${version} and revealed it in Finder.`,
@@ -155,24 +187,24 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
         state: "Companion only"
       },
       installed: {
-        title: "Windows text service found",
-        body: "The native DLL is packaged but its text-service profile is not registered for this account.",
+        title: "Finish Windows keyboard setup",
+        body: "Lekh is installed, but Windows has not registered its keyboard profile. Repairing asks for administrator approval once.",
         state: "Registration needed"
       },
       enabled: {
-        title: "Windows text service registered",
-        body: "Press Windows–Space and choose Lekh Keyboard Nepali. Active-source detection still requires Windows host validation.",
-        state: "Registered"
+        title: "Typing service needs attention",
+        body: "The keyboard is registered, but its private local service is not responding. Restarting it does not close your apps.",
+        state: "Service stopped"
       },
       selected: {
-        title: "Lekh is active",
-        body: "The Windows text service is selected for the current text field.",
-        state: "Active now"
+        title: "Lekh is ready on Windows",
+        body: "Press Windows + Space and choose Lekh Keyboard – Nepali in any text field.",
+        state: "Ready"
       }
     },
     activationProgress: "Activation progress",
     activationSteps: ["Installed", "Added", "Active"],
-    windowsActivationSteps: ["Packaged", "Registered", "Selected"],
+    windowsActivationSteps: ["Installed", "Registered", "Service ready"],
     versionLine: (status) => `Native keyboard ${status.version ?? "version unknown"}`,
     ghostTitle: "Finish words without losing your flow",
     ghostBody: "A quiet gray completion appears beside the word you are composing. Nothing is inserted until you accept it.",
@@ -181,7 +213,7 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
     ghostTypedLabel: "You type swas",
     ghostHint: "accepts the gray ending",
     replay: "Replay preview",
-    spaceSafety: "Space always keeps exactly what you typed.",
+    spaceSafety: "Space accepts the visible suggestion. Shift+Space keeps exactly what you typed.",
     quickGuide: "The four moves worth remembering",
     shortcuts: [
       ["Tab  →", "Accept", "Use the visible gray completion"],
@@ -222,8 +254,8 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
     advancedTitle: "Advanced typing controls",
     advancedBody: "Candidate display, language tools, and contextual ranking",
     preferences: {
-      inlinePreviewEnabled: ["Ghost suggestions", "Show a gray completion beside the active word."],
-      customCandidatePanelEnabled: ["Candidate list", "Show alternate words beneath the insertion point."],
+      inlinePreviewEnabled: ["Ghost suggestions", "Show a subtle completion inside the app where you are typing."],
+      customCandidatePanelEnabled: ["Floating alternatives", "Optional fallback list for apps that cannot show inline suggestions."],
       proofreadAsYouTypeEnabled: ["Nepali spelling help", "Suggest local corrections for Unicode Nepali input."],
       smartPunctuationEnabled: ["Nepali punctuation", "Use danda automatically in Nepali output modes."],
       personalizationEnabled: ["Personal learning", "Improve ranking only from words you explicitly choose."],
@@ -268,9 +300,50 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
       ["Pinned source", "Update archives must remain on Lekh’s configured HTTPS host."],
       ["Double verification", "Every archive must match its hash and Ed25519 signature."]
     ],
-    windowsValidationTitle: "Windows native typing is still in validation",
-    windowsValidationBody: "This companion can report the packaged text service, but its settings are not connected to the Windows typing path yet. Controls stay unavailable instead of pretending to work.",
-    exclusionsUnavailable: "Per-application learning exclusions are not connected to the Windows text service yet. This development path makes no claim that personal learning is active."
+    windowsValidationTitle: "Built to stay out of your way",
+    windowsValidationBody: "Lekh keeps typing after this window closes, starts quietly when you sign in, and recovers its local typing service automatically.",
+    windows: {
+      repair: "Repair keyboard",
+      repairing: "Waiting for Windows…",
+      restart: "Restart typing service",
+      restarting: "Restarting…",
+      runAtSignIn: "Run at sign-in",
+      stopRunAtSignIn: "Do not run at sign-in",
+      repairSucceeded: "Windows keyboard registration repaired",
+      restartSucceeded: "Typing service restarted",
+      startupEnabled: "Lekh will run quietly when you sign in",
+      startupDisabled: "Run at sign-in turned off",
+      actionFailed: "Windows could not complete that action",
+      previewTitle: "See exactly what Lekh will enter",
+      previewBody: "A live Nepali preview follows your Romanized composition. The text is committed only when you finish the word.",
+      previewOff: "Live conversion preview is off. Turn it on to see the Nepali word before it is committed.",
+      previewTry: "Live conversion preview",
+      previewTypedLabel: "You type swasthya",
+      previewHint: "commits the previewed word",
+      previewSafety: "Backspace and Escape always return control without losing surrounding text.",
+      shortcuts: [
+        ["Space", "Commit", "Finish the current word and insert a space"],
+        ["↑  ↓", "Browse", "Move through alternate words"],
+        ["1–8", "Choose", "Pick a numbered candidate directly"],
+        ["Esc", "Cancel", "Return safely to your Romanized source"]
+      ],
+      modeMenuShortcut: "Ctrl + Alt + Space cycles modes. Ctrl + Alt + 1 or 2 selects one directly.",
+      identifierTitle: "Add by executable name",
+      identifierPlaceholder: "win32.exe:notepad.exe",
+      updateTitle: "Safe Windows updates",
+      updateBody: "Install newer versions only from a signed Lekh installer. This build does not download updates silently in the background.",
+      updateSafety: [
+        ["No surprise restarts", "Lekh never interrupts an active typing session to update."],
+        ["Signed installer", "Windows can verify the publisher before system files are changed."],
+        ["Settings preserved", "Updating or reinstalling keeps your local preferences and learning choices."]
+      ],
+      registrationLabel: "Keyboard registration",
+      serviceLabel: "Typing service",
+      startupLabel: "Run at sign-in",
+      ready: "Ready",
+      needsAttention: "Needs attention",
+      serviceLatency: "Local response"
+    }
   },
   ne: {
     localeLabel: "भाषा",
@@ -279,18 +352,18 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
     sections: {
       typing: ["टाइपिङ", "हरेक एपमा Lekh लाई सहज बनाउनुहोस्।"],
       privacy: ["गोपनीयता", "किबोर्डले के सम्झन सक्छ भन्ने नियन्त्रण गर्नुहोस्।"],
-      updates: ["अपडेट र निदान", "यो Mac लाई स्वस्थ र अद्यावधिक राख्नुहोस्।"]
+      updates: ["अपडेट र निदान", "यो device लाई स्वस्थ र अद्यावधिक राख्नुहोस्।"]
     },
     unavailableNoBridge: "यी नियन्त्रणहरू Lekh साथी एपमा मात्र उपलब्ध छन्।",
-    unavailableReadFailure: "Lekh ले यो Mac को नेटिभ किबोर्ड स्थिति पढ्न सकेन।",
+    unavailableReadFailure: "Lekh ले यो device को नेटिभ किबोर्ड स्थिति पढ्न सकेन।",
     loadingTitle: "किबोर्ड जाँच हुँदैछ",
     loadingBody: "इन्स्टल गरिएको input source र स्थानीय सेटिङ पढ्दै…",
     retry: "फेरि प्रयास",
     saving: "सेभ हुँदै…",
-    saved: "यो Mac मा सेभ भयो",
+    saved: "यो device मा सेभ भयो",
     savedMode: "मोड सेभ भयो। Lekh फेरि सक्रिय हुँदा लागू हुन्छ।",
     saveError: "परिवर्तन सेभ भएन। अघिल्लो सेटिङ फिर्ता राखिएको छ।",
-    excludedSaved: "गोपनीयता बहिष्करण यो Mac मा सेभ भयो।",
+    excludedSaved: "गोपनीयता बहिष्करण यो device मा सेभ भयो।",
     excludedError: "com.example.Editor जस्तो पूरा bundle identifier प्रयोग गर्नुहोस्।",
     signedFeedFailed: "हस्ताक्षरित अपडेट फिड प्रमाणित भएन।",
     updateVerified: (version) => `Lekh ${version} प्रमाणित गरेर Finder मा देखाइयो।`,
@@ -329,24 +402,24 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
         state: "Companion मात्र"
       },
       installed: {
-        title: "Windows text service भेटियो",
-        body: "नेटिभ DLL package मा छ तर यो account का लागि text-service profile दर्ता भएको छैन।",
+        title: "Windows keyboard setup पूरा गर्नुहोस्",
+        body: "Lekh install छ, तर Windows मा keyboard profile दर्ता भएको छैन। Repair गर्दा एक पटक administrator अनुमति मागिन्छ।",
         state: "दर्ता आवश्यक"
       },
       enabled: {
-        title: "Windows text service दर्ता छ",
-        body: "Windows–Space थिचेर Lekh Keyboard Nepali छान्नुहोस्। Active-source detection लाई अझै Windows host validation चाहिन्छ।",
-        state: "दर्ता छ"
+        title: "Typing service लाई ध्यान चाहिन्छ",
+        body: "Keyboard दर्ता छ, तर यसको निजी local service ले जवाफ दिइरहेको छैन। Restart गर्दा अरू एप बन्द हुँदैनन्।",
+        state: "Service रोकिएको"
       },
       selected: {
-        title: "Lekh सक्रिय छ",
-        body: "हालको text field मा Windows text service छानिएको छ।",
-        state: "अहिले सक्रिय"
+        title: "Lekh Windows मा तयार छ",
+        body: "कुनै पनि text field मा Windows + Space थिचेर Lekh Keyboard – Nepali छान्नुहोस्।",
+        state: "तयार"
       }
     },
     activationProgress: "सक्रिय गर्ने प्रगति",
     activationSteps: ["इन्स्टल", "थपियो", "सक्रिय"],
-    windowsActivationSteps: ["Packaged", "दर्ता", "छानिएको"],
+    windowsActivationSteps: ["इन्स्टल", "दर्ता", "Service तयार"],
     versionLine: (status) => `नेटिभ किबोर्ड ${status.version ?? "संस्करण अज्ञात"}`,
     ghostTitle: "लय नटुटाई शब्द पूरा गर्नुहोस्",
     ghostBody: "बनिरहेको शब्दसँगै हल्का खैरो पूर्णता देखिन्छ। तपाईंले स्वीकार नगरेसम्म केही पनि घुस्दैन।",
@@ -355,7 +428,7 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
     ghostTypedLabel: "तपाईं swas टाइप गर्नुहुन्छ",
     ghostHint: "थिच्दा खैरो भाग स्वीकारिन्छ",
     replay: "पूर्वावलोकन फेरि चलाउनुहोस्",
-    spaceSafety: "Space ले सधैं तपाईंले टाइप गरेकै कुरा राख्छ।",
+    spaceSafety: "Space ले देखिएको सुझाव स्वीकार गर्छ। Shift+Space ले तपाईंले टाइप गरेकै कुरा राख्छ।",
     quickGuide: "सम्झन लायक चार चाल",
     shortcuts: [
       ["Tab  →", "स्वीकार", "देखिएको खैरो पूर्णता प्रयोग"],
@@ -442,9 +515,50 @@ export const copyByLocale: Record<CompanionLocale, CompanionCopy> = {
       ["Pinned source", "Update archive Lekh को configured HTTPS host मै हुनुपर्छ।"],
       ["दोहोरो प्रमाणिकरण", "हरेक archive को hash र Ed25519 signature मिल्नुपर्छ।"]
     ],
-    windowsValidationTitle: "Windows को नेटिभ टाइपिङ अझै validation मा छ",
-    windowsValidationBody: "यो साथी एपले packaged text service को स्थिति देखाउन सक्छ, तर यसको settings अझै Windows typing path मा जोडिएको छैन। काम गरेको नाटक गर्नुको सट्टा controls उपलब्ध हुँदैनन्।",
-    exclusionsUnavailable: "प्रति-एप learning exclusion अझै Windows text service मा जोडिएको छैन। यो development path ले personal learning सक्रिय भएको दाबी गर्दैन।"
+    windowsValidationTitle: "काममा बाधा नपार्ने गरी बनाइएको",
+    windowsValidationBody: "यो झ्याल बन्द गरेपछि पनि Lekh चलिरहन्छ, sign-in हुँदा चुपचाप सुरु हुन्छ र स्थानीय typing service स्वतः सम्हाल्छ।",
+    windows: {
+      repair: "किबोर्ड मर्मत गर्नुहोस्",
+      repairing: "Windows को प्रतीक्षा हुँदै…",
+      restart: "Typing service फेरि सुरु गर्नुहोस्",
+      restarting: "फेरि सुरु हुँदै…",
+      runAtSignIn: "Sign-in हुँदा चलाउनुहोस्",
+      stopRunAtSignIn: "Sign-in हुँदा नचलाउनुहोस्",
+      repairSucceeded: "Windows keyboard registration मर्मत भयो",
+      restartSucceeded: "Typing service फेरि सुरु भयो",
+      startupEnabled: "Sign-in हुँदा Lekh चुपचाप चल्नेछ",
+      startupDisabled: "Sign-in मा चल्ने विकल्प बन्द भयो",
+      actionFailed: "Windows ले त्यो काम पूरा गर्न सकेन",
+      previewTitle: "Lekh ले हाल्ने text पहिल्यै हेर्नुहोस्",
+      previewBody: "Romanized composition सँगै live नेपाली preview देखिन्छ। शब्द पूरा गरेपछि मात्र text commit हुन्छ।",
+      previewOff: "Live conversion preview बन्द छ। Commit अघि नेपाली शब्द हेर्न यसलाई खोल्नुहोस्।",
+      previewTry: "Live conversion preview",
+      previewTypedLabel: "तपाईं swasthya टाइप गर्नुहुन्छ",
+      previewHint: "preview गरिएको शब्द commit गर्छ",
+      previewSafety: "Backspace र Escape ले वरिपरिको text नहराई सधैं नियन्त्रण फिर्ता दिन्छ।",
+      shortcuts: [
+        ["Space", "Commit", "हालको शब्द पूरा गरेर space हाल्नुहोस्"],
+        ["↑  ↓", "हेर्नुहोस्", "वैकल्पिक शब्दहरूमा सर्नुहोस्"],
+        ["1–8", "छान्नुहोस्", "नम्बर भएको candidate सीधै छान्नुहोस्"],
+        ["Esc", "रद्द", "सुरक्षित रूपमा Romanized source मा फर्कनुहोस्"]
+      ],
+      modeMenuShortcut: "Ctrl + Alt + Space ले mode बदल्छ। Ctrl + Alt + 1 वा 2 ले सीधै छान्छ।",
+      identifierTitle: "Executable नामबाट थप्नुहोस्",
+      identifierPlaceholder: "win32.exe:notepad.exe",
+      updateTitle: "सुरक्षित Windows अपडेट",
+      updateBody: "नयाँ version हस्ताक्षरित Lekh installer बाट मात्र हाल्नुहोस्। यो build ले background मा चुपचाप update डाउनलोड गर्दैन।",
+      updateSafety: [
+        ["अचानक restart हुँदैन", "Active typing session बीचमा Lekh ले update गर्दैन।"],
+        ["हस्ताक्षरित installer", "System file बदल्नुअघि Windows ले publisher जाँच्न सक्छ।"],
+        ["Setting सुरक्षित", "Update वा reinstall गर्दा local preference र learning विकल्प रहन्छन्।"]
+      ],
+      registrationLabel: "Keyboard registration",
+      serviceLabel: "Typing service",
+      startupLabel: "Sign-in मा चल्ने",
+      ready: "तयार",
+      needsAttention: "ध्यान आवश्यक",
+      serviceLatency: "Local response"
+    }
   }
 };
 

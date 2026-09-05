@@ -15,14 +15,25 @@ afterAll(() => {
 });
 
 describe("Windows TSF source safety contract", () => {
-  it("enables deterministic typing while consuming keys only after a safe context is ready", () => {
+  it("keeps OnTestKeyDown predictive and consumes only an accepted real-key edit", () => {
     const source = read("LekhTextService.cpp");
     const header = read("LekhTextService.h");
+    const testBlock = source.slice(
+      source.indexOf("STDMETHODIMP LekhTextService::OnTestKeyDown"),
+      source.indexOf("STDMETHODIMP LekhTextService::OnKeyDown")
+    );
+    const keyBlock = source.slice(
+      source.indexOf("STDMETHODIMP LekhTextService::OnKeyDown"),
+      source.indexOf("STDMETHODIMP LekhTextService::OnTestKeyUp")
+    );
     expect(source).not.toContain("LEKH_TSF_ENABLE_EXPERIMENTAL_KEY_EATING");
     expect(header).not.toContain("experimentalKeyEatingEnabled");
-    expect(source).toContain("*eaten = FALSE");
-    expect(source).toContain("*eaten = prepareSafeContext(context) ? TRUE : FALSE");
-    expect(source).toContain("*eaten = processKey(context, wParam, lParam) ? TRUE : FALSE");
+    expect(testBlock).toContain("shouldHandleKey(wParam, lParam)");
+    expect(testBlock).not.toContain("prepareSafeContext");
+    expect(testBlock).not.toContain("beginDaemonSession");
+    expect(testBlock).not.toContain("ipc_.request");
+    expect(keyBlock).toContain("!prepareSafeContext(context)");
+    expect(keyBlock).toContain("processKey(context, wParam, lParam)");
     expect(source).toContain("ToUnicodeEx");
     expect(source).toContain("GetKeyboardLayout(0)");
     expect(source).toContain("isRomanizedLetter(logicalKey(wParam, lParam))");
@@ -45,11 +56,27 @@ describe("Windows TSF source safety contract", () => {
   it("exports the complete COM and self-registration surface from the TSF DLL", () => {
     const cmake = read("CMakeLists.txt");
     const exports = read("LekhTextService.def");
+    const registration = read("Register.cpp");
     expect(cmake).toContain("LekhTextService.def");
     expect(exports).toContain("DllCanUnloadNow PRIVATE");
     expect(exports).toContain("DllGetClassObject PRIVATE");
     expect(exports).toContain("DllRegisterServer PRIVATE");
     expect(exports).toContain("DllUnregisterServer PRIVATE");
+    expect(registration).toContain("kMaximumWindowsPathCharacters = 32768");
+    expect(registration).toContain("currentModulePath(&modulePath)");
+    expect(registration).toContain("GUID_TFCAT_TIP_KEYBOARD");
+    expect(registration).toContain("GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER");
+    expect(registration).toContain("GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT");
+    expect(registration).toContain("UnregisterCategory");
+    expect(registration).toContain("iconPath.data()");
+    expect(read("LekhTextService.rc")).toContain("IDI_LEKH_IME ICON");
+    expect(registration).toContain("LoadLibraryExW(L\"input.dll\", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32)");
+    expect(registration).toContain('GetProcAddress(input, "InstallLayoutOrTip")');
+    expect(registration).toContain("setTextServiceEnabledForCurrentUser(true)");
+    expect(registration).toContain("setTextServiceEnabledForCurrentUser(false)");
+    expect(registration).not.toContain("kInstallLayoutOrTipDefault");
+    expect(cmake).toContain("LekhTextService.rc");
+    expect(registration).not.toContain("modulePath[MAX_PATH]");
   });
 
   it("begins, validates, and ends real daemon sessions rather than inventing a client session id", () => {
@@ -62,7 +89,8 @@ describe("Windows TSF source safety contract", () => {
     expect(source).toContain("makeProcessKeyRequest");
     expect(source).toContain("parseProcessKeyResponse");
     expect(source).toContain("SessionCommand::End");
-    expect(source).toContain("if (!lekh::tsf::finishActiveComposition(activeContext_, clientId_, &activeComposition_))");
+    expect(source).toContain("submitFinishComposition");
+    expect(source).toContain("abandonCompositionState");
     expect(protocol).toContain('L"session.begin"');
     expect(protocol).toContain('L"session.processKeyStroke"');
     expect(protocol).toContain("sessionId->string != expectedSession.sessionId");
@@ -71,31 +99,65 @@ describe("Windows TSF source safety contract", () => {
     expect(source).not.toContain("windows-tsf-dev");
   });
 
-  it("uses synchronous TSF edit sessions for composition, commit, and cancel", () => {
+  it("owns asynchronous composition edits and falls open inside the accepted edit session", () => {
     const editSession = read("TsfEditSession.cpp");
-    expect(editSession).toContain("RequestEditSession");
-    expect(editSession).toContain("TF_ES_SYNC | TF_ES_READWRITE");
-    expect(editSession).toContain("InsertTextAtSelection");
-    expect(editSession).toContain("StartComposition");
-    expect(editSession).toContain("GetRange");
-    expect(editSession).toContain("SetText");
-    expect(editSession).toContain("EndComposition");
-    expect(editSession).toContain("const bool applied = SUCCEEDED(requestResult) && editSession->hostTextMutated()");
-    expect(editSession).toContain("if (SUCCEEDED(rollback)) hostTextMutated_ = false");
+    const serviceHeader = read("LekhTextService.h");
+    const service = read("LekhTextService.cpp");
+    const attributes = read("DisplayAttributes.cpp");
+    const registration = read("Register.cpp");
+    expect(editSession).toContain("TF_ES_ASYNCDONTCARE | TF_ES_READWRITE");
+    expect(editSession).toContain("TF_ES_ASYNCDONTCARE | TF_ES_READ");
+    expect(service).toContain("primeFocusedContext()");
+    expect(service).toContain("submitContextPrivacyInspection");
+    expect(editSession).not.toContain("TF_ES_SYNC | TF_ES_READWRITE");
+    expect(editSession).toContain("TF_IAS_QUERYONLY");
+    expect(editSession.indexOf("TF_IAS_QUERYONLY")).toBeLessThan(editSession.indexOf("compositionContext->StartComposition"));
+    expect(editSession.indexOf("compositionContext->StartComposition")).toBeLessThan(editSession.indexOf("setRangeText(editCookie, compositionRange, text)"));
+    expect(editSession).toContain("class CompositionState final : public ITfCompositionSink");
+    expect(editSession).toContain("OnCompositionTerminated");
+    expect(editSession).toContain("compositionCreationAlreadyFailed");
+    expect(editSession).toContain("insertPlainText(editCookie, failOpenText_");
+    expect(editSession).toContain("callback_.function(callback_.context, finalOutcome)");
+    expect(service).toContain("candidateWindow_.post");
+    expect(service).toContain("scheduleCommittedCandidateLearning(outcome.decision.commitEpoch)");
+    expect(serviceHeader).toContain("public ITfDisplayAttributeProvider");
+    expect(service).toContain("registerCompositionDisplayAttribute");
+    expect(service).toContain("registerGhostDisplayAttribute");
+    expect(attributes).toContain("IID_ITfDisplayAttributeInfo");
+    expect(attributes).toContain("COLOR_GRAYTEXT");
+    expect(attributes).toContain("TF_ATTR_INPUT");
+    expect(editSession).toContain("GUID_PROP_ATTRIBUTE");
+    expect(editSession).toContain("property->SetValue(editCookie, range, &value)");
+    expect(editSession).toContain("property->Clear(editCookie, range)");
+    expect(editSession).toContain("decision_.inlineCompletionDisplayText");
+    expect(registration).toContain("GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER");
   });
 
-  it("suppresses secure, private, PIN, and unclassified contexts", () => {
+  it("suppresses explicit secure contexts without disabling ordinary Win32 fields", () => {
     const source = read("LekhTextService.cpp");
+    const serviceHeader = read("LekhTextService.h");
     const editSession = read("TsfEditSession.cpp");
     const inputScopeGuids = read("InputScopeGuids.cpp");
     expect(source).toContain("TF_TMAE_SECUREMODE");
-    expect(source).toContain("privacy != lekh::tsf::ContextPrivacy::Safe");
+    expect(source).toContain("contextPrivacy_ != lekh::tsf::ContextPrivacy::Safe");
     expect(editSession).toContain("GUID_PROP_INPUTSCOPE");
+    expect(editSession).toContain("GUID_COMPARTMENT_KEYBOARD_DISABLED");
+    expect(editSession).toContain("GUID_COMPARTMENT_EMPTYCONTEXT");
+    expect(editSession).toContain("IID_ITfCompartmentMgr");
     expect(editSession).toContain("IS_PASSWORD");
     expect(editSession).toContain("IS_PRIVATE");
     expect(editSession).toContain("IS_NUMERIC_PASSWORD");
     expect(editSession).toContain("IS_NUMERIC_PIN");
     expect(editSession).toContain("IS_ALPHANUMERIC_PIN");
+    expect(editSession).toContain("hr == S_FALSE || hr == E_NOTIMPL");
+    expect(editSession).toContain("value.vt == VT_EMPTY || value.vt == VT_NULL");
+    expect(editSession).not.toContain("hr == E_FAIL || hr == E_NOTIMPL");
+    expect(editSession).toContain("if (scopeCount == 0)");
+    expect(editSession).toContain("*classification = ContextPrivacy::Safe");
+    expect(editSession).toContain("privacy != ContextPrivacy::Safe");
+    expect(serviceHeader).toContain("public ITfTextEditSink");
+    expect(source).toContain("GetSelectionStatus");
+    expect(source).toContain("GetTextAndPropertyUpdates");
     expect(editSession).toContain("ContextPrivacy::Unknown");
     expect(editSession).toContain("isKnownInputScope");
     expect(editSession).toContain("!isKnownInputScope(scopes[index])");
@@ -104,11 +166,26 @@ describe("Windows TSF source safety contract", () => {
     expect(read("CMakeLists.txt")).toContain("InputScopeGuids.cpp");
   });
 
+  it("loads per-user Windows preferences and fails closed when an app identity is unavailable", () => {
+    const source = read("LekhTextService.cpp");
+    const preferences = read("WindowsPreferences.cpp");
+    const cmake = read("CMakeLists.txt");
+    expect(source).toContain("preferences_ = lekh::tsf::readWindowsPreferences()");
+    expect(source).toContain("personalizationAllowedForForegroundApplication(preferences_)");
+    expect(source).toContain("TF_TMF_IMMERSIVEMODE");
+    expect(preferences).toContain("if (!preferences.personalizationEnabled) return false");
+    expect(preferences).toContain("if (!identifier) return false");
+    expect(preferences).toContain('return L"win32.exe:" + executable');
+    expect(cmake).toContain("add_library(LekhWindowsPreferences STATIC");
+  });
+
   it("renders and navigates the bounded native candidate list without taking focus", () => {
     const source = read("LekhTextService.cpp");
     const header = read("LekhTextService.h");
     const state = read("CandidateState.cpp");
     const window = read("CandidateWindow.cpp");
+    const accessibility = read("CandidateAccessibility.cpp");
+    const editSession = read("TsfEditSession.cpp");
     const protocol = read("TsfProtocol.cpp");
     const cmake = read("CMakeLists.txt");
     const handleBlock = source.slice(
@@ -118,7 +195,7 @@ describe("Windows TSF source safety contract", () => {
     expect(header).toContain("lekh::tsf::CandidateState candidateState_");
     expect(header).toContain("lekh::tsf::CandidateWindow candidateWindow_");
     expect(handleBlock).toContain("candidateState_.visible() && candidateCommand(wParam)");
-    expect(handleBlock).toContain("if (!activeComposition_) return false");
+    expect(handleBlock).toContain("compositionStateIsActive(compositionState_)");
     expect(source).toContain("VK_UP");
     expect(source).toContain("VK_DOWN");
     expect(source).toContain("CandidateCommand::Digit1");
@@ -133,12 +210,38 @@ describe("Windows TSF source safety contract", () => {
     expect(window).toContain("CreateWindowExW");
     expect(window).toContain("WS_EX_NOACTIVATE");
     expect(window).toContain("SWP_NOACTIVATE | SWP_SHOWWINDOW");
+    expect(window).toContain("GWLP_HWNDPARENT");
+    expect(window).toContain("EVENT_OBJECT_IME_SHOW");
+    expect(window).toContain("EVENT_OBJECT_IME_HIDE");
+    expect(window).toContain("EVENT_OBJECT_IME_CHANGE");
+    expect(window).toContain("WM_GETOBJECT");
+    expect(window).toContain("WM_LBUTTONUP");
+    expect(window).toContain("MA_NOACTIVATE");
+    expect(window).not.toContain("HTTRANSPARENT");
+    expect(window).not.toContain("MA_NOACTIVATEANDEAT");
+    expect(source).toContain("setCandidateInvokedCallback");
     expect(window).toContain("DrawTextW");
+    expect(editSession).toContain("GetActiveView");
+    expect(editSession).toContain("GetWnd(&outcome_.candidateOwnerWindow)");
+    expect(editSession).toContain("GetTextExt(editCookie, range, &extent, &clipped)");
+    expect(window).toContain("textAnchor_.value_or(fallbackCandidateAnchor())");
     expect(window).toContain("DT_END_ELLIPSIS");
     expect(window).toContain('L"Nirmala UI"');
+    expect(source).toContain("TF_TMAE_UIELEMENTENABLEDONLY");
+    expect(accessibility).toContain('L"IME_Candidate_Window"');
+    expect(accessibility).toContain("UIA_MenuOpenedEventId");
+    expect(accessibility).toContain("UIA_MenuClosedEventId");
+    expect(accessibility).toContain("UIA_SelectionItem_ElementSelectedEventId");
+    expect(accessibility).toContain("UIA_SelectionItemIsSelectedPropertyId");
+    expect(accessibility).toContain("kCandidateAccessibilitySelectMessage");
+    expect(accessibility).toContain("PostMessageW");
+    expect(accessibility).toContain("UIA_NamePropertyId");
+    expect(cmake).toContain("CandidateAccessibility.cpp");
+    expect(cmake).toContain("uiautomationcore");
     expect(cmake).toContain("add_executable(LekhCandidateStateTests");
     expect(cmake).toContain("add_test(NAME LekhCandidateStateTests");
-    expect(handleBlock).not.toContain("VK_TAB");
+    expect(handleBlock).toContain("activeGhostVisible_");
+    expect(handleBlock).toContain("wParam == VK_TAB || wParam == VK_RIGHT");
     expect(handleBlock).not.toContain("VK_DELETE");
   });
 
@@ -169,6 +272,8 @@ describe("Windows TSF source safety contract", () => {
     expect(ipc).toContain("lekh::ipc::kMaximumFrameBytes");
     expect(guids).toContain("lekh::ipc::kHotPathDeadlineMilliseconds");
     expect(ipc).toContain("readLineWithDeadline");
+    expect(ipc).toContain("kTransportCompletionGraceMilliseconds = 15");
+    expect(ipc).toContain("transportTimeout(timeoutMs)");
     expect(ipc).toContain("remainingTimeout(startedAt, timeoutMs)");
     expect(ipc).not.toContain("PIPE_READMODE_MESSAGE");
   });
@@ -212,17 +317,22 @@ describe("Windows TSF source safety contract", () => {
     expect(generatedProtocol).toContain("kControlDeadlineMilliseconds = 5000");
     expect(broker).toContain("lekh::ipc::kControlDeadlineMilliseconds");
     expect(broker).toContain("readClientFrame(pipe, requestReadDeadline)");
-    expect(broker).toContain("isProtocolNegotiation(*request)");
-    expect(broker).toContain("operationDeadline");
-    expect(broker).toContain("if (responseWritten) FlushFileBuffers(pipe)");
-    expect(broker.indexOf("FlushFileBuffers(pipe)")).toBeLessThan(broker.lastIndexOf("closeConnectedPipe(pipe)"));
+    expect(broker).toContain("inspectRequestTiming(wideRequest)");
+    expect(broker).toContain("operationDeadlineFor(timing)");
+    expect(broker).toContain("responseDeadlineFor(*operationDeadline)");
+    expect(broker).toContain("FlushFileBuffers(pipe)");
     expect(broker).toContain("verifyBackendReadiness(backend)");
+    expect(broker).toContain("makeProtocolNegotiationRequest(metadata)");
+    expect(broker).toContain("makeEngineWarmRequest(warmMetadata");
+    expect(broker.indexOf("verifyBackendReadiness(backend)")).toBeLessThan(broker.indexOf("createClientPipe(*name"));
     expect(broker).toContain("kMaximumConnections - kWorkerCount - 1");
     expect(backend).toContain("PROC_THREAD_ATTRIBUTE_HANDLE_LIST");
     expect(backend).toContain("JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE");
     expect(backend).toContain('L"NODE_OPTIONS"');
     expect(backend).toContain('L"NODE_PATH"');
     expect(backend).toContain("GetOverlappedResultEx");
+    expect(backend).toContain("std::timed_mutex");
+    expect(backend).toContain("if (!response) poison()");
     expect(backend).toContain("CREATE_SUSPENDED | CREATE_NO_WINDOW");
     expect(cmake).toContain("add_executable(LekhPipeBroker WIN32");
     expect(cmake).toContain("add_executable(LekhDaemonBackendTests");
@@ -231,6 +341,25 @@ describe("Windows TSF source safety contract", () => {
     expect(companion).not.toContain('[daemonPath, "--named-pipe"]');
     expect(companion).toContain('label: "Exit Lekh Keyboard Companion"');
     expect(companion).toContain("click: () => app.quit()");
+  });
+
+  it("ships a focused first-composition host instead of a headless or direct-injection-only probe", () => {
+    const integration = read("TsfInjectionTests.cpp");
+    expect(integration).toContain("CreateWindowExW");
+    expect(integration).toContain("SetForegroundWindow(window)");
+    expect(integration).toContain("AssociateFocus(window_, documentManager_");
+    expect(integration).toContain("forceAsyncWrites");
+    expect(integration).toContain("TS_S_ASYNC");
+    expect(integration).toContain("lockFlags & TS_LF_SYNC");
+    expect(integration).toContain("sink_->OnLockGranted(access)");
+    expect(integration).toContain("testAsyncPrivacyInspection");
+    expect(integration).toContain("testAsyncFirstComposition");
+    expect(integration).toContain("testCompositionFailureFallsBackExactlyOnce");
+    expect(integration).toContain("testRejectedEditPassesThrough");
+    expect(integration).toContain("ActivateProfile(");
+    expect(integration).toContain("live first key did not create a Devanagari composition");
+    expect(integration).not.toContain("LekhGetLiveDiagnosticState");
+    expect(integration).not.toContain("LekhTextService-live3.dll");
   });
 
   it.skipIf(process.platform === "win32")("compiles and runs the portable native protocol tests", () => {

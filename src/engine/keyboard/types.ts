@@ -75,6 +75,7 @@ export interface TypingContext {
   layoutId?: string;
   enabledSurfaces: SuggestionSurface[];
   showRomanizedLabels?: boolean;
+  enablePersonalization?: boolean;
   enableNextWordPrediction?: boolean;
 }
 
@@ -122,7 +123,7 @@ export interface InlineCompletion {
   candidate: Candidate;
   confidence: number;
   source: "active-candidate" | "ngram-lm";
-  acceptKeys: Array<"Tab" | "Enter">;
+  acceptKeys: Array<"Tab" | "ArrowRight">;
 }
 
 export interface ProofHint {

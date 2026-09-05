@@ -90,6 +90,7 @@
         "layoutId": { "type": "string", "maxLength": 16384 },
         "enabledSurfaces": { "type": "array", "maxItems": 6, "items": { "$ref": "#/$defs/SuggestionSurface" } },
         "showRomanizedLabels": { "type": "boolean" },
+        "enablePersonalization": { "type": "boolean" },
         "enableNextWordPrediction": { "type": "boolean" }
       }
     },
@@ -170,7 +171,7 @@
           "minItems": 1,
           "maxItems": 2,
           "uniqueItems": true,
-          "items": { "type": "string", "enum": ["Tab", "Enter"] }
+          "items": { "type": "string", "enum": ["Tab", "ArrowRight"] }
         }
       }
     },

@@ -1,9 +1,14 @@
 #include "CandidateWindow.h"
 
+#include "CandidateAccessibility.h"
+
 #include <algorithm>
 #include <cwchar>
+#include <memory>
 #include <mutex>
+#include <new>
 #include <string>
+#include <utility>
 
 extern HMODULE g_module;
 
@@ -11,12 +16,13 @@ namespace lekh::tsf {
 namespace {
 
 constexpr wchar_t kCandidateWindowClass[] = L"LekhCandidateWindow.v1";
+constexpr UINT kRunPostedCallbackMessage = WM_APP + 0x71;
 
 int scaled(int value, UINT dpi) {
   return MulDiv(value, static_cast<int>(dpi), 96);
 }
 
-POINT candidateAnchor() {
+POINT fallbackCandidateAnchor() {
   const HWND foreground = GetForegroundWindow();
   if (foreground) {
     GUITHREADINFO information = {};
@@ -43,22 +49,63 @@ std::wstring singleLine(std::wstring value) {
 
 CandidateWindow::~CandidateWindow() {
   hide();
+  detachCandidateAccessibility(accessibility_);
+  if (dispatcherWindow_) DestroyWindow(dispatcherWindow_);
   if (window_) DestroyWindow(window_);
-  if (font_) DeleteObject(font_);
+  releaseCandidateAccessibility(&accessibility_);
+  if (font_ && ownsFont_) DeleteObject(font_);
 }
 
-bool CandidateWindow::show(const std::vector<Candidate>& candidates, std::size_t selectedIndex) {
+void CandidateWindow::setCandidateInvokedCallback(std::function<void(std::size_t)> callback) {
+  candidateInvoked_ = std::move(callback);
+}
+
+bool CandidateWindow::initializeDispatcher() {
+  return ensureDispatcherCreated();
+}
+
+bool CandidateWindow::post(std::function<void()> callback) {
+  if (!callback || !dispatcherWindow_) return false;
+  auto* posted = new (std::nothrow) std::function<void()>(std::move(callback));
+  if (!posted) return false;
+  if (!PostMessageW(dispatcherWindow_, kRunPostedCallbackMessage, 0, reinterpret_cast<LPARAM>(posted))) {
+    delete posted;
+    return false;
+  }
+  return true;
+}
+
+bool CandidateWindow::show(
+  const std::vector<Candidate>& candidates,
+  std::size_t selectedIndex,
+  const RECT* textExtent,
+  HWND ownerWindow
+) {
   if (candidates.empty() || selectedIndex >= candidates.size() || !ensureCreated()) {
     hide();
     return false;
   }
 
+  const bool wasVisible = IsWindowVisible(window_) == TRUE;
+  const std::size_t previousSelectedIndex = selectedIndex_;
+  const std::wstring previousSelectedText =
+    previousSelectedIndex < candidates_.size() ? candidates_[previousSelectedIndex].text : L"";
   candidates_ = candidates;
   if (candidates_.size() > kMaximumCandidateCount) candidates_.resize(kMaximumCandidateCount);
   selectedIndex_ = std::min(selectedIndex, candidates_.size() - 1);
+  if (textExtent) textAnchor_ = POINT{textExtent->left, textExtent->bottom};
 
-  const HWND foreground = GetForegroundWindow();
-  const UINT dpi = foreground ? GetDpiForWindow(foreground) : GetDpiForSystem();
+  HWND requestedOwner = ownerWindow;
+  if (!requestedOwner) requestedOwner = ownerWindow_;
+  if (!requestedOwner) requestedOwner = GetForegroundWindow();
+  if (requestedOwner) {
+    const HWND rootOwner = GetAncestor(requestedOwner, GA_ROOT);
+    ownerWindow_ = rootOwner ? rootOwner : requestedOwner;
+    SetWindowLongPtrW(window_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(ownerWindow_));
+  }
+
+  const HWND dpiWindow = ownerWindow_ ? ownerWindow_ : GetForegroundWindow();
+  const UINT dpi = dpiWindow ? GetDpiForWindow(dpiWindow) : GetDpiForSystem();
   replaceFont(dpi == 0 ? 96 : dpi);
 
   HDC device = GetDC(window_);
@@ -87,7 +134,7 @@ bool CandidateWindow::show(const std::vector<Candidate>& candidates, std::size_t
 
   const int width = std::clamp(contentWidth + horizontalPadding_ * 2, scaled(250, dpi), scaled(620, dpi));
   const int height = rowHeight_ * static_cast<int>(candidates_.size()) + scaled(2, dpi);
-  const POINT anchor = candidateAnchor();
+  const POINT anchor = textAnchor_.value_or(fallbackCandidateAnchor());
   MONITORINFO monitor = {};
   monitor.cbSize = sizeof(monitor);
   const HMONITOR nearest = MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
@@ -105,22 +152,50 @@ bool CandidateWindow::show(const std::vector<Candidate>& candidates, std::size_t
   if (y + height > workArea.bottom) y = anchor.y - height - margin;
   if (y < workArea.top) y = workArea.top;
 
-  SetWindowPos(
-    window_, HWND_TOPMOST, x, y, width, height,
+  if (!SetWindowPos(
+    window_, HWND_TOP, x, y, width, height,
     SWP_NOACTIVATE | SWP_SHOWWINDOW
-  );
+  )) {
+    hide();
+    return false;
+  }
   RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+  updateCandidateAccessibility(accessibility_, candidates_, selectedIndex_, rowHeight_, true);
+  NotifyWinEvent(
+    wasVisible ? EVENT_OBJECT_IME_CHANGE : EVENT_OBJECT_IME_SHOW,
+    window_,
+    OBJID_CLIENT,
+    CHILDID_SELF
+  );
+  if (!wasVisible) {
+    notifyCandidateMenuOpened(accessibility_);
+    notifyCandidateSelectionChanged(accessibility_);
+  } else if (selectedIndex_ != previousSelectedIndex ||
+             candidates_[selectedIndex_].text != previousSelectedText) {
+    notifyCandidateSelectionChanged(accessibility_);
+  }
   return true;
 }
 
 void CandidateWindow::hide() {
+  const bool wasVisible = window_ && IsWindowVisible(window_) == TRUE;
   candidates_.clear();
   selectedIndex_ = 0;
-  if (window_) ShowWindow(window_, SW_HIDE);
+  textAnchor_.reset();
+  ownerWindow_ = nullptr;
+  if (window_) {
+    ShowWindow(window_, SW_HIDE);
+    SetWindowLongPtrW(window_, GWLP_HWNDPARENT, 0);
+  }
+  updateCandidateAccessibility(accessibility_, candidates_, selectedIndex_, rowHeight_, false);
+  if (wasVisible) {
+    NotifyWinEvent(EVENT_OBJECT_IME_HIDE, window_, OBJID_CLIENT, CHILDID_SELF);
+    notifyCandidateMenuClosed(accessibility_);
+  }
 }
 
-bool CandidateWindow::ensureCreated() {
-  if (window_) return true;
+bool CandidateWindow::ensureDispatcherCreated() {
+  if (dispatcherWindow_) return true;
   static std::once_flag registration;
   static bool registered = false;
   std::call_once(registration, [] {
@@ -133,14 +208,29 @@ bool CandidateWindow::ensureCreated() {
     registered = RegisterClassExW(&windowClass) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
   });
   if (!registered) return false;
+  dispatcherWindow_ = CreateWindowExW(
+    0,
+    kCandidateWindowClass,
+    L"",
+    0,
+    0, 0, 0, 0,
+    HWND_MESSAGE, nullptr, g_module, this
+  );
+  return dispatcherWindow_ != nullptr;
+}
+
+bool CandidateWindow::ensureCreated() {
+  if (window_) return true;
+  if (!ensureDispatcherCreated()) return false;
   window_ = CreateWindowExW(
-    WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
     kCandidateWindowClass,
     L"Lekh suggestions",
     WS_POPUP | WS_BORDER,
     0, 0, 0, 0,
     nullptr, nullptr, g_module, this
   );
+  if (window_) accessibility_ = createCandidateAccessibility(window_);
   return window_ != nullptr;
 }
 
@@ -176,16 +266,20 @@ void CandidateWindow::paint() {
 }
 
 void CandidateWindow::replaceFont(UINT dpi) {
+  if (font_ && fontDpi_ == dpi) return;
   if (font_) {
-    DeleteObject(font_);
+    if (ownsFont_) DeleteObject(font_);
     font_ = nullptr;
+    ownsFont_ = false;
   }
   font_ = CreateFontW(
     -scaled(16, dpi), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
     DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
     DEFAULT_PITCH | FF_DONTCARE, L"Nirmala UI"
   );
+  ownsFont_ = font_ != nullptr;
   if (!font_) font_ = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+  fontDpi_ = dpi;
 }
 
 std::wstring CandidateWindow::rowText(const Candidate& candidate, std::size_t index) const {
@@ -193,6 +287,12 @@ std::wstring CandidateWindow::rowText(const Candidate& candidate, std::size_t in
   std::wstring output = shortcut + L".  " + singleLine(candidate.text);
   if (!candidate.label.empty()) output += L"    " + singleLine(candidate.label);
   return output;
+}
+
+void CandidateWindow::invokeCandidateAt(int y) {
+  if (y < 0 || rowHeight_ <= 0 || !candidateInvoked_) return;
+  const std::size_t index = static_cast<std::size_t>(y / rowHeight_);
+  if (index < candidates_.size()) candidateInvoked_(index);
 }
 
 LRESULT CALLBACK CandidateWindow::windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -204,17 +304,38 @@ LRESULT CALLBACK CandidateWindow::windowProcedure(HWND window, UINT message, WPA
   }
   switch (message) {
     case WM_PAINT:
-      if (self) self->paint();
+      if (self && window == self->window_) self->paint();
+      else ValidateRect(window, nullptr);
       return 0;
     case WM_ERASEBKGND:
       return 1;
-    case WM_NCHITTEST:
-      return HTTRANSPARENT;
     case WM_MOUSEACTIVATE:
-      return MA_NOACTIVATEANDEAT;
+      return MA_NOACTIVATE;
+    case WM_LBUTTONUP:
+      if (self) self->invokeCandidateAt(static_cast<int>(static_cast<short>(HIWORD(lParam))));
+      return 0;
+    case kCandidateAccessibilitySelectMessage:
+      if (self && wParam < self->candidates_.size() && self->rowHeight_ > 0) {
+        self->invokeCandidateAt(static_cast<int>(wParam) * self->rowHeight_);
+      }
+      return 0;
+    case kRunPostedCallbackMessage: {
+      std::unique_ptr<std::function<void()>> callback(
+        reinterpret_cast<std::function<void()>*>(lParam)
+      );
+      if (callback && *callback) (*callback)();
+      return 0;
+    }
+    case WM_GETOBJECT:
+      if (self && window == self->window_) {
+        const LRESULT provider = candidateAccessibilityObject(self->accessibility_, wParam, lParam);
+        if (provider) return provider;
+      }
+      break;
     default:
-      return DefWindowProcW(window, message, wParam, lParam);
+      break;
   }
+  return DefWindowProcW(window, message, wParam, lParam);
 }
 
 } // namespace lekh::tsf

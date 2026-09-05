@@ -78,7 +78,7 @@ but it must never take authority over it.**
 |---|---|
 | Romanized Nepali | Type familiar Latin spellings such as `namaste`; choose from ranked Devanagari candidates such as `नमस्ते`. |
 | System integration | Native InputMethodKit input method on macOS; native Text Services Framework text service on Windows. |
-| Candidate control | Inline and popup candidates on macOS; numbered candidates with keyboard navigation on Windows. Nothing commits merely because it appears. |
+| Candidate control | Inline and popup candidates on macOS; numbered, keyboard/pointer-selectable, Narrator-readable candidates on Windows. Nothing commits merely because it appears. |
 | Local language tools | Bundled dictionary-backed ranking, local explicit-choice memory, and conservative active-token proofread suggestions. |
 | Traditional typing | Traditional → Nepali and Traditional → Romanized on macOS, clearly labeled **Beta**. |
 | Privacy boundary | No text telemetry in the v1 typing path. Secure or unknown contexts fail closed and clear composition state. |
@@ -89,7 +89,7 @@ but it must never take authority over it.**
 | Platform | Release target | What ships |
 |---|---|---|
 | macOS | macOS 13 or newer | One universal installer for Apple Silicon and Intel Macs |
-| Windows | Windows 11 x64 | x64 installer with the native text service and local companion |
+| Windows | Windows 11 x64 | x64 installer with 64-bit and 32-bit native text-service support, a local broker, and the companion |
 
 Windows ARM64 compiles and passes native tests in CI, but v1.0 does not ship an
 ARM64 installer because that install lifecycle has not passed the same
@@ -161,9 +161,13 @@ Use these options in order:
    finish.
 6. Press **Windows key + Space** and choose **Lekh Keyboard Nepali**.
 
-If Lekh is not listed, sign out of Windows and sign back in once. If it remains
-absent, uninstall Lekh Keyboard Companion, restart Windows, and install the
-same release file again.
+Setup adds Lekh to the installing user's Windows input list, but it does not
+change the default keyboard or switch input sources without the user.
+
+If Lekh is not listed, open **Lekh Keyboard Companion → Updates & diagnostics**
+and choose **Repair text service**. Approve its single UAC prompt, then sign out
+and back in once if Windows has not refreshed the input list. Reinstall only if
+the companion reports that a required native file is missing.
 
 <details>
 <summary><strong>Verify a download before opening it</strong></summary>
@@ -221,7 +225,11 @@ the recommended v1.0 mode.
 | Turn Lekh on or switch keyboards | **Windows key + Space** |
 | Move through candidates | **Up/Down Arrow** |
 | Choose a numbered candidate | **1–8** |
+| Choose with pointer or touch | Click or tap a candidate row |
 | Commit the selected candidate | **Space** or **Enter** |
+| Cycle Lekh typing modes | **Ctrl + Alt + Space** |
+| Choose English letters → Nepali | **Ctrl + Alt + 1** |
+| Choose Romanized text | **Ctrl + Alt + 2** |
 | Turn Lekh off | **Windows key + Space**, then choose another keyboard |
 
 To stop the Windows background process completely, open **Lekh Keyboard
@@ -282,13 +290,14 @@ claims:
 
 - CI builds and tests macOS on Apple Silicon and Intel, plus Windows on x64 and
   ARM64.
-- The deterministic v1 release suite recorded **47 test files / 452 tests**.
+- The deterministic v1 release suite runs on every release candidate through
+  `npm run v1:test`; CI output is the source of truth for its current count.
 - TypeScript and Swift passed all **31 shared behavior-contract cases** with
   byte-identical output.
 - Windows CI commits a selected Devanagari candidate through a real TSF thread
   manager, document manager, context, edit session, and in-memory text store.
-- Windows x64 CI installs silently, verifies COM/TSF registration and local
-  service startup, uninstalls, and verifies cleanup.
+- Windows x64 CI installs silently, verifies 64-bit and 32-bit COM/TSF
+  registration plus local service startup, uninstalls, and verifies cleanup.
 - The macOS package simulation verifies quarantine detection, the preferred
   Finder approval path, universal architecture, and package integrity.
 - The final bounded adversarial review recorded **zero open P0 issues**. It
@@ -297,6 +306,7 @@ claims:
 Explore the evidence:
 
 - [Current CI workflow](https://github.com/dantwoashim/Lekh_Assistant/actions/workflows/ci.yml)
+- [Windows release build and physical validation matrix](docs/WINDOWS_RELEASE_BUILD.md)
 - [macOS unsigned-install walkthrough](C2_MACOS_UNSIGNED_INSTALL_WALKTHROUGH.md)
 - [Traditional / Preeti corpus result](C3_TRADITIONAL_PREETI_CORPUS_RESULTS.md)
 - [Known limitations](KNOWN_LIMITATIONS.md)
@@ -326,7 +336,9 @@ Honest limits are part of the product contract:
 - Physical Windows behavior in Notepad, browsers, and Microsoft Word has not
   been claimed as visually verified; the native commit path and candidate state
   machine use automated CI proxies.
-- The shipped Windows installer is x64 only.
+- The companion and installer target Windows 11 x64. The installer includes a
+  separate x86 TSF DLL so the keyboard can load in 32-bit applications; a
+  Windows ARM64 installer is not yet shipped.
 - Traditional typing is Beta and lacks a verified physical-layout corpus and
   experienced-typist sign-off.
 - The Preeti converter has extensive locked-fixture regression coverage but no
@@ -387,7 +399,7 @@ maintenance and research scripts remain in `package.json` for maintainers.
 | `npm run v1:test` | Run the deterministic v1 test suite | macOS / Windows |
 | `npm run v1:check` | Run format, types, tests, build, IPC, and commit-policy checks | macOS / Windows |
 | `npm run v1:build:macos` | Compile the native macOS input method with neural typing off | macOS |
-| `npm run v1:build:windows` | Compile the native Windows TSF service | Windows |
+| `npm run v1:build:windows` | Compile and test both 64-bit and 32-bit Windows TSF services | Windows |
 | `npm run v1:package:macos` | Build and verify the unsigned universal installer ZIP | macOS |
 | `npm run v1:package:windows` | Build the unsigned x64 Windows installer | Windows |
 

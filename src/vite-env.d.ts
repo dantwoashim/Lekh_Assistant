@@ -22,6 +22,18 @@ interface LekhNativeStatus {
   version: string | null;
   bundlePath: string | null;
   releaseSigned: boolean | null;
+  registered?: boolean;
+  registrationPathMatches?: boolean;
+  registrationIssues?: string[];
+  compatibilityRegistered?: boolean;
+  compatibilityPathMatches?: boolean;
+  serviceHealthy?: boolean;
+  serviceLatencyMs?: number;
+  serviceIssue?: string | null;
+  serviceProcessRunning?: boolean;
+  startupEnabled?: boolean;
+  startupCanChange?: boolean;
+  repairAvailable?: boolean;
 }
 
 interface LekhNativePreferences {
@@ -65,6 +77,9 @@ interface Window {
     openKeyboardSettings(): Promise<{ ok: boolean }>;
     revealInputMethod(): Promise<{ ok: boolean; error: string | null }>;
     chooseExcludedApplications(): Promise<LekhExcludedApplication[]>;
+    repairWindowsInstallation(): Promise<{ ok: boolean; status: LekhNativeStatus }>;
+    restartWindowsService(): Promise<{ ok: boolean }>;
+    setWindowsStartupEnabled(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>;
     checkForUpdates(): Promise<LekhUpdateStatus>;
     downloadVerifiedUpdate(): Promise<{ ok: boolean; version: string }>;
   };

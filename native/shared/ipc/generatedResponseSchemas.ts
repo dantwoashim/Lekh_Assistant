@@ -122,6 +122,9 @@ export const IPC_COMMON_DEFINITIONS = {
       "showRomanizedLabels": {
         "type": "boolean"
       },
+      "enablePersonalization": {
+        "type": "boolean"
+      },
       "enableNextWordPrediction": {
         "type": "boolean"
       }
@@ -365,7 +368,7 @@ export const IPC_COMMON_DEFINITIONS = {
           "type": "string",
           "enum": [
             "Tab",
-            "Enter"
+            "ArrowRight"
           ],
           "x-wellFormedUtf16": true
         }

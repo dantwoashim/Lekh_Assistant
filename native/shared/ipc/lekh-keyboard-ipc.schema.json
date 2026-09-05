@@ -134,6 +134,9 @@
         "showRomanizedLabels": {
           "type": "boolean"
         },
+        "enablePersonalization": {
+          "type": "boolean"
+        },
         "enableNextWordPrediction": {
           "type": "boolean"
         }
@@ -377,7 +380,7 @@
             "type": "string",
             "enum": [
               "Tab",
-              "Enter"
+              "ArrowRight"
             ],
             "x-wellFormedUtf16": true
           }

@@ -118,9 +118,9 @@ function validatePreferencePatch(
       const identifiers = value.map((item) => {
         if (
           typeof item !== "string"
-          || !/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(item)
+          || !isSupportedApplicationIdentifier(item)
         ) {
-          throw new TypeError("Excluded applications must be valid bundle identifiers.");
+          throw new TypeError("Excluded applications must be valid platform application identifiers.");
         }
         return item;
       });
@@ -136,6 +136,11 @@ function validatePreferencePatch(
     validated[key] = value;
   }
   return validated;
+}
+
+function isSupportedApplicationIdentifier(value) {
+  return /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(value)
+    || /^win32\.exe:[^<>:"/\\|?*\u0000-\u001F]{1,180}\.exe$/iu.test(value);
 }
 
 module.exports = {

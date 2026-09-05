@@ -1,16 +1,17 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import { spawnSync } from "node:child_process";
+import { verifyHardenedElectronFusePolicy } from "./lib/electron-fuse-policy.mjs";
 
 const root = process.cwd();
 const startedAt = performance.now();
 const signed = process.argv.includes("--signed");
 const unsigned = process.argv.includes("--unsigned") || !signed;
 const supportedArchitectures = new Map([
-  ["x64", { cmake: "x64", buildDirectory: "build", electronBuilder: "x64" }],
-  ["arm64", { cmake: "ARM64", buildDirectory: "build-ARM64", electronBuilder: "arm64" }]
+  ["x64", { cmake: "x64", buildDirectory: "build", electronBuilder: "x64", compatibilityArchitecture: "x86" }],
+  ["arm64", { cmake: "ARM64", buildDirectory: "build-ARM64", electronBuilder: "arm64", compatibilityArchitecture: "x86" }]
 ]);
 const requestedArchitecture = (
   optionValue("--architecture") ?? process.env.LEKH_WINDOWS_ARCHITECTURE ?? "x64"
@@ -27,6 +28,9 @@ if (!architecture) {
 
 const tsfDll = join(root, "native", "windows-tsf", "skeleton", architecture.buildDirectory, "bin", "Release", "LekhTextService.dll");
 const pipeBroker = join(root, "native", "windows-tsf", "skeleton", architecture.buildDirectory, "bin", "Release", "LekhPipeBroker.exe");
+const compatibilityTsfDll = architecture.compatibilityArchitecture
+  ? join(root, "native", "windows-tsf", "skeleton", "build-Win32", "bin", "Release", "LekhTextService.dll")
+  : null;
 
 function finish(status, details, exitCode) {
   mkdirSync(join(root, "reports"), { recursive: true });
@@ -46,7 +50,7 @@ function finish(status, details, exitCode) {
       2
     )}\n`
   );
-  console.log(JSON.stringify({ status, report: reportPath.replace(`${root}/`, ""), ...details }, null, 2));
+  console.log(JSON.stringify({ status, report: relative(root, reportPath).replaceAll("\\", "/"), ...details }, null, 2));
   process.exit(exitCode);
 }
 
@@ -82,17 +86,20 @@ if (process.platform !== "win32" && !process.env.LEKH_ALLOW_CROSS_WINDOWS_PACKAG
 }
 
 if (process.platform === "win32") {
-  const nativeBuild = runNode(join(root, "scripts", "build-windows-tsf.mjs"), [
-    "--architecture",
-    architecture.cmake
-  ]);
-  if (nativeBuild.status !== 0) {
-    finish("failed", {
-      step: "windows-tsf-build",
-      stdout: nativeBuild.stdout,
-      stderr: nativeBuild.stderr,
-      error: nativeBuild.error?.message
-    }, nativeBuild.status ?? 1);
+  for (const nativeArchitecture of [architecture.cmake, architecture.compatibilityArchitecture].filter(Boolean)) {
+    const nativeBuild = runNode(join(root, "scripts", "build-windows-tsf.mjs"), [
+      "--architecture",
+      nativeArchitecture
+    ]);
+    if (nativeBuild.status !== 0) {
+      finish("failed", {
+        step: "windows-tsf-build",
+        nativeArchitecture,
+        stdout: nativeBuild.stdout,
+        stderr: nativeBuild.stderr,
+        error: nativeBuild.error?.message
+      }, nativeBuild.status ?? 1);
+    }
   }
 }
 
@@ -110,6 +117,14 @@ if (!existsSync(pipeBroker)) {
     reason: "The required native named-pipe broker is missing. An unprotected daemon endpoint is forbidden.",
     expectedArtifact: pipeBroker,
     buildCommand: "npm run build:windows"
+  }, 1);
+}
+if (compatibilityTsfDll && !existsSync(compatibilityTsfDll)) {
+  finish("failed", {
+    step: "windows-x86-tsf-artifact",
+    reason: "The 32-bit TSF DLL required by 32-bit Windows applications is missing.",
+    expectedArtifact: compatibilityTsfDll,
+    buildCommand: "node scripts/build-windows-tsf.mjs --architecture x86"
   }, 1);
 }
 
@@ -175,18 +190,53 @@ const unpackedDirectory = join(
   releaseDir,
   architecture.electronBuilder === "arm64" ? "win-arm64-unpacked" : "win-unpacked"
 );
+const packagedAsar = join(unpackedDirectory, "resources", "app.asar");
 const unpackedArtifacts = [
   join(unpackedDirectory, "Lekh Keyboard Companion.exe"),
+  packagedAsar,
   join(unpackedDirectory, "resources", "native", "windows-tsf", "build", "bin", "Release", "LekhTextService.dll"),
   join(unpackedDirectory, "resources", "native", "windows-tsf", "build", "bin", "Release", "LekhPipeBroker.exe"),
   join(unpackedDirectory, "resources", "native", "daemon", "lekh-keyboard-daemon.mjs")
 ];
+if (compatibilityTsfDll) {
+  unpackedArtifacts.push(
+    join(unpackedDirectory, "resources", "native", "windows-tsf", "build-x86", "bin", "Release", "LekhTextService.dll")
+  );
+}
 const missingUnpackedArtifacts = unpackedArtifacts.filter((path) => !existsSync(path));
 if (missingUnpackedArtifacts.length > 0) {
   finish("failed", {
     step: "unpacked-artifacts",
     reason: "electron-builder omitted required architecture-specific runtime files.",
     missingArtifacts: missingUnpackedArtifacts
+  }, 1);
+}
+const maximumCompanionAsarBytes = 16 * 1024 * 1024;
+const companionAsarBytes = statSync(packagedAsar).size;
+if (companionAsarBytes > maximumCompanionAsarBytes) {
+  finish("failed", {
+    step: "package-footprint",
+    reason: "The companion ASAR exceeds its runtime-only payload budget; check for accidentally packaged build dependencies.",
+    companionAsarBytes,
+    maximumCompanionAsarBytes
+  }, 1);
+}
+
+let fuseVerification;
+try {
+  fuseVerification = await verifyHardenedElectronFusePolicy(unpackedArtifacts[0]);
+} catch (error) {
+  finish("failed", {
+    step: "electron-fuses",
+    reason: "The packaged Electron fuse wire could not be read.",
+    error: error instanceof Error ? error.message : String(error)
+  }, 1);
+}
+if (!fuseVerification.valid) {
+  finish("failed", {
+    step: "electron-fuses",
+    reason: "The packaged Electron binary does not match the complete fail-closed fuse policy.",
+    ...fuseVerification
   }, 1);
 }
 
@@ -206,6 +256,8 @@ if (!existsSync(exe)) {
 finish(signed ? "passed-signed" : "passed-unsigned-dev", {
   artifact: exe,
   unpackedArtifacts,
+  companionAsarBytes,
+  electronFuseCount: fuseVerification.wireFuseCount,
   signed: !unsigned
 }, 0);
 

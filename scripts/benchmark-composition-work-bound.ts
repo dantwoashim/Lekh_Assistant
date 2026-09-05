@@ -104,7 +104,7 @@ function runParent(write: boolean): void {
   if (write) {
     mkdirSync(resolve(ROOT, "docs/evidence"), { recursive: true });
     writeFileSync(ARTIFACT_PATH, json);
-    console.log(`Wrote ${relative(ROOT, ARTIFACT_PATH)}.`);
+    console.log(`Wrote ${portableRelativePath(ARTIFACT_PATH)}.`);
   }
   console.log(json.trimEnd());
 }
@@ -344,8 +344,12 @@ function collectSourceFiles(directory: string, extensions: readonly string[], ou
       name.includes(".test-support.") ||
       !extensions.some((extension) => name.endsWith(extension))
     ) continue;
-    output.add(relative(ROOT, absolute));
+    output.add(portableRelativePath(absolute));
   }
+}
+
+function portableRelativePath(absolutePath: string): string {
+  return relative(ROOT, absolutePath).replaceAll("\\", "/");
 }
 
 function readPositiveIntegerArg(name: string): number {

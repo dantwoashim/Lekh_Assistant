@@ -193,7 +193,12 @@ export function companionSettingsToTypingContext(
     const needle = item.toLowerCase();
     return appName.toLowerCase().includes(needle) || appId.toLowerCase().includes(needle);
   });
-  const secureInput = Boolean(patch.secureInput || patch.fieldType === "password" || patch.fieldType === "code" || patch.fieldType === "unknown" || !normalized.enableLocalMemory || normalized.pauseLearning || appExcluded);
+  const secureInput = Boolean(
+    patch.secureInput
+    || patch.fieldType === "password"
+    || patch.fieldType === "code"
+    || patch.fieldType === "unknown"
+  );
 
   return {
     leftTextWindow: "",
@@ -206,6 +211,7 @@ export function companionSettingsToTypingContext(
     secureInput,
     enabledSurfaces,
     showRomanizedLabels: normalized.showRomanizedLabels,
+    enablePersonalization: normalized.enableLocalMemory && !normalized.pauseLearning && !appExcluded,
     enableNextWordPrediction: normalized.enableNextWordPrediction,
     layoutId: normalized.traditionalLayoutStatus === "verified" ? "traditional-ltk-compatible" : "traditional-ltk-compatible.pending"
   };
