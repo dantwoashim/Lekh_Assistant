@@ -186,12 +186,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lekh-v1-windows-${{ matrix.package_architecture }}
-          path: release/Lekh-Keyboard-Companion-1.0.0-Setup-${{ matrix.package_architecture }}.exe
+          path: release/Lekh-Keyboard-Companion-*-Setup-${{ matrix.package_architecture }}.exe
           if-no-files-found: error
           compression-level: 0
 
   release-candidate:
-    name: v1.0.0 release bundle
+    name: v1 release bundle
     needs:
       - native-macos
       - native-windows
@@ -222,10 +222,10 @@ jobs:
           --output release-candidate/RELEASE_NOTES_v1.0.md
           --checksums release-candidate/SHA256SUMS.txt
 
-      - name: Upload self-consistent v1.0.0 release bundle
+      - name: Upload self-consistent v1 release bundle
         uses: actions/upload-artifact@v7
         with:
-          name: lekh-assistant-v1.0.0-release-candidate
+          name: lekh-assistant-v1-release-candidate
           path: release-candidate
           if-no-files-found: error
           compression-level: 0
