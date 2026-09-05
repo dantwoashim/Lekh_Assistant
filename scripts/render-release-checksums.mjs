@@ -62,9 +62,11 @@ if (checksumHeadingIndex < 0 || notes.indexOf(checksumHeading, checksumHeadingIn
 }
 
 const renderedNotes = `${notes.slice(0, checksumHeadingIndex)}${checksumBlock}`
+  .replace(/^# Lekh Assistant v1 Release Notes$/mu, `# Lekh Assistant v${packageVersion} Release Notes`)
+  .replaceAll("<version>", packageVersion)
   .replace(
     /Status:[\s\S]*?\n\n## What is included/u,
-    "Status: CI-built v1.0.0 release candidate. The SHA-256 block below was generated from the installers in this release bundle.\n\n## What is included"
+    `Status: CI-built v${packageVersion} unsigned community preview. The SHA-256 block below was generated from the installers in this release bundle.\n\n## What is included`
   )
   .replace("## Verification completed before E2", "## Verification");
 

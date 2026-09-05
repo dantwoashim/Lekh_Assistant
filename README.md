@@ -17,18 +17,18 @@
 <p align="center"><strong>No browser tab. No copy-and-paste loop. No account required.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/Lekh-Keyboard-Test-Installer.zip">
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.3/Lekh-Keyboard-Test-Installer.zip">
     <img src="https://img.shields.io/badge/Download-macOS_13%2B-0D6B5B?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Download Lekh Assistant for macOS 13 or newer" />
   </a>
-  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe">
-    <img src="https://img.shields.io/badge/Download-Windows_11_x64-174EA6?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download Lekh Assistant for Windows 11 x64" />
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.3/Lekh-Keyboard-Companion-1.0.3-Setup-x64.exe">
+    <img src="https://img.shields.io/badge/Download-Windows_11_x64_Beta-174EA6?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download Lekh Assistant 1.0.3 beta for Windows 11 x64" />
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/tag/v1.0.0">v1.0.0 release</a>
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/tag/v1.0.3">v1.0.3 release</a>
   ·
-  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/SHA256SUMS.txt">verify downloads</a>
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.3/SHA256SUMS.txt">verify downloads</a>
   ·
   <a href="KNOWN_LIMITATIONS.md">known limitations</a>
 </p>
@@ -37,7 +37,7 @@
   <a href="https://github.com/dantwoashim/Lekh_Assistant/actions/workflows/ci.yml">
     <img src="https://github.com/dantwoashim/Lekh_Assistant/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" />
   </a>
-  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/tag/v1.0.0">
+  <a href="https://github.com/dantwoashim/Lekh_Assistant/releases/tag/v1.0.3">
     <img src="https://img.shields.io/github/v/release/dantwoashim/Lekh_Assistant?color=0D6B5B" alt="Latest release" />
   </a>
   <a href="LICENSE">
@@ -65,11 +65,11 @@ but it must never take authority over it.**
   companion explicitly.
 
 > [!IMPORTANT]
-> **v1.0 is an unsigned release.** The macOS package is ad-hoc signed but not
+> **v1.0.3 is an unsigned community preview.** The macOS package is ad-hoc signed but not
 > Apple-notarized; the Windows package has no publisher certificate. Gatekeeper
 > or SmartScreen warnings are therefore expected. Download only from the
 > official release links above and compare the file with the published
-> [SHA-256 checksums](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/SHA256SUMS.txt).
+> [SHA-256 checksums](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.3/SHA256SUMS.txt).
 > Lekh never asks you to disable operating-system security globally.
 
 ## What you get
@@ -101,7 +101,7 @@ End users do **not** need Node.js, npm, or a developer toolchain.
 
 ### macOS
 
-1. [Download `Lekh-Keyboard-Test-Installer.zip`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/Lekh-Keyboard-Test-Installer.zip).
+1. [Download `Lekh-Keyboard-Test-Installer.zip`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.3/Lekh-Keyboard-Test-Installer.zip).
 2. In Finder, double-click the ZIP once. Keep the extracted **Lekh Keyboard
    Test Installer** folder intact.
 3. Open that folder. Control-click or right-click `Lekh Keyboard Test Installer.app`, choose Open, then click Open again.
@@ -150,16 +150,22 @@ Use these options in order:
 
 ### Windows
 
-1. [Download `Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe).
+1. [Download `Lekh-Keyboard-Companion-1.0.3-Setup-x64.exe`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.3/Lekh-Keyboard-Companion-1.0.3-Setup-x64.exe).
 2. Double-click the installer.
 3. If Windows says **Windows protected your PC**, click **More info**, confirm
    that the file name is the Lekh installer, and click **Run anyway**.
+   If Windows provides no **Run anyway** option, Smart App Control or an
+   organization policy is blocking unsigned software. Do not disable device
+   security globally; this unsigned preview cannot be installed on that PC.
 4. Approve the **User Account Control** prompt. Administrator approval is
    required because the installer registers a machine-wide Windows text
    service.
 5. Keep the default install folder, click **Install**, and wait for setup to
    finish.
-6. Press **Windows key + Space** and choose **Lekh Keyboard Nepali**.
+6. Open **Lekh Keyboard Companion** once and confirm that Keyboard
+   registration, Typing service, and Run at sign-in all show **Ready**.
+7. Open Notepad, press **Windows key + Space**, and choose **Lekh Keyboard
+   Nepali**. Type `namaste`; the inline suggestion should show `नमस्ते`.
 
 Setup adds Lekh to the installing user's Windows input list, but it does not
 change the default keyboard or switch input sources without the user.
@@ -170,10 +176,29 @@ and back in once if Windows has not refreshed the input list. Reinstall only if
 the companion reports that a required native file is missing.
 
 <details>
+<summary><strong>If Lekh is selected but typing stays Latin</strong></summary>
+
+1. Open **Lekh Keyboard Companion → Updates & diagnostics** and confirm that
+   Keyboard registration and Typing service both show **Ready**.
+2. If registration needs attention, choose **Repair keyboard** and approve its
+   UAC prompt.
+3. If the service needs attention, choose **Restart typing service**.
+4. Confirm **Run at sign-in** is enabled, then retry in Notepad before testing
+   Word, a browser, or another editor.
+5. If the keyboard was just installed or repaired, sign out and back in once,
+   select it again with **Windows key + Space**, and retry.
+
+Lekh intentionally passes Latin text through unchanged when its local service
+is unavailable or when Windows reports a secure or unknown typing context. It
+never asks users to disable antivirus, SmartScreen, or Smart App Control.
+
+</details>
+
+<details>
 <summary><strong>Verify a download before opening it</strong></summary>
 
 Download the official
-[`SHA256SUMS.txt`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.0/SHA256SUMS.txt)
+[`SHA256SUMS.txt`](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.3/SHA256SUMS.txt)
 file, then compare the installer hash.
 
 On macOS:
@@ -185,7 +210,7 @@ shasum -a 256 ~/Downloads/Lekh-Keyboard-Test-Installer.zip
 On Windows PowerShell:
 
 ```powershell
-Get-FileHash "$HOME\Downloads\Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe" -Algorithm SHA256
+Get-FileHash "$HOME\Downloads\Lekh-Keyboard-Companion-1.0.3-Setup-x64.exe" -Algorithm SHA256
 ```
 
 </details>
@@ -223,6 +248,7 @@ the recommended v1.0 mode.
 | Action | Control |
 |---|---|
 | Turn Lekh on or switch keyboards | **Windows key + Space** |
+| Accept the inline ghost suggestion | **Tab** or **Right Arrow** |
 | Move through candidates | **Up/Down Arrow** |
 | Choose a numbered candidate | **1–8** |
 | Choose with pointer or touch | Click or tap a candidate row |

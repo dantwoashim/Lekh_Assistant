@@ -1,8 +1,7 @@
-# Lekh Assistant v1.0 Release Notes
+# Lekh Assistant v1 Release Notes
 
-Status: v1.0.0 release candidate. The checksum block below belongs to the cited
-CI release bundle. CI regenerates this block from the installers it packages
-together.
+Status: unsigned community preview built and verified by CI. The checksum block
+is regenerated from the installers packaged in the same release run.
 
 ## What is included
 
@@ -21,6 +20,7 @@ together.
 ### Windows
 
 - System-wide Romanized Nepali typing through Windows Text Services Framework.
+- Host-rendered inline ghost suggestions accepted with Tab or Right Arrow.
 - A numbered candidate window with Up/Down, digits 1–8, Space, and Enter.
 - Exact selected-candidate commit through the native TSF edit-session path.
 - Local deterministic daemon and protected per-user named-pipe broker.
@@ -52,7 +52,7 @@ macOS:
 
 Windows:
 
-1. Run the Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe release asset.
+1. Run the Lekh-Keyboard-Companion-<version>-Setup-x64.exe release asset.
 2. Approve the unsigned-publisher and User Account Control prompts after
    checking the downloaded file name.
 3. Press Windows key + Space and choose Lekh Keyboard Nepali.
@@ -61,7 +61,7 @@ Windows:
 
 - Four-target CI is green on macOS ARM64, macOS Intel x64, Windows x64, and
   Windows ARM64.
-- The scoped deterministic suite passes 47 files / 452 tests.
+- The scoped deterministic suite passes in the cited release workflow.
 - TypeScript and Swift pass all 31 shared behavior-contract rows with
   byte-identical output.
 - Windows CI commits selected Devanagari through a real TSF thread manager,
@@ -97,11 +97,5 @@ release.
 
 ## Artifact checksums
 
-Generated from the two installers collected in
-[E2 CI run 29850032455](https://github.com/dantwoashim/Lekh_Assistant/actions/runs/29850032455)
-and published with them in artifact `lekh-assistant-v1.0.0-release-candidate`:
-
-```text
-222827ebfca9d529a3b427d6aa35ace5bf1a8077c57c43ee9cea4352b2074c30  Lekh-Keyboard-Test-Installer.zip
-02702fbc72c6b7e06f3fb2ab80722eb12e26c0719222bb100ea68e56cf4e38e2  Lekh-Keyboard-Companion-1.0.0-Setup-x64.exe
-```
+CI replaces this paragraph with hashes computed from the installers in the same
+release bundle. Never copy checksum values from an older release.
