@@ -16,7 +16,7 @@ function key(value: string): KeyboardKeyEvent {
     code: value === " " ? "Space" : value.length === 1 ? `Key${value.toUpperCase()}` : value,
     modifiers: { shift: false, ctrl: false, alt: false, meta: false },
     timestamp: 1,
-    platform: "test"
+    platform: "windows-tsf"
   };
 }
 

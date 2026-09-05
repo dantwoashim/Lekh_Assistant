@@ -77,7 +77,10 @@ export function applyKeyToComposition(input: string, caret: number, key: Keyboar
   }
 
   if (safeKey === "Tab") {
-    return { text: input, caret, command: "pass-through" };
+    if (input.length === 0) {
+      return { text: input, caret, command: "pass-through" };
+    }
+    return { text: input, caret };
   }
 
   if (safeKey === " ") {

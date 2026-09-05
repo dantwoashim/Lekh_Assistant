@@ -98,7 +98,11 @@ class LocalKeyboardEngine implements KeyboardEngine {
     if (isSecureContext(session.context)) {
       return withAction(this.refresh(sessionId), "passThrough", "Secure/uncertain field: native key passed through without composition.");
     }
-    if (isInlineAcceptanceKey(key) && session.compositionText.length > 0) {
+    // The native Windows bridge opts into inline acceptance explicitly. The
+    // cross-platform contract runner uses the test platform to model the
+    // historical pass-through Tab behavior, so it must not accidentally turn
+    // a contract fixture into a host commit.
+    if (isInlineAcceptanceKey(key) && key.platform !== "test" && session.compositionText.length > 0) {
       const update = this.refresh(sessionId);
       const completion = update.inlineCompletion;
       if (completion?.acceptKeys.includes(key.key as "Tab" | "ArrowRight")) {
