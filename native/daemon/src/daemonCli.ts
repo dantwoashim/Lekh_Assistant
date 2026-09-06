@@ -45,6 +45,10 @@ async function runDaemonCli(): Promise<void> {
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
 
+  // The private Windows broker waits for imports and storage initialization
+  // before starting the normal IPC deadline. This is not a public IPC frame.
+  if (process.argv.includes("--broker-ready")) process.stdout.write("LEKH_BROKER_READY_V1\n");
+
   for await (const line of io) {
     try {
       process.stdout.write(`${await handler.handleLine(line)}\n`);

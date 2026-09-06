@@ -25,6 +25,7 @@ public:
   DaemonBackend& operator=(const DaemonBackend&) = delete;
 
   bool start(const DaemonLayout& layout);
+  bool waitForReady(DWORD timeoutMs);
   bool running() const;
   HANDLE waitHandle() const;
   std::optional<std::string> request(const std::string& requestFrame, DWORD timeoutMs);

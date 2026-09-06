@@ -5,8 +5,8 @@
   "sourceContract": {
     "id": "lekh-token-candidates-v1",
     "path": "data/engine/lekh-token-candidates.v1.json",
-    "sha256": "cdaf7b070a09b04b0f6e6b696603082243d3bcacd94e88633ceb65c464bd43f2",
-    "canonicalJsonSha256": "6dd2024bdbb925ff44e2974bbea28598a72ec4b40a51d885a81f5a6947bdb9b3"
+    "sha256": "708270462deeab55d5ace6280341899d89a14a86c98306741ec8af3b0a27949b",
+    "canonicalJsonSha256": "214414202b4c5d4c22dd123707caa0fa405653308fa633e5537fcf3109b0fed9"
   },
   "productionEligible": false,
   "activation": "opaque-test-build-capability-only",

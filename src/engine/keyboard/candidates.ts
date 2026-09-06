@@ -34,6 +34,9 @@ const SHARED_TOKEN_ROWS: PrefixCandidateRow[] = tokenCandidatePack.rows.flatMap(
     allowPrefix: true
   }))
 );
+const SHARED_TOKEN_INDEX = new Map(
+  tokenCandidatePack.rows.map((row) => [row.input, row.outputs] as const)
+);
 const TYPE_PRIORITY: Record<Candidate["type"], number> = {
   protected: 100,
   personal: 90,
@@ -164,6 +167,7 @@ export function romanizedCandidates(
   const englishPreserve = englishPreserveCandidate(trimmed, input.length);
   if (englishPreserve) return [englishPreserve];
   const smartCandidates = smartTransformCandidates(input, input.length, context);
+  const deterministicPhrase = deterministicPhraseCandidate(trimmed, input.length, context);
   const correctionCandidates = romanizedCorrectionCandidates(trimmed, input.length, context);
   const mixedCandidates = mixedSpanCandidates(trimmed, input.length, context);
   const contextCandidates = contextualPredictionCandidates(trimmed, input.length, context);
@@ -226,6 +230,7 @@ export function romanizedCandidates(
   const primaryCandidates = finalizeCandidates([
     ...memoryCandidates,
     ...smartCandidates,
+    ...(deterministicPhrase ? [deterministicPhrase] : []),
     ...contextCandidates,
     ...correctionCandidates,
     ...mixedCandidates,
@@ -361,12 +366,9 @@ function prefixCandidates(input: string, rangeEnd: number, context?: TypingConte
     { input: "ke gardai chau", output: "के गर्दै छौ", confidence: 0.96, reason: "Casual activity question" },
     { input: "k gardai xau", output: "के गर्दै छौ", confidence: 0.95, reason: "Casual x spelling activity question" },
     { input: "tapai kahaa hunuhuncha", output: "तपाईं कहाँ हुनुहुन्छ", confidence: 0.95, reason: "Polite location phrase" },
-    { input: "mero ke cha", output: "मेरो के छ अवस्था", label: "mero ke cha awastha", confidence: 0.93, reason: "Casual status sentence completion", allowPrefix: false },
-    { input: "mero k cha", output: "मेरो के छ अवस्था", label: "mero ke cha awastha", confidence: 0.92, reason: "Casual shorthand status sentence completion", allowPrefix: false },
-    { input: "mero k xa", output: "मेरो के छ अवस्था", label: "mero ke cha awastha", confidence: 0.92, reason: "Casual x spelling status sentence completion", allowPrefix: false },
-    { input: "ke cha", output: "के छ अवस्था", label: "ke cha awastha", confidence: 0.91, reason: "Casual status phrase completion", allowPrefix: false },
-    { input: "k cha", output: "के छ अवस्था", label: "ke cha awastha", confidence: 0.9, reason: "Casual shorthand status phrase completion", allowPrefix: false },
-    { input: "k xa", output: "के छ अवस्था", label: "ke cha awastha", confidence: 0.9, reason: "Casual x spelling status phrase completion", allowPrefix: false },
+    { input: "mero ke cha", output: "मेरो के छ", confidence: 0.97, reason: "Exact casual phrase", allowPrefix: false },
+    { input: "mero k cha", output: "मेरो के छ", confidence: 0.96, reason: "Exact casual shorthand phrase", allowPrefix: false },
+    { input: "mero k xa", output: "मेरो के छ", confidence: 0.95, reason: "Exact casual x-spelling phrase", allowPrefix: false },
     { input: "mero k xa awastha", output: "मेरो के छ अवस्था", confidence: 0.96, reason: "Casual mixed shorthand status phrase", allowPrefix: false },
     { input: "mero ke cha awastha", output: "मेरो के छ अवस्था", confidence: 0.96, reason: "Casual status phrase", allowPrefix: false },
     { input: "mero k cha awastha", output: "मेरो के छ अवस्था", confidence: 0.95, reason: "Casual shorthand status phrase", allowPrefix: false },
@@ -423,8 +425,12 @@ function prefixCandidates(input: string, rangeEnd: number, context?: TypingConte
       text: row.output,
       label: context?.showRomanizedLabels ? (row.label ?? canonicalRomanizedLabel(row.output, row.input)) : undefined,
       type: row.output.includes(" ") ? "phrase" : "word",
-      confidence: phraseBeforeBoundary ? Math.min(row.confidence, 0.76) : row.confidence,
-      reason: phraseBeforeBoundary ? [row.reason, "Phrase completion held below exact word until phrase boundary is typed"] : [row.reason],
+      confidence: exactMatch
+        ? row.confidence
+        : Math.min(row.confidence, phraseBeforeBoundary ? 0.7 : normalized.length <= 2 ? 0.68 : 0.8),
+      reason: exactMatch
+        ? [row.reason, "exact active input"]
+        : [row.reason, "Completion held below exact active input"],
       shortcut: String(index + 1),
       replaceRange: [0, rangeEnd]
     };
@@ -865,10 +871,50 @@ function convertRomanizedPrefix(prefix: string, context?: TypingContext): string
   const trailingWhitespace = prefix.match(/\s*$/)?.[0] ?? "";
   const core = prefix.slice(0, prefix.length - trailingWhitespace.length);
   if (!core) return trailingWhitespace;
-  return `${convertRomanized(core, {
-    mode: context?.activeDomains.includes("government") ? "romanized-government" : "romanized-mixed",
-    digitPolicy: "context-dependent"
-  }).normalizedOutput}${trailingWhitespace}`;
+  const converted = core.split(/(\s+)/).map((part) => {
+    if (/^\s+$/.test(part)) return part;
+    return exactSharedTokenOutput(part) ?? convertRomanized(part, {
+      mode: context?.activeDomains.includes("government") ? "romanized-government" : "romanized-mixed",
+      digitPolicy: "context-dependent"
+    }).normalizedOutput;
+  }).join("");
+  return `${converted}${trailingWhitespace}`;
+}
+
+function deterministicPhraseCandidate(input: string, rangeEnd: number, context?: TypingContext): Candidate | undefined {
+  if (!input.includes(" ") || !/^[A-Za-z]+(?:\s+[A-Za-z]+)+$/.test(input)) return undefined;
+  let minimumConfidence = 1;
+  const output = input.split(/(\s+)/).map((part) => {
+    if (/^\s+$/.test(part)) return part;
+    const normalized = part.toLowerCase();
+    const rows = SHARED_TOKEN_INDEX.get(normalized);
+    if (rows?.[0]) {
+      minimumConfidence = Math.min(minimumConfidence, rows[0].confidence);
+      return rows[0].text;
+    }
+    const converted = convertRomanized(part, {
+      mode: context?.activeDomains.includes("government") ? "romanized-government" : "romanized-mixed",
+      digitPolicy: "context-dependent"
+    }).normalizedOutput;
+    if (!converted || /[A-Za-z]/.test(converted)) minimumConfidence = Math.min(minimumConfidence, 0.48);
+    else minimumConfidence = Math.min(minimumConfidence, 0.62);
+    return converted;
+  }).join("");
+  if (!output || output === input || /[A-Za-z]/.test(output)) return undefined;
+  return {
+    id: `deterministic-phrase-${output}`,
+    text: output,
+    label: context?.showRomanizedLabels ? input : undefined,
+    type: "phrase",
+    confidence: minimumConfidence >= 0.9 ? Math.min(0.975, minimumConfidence + 0.025) : minimumConfidence,
+    reason: [minimumConfidence >= 0.9 ? "Exact curated token sequence" : "Conservative token-by-token transliteration"],
+    replaceRange: [0, rangeEnd]
+  };
+}
+
+function exactSharedTokenOutput(input: string): string | undefined {
+  const normalized = input.normalize("NFKC").toLowerCase().replace(/[^a-z]+/g, "");
+  return SHARED_TOKEN_INDEX.get(normalized)?.[0]?.text;
 }
 
 function traditionalRomanizedLabel(prefix: string, romanized?: string): string | undefined {

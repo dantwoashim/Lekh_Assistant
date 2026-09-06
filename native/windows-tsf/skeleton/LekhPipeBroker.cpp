@@ -29,6 +29,7 @@ constexpr std::size_t kWorkerCount = 8;
 static_assert(kMaximumConnections > kWorkerCount + 1);
 constexpr std::size_t kQueueCapacity = kMaximumConnections - kWorkerCount - 1;
 constexpr DWORD kTransportCompletionGraceMilliseconds = 15;
+constexpr DWORD kStartupReadinessTimeoutMilliseconds = 30000;
 constexpr DWORD kStartupWarmBudgetMilliseconds = 4500;
 using Deadline = std::chrono::steady_clock::time_point;
 
@@ -354,6 +355,8 @@ Deadline responseDeadlineFor(Deadline operationDeadline) {
 }
 
 bool verifyBackendReadiness(lekh::pipe::DaemonBackend& backend) {
+  // Allow cold process initialization without extending protocol deadlines.
+  if (!backend.waitForReady(kStartupReadinessTimeoutMilliseconds)) return false;
   constexpr DWORD readinessTimeoutMs = kControlDeadlineMilliseconds;
   const std::uint64_t sentAt = epochMilliseconds();
   const std::wstring clientInstanceId = L"windows-broker-startup-" + std::to_wstring(GetCurrentProcessId());

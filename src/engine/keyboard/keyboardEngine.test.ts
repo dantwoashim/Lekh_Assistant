@@ -77,16 +77,12 @@ describe("KeyboardEngine session API", () => {
     expect(update.candidates.some((item) => item.text === "थापेर")).toBe(true);
   });
 
-  it("uses the trained aggregate prediction model for contextual Romanized suggestions", () => {
+  it("converts everyday chat phrases without the unreviewed trained model", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
-    const update = engine.updateComposition(sessionId, "ramro x", 7);
-    const trainedCandidate = update.candidates.find((candidate) =>
-      candidate.label === "ramro xa" && candidate.reason.join(" ").includes("trained prediction model")
-    );
-
-    expect(trainedCandidate?.text).toBe("राम्रो छ");
-    expect(trainedCandidate?.confidence).toBeGreaterThan(0.7);
+    const update = engine.updateComposition(sessionId, "ramro xa", 8);
+    expect(update.primary?.text).toBe("राम्रो छ");
+    expect(update.candidates.some((candidate) => candidate.reason.some((reason) => /trained .*model/.test(reason)))).toBe(false);
   });
 
   it("uses the quantized local n-gram model for inline next-word completion", () => {
@@ -537,13 +533,13 @@ describe("KeyboardEngine session API", () => {
     expect(update.candidates.find((candidate) => candidate.text === "मेरो के छ अवस्था")?.label).toBe("mero k xa awastha");
   });
 
-  it("offers status phrase completions without relying on raw Romanized echoes", () => {
+  it("does not append an invented status phrase to a complete input", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession({ ...defaultTypingContext("romanized"), showRomanizedLabels: true });
     const update = engine.updateComposition(sessionId, "mero ke cha", 11);
 
-    expect(update.candidates.map((candidate) => candidate.text)).toContain("मेरो के छ अवस्था");
-    expect(update.candidates.map((candidate) => candidate.label)).toContain("mero ke cha awastha");
+    expect(update.primary?.text).toBe("मेरो के छ");
+    expect(update.candidates.map((candidate) => candidate.text)).not.toContain("मेरो के छ अवस्था");
   });
 
   it("progressively completes casual Romanized prefixes instead of waiting for exact words", () => {
@@ -754,7 +750,7 @@ describe("KeyboardEngine session API", () => {
     }
   });
 
-  it("uses compiled next-context corpus rows for broad casual continuation", () => {
+  it("keeps useful casual continuations when the noisy corpus is disabled", () => {
     const engine = createKeyboardEngine();
     const sessionId = engine.beginSession({
       ...defaultTypingContext("romanized"),
@@ -765,7 +761,7 @@ describe("KeyboardEngine session API", () => {
     const update = engine.updateComposition(sessionId, "chh", 3);
 
     expect(update.candidates.map((candidate) => candidate.label)).toContain("chhu");
-    expect(update.candidates.find((candidate) => candidate.label === "chhu")?.reason.join(" ")).toMatch(/trained prediction model|next-context pack/);
+    expect(update.candidates.find((candidate) => candidate.label === "chhu")?.reason.join(" ")).toMatch(/Context prediction/);
   });
 
   it("suppresses low-confidence proofread hints on active prefixes", () => {

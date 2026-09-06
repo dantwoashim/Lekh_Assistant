@@ -403,7 +403,7 @@ bool DaemonBackend::start(const DaemonLayout& layout) {
     DeleteProcThreadAttributeList(startup.lpAttributeList);
     return false;
   }
-  const std::wstring commandLine = quoted(layout.runtimePath) + L" " + quoted(layout.daemonPath) + L" --stdio";
+  const std::wstring commandLine = quoted(layout.runtimePath) + L" " + quoted(layout.daemonPath) + L" --stdio --broker-ready";
   std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
   mutableCommand.push_back(L'\0');
 
@@ -440,6 +440,16 @@ bool DaemonBackend::start(const DaemonLayout& layout) {
 
 bool DaemonBackend::running() const {
   return process_ && !poisoned_.load() && WaitForSingleObject(process_, 0) == WAIT_TIMEOUT;
+}
+
+bool DaemonBackend::waitForReady(DWORD timeoutMs) {
+  std::unique_lock<std::timed_mutex> lock(requestMutex_);
+  if (!running()) return false;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+  const auto ready = readLine(standardOutput_, outputBuffer_, deadline);
+  if (ready && *ready == "LEKH_BROKER_READY_V1") return true;
+  poison();
+  return false;
 }
 
 HANDLE DaemonBackend::waitHandle() const {

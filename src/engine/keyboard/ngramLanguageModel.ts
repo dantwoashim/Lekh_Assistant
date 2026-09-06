@@ -1,4 +1,3 @@
-import ngramModel from "../../data/keyboard-packs/v0.1/ngram-lm.json";
 import { isSecureContext } from "./modes";
 import { romanizedCanonicalKey } from "./romanizationTolerance";
 import type { Candidate, InlineCompletion, KeyboardSession, TypingContext } from "./types";
@@ -25,7 +24,10 @@ interface CompletionMatch {
   contextLength: number;
 }
 
-const model = ngramModel as NgramModel;
+const model: NgramModel = {
+  version: "v0.2-curated-inline",
+  rows: []
+};
 const MAX_NEXT_WORDS = 4;
 const CURATED_NEXT_WORDS: Array<{
   kind: ScriptKind;
@@ -43,7 +45,27 @@ const CURATED_NEXT_WORDS: Array<{
   { kind: "devanagari", context: "जन्म", next: "दर्ता", romanized: "darta", confidence: 0.96 },
   { kind: "romanized", context: "janma", next: "दर्ता", romanized: "darta", confidence: 0.96 },
   { kind: "devanagari", context: "मृत्यु", next: "दर्ता", romanized: "darta", confidence: 0.96 },
-  { kind: "romanized", context: "mrityu", next: "दर्ता", romanized: "darta", confidence: 0.96 }
+  { kind: "romanized", context: "mrityu", next: "दर्ता", romanized: "darta", confidence: 0.96 },
+  { kind: "devanagari", context: "मेरो", next: "नाम", romanized: "naam", confidence: 0.96 },
+  { kind: "romanized", context: "mero", next: "नाम", romanized: "naam", confidence: 0.96 },
+  { kind: "devanagari", context: "तपाईंको", next: "नाम", romanized: "naam", confidence: 0.95 },
+  { kind: "romanized", context: "tapaiko", next: "नाम", romanized: "naam", confidence: 0.95 },
+  { kind: "devanagari", context: "कस्तो", next: "छ", romanized: "cha", confidence: 0.96 },
+  { kind: "romanized", context: "kasto", next: "छ", romanized: "cha", confidence: 0.96 },
+  { kind: "devanagari", context: "के", next: "छ", romanized: "cha", confidence: 0.95 },
+  { kind: "romanized", context: "ke", next: "छ", romanized: "cha", confidence: 0.95 },
+  { kind: "devanagari", context: "ठीक", next: "छ", romanized: "cha", confidence: 0.96 },
+  { kind: "romanized", context: "thik", next: "छ", romanized: "cha", confidence: 0.96 },
+  { kind: "devanagari", context: "धेरै", next: "धन्यवाद", romanized: "dhanyabad", confidence: 0.95 },
+  { kind: "romanized", context: "dherai", next: "धन्यवाद", romanized: "dhanyabad", confidence: 0.95 },
+  { kind: "devanagari", context: "मलाई", next: "थाहा", romanized: "thaha", confidence: 0.94 },
+  { kind: "romanized", context: "malai", next: "थाहा", romanized: "thaha", confidence: 0.94 },
+  { kind: "devanagari", context: "माया", next: "लाग्छ", romanized: "lagcha", confidence: 0.94 },
+  { kind: "romanized", context: "maya", next: "लाग्छ", romanized: "lagcha", confidence: 0.94 },
+  { kind: "devanagari", context: "भोक", next: "लाग्यो", romanized: "lagyo", confidence: 0.94 },
+  { kind: "romanized", context: "bhok", next: "लाग्यो", romanized: "lagyo", confidence: 0.94 },
+  { kind: "devanagari", context: "राम्रो", next: "लाग्यो", romanized: "lagyo", confidence: 0.94 },
+  { kind: "romanized", context: "ramro", next: "लाग्यो", romanized: "lagyo", confidence: 0.94 }
 ];
 
 let index: Map<string, NgramRow[]> | undefined;

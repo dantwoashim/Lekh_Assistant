@@ -15,6 +15,10 @@ interface ContextPredictionRow {
 
 const CONTEXT_ROWS: ContextPredictionRow[] = [
   {
+    romanized: "chhu", output: "छु", label: "chhu", confidence: 0.93,
+    domains: [], contextHints: ["khusi", "खुसी"], reason: "first-person feeling continuation", minPrefix: 2
+  },
+  {
     romanized: "mero ke cha awastha",
     output: "मेरो के छ अवस्था",
     label: "mero ke cha awastha",
@@ -338,8 +342,7 @@ function scoreContextRow(
   const prefixMinimum = row.minPrefix ?? 3;
   const exact = active === row.romanized;
   const prefixMatch = row.romanized.startsWith(active) && active.length >= prefixMinimum;
-  const completedMatch = active.startsWith(row.romanized) && row.romanized.length >= prefixMinimum;
-  if (!exact && !prefixMatch && !completedMatch) return undefined;
+  if (!exact && !prefixMatch) return undefined;
 
   const hintMatches = row.contextHints.filter((hint) => contextWindow.includes(hint));
   const domainMatches = row.domains.filter((domain) => activeDomains.has(domain));
@@ -348,9 +351,8 @@ function scoreContextRow(
   const coverage = Math.min(1, active.length / Math.max(row.romanized.length, 1));
   const contextBoost = Math.min(0.035, hintMatches.length * 0.012) + Math.min(0.025, domainMatches.length * 0.008);
   const exactBoost = exact ? 0.018 : 0;
-  const shorterPhrasePenalty = completedMatch && !exact ? 0.045 : 0;
   const phraseBeforeBoundary = row.output.includes(" ") && prefixMatch && !active.includes(" ");
-  const rawConfidence = Math.min(0.995, row.confidence + contextBoost + exactBoost + coverage * 0.015 - shorterPhrasePenalty);
+  const rawConfidence = Math.min(0.995, row.confidence + contextBoost + exactBoost + coverage * 0.015);
   const confidence = phraseBeforeBoundary && hintMatches.length === 0 ? Math.min(0.78, rawConfidence) : rawConfidence;
   const label = context?.showRomanizedLabels ? row.label ?? canonicalRomanizedLabel(row.output, row.romanized) : undefined;
   const reasons = [

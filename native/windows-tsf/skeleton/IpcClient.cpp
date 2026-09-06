@@ -6,11 +6,14 @@
 #include "../../shared/ipc/generated/LekhIPCProtocol.generated.h"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <climits>
+#include <filesystem>
 #include <iterator>
 #include <string>
 #include <utility>
+#include <vector>
 
 extern HMODULE g_module;
 
@@ -18,6 +21,7 @@ namespace {
 
 constexpr std::size_t kMaximumFrameBytes = lekh::ipc::kMaximumFrameBytes;
 constexpr DWORD kTransportCompletionGraceMilliseconds = 15;
+constexpr ULONGLONG kCompanionLaunchThrottleMilliseconds = 10000;
 
 DWORD transportTimeout(DWORD protocolTimeout) {
   return protocolTimeout > MAXDWORD - kTransportCompletionGraceMilliseconds
@@ -79,6 +83,56 @@ std::optional<std::wstring> configuredPipeName() {
   const std::optional<std::wstring> sid = currentUser ? currentUser->string() : std::nullopt;
   if (!sid || sid->empty()) return std::nullopt;
   return std::wstring(kLekhPipeNamePrefix) + *sid;
+}
+
+std::optional<std::filesystem::path> companionExecutablePath() {
+  std::vector<wchar_t> modulePath(1024);
+  while (modulePath.size() <= 32768) {
+    const DWORD length = GetModuleFileNameW(g_module, modulePath.data(), static_cast<DWORD>(modulePath.size()));
+    if (length == 0) return std::nullopt;
+    if (length < modulePath.size()) {
+      std::filesystem::path directory = std::filesystem::path(std::wstring(modulePath.data(), length)).parent_path();
+      for (unsigned int depth = 0; depth < 12 && !directory.empty(); ++depth) {
+        if (_wcsicmp(directory.filename().c_str(), L"resources") == 0) {
+          const std::filesystem::path executable = directory.parent_path() / L"Lekh Keyboard Companion.exe";
+          std::error_code error;
+          if (std::filesystem::is_regular_file(executable, error) && !error) return executable;
+          return std::nullopt;
+        }
+        const auto parent = directory.parent_path();
+        if (parent == directory) break;
+        directory = parent;
+      }
+      return std::nullopt;
+    }
+    modulePath.resize(modulePath.size() * 2);
+  }
+  return std::nullopt;
+}
+
+void startCompanionIfNeeded() {
+  static std::atomic<ULONGLONG> lastAttempt = 0;
+  const ULONGLONG now = GetTickCount64();
+  ULONGLONG previous = lastAttempt.load();
+  if (previous != 0 && now - previous < kCompanionLaunchThrottleMilliseconds) return;
+  if (!lastAttempt.compare_exchange_strong(previous, now)) return;
+
+  const std::optional<std::filesystem::path> executable = companionExecutablePath();
+  if (!executable || executable->wstring().find(L'"') != std::wstring::npos) return;
+  std::wstring command = L"\"" + executable->wstring() + L"\" --background";
+  std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+  mutableCommand.push_back(L'\0');
+  STARTUPINFOW startup = {};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process = {};
+  if (CreateProcessW(
+    executable->c_str(), mutableCommand.data(), nullptr, nullptr, FALSE,
+    CREATE_NO_WINDOW, nullptr, executable->parent_path().c_str(),
+    &startup, &process
+  )) {
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+  }
 }
 
 std::optional<DWORD> waitForOverlappedBytes(HANDLE handle, OVERLAPPED& overlapped, DWORD timeoutMs) {
@@ -191,7 +245,10 @@ std::optional<std::wstring> LekhIpcClient::request(const std::wstring& jsonLine,
   if (pipeName_.empty()) return std::nullopt;
   const DWORD boundedTransportTimeout = transportTimeout(timeoutMs);
   const ULONGLONG startedAt = GetTickCount64();
-  if (!WaitNamedPipeW(pipeName_.c_str(), boundedTransportTimeout)) return std::nullopt;
+  if (!WaitNamedPipeW(pipeName_.c_str(), boundedTransportTimeout)) {
+    startCompanionIfNeeded();
+    return std::nullopt;
+  }
 
   HANDLE pipe = CreateFileW(
     pipeName_.c_str(),

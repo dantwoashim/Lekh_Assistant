@@ -65,6 +65,8 @@ let windowsTray = null;
 let pipeBrokerGeneration = 0;
 let explainedWindowsBackgroundBehavior = false;
 let windowsStartupRegistrationEnabled = false;
+const windowsServiceEvents = [];
+let windowsServiceLogQueue = Promise.resolve();
 const windowsAuthenticodeStatusCache = new Map();
 
 function createWindow({ showWhenReady = true } = {}) {
@@ -162,7 +164,13 @@ const ownsPrimaryInstance = app.requestSingleInstanceLock();
 if (!ownsPrimaryInstance) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    if (process.platform === "win32" && argv.includes("--background")) {
+      if (pipeBrokerRestartTimer) clearTimeout(pipeBrokerRestartTimer);
+      pipeBrokerRestartTimer = null;
+      if (app.isReady()) startWindowsPipeBrokerIfAvailable();
+      return;
+    }
     if (app.isReady()) {
       showCompanionWindow();
     } else {
@@ -831,9 +839,15 @@ function startWindowsPipeBrokerIfAvailable() {
   if (!existsSync(daemonPath) || !existsSync(brokerPath)) return;
 
   const broker = spawn(brokerPath, [], {
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     detached: false,
     windowsHide: true
+  });
+  recordWindowsServiceEvent(`broker launched pid=${broker.pid ?? "unknown"}`);
+  let brokerError = "";
+  broker.stderr?.setEncoding("utf8");
+  broker.stderr?.on("data", (chunk) => {
+    brokerError = `${brokerError}${String(chunk)}`.slice(-2000);
   });
   pipeBrokerProcess = broker;
   pipeBrokerStableTimer = setTimeout(() => {
@@ -843,14 +857,14 @@ function startWindowsPipeBrokerIfAvailable() {
   pipeBrokerStableTimer.unref();
 
   let stopped = false;
-  const handleStoppedBroker = () => {
+  const handleStoppedBroker = (reason) => {
     if (stopped) return;
     stopped = true;
     if (pipeBrokerStableTimer) clearTimeout(pipeBrokerStableTimer);
     pipeBrokerStableTimer = null;
     if (pipeBrokerProcess === broker) pipeBrokerProcess = null;
     if (applicationIsQuitting || generation !== pipeBrokerGeneration) return;
-    const retryDelays = [250, 1000, 4000, 15_000, 60_000];
+    const retryDelays = [100, 250, 500, 1000, 2000, 5000];
     const retryIndex = Math.min(pipeBrokerRestartAttempts, retryDelays.length - 1);
     const delay = retryDelays[retryIndex];
     pipeBrokerRestartAttempts = Math.min(retryIndex + 1, retryDelays.length - 1);
@@ -859,9 +873,25 @@ function startWindowsPipeBrokerIfAvailable() {
       startWindowsPipeBrokerIfAvailable();
     }, delay);
     pipeBrokerRestartTimer.unref();
+    recordWindowsServiceEvent(`${reason}; retry=${delay}ms${brokerError.trim() ? `; detail=${singleLineDiagnostic(brokerError)}` : ""}`);
   };
-  broker.once("error", handleStoppedBroker);
-  broker.once("exit", handleStoppedBroker);
+  broker.once("error", (error) => handleStoppedBroker(`broker spawn error=${singleLineDiagnostic(error?.message ?? error)}`));
+  broker.once("exit", (code, signal) => handleStoppedBroker(`broker exited code=${code ?? "none"} signal=${signal ?? "none"}`));
+}
+
+function recordWindowsServiceEvent(message) {
+  if (process.platform !== "win32" || !app.isReady()) return;
+  const destination = path.join(app.getPath("userData"), "windows-service.log");
+  const line = `${new Date().toISOString()} ${singleLineDiagnostic(message)}\n`;
+  windowsServiceEvents.push(line);
+  if (windowsServiceEvents.length > 100) windowsServiceEvents.shift();
+  windowsServiceLogQueue = windowsServiceLogQueue
+    .then(() => writeFile(destination, windowsServiceEvents.join("")))
+    .catch((error) => console.error("Could not write Windows service diagnostic.", error));
+}
+
+function singleLineDiagnostic(value) {
+  return String(value ?? "").replace(/[\r\n\0]+/g, " ").slice(0, 2000);
 }
 
 async function restartWindowsPipeBroker() {

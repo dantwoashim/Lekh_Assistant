@@ -1,7 +1,7 @@
 {
   "name": "lekh-keyboard",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Lekh Keyboard companion, daemon, and native input method source for local-first Nepali typing.",
   "author": "Lekh",
   "license": "MIT",
@@ -31,7 +31,7 @@
     "test:dictionary": "vitest run src/core/dictionary/dictionary.test.ts --pool=forks --maxWorkers=1",
     "test:keyboard": "vitest run src/engine/keyboard --pool=forks --maxWorkers=1",
     "test:companion": "vitest run src/tests/app-smoke.test.tsx src/tests/companion-shell.test.tsx --pool=forks --maxWorkers=1",
-    "test:native-scaffold": "vitest run native --pool=forks --maxWorkers=1",
+    "test:native-scaffold": "vitest run native/daemon/src native/shared --pool=forks --maxWorkers=1",
     "test:native-swift": "swift run --package-path native/macos-imk/skeleton LekhInputMethodUnitProbe",
     "generate:production-release-evidence": "node scripts/generate-production-release-evidence.mjs",
     "test:watch": "vitest --pool=forks --maxWorkers=2",
