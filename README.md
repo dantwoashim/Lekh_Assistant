@@ -72,6 +72,28 @@ but it must never take authority over it.**
 > [SHA-256 checksums](https://github.com/dantwoashim/Lekh_Assistant/releases/download/v1.0.3/SHA256SUMS.txt).
 > Lekh never asks you to disable operating-system security globally.
 
+### No Mac or Windows machine handy? Run the engine in a terminal
+
+The transliteration engine that powers the input method is plain TypeScript
+with no DOM or network dependency, so it runs anywhere Node does:
+
+```bash
+git clone https://github.com/dantwoashim/Lekh_Assistant.git && cd Lekh_Assistant
+npm ci
+npm run demo:romanized -- "namaste" "mero naam prabin ho" "dhanyabad, pheri bhetaula"
+```
+
+```text
+namaste  ->  नमस्ते
+mero naam prabin ho  ->  मेरो नाम प्रबिन हो
+dhanyabad, pheri bhetaula  ->  धन्यवाद, फेरि भेटाउला
+```
+
+The script calls the document-level `convert()` in `romanized-strict` mode,
+which routes to the same `src/engine/romanized` module the native keyboard
+engine uses per keystroke. Ranked candidates, explicit-choice memory, and the
+proofread pass are exercised by `npm run v1:test`.
+
 ## What you get
 
 | Capability | v1.0 behavior |

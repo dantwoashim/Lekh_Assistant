@@ -217,6 +217,7 @@
     "generate:romanized-aliases": "npm run alias:romanized",
     "check:alias-collisions": "LEKH_SCRIPT=alias-collisions LEKH_BENCHMARK_CLI=1 vite-node scripts/report-romanized-alias-collisions.ts",
     "report:alias-collisions": "npm run check:alias-collisions",
+    "demo:romanized": "LEKH_BENCHMARK_CLI=1 vite-node scripts/demo-romanized.ts",
     "benchmark:romanized": "LEKH_BENCHMARK_CLI=1 vite-node scripts/benchmark-romanized.ts",
     "benchmark:romanized:smoke": "LEKH_BENCHMARK_SMOKE=1 LEKH_BENCHMARK_CLI=1 vite-node scripts/benchmark-romanized.ts",
     "benchmark:romanized:full": "npm run benchmark:romanized",
